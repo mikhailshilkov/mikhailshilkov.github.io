@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>SQL: produce resultset with N rows | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.1" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">.NET, SQL and Javascript programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                <li><a href="/">Blog</a></li>
+                <li><a href="/about">About</a></li>
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="http://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="http://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="row">
+        <div class="col-sm-12 col-md-10">
+            <article class="post">
+    <div class="post-date">Jun 3rd, 2014</div>
+    
+    <h1>SQL: produce resultset with N rows</h1>
+    
+    <div class="post-content">
+        <p>Let&#39;s talk about T-SQL today.</p>
+<p>Sometimes you need to produce a result set, which would contain N rows with numbers 1...N in each row. For example, I needed to calculate some statistics per week for N weeks starting from today and going back to the past.</p>
+<p>Here is a table funtion which does the enumeration:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">FUNCTION</span> dbo.fnEnumerateNumbers(@<span class="hljs-keyword">max</span> <span class="hljs-built_in">int</span>) 
+<span class="hljs-keyword">RETURNS</span> <span class="hljs-keyword">TABLE</span> 
+<span class="hljs-keyword">RETURN</span> 
+<span class="hljs-keyword">WITH</span>
+ E1(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
+           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
+           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
+           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span>),                 <span class="hljs-comment">--10E1  or 10 rows</span>
+ E2(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E1 a, E1 b), <span class="hljs-comment">--10E2  or 100 rows</span>
+ E4(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E2 a, E2 b), <span class="hljs-comment">--10E4  or 10000 rows</span>
+ E8(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E4 a, E4 b)  <span class="hljs-comment">--10E8  or 100000000 rows</span>
+<span class="hljs-keyword">SELECT</span> TOP (@<span class="hljs-keyword">max</span>) N = ROW_NUMBER() OVER (<span class="hljs-keyword">ORDER</span> <span class="hljs-keyword">BY</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-literal">NULL</span>)) 
+  <span class="hljs-keyword">FROM</span> E8
+</span></code></pre><p>Usage is trivial:</p>
+<pre class="highlight"><code class="hljs stylus">SELECT N
+  FROM dbo.<span class="hljs-function"><span class="hljs-title">fnEnumerateNumbers</span><span class="hljs-params">(<span class="hljs-number">100</span>)</span></span>
+</code></pre><p>And here is how I solved the task of enumerating weeks:</p>
+<pre class="highlight"><code class="hljs stylus">SELECT <span class="hljs-function"><span class="hljs-title">dateadd</span><span class="hljs-params">(week, <span class="hljs-number">1</span> - N, getutcdate()</span></span>) 
+  FROM dbo.<span class="hljs-function"><span class="hljs-title">fnEnumerateNumbers</span><span class="hljs-params">(<span class="hljs-number">100</span>)</span></span>
+</code></pre><p>There are multiple possibilities to implement similar function, but I believe this way is the best one in terms of performance. No temporary tables, no table reads, no dependencies on table existance, and you can define your maximum yourself.</p>
+<p>Happy coding!</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov" data-size="large" data-count="none">Tweet</a>
+      <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2014/06/03/sql-produce-resultset-with-n-rowsindex.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/performance/'>performance</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/t-sql/'>T-SQL</a>
+    </div>
+    
+</article>
+            <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy C#, Javascript and SQL development and I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="http://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="http://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+            <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'http://mikhail.io/2014/06/03/sql-produce-resultset-with-n-rows';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'SQL: produce resultset with N rows';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2015 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>

@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.1" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">.NET, SQL and Javascript programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                <li><a href="/">Blog</a></li>
+                <li><a href="/about">About</a></li>
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="http://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="http://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    
+    <article class="post">
+    <div class="post-date">Aug 11th, 2015</div>
+    
+    <h1><a href='/2015/08/units-of-measurement-in-domain-design'>Units of measurement in domain design</a></h1>
+    
+    <div class="post-content">
+        <p>If you have business application of any decent size, your most important code probably resides in domain logic.
+When working with 3rd party code, you can always find an answer on stack overflow or official documentation, but your domain is all yours. Try to make it as simple and readable as possible, and it will always pay you back.</p>
+<p>Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.</p>
+<h2 id="problem-statement">Problem statement</h2>
+<p>Our toy example will be about cars and fuel consumption. You receive some data about the trip of your car, e.g. an instance of</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+{
+    <span class="hljs-keyword">double</span> FuelUsed { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">double</span> Distance { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = trip.FuelUsed / trip.Distance;
+</code></pre>
+<p>You get the value, but what is it? Let&#39;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+{
+    <span class="hljs-keyword">double</span> FuelUsedInLiters { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">double</span> DistanceInKilometers { <span class="hljs-keyword">get</span>; }
+}
+
+<span class="hljs-keyword">var</span> fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * <span class="hljs-number">100.0</span> / trip.DistanceInKilometers;
+</code></pre>
+<p>Now it&#39;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
+<ol>
+<li><p>You will start measuring same things in different units. E.g. you will store the distance in meters in the database, so you&#39;ll have to multiply by 1000 somewhere in persistence layer.</p>
+</li>
+<li><p>If you need to convert metric to imperial and back, you will get lots of constants here and there.</p>
+</li>
+<li><p>String formatting will become a tedious task. Be sure to call a right formatter for each implicit unit.</p>
+</li>
+</ol>
+<p>This does not work well. The code smell is called <a href="http://blog.ploeh.dk/2011/05/25/DesignSmellPrimitiveObsession/">Primitive Obsession</a> and we should avoid this in production-grade code. Instead, we want the succinctness of first example in combination with strong compile-time checks and well-defined operations.</p>
+<h2 id="defining-the-units">Defining the units</h2>
+<p>I tried several options like generic classes for units, but I ended up having a struct per measurement. The code is very boring and repetitive, but it provides me with the strongest compile-time checks and nice readability. If you are too bored with typing, you can do some code generation or just use 3rd party that suits you.
+So, my end result looks like</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+{
+    Volume FuelUsed { <span class="hljs-keyword">get</span>; }
+    Distance Distance { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>Let&#39;s see how Distance is defined (Volume will be almost exactly same):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">struct</span> Distance
+{
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">Distance</span><span class="hljs-params">(<span class="hljs-keyword">double</span> kilometers)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Kilometers = kilometers;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Kilometers { <span class="hljs-keyword">get</span>; }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Meters =&gt; <span class="hljs-keyword">this</span>.Kilometers / <span class="hljs-number">1000.0</span>;
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance Zero = <span class="hljs-keyword">new</span> Distance(<span class="hljs-number">0.0</span>);
+
+    ...
+}
+</code></pre>
+<p>Several important things to notice here:</p>
+<ol>
+<li><p>It&#39;s a struct.</p>
+</li>
+<li><p>It&#39;s immutable. Once an instance is created, its properties can&#39;t be changed anymore.</p>
+</li>
+<li><p>Constructor is private. I don&#39;t actually want people to create instances directly: <code>new Distance(123)</code> reads pretty horribly, keep reading to see better options.
+Of course, default constructor is still public, but you can only create a zero value with it.</p>
+</li>
+<li><p>Better way of creating zero distance is to call Zero static field.</p>
+</li>
+</ol>
+<h2 id="instantiation">Instantiation</h2>
+<p>So, how do we create measurement objects?</p>
+<h3 id="factory-method">Factory method</h3>
+<p>The classic way is a set of static factory methods:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromKilometers</span><span class="hljs-params">(<span class="hljs-keyword">double</span> kilometers)</span>
+</span>{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Distance</span><span class="hljs-params">(kilometers)</span></span>;
+}
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromMeters</span><span class="hljs-params">(<span class="hljs-keyword">double</span> meters)</span>
+</span>{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Distance</span><span class="hljs-params">(kilometers / <span class="hljs-number">1000.0</span>)</span></span>;
+}
+</code></pre>
+<p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
+<h3 id="extension-method">Extension method</h3>
+<p>Imagine you have the following code which converts an integer value of a database result into our units</p>
+<pre class="highlight"><code class="hljs cs">trip.Distance = Distance.FromMeters(database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
+                        .GetDefaultOrEmpty());
+</code></pre>
+<p>Such a long expression reads better with a fluent interface like</p>
+<pre class="highlight"><code class="hljs cs">trip.Distance = database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
+                        .GetDefaultOrEmpty()
+                        .MetersToDistance();
+</code></pre>
+<p><code>MetersToDistance</code> in this case is an extension method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">DistanceExtensions</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">MetersToDistance</span><span class="hljs-params">(<span class="hljs-keyword">this</span> <span class="hljs-keyword">double</span> meters)</span>
+    </span>{
+        <span class="hljs-keyword">return</span> Distance.FromMeters(meters);
+    }
+}
+</code></pre>
+<h3 id="operator-with-static-class-using">Operator with static class using</h3>
+<p>C# 6 brings us a new language construct. Now we can import a static helper class</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">using</span> <span class="hljs-keyword">static</span> Units.Constants;
+</code></pre>
+<p>And then we can write something like</p>
+<pre class="highlight"><code class="hljs swift"><span class="hljs-keyword">var</span> <span class="hljs-built_in">distance</span> = <span class="hljs-number">10.0</span> * km;
+</code></pre><p>where liter is defined in that static class:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Constants</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance km = Distance.FromKilometers(<span class="hljs-number">1.0</span>);
+}
+</code></pre>
+<p>This may not look like idiomatic C#, but I think it&#39;s very good at least for writing unit tests:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> Trip
+{
+    DistanceOnFoot = <span class="hljs-number">5</span> * km,
+    DistanceOnBicycle = <span class="hljs-number">10</span> * km,
+    DistanceOnCar = <span class="hljs-number">30</span> * km
+};
+target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span class="hljs-number">10</span> + <span class="hljs-number">5</span>) * km);
+</code></pre>
+<p>For this to compile you just need to define the operator overload:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-keyword">operator</span>*(<span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span>, Distance distance)
+{
+    <span class="hljs-keyword">return</span> Distance.FromKilometers(<span class="hljs-keyword">value</span> * distance.Kilometers);
+}
+</code></pre>
+<h2 id="conversion-and-printing">Conversion and printing</h2>
+<p>More advanced unit conversions are easy with unit classes. A common use case would be to convert metric units to imperial system. All you need to do is to add another calculated property</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Distance class</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> MilesInKilometer = <span class="hljs-number">0.621371192</span>;
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> FeetInMeter = = <span class="hljs-number">3.2808399</span>;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Miles =&gt; <span class="hljs-keyword">this</span>.Kilometers * MilesInKilometer;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Feet =&gt; <span class="hljs-keyword">this</span>.Meters * FeetInMeter;
+</code></pre>
+<p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
+<ul>
+<li>Format based on user preferences (metric/imperial)</li>
+<li>Pick units based on the value (e.g. 30 m but 1.2 km, not 1200 m)</li>
+<li>Localization to different languages</li>
+<li>Rounding to some closest value</li>
+</ul>
+<p>If you do all that in the unit class, it&#39;s going to violate the single responsibility principle. Just create a separate class for formatting and put all those rules there.</p>
+<h2 id="unit-derivation">Unit derivation</h2>
+<p>Once you write more unit classes, you will definitely want to derive the calculation result of two units into the third one. In our example, we want to divide <code>Volume</code> of fuel used by <code>Distance</code> to get fuel <code>ConsumptionRate</code>.</p>
+<p>There&#39;s no magic that you could do here. You will have to define <code>ConsumptionRate</code> class the same way you defined the other two, and then just overload the operation</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ConsumptionRate <span class="hljs-keyword">operator</span>/(Volume volume, Distance distance)
+{
+    <span class="hljs-keyword">return</span> ConsumptionRate
+        .FromLitersPer100Kilometers(volume.Liters * <span class="hljs-number">100.0</span> / distance.Kilometers);
+}
+</code></pre>
+<p>Of course, you&#39;ll have to define all the required combinations explicitly.</p>
+<p>If you defined Constants as described above, you&#39;ll be able to instantiate values in your tests in the following way:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = <span class="hljs-number">7.5</span> * lit / (<span class="hljs-number">100</span> * km);
+</code></pre>
+<h2 id="should-i-use-3rd-party-libraries-for-that-">Should I use 3rd party libraries for that?</h2>
+<p>It depends. Of course, people implemented all this functionality about 1 million times before you, so there are numerous libraries on GitHub.</p>
+<p>I would say, if you start a new project and you don&#39;t have a strong opinion about the unit code, just go grab the library and try to use it.</p>
+<p>At the same time, for existing code base, it might be easier to introduce your own implementation which would resemble something that you already use.</p>
+<p>Also, I have another reason for my own implementation. I&#39;m using units all over the code base of domain logic, the very heart of the software, the exact place where I want full control. I find it a bit awkward to introduce a 3rd party dependency in domain layer.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/units-of-measurement/'>units of measurement</a>, <a href='/tags/domain-design/'>domain design</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/clean-code/'>clean code</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Jul 28th, 2015</div>
+    
+    <h1><a href='/2015/07/aurelia-element-animation-with-custom-attribute'>Aurelia element animation with custom attribute</a></h1>
+    
+    <div class="post-content">
+        <p>I&#39;ve been exploring <a href="http://aurelia.io">Aurelia</a> javascript UI framework recently to get some experience needed
+for our next big project. One thing that I couldn&#39;t implement out of the box was a kind 
+of animation.</p>
+<p>I have a grid of values bound to View Model. View Model communicates to server, receives
+any updates of data and the grid got immediately updated, all that works great with Aurelia.
+Now I want to highlight the cell which has just received an updated value with a small
+background animation, like this:</p>
+<p><img src="/2015/07/aurelia-element-animation-with-custom-attribute/animation.gif" alt="Updated cell animation"></p>
+<p>Aurelia has a library called <a href="https://github.com/aurelia/animator-css">aurelia-animator-css</a> with a helper
+class to run CSS animation. If you use it directly in your View Model, you will end up with the code like</p>
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">this</span>.newMessageReceived =
+    msg =&gt; {
+        <span class="hljs-keyword">this</span>.data.filter(i =&gt; i.id === msg.id).forEach(t =&gt; {
+            <span class="hljs-keyword">let</span> editedItemIdx = <span class="hljs-keyword">this</span>.data.indexOf(i);
+            <span class="hljs-keyword">var</span> elem = <span class="hljs-keyword">this</span>.element.querySelectorAll(<span class="hljs-string">'tbody tr'</span>)[editedItemIdx + <span class="hljs-number">1</span>]
+                                   .querySelectorAll(<span class="hljs-string">'td'</span>)[<span class="hljs-number">3</span>];
+
+            <span class="hljs-keyword">this</span>.animator.addClass(elem, <span class="hljs-string">'background-animation'</span>).then(() =&gt; {
+                <span class="hljs-keyword">this</span>.animator.removeClass(elem, <span class="hljs-string">'background-animation'</span>);
+            });
+        });
+    };
+</code></pre>
+<p>So we get a new message, find the related item in our data, then find the index of that data. Then we use this
+index in query selector to get the exact row that needs animation, find the cell by hard coded index, and 
+finally use animator to highlight the background.</p>
+<p>Ouch... That smells. We spoiled our view model with view details, and all this code is very ugly and fragile.</p>
+<p>Good news: we can improve the solution with the Aurelia&#39;s feature called Custom Attributes. Let&#39;s create a new
+javascript file and call it <code>animateonchange.js</code>:</p>
+<pre class="highlight"><code class="hljs javascript">import {customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
+
+@customAttribute(<span class="hljs-string">'animateonchange'</span>)
+export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
+
+}
+</code></pre>
+<p>I declared a class for our new attribute, so far it&#39;s empty. I imported customAttribute decorator from
+Aurelia framework: that the way we can define a name for our custom attribute. This can be avoided: if I
+change the name to <code>AnimateonchangeCustomAttribute</code>, Aurelia will infer the name from class name, but I want
+to stay explicit and keep the class name readable. Note that capital letters are not allowed in attribute name.</p>
+<p>Now, let&#39;s declare the constructor of the new class and inject all the dependencies:</p>
+<pre class="highlight"><code class="hljs javascript">import {inject, customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
+import {CssAnimator} from <span class="hljs-string">'aurelia-animator-css'</span>;
+
+@customAttribute(<span class="hljs-string">'animateonchange'</span>)
+@inject(Element, CssAnimator)
+export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
+
+    constructor(element, animator) {
+        <span class="hljs-keyword">this</span>.element = element;
+        <span class="hljs-keyword">this</span>.animator = animator;
+    }
+
+}
+</code></pre>
+<p>I used dependency injection to get attribute&#39;s element and CSS animator and save them into class fields.
+Here&#39;s how to use them:</p>
+<pre class="highlight"><code class="hljs javascript">import {inject, customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
+import {CssAnimator} from <span class="hljs-string">'aurelia-animator-css'</span>;
+
+@customAttribute(<span class="hljs-string">'animateonchange'</span>)
+@inject(Element, CssAnimator)
+export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
+    constructor(element, animator) {
+        <span class="hljs-keyword">this</span>.element = element;
+        <span class="hljs-keyword">this</span>.animator = animator;
+        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">false</span>;
+    }
+
+    valueChanged(newValue){
+        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>.initialValueSet) {
+            <span class="hljs-keyword">this</span>.animator.addClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>).then(() =&gt; {
+                <span class="hljs-keyword">this</span>.animator.removeClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>);
+            });
+        }
+        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">true</span>;
+    }
+}
+</code></pre>
+<p>The new method <code>valueChanged</code> will be called every time the bound value changes. I want to ignore the
+first value (it&#39;s not an update yet), so I did that with <code>initialValueSet</code> flag. Then I just run CSS 
+animator. No DOM-related queries!</p>
+<p>Here is how we use the custom attribute from a view:</p>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-title">template</span>&gt;</span>
+
+    <span class="hljs-tag">&lt;<span class="hljs-title">require</span> <span class="hljs-attribute">from</span>=<span class="hljs-value">"./animateonchange"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">require</span>&gt;</span>
+
+    <span class="hljs-tag">&lt;<span class="hljs-title">table</span> <span class="hljs-attribute">class</span>=<span class="hljs-value">"table"</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-title">tr</span> <span class="hljs-attribute">repeat.for</span>=<span class="hljs-value">"item of data"</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value1}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value2}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-title">td</span> <span class="hljs-attribute">animateonchange.bind</span>=<span class="hljs-value">"item.value3ToUpdate"</span>&gt;</span>${item.value3ToUpdate}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value4}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
+        <span class="hljs-tag">&lt;/<span class="hljs-title">tr</span>&gt;</span>
+    <span class="hljs-tag">&lt;/<span class="hljs-title">table</span>&gt;</span>
+
+<span class="hljs-tag">&lt;/<span class="hljs-title">template</span>&gt;</span>
+</code></pre>
+<p>First, we use <code>require</code> element to import custom attribute definition (make sure the path is correct
+and no <code>.js</code> extension is present).</p>
+<p>Second, we use <code>animateonchange.bind</code> to bind the value to the custom attributes. And it works!</p>
+<p>Of course, you need to define the CSS class, e.g.</p>
+<pre class="highlight"><code class="hljs css"><span class="hljs-class">.background-animation-add</span> <span class="hljs-rules">{
+    <span class="hljs-rule"><span class="hljs-attribute">-webkit-animation</span>:<span class="hljs-value"> changeBack <span class="hljs-number">0.5s</span></span></span>;
+    <span class="hljs-rule"><span class="hljs-attribute">animation</span>:<span class="hljs-value"> changeBack <span class="hljs-number">0.5s</span></span></span>;
+<span class="hljs-rule">}</span></span>
+<span class="hljs-class">.background-animation-remove</span> <span class="hljs-rules">{
+    <span class="hljs-rule"><span class="hljs-attribute">-webkit-animation</span>:<span class="hljs-value"> fadeIn <span class="hljs-number">0.5s</span></span></span>;
+    <span class="hljs-rule"><span class="hljs-attribute">animation</span>:<span class="hljs-value"> fadeIn <span class="hljs-number">0.5s</span></span></span>;
+<span class="hljs-rule">}</span></span>
+<span class="hljs-at_rule">@<span class="hljs-keyword">-webkit-keyframes</span> changeBack </span>{
+    0% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
+    50% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> lightgreen</span></span>; <span class="hljs-rule">}</span></span>
+    100% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
+}
+<span class="hljs-at_rule">@<span class="hljs-keyword">keyframes</span> changeBack </span>{
+    0% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
+    50% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> lightgreen</span></span>; <span class="hljs-rule">}</span></span>
+    100% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
+}
+</code></pre>
+<p>Here is a <a href="http://plnkr.co/edit/oa0Kb1hf6D9M2jl22vWD">plunkr link to a complete example</a></p>
+<p>Happy coding!</p>
+<p>Useful links:</p>
+<ul>
+<li><p><a href="http://aurelia.io/docs.html#custom-attributes">Aurelia Custom Attributes documentation</a></p>
+</li>
+<li><p><a href="http://blog.durandal.io/2015/07/17/animating-apps-with-aurelia-part-1/">Animating Apps with Aurelia - Part 1 by Rob Eisenberg</a></p>
+</li>
+</ul>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/javascript/'>javascript</a>, <a href='/tags/es2015/'>ES2015</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/animation/'>animation</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">May 27th, 2015</div>
+    
+    <h1><a href='/2015/05/peer-code-review-whys-hows-and-whats'>Peer code review Why's, How's and What's</a></h1>
+    
+    <div class="post-content">
+        <p>This post is a short summary on why do code reviews, what the steps are and what should actually be reviewed. The text was created to set some common ground for my team, which was just starting to conduct code reviews in a consistent way. By any means, this text is not a complete guide but rather a checklist and a starting point for discussion.</p>
+<h2 id="why-s">WHY&#39;s</h2>
+<p>So, why spend time on code reviews at all? The most important reasons are listed below:</p>
+<p><strong>To find bugs</strong>, to spot and fix defects early in the process;</p>
+<p><strong>To spread knowledge</strong>, to share understanding of the code base as team members learn from each other and increase team cohesiveness;</p>
+<p><strong>To agree on rules</strong>, to maintain a level of consistency in design and implementation;</p>
+<p><strong>To improve as the team</strong>, to identify common defects across the team thus reduce rework;</p>
+<p><strong>To get second opinion</strong>, to add a different perspective, &quot;another set of eyes&quot; adds objectivity.</p>
+<h2 id="how-s">HOW&#39;s</h2>
+<p>Which steps should I take during code reviews? This depends a lot on the tools being used, of course. We use the following set of tools: task management tool (<em>Atlassian JIRA</em>), IDE (<em>Visual Studio</em>), source control log (Git log viewer of taste) and code review tool (<em>Atlassian Crucible/FishEye</em>). 
+You should do the following during your code review process:</p>
+<p><strong>Understand the scope</strong>, read the task description, user story, commit or pull request message;</p>
+<p><strong>Get the code</strong>, pull the latest code to your hard drive and in your IDE, create a review item in code review tool, make sure that all changes are included;</p>
+<p><strong>Read and understand</strong> all the changes by navigating them in your tools;</p>
+<p><strong>Ask the author</strong> if something is unclear;</p>
+<p><strong>Go through the checklist</strong> (below) and make your peer judgement;</p>
+<p><strong>Put your comments</strong> to code review tool, as written comments are usually preferred over verbal;</p>
+<p><strong>Merge the code</strong> into main repository or integration branch, if you agree with the proposed changes;</p>
+<p><strong>Report the result back</strong> to the team by moving the task to rejected or accepted state, according to your team&#39;s workflow.</p>
+<h2 id="what-s">WHAT&#39;s</h2>
+<p>Here is the approximate checklist of what should be reviewed during the code review. Start at the top and go down to the bottom.</p>
+<p><strong>Readiness</strong>: Is the change under review submitted correctly, are all tests green?</p>
+<p><strong>Functionality</strong>: Does the code work? Does it perform its intended function, is the logic correct etc. You don&#39;t have to test all scenarios, but you should at least think of possible scenarios and whether the code addresses all of them in your opinion.</p>
+<p><strong>Readability</strong>: Is all the code easy to understand? When you read the code, is it easy to understand every detail of it without spending a lot of time and effort?</p>
+<p><strong>Testabity</strong>: Is the code testable? I.e. not too many dependencies, unable to initialize objects with stubs or mocks, test frameworks can use methods etc.</p>
+<p><strong>No duplication</strong>: Is there any redundant or duplicate code? Do you see some possibility to refactor it to reduce duplication? </p>
+<p><strong>Reuse</strong>: Did the author reuse existing classes and libraries for solving common tasks? Is the naming and code structure consistent with similar existing blocks of solution? Can any of the code be replaced with library functions?</p>
+<p><strong>Design</strong>: Do you agree with the design and structure of code blocks? Think of coupling and cohesion, SOLID principles, dependency chains etc.</p>
+<p><strong>Unit tests</strong>: Do tests exist and are they comprehensive? Are all the changes covered by unit tests? Do they conform to unit testing guidelines? Can you think of more tests which are missing?</p>
+<p><strong>Readability of tests</strong>: Are tests short and readable? Do they reveal any design problems?</p>
+<p><strong>Error handling</strong>: Is exception handling and logging consistent? Are they tested?</p>
+<p><strong>Public contracts</strong>: Could the code violate backwards compatibility when we have to keep it?</p>
+<p><strong>No leftovers</strong>: Do you see any code which is commented out or any TODOs? Can any logging or debugging code be removed without loosing functionality?</p>
+<p><strong>Code style</strong>: Does it conform to your agreed programming practices and coding style? Do ReSharper and static code analysis tools give no errors and warnings?</p>
+<p><strong>Documentation</strong>: Was the documentation updated in case the change touches public API?</p>
+<p><strong>Comments</strong>: Are all comments valid? Do you see any dummy comments which are unreadable and were created just to make ReSharper happy?</p>
+<p><strong>Performance</strong>: Do you see any potential performance problems that have to be solved before the first version of this code is accepted? When applicable, measure the CPU load, memory, or traffic consumption caused by new code.</p>
+<p><strong>High level tests</strong>: When applicable, are integration and/or end-to-end tests created?</p>
+<p><strong>Data migration</strong>: When applicable, was database migration script updated?</p>
+<p>Am I missing anything important? Probably yes, so please share your suggestions in the comments. 
+Happy reviews!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/code-review/'>code review</a>, <a href='/tags/best-practices/'>best practices</a>, <a href='/tags/checklist/'>checklist</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Apr 8th, 2015</div>
+    
+    <h1><a href='/2015/04/unit-testing-null-parameter-checks'>Unit testing null parameter checks</a></h1>
+    
+    <div class="post-content">
+        <p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClass</span> : <span class="hljs-title">IVeryUsefulClass</span>
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomething something;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomethingElse somethingElse;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(ISomething something, ISomethingElse somethingElse)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.something = something;
+        <span class="hljs-keyword">this</span>.somethingElse = somethingElse;
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> AwesomeResponse <span class="hljs-title">DoUsefullStaff</span><span class="hljs-params">(ImportantRequest request)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.something.DoSomething();
+        <span class="hljs-keyword">this</span>.somethingElse.DoSomethingElse();
+        <span class="hljs-keyword">return</span> ...;
+    }
+}
+</code></pre><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
+<pre class="highlight"><code class="hljs cs">[TestFixture]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
+{
+    [Test]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+    </span>{
+        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
+            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object));
+    }
+
+    [Test]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+    </span>{
+        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
+            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, <span class="hljs-keyword">null</span>));
+    }
+
+    [Test]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+    </span>{
+        <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, 
+            <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object);
+        ...
+    }
+
+    ...
+}
+</code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
+<h2 id="make-it-better">Make it better</h2>
+<p>Now let&#39;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
+<pre class="highlight"><code class="hljs r">public VeryUsefulClass(ISomething something, 
+    ISomethingElse somethingElse, 
+    ISomethingNew somethingNew)
+{
+    <span class="hljs-keyword">...</span>
+}
+</code></pre><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&#39;s refactor the tests. First, let&#39;s declare all mocks as private fields and create them in set-up method:</p>
+<pre class="highlight"><code class="hljs cs">[TestFixture]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
+{
+    <span class="hljs-keyword">private</span> Mock&lt;ISomething&gt; something;
+    <span class="hljs-keyword">private</span> Mock&lt;ISomethingElse&gt; somethingElse;
+
+    [SetUp]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SetUp</span><span class="hljs-params">()</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;();
+        <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;();
+    }
+...
+</code></pre><p>This way the same clean mocks will be available for each and every test. To make use of them, let&#39;s create GetTarget method which will create an instance of class under test</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> VeryUsefulClass <span class="hljs-title">GetTarget</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(<span class="hljs-keyword">this</span>.something.Object, <span class="hljs-keyword">this</span>.somethingElse.Object)</span></span>;
+}
+</code></pre><p>Now we are ready to rewrite our test methods with less duplication</p>
+<pre class="highlight"><code class="hljs cs">[Test]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">null</span>;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
+}
+
+[Test]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">null</span>;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
+}
+
+[Test]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">this</span>.GetTarget();
+    ...
+}
+</code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
+<p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
+<h2 id="make-it-shine">Make it shine</h2>
+<p>I&#39;m still not quite satisfied with the amount of code we have to write for such a simple thing as the validation of ArgumentNullException being thrown from constructors. Imagine this: we have hundreds or thousands of classes which follow this same pattern, and we end up writing thousands tests which look almost exactly the same... </p>
+<p>I solved it with a simple helper method:</p>
+<pre class="highlight"><code class="hljs undefined">public void ConstructorMustThrowArgumentNullException(Type type)
+{
+    foreach (var constructor in type.GetConstructors())
+    {
+        var parameters = constructor.GetParameters();
+        var mocks = parameters.Select(
+            p =&gt;
+                {
+                    Type mockType = typeof(Mock&lt;&gt;).MakeGenericType(
+                        new[] { p.ParameterType });
+                    return (Mock)Activator.CreateInstance(mockType);
+                }).ToArray();
+
+        for (int i = 0; i &lt; parameters.Length; i++)
+        {
+            var mocksCopy = mocks.Select(m =&gt; m.Object).ToArray();
+            mocksCopy[i] = null;
+            try
+            {
+                constructor.Invoke(mocksCopy);
+                Assert.Fail("ArgumentNullException expected for parameter {0} of 
+                             constructor, but no exception was thrown", 
+                             parameters[i].Name);
+            }
+            catch (TargetInvocationException ex)
+            {
+                Assert.AreEqual(typeof(ArgumentNullException), 
+                    ex.InnerException.GetType(), 
+                    string.Format("ArgumentNullException expected for parameter {0} of 
+                        constructor, but exception of type {1} was thrown", 
+                        parameters[i].Name, ex.InnerException.GetType()));
+            }
+        }
+    }
+}
+</code></pre>
+<p>It accepts a type as its only input parameter (obviously, it&#39;s easy to make it generic or an extension method). Then, using the reflection, it iterates through the input parameters of a constructor, and passes one null value and mocks all other parameters. It expects ArgumentNullException to be thrown on each call.</p>
+<p>You could write one test for all classes in a namespace or in assembly, if the pattern is applied consistently there! And it will let you know when one of your new classes violates the common rule, with zero extra effort.</p>
+<p>Does anyone know the library which would do that without me inventing the bicycle myself?</p>
+<p>Happy coding!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/unit-testing/'>unit testing</a>, <a href='/tags/dependency-injection/'>dependency injection</a>, <a href='/tags/guard/'>guard</a>, <a href='/tags/clean-code/'>clean code</a>, <a href='/tags/best-practices/'>best practices</a>, <a href='/tags/reflection/'>reflection</a>, <a href='/tags/c#/'>C#</a>, <a href='/tags/code-samples/'>code samples</a>, <a href='/tags/tdd/'>TDD</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Mar 15th, 2015</div>
+    
+    <h1><a href='/2015/03/the-green-hackfest-my-first-hackathon'>The Green Hackfest - my first hackathon</a></h1>
+    
+    <div class="post-content">
+        <p>In this post I&#39;d like to share my experience about the first hackathon that I took part in. It was called <a href="http://the-hackfest.com/past-hacks/green-hackfest-utrecht-2014.html">The Green Hackfest</a> and took place in Utrecht, the Netherlands on 10-12 October 2014.</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/hackfest_banner.jpg" alt="Green Hackfest"></p>
+<p>A brief introduction on what hackathon is. A hackathon, or a hackfest in this case (people used these words interchangeably), is an event for programmers, engineers, designers and entrepreneurs where they can get together, form teams and work on solving problems in creative way. The time is very limited, usually from 12 to 24 hours, but in this case we had a &#39;marathon&#39; of 48 hours. At the start, teams get the challenge definitions and in the end they must pitch their ideas, prototypes and mock-ups to the judges to win the prizes. The participants are traditionally called hackers, which does not mean that they hack bank networks and that kind of stuff, but they rather strive to overcome the usual limitation in whatever area they are competing.</p>
+<p>I will start with the most useful part - I&#39;ll give several pieces of advice for those who are preparing to their first hackathon. And then I&#39;ll get to the description of what was happening this time, so expect quite some photos.</p>
+<h2 id="what-i-learnt">What I learnt</h2>
+<p>So, in case you are going to take part in one of those hackathons, here is what I can advise you:</p>
+<ul>
+<li><p>Definitely go. It will be quite a new experience for you, well worth the time.</p>
+</li>
+<li><p>Take a laptop with your favourite working environment and any other devices that might be useful. Apart from this and some small personal things, you won&#39;t probably need anything else.</p>
+</li>
+<li><p>Don&#39;t be late. Otherwise you may miss the important parts: briefs and team formation.</p>
+</li>
+<li><p>Don&#39;t worry if you don&#39;t have a team before the event, that&#39;s normal.</p>
+</li>
+<li><p>Always compete for a prize. Even if it&#39;s not particularly important for you, it will help you align your actions and get more drive and fun.</p>
+</li>
+<li><p>Don&#39;t be shy, talk to people. If you don&#39;t know how to start, just join some other discussion by saying hello and your name. Ask what people think about briefs, what their background is, what are they going to do next and so on. Don&#39;t be afraid to get out of comfort zone.</p>
+</li>
+<li><p>Be nice, smile, make jokes, be open and willing to help others, listen to them.</p>
+</li>
+<li><p>Try to join someone who has complementing background for your skills, not someone with the same skill set. If you are a software developer, search for designers, entrepreneurs and pitch speakers.</p>
+</li>
+<li><p>Don&#39;t come with anything done in advance. You are welcome to bring relevant ideas, but don&#39;t bring implementations. The briefs will be too specific for you to fit. And, in any case, it will be transparent to everyone whether you did your prototype on-site or beforehand. You won&#39;t have fun if you start cheating.</p>
+</li>
+<li><p>Focus on pitch preparation quite early. Think through your demo, and focus on making it shiny and impressive, and don&#39;t spend much time on anything else. During last hour, practice your speech and check that you fit into time limit.</p>
+</li>
+<li><p>If you are suggested to use a specific technology, use it, you might then compete for two prizes instead of one, which double your chances.</p>
+</li>
+<li><p>If you stay overnight, have some sleep. Take a sleeping bag or a mat with you.</p>
+</li>
+<li><p>Keep your prototype focused. You only need one impressive idea, not 10 boring ideas.</p>
+</li>
+<li><p>There will be someone from sponsors and technology partners to support you. Reach to them and take advice from people who are willing to help you.</p>
+</li>
+<li><p>Have fun!</p>
+</li>
+</ul>
+<h2 id="how-we-scored-at-green-hackfest">How we scored at Green Hackfest</h2>
+<p>So we gathered together on Friday evening, and stayed in the hackspace until Sunday night. Participants are provided with all the infrastructure during this time: power plugs, Wi-Fi, tables &amp; chairs, food, drinks and sleeping room. All free of charge.</p>
+<p>The whole story starts with introduction from hosts and then with briefs from sponsors. Here is Richard Kastelein, the event organizer, giving his kick-off speech:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Richard_Kastelein.jpg" alt="Richard Kastelein"></p>
+<p>This way we got the tasks for these 2 days. There were several tasks, so everyone could choose which one suits them the best. Some folks were late, so they were having troubles afterwards to get the idea of what&#39;s expected from them.</p>
+<p>I think there were about 70 participants in beginning, and about 50 of them made it to the end. Most people came alone or in pair; and I think there were two pre-formed teams of several people. </p>
+<p>Most people were Dutch, but a lot were not. Many international students, scientists and entrepreneurs live in the Netherlands these days, and they were all welcome. So, while some teams were speaking Dutch within the group, English was the default language for other communication all the time, which is very handy. Some participants came to the Netherlands specifically to take part in this event: I remember guys from UK, Belgium and even Serbia.</p>
+<p>I am the software developer and I expected the majority of hackers to be developers too, mostly on experienced side. But I was quite wrong. Many people were from entrepreneurial background, coming from ventures on early stage, or research environments. Many folks were students with no career set yet. In result, I was the only person who was able to write code in our team, and one of the most experienced programmers overall (my guess).</p>
+<p>So the first task for everyone was to build a team for yourself. There was no formal procedure for that. You just meet people, ask what they think about the challenges and try to start the discussion, then go to someone else, and repeat. Sooner or later, you should find someone with whom you are ready to spend the next 45 hours working on a project. The normal team is of 2 to 5 people, and you should ideally join diverse skills. So if you are a developer, search for entrepreneurs or other idea generators, and also someone with design skills.</p>
+<p>This time we had the following briefs, all of them were more or less related to green tech:</p>
+<ul>
+<li><p>Crowdfunding challenge: find new applications for an existing crowdfunding platform</p>
+</li>
+<li><p>Optimize manufacturing line based on monitoring data to use less energy without compromising the production schedule</p>
+</li>
+<li><p>Make people in Utrecht use more bicycles instead of cars (tough task, as Utrecht is one of the cities were pretty much everyone is already using bicycles)</p>
+</li>
+<li><p>Visualize the sustainability of electric car stations</p>
+</li>
+<li><p>Show off anything with IBM BlueMix platform</p>
+</li>
+</ul>
+<p>And there was the main prize for the best overall Hack Green.</p>
+<p>Here is the prize structure:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Prize_structure.jpg" alt="Prize structure"></p>
+<p>(the student award was eventually transformed to IBM technology award)</p>
+<p>Quite quickly I decided that Ebbits brief looks the most promising. First, it provided some test data and API to play with, so we had at least something to start with. Second, it did not sound as romantic as some other topics, so I hoped that not many teams would pick it. And last but not least, there were 3 prizes for this same brief, so any of the top 3 teams were going to cash!</p>
+<p>Here is the manager from Ebbits presenting his manufacturing brief:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Manufacturing_brief.jpg" alt="Manufacturing brief"></p>
+<p>So I joined several discussions until I found folks who were thinking more or less on the same page, and were equally enthusiastic about smart factory challenge.</p>
+<p>The hackspace was available for the whole 48 hours of the hackfest. There was one big open space containing many open cabins with tables, couches and chairs inside:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_cabin.jpg" alt="Hackspace four guys 2"></p>
+<p>So usually one team could fit into one cabin:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_one_team.jpg" alt="Hackspace three guys"></p>
+<p>Not too much space, but enough to put two or three laptops + cups or beers aside:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_tables.jpg" alt="Hackspace one guy"></p>
+<p>The gathering area was located in the centre of this room. People got together for all briefs, intermediate meet-ups, final pitches and prizes.</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_hall.jpg" alt="Hackspace"></p>
+<p>These guys had won the previous hackfest of same series, and I think they didn&#39;t speak to anyone, so nobody knew what they were doing:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Last_winners.jpg" alt="Hackspace four guys"></p>
+<p>We took the large space behind the scene, and also got a big white board for brainstorming:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Hackfest_our_team.jpg" alt="Hackspace our team"></p>
+<p>Wi-Fi was free and fast enough for the participants. Power plugs were everywhere, sometimes hanging from the ceiling:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_wires.jpg" alt="Hackspace our team 2"></p>
+<p>Food and beverages (including beer) were also provided in effectively unlimited quantities. Breakfasts, lunches, dinners plus night snacks - all for free for hackers. Biological green food for green hack fest:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Food.jpg" alt="Food"></p>
+<p>There were two sleeping areas as well. I don&#39;t have any photos of those, but they were really basic: just separate empty rooms where you could put a sleeping bag and take a nap. I&#39;m not sure how many teams slayed late in the night, but we were lazy and went to sleep at midnight or so :)</p>
+<p>In terms of prize winning odds, the most important part of the whole process is the final pitch. Each team had just 2 minutes to make a demo and do the speech. The demo doesn&#39;t need to show off a finished product, but everyone had to prepare prototypes, some pieces of working UI. Powerpoint slides were not enough. After the demo, the jury had 3 to 5 minutes to ask questions, and then the next team takes over. There was a training on how to pitch effectively, but I skipped that one.</p>
+<p>So, you should leave quite some time before the pitch starts to actually prepare your demo. Focus on what you will say, and implement only the features that will be demoed, don&#39;t waste your time on anything else. Try showing something relatively small, specific and easy to understand, but also give a short overview of how you can see this can be expanded. Highlight the strengths of your team and why you are good candidates to do the job that you started.</p>
+<p>During the pitch, the team is standing next to a big screen. One member is showing the demo on his laptop, while another member explains the whole story behind. Here is how it looked like:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Pitch.jpg" alt="Pitch"></p>
+<p>There were four Judges in the jury, consisting of sponsor representatives and serial entrepreneurs. Here are those smart powerful guys:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Judges.jpg" alt="Judges"></p>
+<p>We ended up taking the second place in our category. As we chose to participate in a category with 3 prizes, we scored 1000 euros! This is our photo with the sponsor and our prize:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Our_prize.jpg" alt="Our prize"></p>
+<p>And this is the best overall hack team, congratulations to them:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/Winners.jpg" alt="Winners"></p>
+<p>Here are all the hackers who stayed at the fest until the very end:</p>
+<p><img src="/2015/03/the-green-hackfest-my-first-hackathon/All_hackers.jpg" alt="All hackers"></p>
+<p>Enjoyable experience, thanks everyone for sharing it.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/hackathon/'>hackathon</a>, <a href='/tags/hackfest/'>hackfest</a>, <a href='/tags/challenge/'>challenge</a>, <a href='/tags/green-hackfest/'>Green Hackfest</a>, <a href='/tags/green-technologies/'>green technologies</a>
+    </div>
+    
+</article>
+
+
+
+    <article class="post">
+    <div class="post-date">Feb 17th, 2015</div>
+    <h1><a href='/2015/02/how-i-fixed-a-bug-in-sql-server'>How I fixed a bug in SQL Server</a></h1>
+    <div class="post-content">
+        Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, the new cardinality estimator was introduced. In two words, cardinality estimator is a piece of SQL functionality which estimates how many rows the engine might get for a specific query or a query part. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &quot;new&quot; also means &quot;less tested&quot;...
+    </div>
+    <div class="post-goundercut">
+        <a href='/2015/02/how-i-fixed-a-bug-in-sql-server'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/sql-server/'>sql server</a>, <a href='/tags/execution-plan/'>execution plan</a>, <a href='/tags/query-plan/'>query plan</a>, <a href='/tags/database/'>database</a>, <a href='/tags/repro/'>repro</a>, <a href='/tags/erland-sommarskog/'>Erland Sommarskog</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Feb 5th, 2015</div>
+    <h1><a href='/2015/02/how-we-do-message-processing'>How we do message processing</a></h1>
+    <div class="post-content">
+        Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture...
+    </div>
+    <div class="post-goundercut">
+        <a href='/2015/02/how-we-do-message-processing'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/architecture/'>architecture</a>, <a href='/tags/design/'>design</a>, <a href='/tags/messages/'>messages</a>, <a href='/tags/message-processing/'>message processing</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Oct 16th, 2014</div>
+    <h1><a href='/2014/10/16/nice-way-to-kill-your-sql-server'>Nice way to kill your SQL Server</a></h1>
+    <div class="post-content">
+        The short story about how to crash your complete system by missing one line of code in SQL Server stored procedure.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2014/10/16/nice-way-to-kill-your-sql-server'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/bugs/'>Bugs</a>, <a href='/tags/error-log/'>Error log</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/sql-server-service broker/'>SQL Server Service Broker</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Jun 3rd, 2014</div>
+    <h1><a href='/2014/06/03/sql-produce-resultset-with-n-rows'>SQL: produce resultset with N rows</a></h1>
+    <div class="post-content">
+        Sometimes you need to produce a result set, which would contain N rows with numbers 1...N in each row. For example, I needed to calculate some statistics per week for N weeks starting from today and going back to the past.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2014/06/03/sql-produce-resultset-with-n-rows'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/performance/'>performance</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/t-sql/'>T-SQL</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">May 21st, 2014</div>
+    <h1><a href='/2014/05/21/sgen-to-precompile-classes-for-xmpserializer'>Sgen to precompile classes for XmlSerializer</a></h1>
+    <div class="post-content">
+        During my investigation of our ASP.NET application performance issue, I've found out that XmlSerializer may require a long warm-up. The first time, when it's used for a specific class (de-)serialization, can take up to 500 ms om my machine! We use XmlSerializer to encode/decode user preferences. Having 40 different classes being deserialized at user login lead to a massive delay of 14 seconds.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2014/05/21/sgen-to-precompile-classes-for-xmpserializer'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/.net/'>.NET</a>, <a href='/tags/asp.net/'>ASP.NET</a>, <a href='/tags/c#/'>C#</a>, <a href='/tags/debugging/'>debugging</a>, <a href='/tags/msbuild/'>MSBuild</a>, <a href='/tags/performance/'>performance</a>, <a href='/tags/sgen/'>Sgen</a>, <a href='/tags/xmlserializer/'>XmlSerializer</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Jan 6th, 2013</div>
+    <h1><a href='/2013/01/06/poker-money-application-for-windows-store'>Poker Money application for Windows Store</a></h1>
+    <div class="post-content">
+        Windows 8 / Windows RT / Windows Store all arrived in October 2012. I've decided to take a shot on writing a commercial application for this new platform. And that's how Poker Money app appeared.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2013/01/06/poker-money-application-for-windows-store'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/full-tilt-poker/'>Full Tilt Poker</a>, <a href='/tags/poker/'>Poker</a>, <a href='/tags/poker-money/'>Poker Money</a>, <a href='/tags/poker-money-application/'>Poker Money application</a>, <a href='/tags/poker-stars/'>Poker Stars</a>, <a href='/tags/windows-8/'>Windows 8</a>, <a href='/tags/windows-rt/'>Windows RT</a>, <a href='/tags/windows-store/'>Windows Store</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Dec 26th, 2012</div>
+    <h1><a href='/2012/12/26/one-certificate-missing-one-received-unexpectedly'>One certificate missing, one received unexpectedly</a></h1>
+    <div class="post-content">
+        Today I want to give a note about two more online courses that I completed. The last one (10 weeks in September-November) was called Introduction to Computational Finance and Financial Econometrics and was lead by Eric Zivot from University of Washington. First of all, it was the most intense course out of all that I took to date.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/12/26/one-certificate-missing-one-received-unexpectedly'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Nov 1st, 2012</div>
+    <h1><a href='/2012/11/01/finance-class-at-coursera'>Introduction to Finance class at Coursera</a></h1>
+    <div class="post-content">
+        I've recently received a statement of accomplishment document for Coursera's online Introduction to Finance class that I took in July-September this year.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/11/01/finance-class-at-coursera'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/finance/'>finance</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Oct 29th, 2012</div>
+    <h1><a href='/2012/10/29/gamification-class-at-coursera'>Gamification class at Coursera</a></h1>
+    <div class="post-content">
+        I've recently received a statement of accomplishment document for Coursera's online Gamification class that I took in August-October this year.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/10/29/gamification-class-at-coursera'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/gamification/'>gamification</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Sep 2nd, 2012</div>
+    <h1><a href='/2012/09/02/use-fiddler-to-debug-urlfetch-requests-in-google-appengine'>Use Fiddler to debug urlfetch requests in Google AppEngine</a></h1>
+    <div class="post-content">
+        In TripBenefit application, we use a lot of web crawling to get data from third-party websites. As the application works on top of Google AppEngine, the urlfetch.fetch() function is used to send HTTP requests and get responses. Some crawling is not as easy as just a simple GET request, so we have to send specific POST data, cookies and HTTP headers. And all this needs to be debugged. Fiddler2 is the gold standard for web debugging tools, so I'd like to use it in this case too. I.e. I want to see urlfetch requests displayed in Fiddler, while I'm on development env.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/09/02/use-fiddler-to-debug-urlfetch-requests-in-google-appengine'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/appengine/'>AppEngine</a>, <a href='/tags/debugging/'>debugging</a>, <a href='/tags/fiddler/'>Fiddler</a>, <a href='/tags/google-appengine/'>Google AppEngine</a>, <a href='/tags/python/'>Python</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Aug 14th, 2012</div>
+    <h1><a href='/2012/08/14/google-adds-public-transit-into-api'>Google adds Public Transit into API</a></h1>
+    <div class="post-content">
+        Now, both Google Directions Web Services and Google Maps JavaScript API include building the routes with Public Transit.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/08/14/google-adds-public-transit-into-api'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/google-maps/'>Google Maps</a>, <a href='/tags/google-transit/'>Google Transit</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Jul 26th, 2012</div>
+    <h1><a href='/2012/07/26/enable-jinja2-and-i18n-translations-on-google-appengine'>Enable jinja2 and i18n translations on Google AppEngine</a></h1>
+    <div class="post-content">
+        My initial goal was to make our new application (based on python/AppEngine) translatable. This means the following requirements: (1) All strings in the application must be translatable (2) Translations should preferably stored in separate files (3) It should be easy to use the translations both in .py files and html templates
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/07/26/enable-jinja2-and-i18n-translations-on-google-appengine'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/appengine/'>AppEngine</a>, <a href='/tags/i18n/'>i18n</a>, <a href='/tags/jinja2/'>jinja2</a>, <a href='/tags/python/'>Python</a>, <a href='/tags/translations/'>Translations</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Jun 21st, 2012</div>
+    <h1><a href='/2012/06/21/model-thinking-class-at-coursera'>Model Thinking class at Coursera</a></h1>
+    <div class="post-content">
+        I've recently received a statement of accomplishment document for Coursera's online Model Thinking Class that I took in April-May this year.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/06/21/model-thinking-class-at-coursera'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/model-thinking/'>Model Thinking</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">May 17th, 2012</div>
+    <h1><a href='/2012/05/17/api-to-get-the-list-of-hotels'>API to get the list of hotels</a></h1>
+    <div class="post-content">
+        In our travelling application, we need to show the list of hotels in a city (St. Petersburg, Russia at the moment, but more will be needed in the future). The idea was to find a hotel information provider, and then upload the complete list into our own database.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/05/17/api-to-get-the-list-of-hotels'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/hotels-api/'>Hotels API</a>, <a href='/tags/hotelscombined/'>HotelsCombined</a>, <a href='/tags/public-api/'>Public API</a>, <a href='/tags/python/'>Python</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">May 16th, 2012</div>
+    <h1><a href='/2012/05/16/books-that-ive-recently-read-part-2'>Books that I’ve recently read, part 2</a></h1>
+    <div class="post-content">
+        Reviews of &quot;Rework&quot; by Jason Fried and David Heinemeier Hansson, &quot;Don't Make Me Think&quot; by Steve Krug, &quot;The Non-Designer's Design Book&quot; by Robin Williams and &quot;The Toilet Paper Entrepreneur&quot; by Mike Michaliwicz.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/05/16/books-that-ive-recently-read-part-2'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/books/'>Books</a>, <a href='/tags/business-books/'>Business books</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Apr 10th, 2012</div>
+    <h1><a href='/2012/04/10/google-transit-api-research'>Google Transit API research</a></h1>
+    <div class="post-content">
+        Recently, Google has launch a Transit service for the biggest cities of Russia: a service to caculate routes with public transport options. As a part of RnD for upcoming project, I need to understand whether there's any feasible way to calculate public transport route programmatically. I.e. I need Google Transit API.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/04/10/google-transit-api-research'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/api/'>API</a>, <a href='/tags/google-maps/'>Google Maps</a>, <a href='/tags/google-transit/'>Google Transit</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Mar 13th, 2012</div>
+    <h1><a href='/2012/03/13/multi-level-teleriks-tileview'>Multi-level telerik's TileView</a></h1>
+    <div class="post-content">
+        We were investigating the options for visual representation of hierarchical dashboard in our Silverlight application. This means, we want to display the number of gauges with tree-like structure. Here is a sample...
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/03/13/multi-level-teleriks-tileview'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/c#/'>C#</a>, <a href='/tags/silverlight/'>Silverlight</a>, <a href='/tags/telerik/'>Telerik</a>, <a href='/tags/tileview/'>TileView</a>, <a href='/tags/user-contol/'>User Contol</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Mar 1st, 2012</div>
+    <h1><a href='/2012/03/01/books-that-ive-recently-read'>Books that I've recently read</a></h1>
+    <div class="post-content">
+        My reviews of &quot;Steve Jobs&quot; by Walter Isaacson, &quot;The Art of the Start&quot; by Guy Kawasaki, &quot;How to Become a Businessman&quot; and &quot;I'm Just Like Anyone Else&quot; by Oleg Tinkov.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/03/01/books-that-ive-recently-read'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/books/'>Books</a>, <a href='/tags/business-books/'>Business books</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Feb 28th, 2012</div>
+    <h1><a href='/2012/02/28/gauge-control-with-two-values-silverlight'>Gauge control with two values (Silverlight)</a></h1>
+    <div class="post-content">
+        While developing the dashboard to display several performance indexes, I bumped into the task of visualizing the pair of numbers on a single gauge. One number would show a person's performance metric, while the other one would display the person group's performance indicator to compare with. I couldn't find a ready control to use, so I decided to design my own.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/02/28/gauge-control-with-two-values-silverlight'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/gauge-control/'>gauge control</a>, <a href='/tags/silverlight/'>Silverlight</a>, <a href='/tags/user-control/'>User Control</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Feb 5th, 2012</div>
+    <h1><a href='/2012/02/05/hunting-memory-leaks-in-silverlight'>Hunting memory leaks in Silverlight</a></h1>
+    <div class="post-content">
+        Recently, I've spent a couple of days seeking and fixing memory leaks in our Silverlight application. It might be tough sometimes, but it's a good 'brain-teasing' practice and it's a good way to learn how inner things work.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/02/05/hunting-memory-leaks-in-silverlight'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/c#/'>C#</a>, <a href='/tags/fixing-memory-leaks/'>fixing memory leaks</a>, <a href='/tags/memory-leaks/'>Memory leaks</a>, <a href='/tags/silverlight/'>Silverlight</a>, <a href='/tags/windbg/'>WinDbg</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Feb 1st, 2012</div>
+    <h1><a href='/2012/02/01/machine-learning-class-at-stanford-online'>Machine Learning class at Stanford online</a></h1>
+    <div class="post-content">
+        Several days ago, I've received a Statement of Accomplishment document from Andrew Ng and Machine Learning online class team.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/02/01/machine-learning-class-at-stanford-online'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/machine-learning/'>Machine Learning</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/stanford/'>Stanford</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Jan 26th, 2012</div>
+    <h1><a href='/2012/01/26/speech-bubble-control-in-sl'>Speech bubble custom border control in Silverlight</a></h1>
+    <div class="post-content">
+        Recently, I was trying to find a Silverlight control, which works like a standard Border, but looks like a Speech Bubble instead. This means the border would have a &quot;leader&quot; triangle, which could point to a related visual element.
+    </div>
+    <div class="post-goundercut">
+        <a href='/2012/01/26/speech-bubble-control-in-sl'>Read further</a>
+    </div>
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/c#/'>C#</a>, <a href='/tags/silverlight/'>Silverlight</a>, <a href='/tags/speech-bubble/'>Speech Bubble</a>, <a href='/tags/user-control/'>User Control</a>, <a href='/tags/wpf/'>WPF</a>
+    </div>
+    
+</article>
+
+
+<div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy C#, Javascript and SQL development and I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="http://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="http://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2015 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
