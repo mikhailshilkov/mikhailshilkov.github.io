@@ -3,13 +3,208 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2015-12-14T11:39:51.565Z</updated>
+    <updated>2015-12-22T15:52:31.613Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Weaving your domain classes with Fody</title>
+        <link href="http://mikhail.io/2015/12/weaving-your-domain-classes-with-fody"/>
+        <updated>2015-12-22T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2015-12-22,/2015/12/weaving-your-domain-classes-with-fody</id>
+        <content type="html"><![CDATA[<p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive craft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> trip = <span class="hljs-keyword">new</span> Trip(
+    origin: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Paris"</span>, geoParis), 
+    destination: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Amsterdam"</span>, geoAmsterdam),
+    vehicle: <span class="hljs-keyword">new</span> Vehicle(<span class="hljs-string">"TBL-12-H"</span>, Type.HeavyTruck)
+</code></pre>
+<p>Let&#39;s include these requirements as parts of our trip model:</p>
+<ul>
+<li>It has a constructor which accepts three arguments (see above)</li>
+<li>It has 3 read-only properties which are assigned from constructor parameters</li>
+<li>It should not allow null values to be assigned to these properties via constructor</li>
+<li>It should be a Value object, that is two objects with same properties should be equal</li>
+</ul>
+<h2 id="initial-version">Initial version</h2>
+<p>First, let&#39;s implement these requirement in a usual way:</p>
+<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+{
+    public Trip(Location origin, Location destination, Vehicle vehicle)
+    {
+        if (origin == null) throw new ArgumentNullException(nameof(origin));
+        if (destination == null) throw new ArgumentNullException(nameof(destination));
+        if (vehicle == null) throw new ArgumentNullException(nameof(vehicle));
+
+        this.Origin = origin;
+        this.Destination = destination;
+        this.Vehicle = vehicle;
+    }
+
+    public Location Origin { get; }
+    public Location Destination { get; }
+    public Vehicle Vehicle { get; }
+
+    public bool Equals(Trip other)
+    {
+        return Equals(this.Origin, other.Origin) 
+            &amp;&amp; Equals(this.Destination, other.Destination) 
+            &amp;&amp; Equals(this.Vehicle, other.Vehicle);
+    }
+
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(null, obj))
+        {
+            return false;
+        }
+        if (ReferenceEquals(this, obj))
+        {
+            return true;
+        }
+        if (obj.GetType() != this.GetType())
+        {
+            return false;
+        }
+        return Equals((Trip)obj);
+    }
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var hashCode = this.Origin.GetHashCode();
+            hashCode = (hashCode * 397) ^ this.Destination.GetHashCode();
+            hashCode = (hashCode * 397) ^ this.Vehicle.GetHashCode();
+            return hashCode;
+        }
+    }
+
+    public static bool operator ==(Trip tripA, Trip tripB)
+    {
+        return object.Equals(tripA, tripB);
+    }
+
+    public static bool operator !=(Trip tripA, Trip tripB)
+    {
+        return !object.Equals(tripA, tripB);
+    }
+}
+</code></pre>
+<p>That&#39;s a lot of code! It&#39;s very repetitive but it&#39;s also tricky: you can implement it incorrectly in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
+<p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still a heavy luggage to carry on. This class is hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
+<p>Are there other options?</p>
+<h2 id="introducing-fody">Introducing Fody</h2>
+<p><a href="https://github.com/Fody/Fody">Fody</a> is an extensible tool for weaving .NET assemblies. It means that you can use it to improve your code automatically at the time of compilation. Fody itself doesn&#39;t do much to the code, but it has a collection of plugins to actually change it. For this example I will use two of them: </p>
+<ul>
+<li><a href="https://github.com/Fody/NullGuard"><strong>NullGuard</strong></a> - guards all the input parameters, output parameters and return values of all types in a current assembly not to be null. If null value is passed or returned, the weaved code with throw an exception.</li>
+<li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
+</ul>
+<p>To install them just execute </p>
+<pre class="highlight"><code class="hljs ps">PM&gt; Install-Package NullGuard.Fody
+PM&gt; Install-Package Equals.Fody
+</code></pre>
+<p>The root of your project will now contain the following configuration file:</p>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-pi">&lt;?xml version="1.0" encoding="utf-8"?&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-title">Weavers</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">NullGuard</span> <span class="hljs-attribute">IncludeDebugAssert</span>=<span class="hljs-value">"false"</span> /&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">Equals</span> /&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-title">Weavers</span>&gt;</span>
+</code></pre>
+<p>(I&#39;ve added <code>IncludeDebugAssert</code> attribute manually to disable assert statements in debug mode)</p>
+<p>Let&#39;s adjust our class to make use of the plugins:</p>
+<pre class="highlight"><code class="hljs cs">[Equals]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Trip</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Origin = origin;
+        <span class="hljs-keyword">this</span>.Destination = destination;
+        <span class="hljs-keyword">this</span>.Vehicle = vehicle;
+    }
+
+    <span class="hljs-keyword">public</span> Location Origin { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Location Destination { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Vehicle Vehicle { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
+<ul>
+<li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So this plugin is in <em>opt-in</em> mode.</li>
+<li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
+</ul>
+<p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
+</span>{
+    <span class="hljs-keyword">bool</span> flag = origin == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"origin"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">bool</span> flag2 = destination == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag2)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"destination"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">bool</span> flag3 = vehicle == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag3)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"vehicle"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField = origin;
+    <span class="hljs-keyword">this</span>.&lt;Destination&gt;k__BackingField = destination;
+    <span class="hljs-keyword">this</span>.&lt;Vehicle&gt;k__BackingField = vehicle;
+}
+</code></pre>
+<p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Location Origin
+{
+    [CompilerGenerated]
+    <span class="hljs-keyword">get</span>
+    {
+        Location expr_06 = <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField;
+        <span class="hljs-keyword">if</span> (expr_06 == <span class="hljs-keyword">null</span>)
+        {
+            <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">InvalidOperationException</span><span class="hljs-params">(<span class="hljs-string">"[NullGuard] Return value of property 'ETA.Domain.Location ETA.Domain.Trip::Origin()' is null."</span>)</span></span>;
+        }
+        <span class="hljs-keyword">return</span> expr_06;
+    }
+}
+</code></pre>
+<p>It doesn&#39;t make much sense to me, so I configured Fody on assembly level to check only arguments and return values:</p>
+<pre class="highlight"><code class="hljs cs">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]
+</code></pre>
+<p>Here is a set of operations related to equality (I&#39;ll skip the body in sake of brevity):</p>
+<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+{
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    private static bool EqualsInternal(Trip left, Trip right) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override bool Equals(Trip other) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override bool Equals(object obj) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override int GetHashCode() { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public static bool operator ==(Trip left, Trip right) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public static bool operator !=(Trip left, Trip right) { ... }
+}
+</code></pre>
+<p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
+<h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
+<p>Here is how you actually should define similar types:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Trip</span> </span>= 
+  { Origin : Location
+    Destination : Location
+    Vehicle : Vehicle }
+</code></pre>
+<p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Deploy your SPA to Azure</title>
@@ -854,92 +1049,6 @@ Happy coding!</p>
 <h3 id="wrapping-up">Wrapping up</h3>
 <p>Clean and understandable architecture provides developers with a good means of communication, helps figure out the similar vision and concepts. Architecture metaphor expressed in form of a picture or short document will bring you closer to smart design, will help find errors or plan a refactoring.</p>
 <p>Happy message processing!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Nice way to kill your SQL Server</title>
-        <link href="http://mikhail.io/2014/10/16/nice-way-to-kill-your-sql-server"/>
-        <updated>2014-10-16T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2014-10-16,/2014/10/16/nice-way-to-kill-your-sql-server</id>
-        <content type="html"><![CDATA[<p>Are you getting enormous amount of </p>
-<pre class="highlight"><code class="hljs nimrod"><span class="hljs-type">The</span> activated <span class="hljs-keyword">proc</span> '...' running on queue '...' output the following:
-'<span class="hljs-type">The</span> service queue <span class="hljs-string">"..."</span> <span class="hljs-keyword">is</span> currently disabled.
-</code></pre><p>errors from SQL Server? Keep on reading!</p>
-<p>Yesterday, when I came back from my lunch, I got a heads-up from Windows:
-<img src="http://mikhail.io/2014/10/16/nice-way-to-kill-your-sql-server/low-disk-space.gif" alt="Low disk space"></p>
-<p>And it was literally out of space: 0 (zero) bytes available on C: drive. Wow...</p>
-<p>I cleaned up the binary files from my developments, which gave me 3 GB of free space and some time to do the investigation. A short time, because disk space was counting down at about 300 MB per minute.</p>
-<p>It appeared that the SQL Server error log files grew up to 53 GB and were still growing. Here is the default folder where you can find them:</p>
-<p><img src="http://mikhail.io/2014/10/16/nice-way-to-kill-your-sql-server/errorlog.png" alt="SQL Server error log"></p>
-<p>To gain more time, I executed the command</p>
-<pre class="highlight"><code class="hljs bash"><span class="hljs-keyword">exec</span> sp_cycle_error
-</code></pre><p>is Management Studio. It renames current ERRORLOG file to ERRORLOG.1 and starts the new current. So now it was safe to delete all .1/.2/etc files and get those 53 GB back. Huh...</p>
-<p>Now it&#39;s time to figure out the actual issue. Go to Management Studio -&gt; your server -&gt; Management -&gt; SQL Server Logs -&gt; Current -&gt; (right click) -&gt; View SQL Server Log</p>
-<p>I saw millions of the following messages there (let&#39;s say my queue is named XQueue for simplicity):</p>
-<pre class="highlight"><code class="hljs nimrod"><span class="hljs-type">The</span> activated <span class="hljs-keyword">proc</span> '[dbo].[<span class="hljs-type">XQueueProcessor</span>]' running 
-on queue 'dbo.<span class="hljs-type">XQueue</span>' output the following:
-'<span class="hljs-type">The</span> service queue <span class="hljs-string">"XQueue"</span> <span class="hljs-keyword">is</span> currently disabled.
-</code></pre><p>So, it looks like there is a problem with SQL Server Service Broker, which is constantly trying to read something from disabled queue. Isn&#39;t it supposed to stop after 5 attempts (a.k.a. poison messages)? Ok, keep on troubleshooting.</p>
-<p>First, let check if the queue is actually disabled</p>
-<pre class="highlight"><code class="hljs oxygene"><span class="hljs-keyword">SELECT</span> Name, is_receive_enabled, is_enqueue_enabled
-  <span class="hljs-keyword">FROM</span> sys.service_queues 
- <span class="hljs-keyword">WHERE</span> Name = <span class="hljs-string">'XQueue'</span>  
-</code></pre><p>Yep, it&#39;s disabled:
-<img src="http://mikhail.io/2014/10/16/nice-way-to-kill-your-sql-server/qdisabled.png" alt="XQueue disabled"></p>
-<p>Do we have anything queued?</p>
-<pre class="highlight"><code class="hljs oxygene"><span class="hljs-keyword">SELECT</span> TOP <span class="hljs-number">1000</span> *
-  <span class="hljs-keyword">FROM</span> [XQueue] <span class="hljs-keyword">WITH</span>(NOLOCK) 
-</code></pre><p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
-<p>So, let&#39;s have a look at the processor. We had something like that:</p>
-<pre class="highlight"><code class="hljs oxygene"><span class="hljs-keyword">CREATE</span> <span class="hljs-function"><span class="hljs-keyword">PROCEDURE</span> [<span class="hljs-title">dbo</span>].[<span class="hljs-title">XQueueProcessor</span>]
-<span class="hljs-title">AS</span>
-<span class="hljs-title">BEGIN</span>
-    <span class="hljs-title">DECLARE</span> 
-        @<span class="hljs-title">queuing_order</span> <span class="hljs-title">BIGINT</span>
-        ,@<span class="hljs-title">conversation_handle</span> <span class="hljs-title">UNIQUEIDENTIFIER</span>
-        ,@<span class="hljs-title">message_enqueue_time</span> <span class="hljs-title">DATETIME</span>
-        ,@<span class="hljs-title">message_type_name</span> <span class="hljs-title">VARCHAR</span><span class="hljs-params">(156)</span>
-        ,@<span class="hljs-title">message_body</span> <span class="hljs-title">VARBINARY</span><span class="hljs-params">(MAX)</span>;</span>
-
-    <span class="hljs-keyword">WHILE</span>(<span class="hljs-number">1</span>=<span class="hljs-number">1</span>) -- MAIN <span class="hljs-keyword">WHILE</span> <span class="hljs-keyword">LOOP</span> RECEIVING THE MESSAGE BATCHES
-    <span class="hljs-keyword">BEGIN</span>
-        <span class="hljs-keyword">BEGIN</span> TRANSACTION
-        <span class="hljs-keyword">BEGIN</span> <span class="hljs-keyword">TRY</span>
-            WAITFOR(RECEIVE TOP(<span class="hljs-number">1</span>)
-                        @queuing_order = [queuing_order],
-                        @conversation_handle = [conversation_handle],
-                        @message_enqueue_time = message_enqueue_time,
-                        @message_type_name = message_type_name,
-                        @message_body = message_body
-                    <span class="hljs-keyword">FROM</span> [dbo].[XQueue]), TIMEOUT <span class="hljs-number">10</span>
-
-            <span class="hljs-keyword">IF</span> (@@ROWCOUNT = <span class="hljs-number">0</span>)
-            <span class="hljs-keyword">BEGIN</span>
-                ROLLBACK TRANSACTION
-                <span class="hljs-keyword">BREAK</span>
-            <span class="hljs-keyword">END</span>    
-
-            -- SOME CRUD OPERATIONS HAPPEN HERE        
-
-            COMMIT TRANSACTION
-        <span class="hljs-keyword">END</span> <span class="hljs-keyword">TRY</span>
-        <span class="hljs-keyword">BEGIN</span> CATCH            
-            DECLARE @Error varchar(<span class="hljs-number">4000</span>) = ERROR_MESSAGE()
-            PRINT @Error
-            ROLLBACK TRANSACTION
-        <span class="hljs-keyword">END</span> CATCH        
-    <span class="hljs-keyword">END</span>
-<span class="hljs-keyword">END</span>
-</code></pre><p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back... But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &quot;The service queue is currently disabled&quot; and voila, CPU is busy and error logs are floating the disk.</p>
-<p>The fix is pretty trivial, just change the CATCH block to</p>
-<pre class="highlight"><code class="hljs monkey">BEGIN <span class="hljs-keyword">CATCH</span>            
-    DECLARE @<span class="hljs-built_in">Error</span> varchar(<span class="hljs-number">4000</span>) = ERROR_MESSAGE()
-    <span class="hljs-built_in">PRINT</span> @<span class="hljs-built_in">Error</span>
-    ROLLBACK TRANSACTION
-    <span class="hljs-keyword">RETURN</span>
-<span class="hljs-keyword">END</span> <span class="hljs-keyword">CATCH</span>        
-</code></pre><p>Be careful!</p>
 ]]></content>
     </entry>
     

@@ -67,12 +67,12 @@
     <div class="row">
         <div class="col-sm-12 col-md-10">
             <article class="post">
-    <div class="post-date">Dec 18th, 2015</div>
+    <div class="post-date">Dec 22nd, 2015</div>
     
     <h1>Weaving your domain classes with Fody</h1>
     
     <div class="post-content">
-        <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive craft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each Trip we need to keep track of Origin, Destination and Vehicle which executes the trip, nothing else. Here is a code to create an sample trip:</p>
+        <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive craft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> trip = <span class="hljs-keyword">new</span> Trip(
     origin: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Paris"</span>, geoParis), 
     destination: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Amsterdam"</span>, geoAmsterdam),
@@ -150,14 +150,14 @@
     }
 }
 </code></pre>
-<p>That&#39;s a lot of code! It&#39;s very repetative but it&#39;s also tricky: you can do it wrong in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
-<p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still there. So, it makes this class hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
+<p>That&#39;s a lot of code! It&#39;s very repetitive but it&#39;s also tricky: you can implement it incorrectly in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
+<p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still a heavy luggage to carry on. This class is hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
 <p>Are there other options?</p>
 <h2 id="introducing-fody">Introducing Fody</h2>
-<p>Fody is an extensible tool for weaving .net assemblies. It means, it means that you can use it to improve your code in an automatic way at the time of compilation. Fody itself doesn&#39;t do much to the code, but it has a collection of plugins to actually change it. For this example I will use two of them: </p>
+<p><a href="https://github.com/Fody/Fody">Fody</a> is an extensible tool for weaving .NET assemblies. It means that you can use it to improve your code automatically at the time of compilation. Fody itself doesn&#39;t do much to the code, but it has a collection of plugins to actually change it. For this example I will use two of them: </p>
 <ul>
-<li>NullGuard - checks that all input parameters, output parameters and return values of all types in current assembly can&#39;t not be null. If null value is passed or returned, the weaved code with throw an exception.</li>
-<li>Equals - you can mark a class with [Equals] attribute and Fody will implement Equals() and GetHashCode() methods and == operator for you by comparing all public properties of the annotated class.</li>
+<li><a href="https://github.com/Fody/NullGuard"><strong>NullGuard</strong></a> - guards all the input parameters, output parameters and return values of all types in a current assembly not to be null. If null value is passed or returned, the weaved code with throw an exception.</li>
+<li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
 </ul>
 <p>To install them just execute </p>
 <pre class="highlight"><code class="hljs ps">PM&gt; Install-Package NullGuard.Fody
@@ -189,8 +189,8 @@ PM&gt; Install-Package Equals.Fody
 </code></pre>
 <p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
 <ul>
-<li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So, this plugin is in opt-in mode.</li>
-<li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in opt-out mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
+<li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So this plugin is in <em>opt-in</em> mode.</li>
+<li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
 </ul>
 <p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
@@ -215,7 +215,7 @@ PM&gt; Install-Package Equals.Fody
     <span class="hljs-keyword">this</span>.&lt;Vehicle&gt;k__BackingField = vehicle;
 }
 </code></pre>
-<p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property return values are checked:</p>
+<p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Location Origin
 {
     [CompilerGenerated]
@@ -250,7 +250,7 @@ PM&gt; Install-Package Equals.Fody
     public static bool operator !=(Trip left, Trip right) { ... }
 }
 </code></pre>
-<p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them at the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined in compile time, and they only get defined after complication (weaving takes over place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
+<p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
 <h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
 <p>Here is how you actually should define similar types:</p>
 <pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Trip</span> </span>= 
@@ -258,7 +258,7 @@ PM&gt; Install-Package Equals.Fody
     Destination : Location
     Vehicle : Vehicle }
 </code></pre>
-<p>No nulls are possible here and equality works out of the box. There&#39;s just one possible difficulty: it&#39;s F#...</p>
+<p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
 
     </div>
 
@@ -269,7 +269,7 @@ PM&gt; Install-Package Equals.Fody
       <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
     </p>
 
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/draftindex.html.md">Edit this post!</a><br />
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2015/12/weaving-your-domain-classes-with-fodyindex.html.md">Edit this post!</a><br />
     
 
     
@@ -294,7 +294,7 @@ PM&gt; Install-Package Equals.Fody
             <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
-    var disqus_url = 'http://mikhail.io/draft';
+    var disqus_url = 'http://mikhail.io/2015/12/weaving-your-domain-classes-with-fody';
     var disqus_identifier = disqus_url;
     var disqus_title = 'Weaving your domain classes with Fody';
 
