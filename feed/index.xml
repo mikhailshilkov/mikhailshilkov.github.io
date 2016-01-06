@@ -3,13 +3,146 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2015-12-22T15:52:31.613Z</updated>
+    <updated>2016-01-06T13:16:19.562Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Validation with Either data type in C#</title>
+        <link href="http://mikhail.io/2016/01/validation-with-either-data-type-in-csharp"/>
+        <updated>2016-01-06T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-01-06,/2016/01/validation-with-either-data-type-in-csharp</id>
+        <content type="html"><![CDATA[<p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
+code more expressive and easier to maintain.</p>
+<h2 id="problem">Problem</h2>
+<p>Let&#39;s say we get a request from some client code and we need to check if this
+request is actually valid. If it&#39;s not valid, we want to make a detailed description
+of the problems that we identified. If it is valid, we want to produce a response
+about the successful acceptance of the request. Let&#39;s define the classes:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Request</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ValidationError</span> { ... }
+</code></pre>
+<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
+or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
+<h2 id="throw-an-exception">Throw an exception</h2>
+<p>Validation <em>error</em> sounds like it could be an exception:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r)</span>
+</span>{
+   <span class="hljs-keyword">if</span> (!Valid(r))
+       <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ValidationException</span><span class="hljs-params">(<span class="hljs-keyword">new</span> ValidationError(...)</span>)</span>;
+
+   <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+}
+</code></pre>
+<p>This approach is really bad though. You have to declare a special exception
+class to hold the validation error. But even worse, exception handling is not
+explicit - you don&#39;t see the exception type when you look at method signature.
+Client processing code is going to be messed up because of exception handling.
+Never use exceptions for your business logic flow.</p>
+<h2 id="output-parameter">Output parameter</h2>
+<p>We could make an output parameter of <code>ValidationError</code> type:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r, <span class="hljs-keyword">out</span> ValidationError error)</span>
+</span>{
+    <span class="hljs-keyword">if</span> (Valid(r))
+    { 
+        error = <span class="hljs-keyword">new</span> ValidationError(...);
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+    }
+
+    error = <span class="hljs-keyword">null</span>;
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+}
+</code></pre>
+<p>Now the interface is more explicit: client won&#39;t be able to completely ignore
+the fact that an error is possible. But output parameters are not really
+easy to use in C#, especially in fluent-style client code. Moreover, we are
+using nulls as a way to represent missing object, which is a smell by itself,
+because nulls are not explicit. Never use nulls in your business logic.</p>
+<h2 id="return-the-combined-result">Return the combined result</h2>
+<p>We could declare a container class which would keep both <code>Response</code> and 
+<code>ValidationError</code>, and then return it from the method.</p>
+<pre class="highlight"><code class="hljs undefined">public class Both&lt;TData, TError&gt;
+{
+    public TData Data { get; set; }
+    public TErrro Error { get; set; }
+}
+...
+public Both&lt;Response, ValidationError&gt; Validate(Request r)
+{
+    return Valid(r) 
+        ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
+        : new Both&lt;Response, ValidationError&gt; { Data = new ValidationError(...) };
+}
+</code></pre>
+<p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
+and output parameters, but we still use null for result state representation.
+Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
+<h2 id="introducing-either">Introducing Either</h2>
+<p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
+with just one of them. When constructing an object, you can specify either
+a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
+<pre class="highlight"><code class="hljs undefined">public class Either&lt;TL, TR&gt;
+{
+    private readonly TL left;
+    private readonly TR right;
+    private readonly bool isLeft;
+
+    public Either(TL left)
+    {
+        this.left = left;
+        this.isLeft = true;
+    }
+
+    public Either(TR right)
+    {
+        this.right = right;
+        this.isLeft = false;
+    }
+}
+</code></pre>
+<p>Now, the main difference is in how the client uses it. There are no properties
+to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
+    =&gt; <span class="hljs-keyword">this</span>.isLeft ? leftFunc(<span class="hljs-keyword">this</span>.left) : rightFunc(<span class="hljs-keyword">this</span>.right);
+</code></pre>
+<p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
+is specified, <code>Match</code> will return the result of the left function, otherwise the result
+of the right function.</p>
+<p>Another improvement would be to create explicit operators for easy conversions
+from left and right types:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TL left) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(left);
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TR right) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(right);
+</code></pre>
+<p>Let&#39;s have a look at a complete example.</p>
+<h2 id="why-it-s-great">Why it&#39;s great</h2>
+<p>Here is the service code written with <code>Either</code>:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Either&lt;Response, ValidationError&gt; Validate(Request r)
+{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-title">Valid</span><span class="hljs-params">(r)</span> 
+        ? Data </span>= <span class="hljs-keyword">new</span> Response(r)
+        : <span class="hljs-keyword">new</span> ValidationError(...);
+}
+</code></pre>
+<p>Clean and nice! Now a simplistic client:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> validated = service.Validate(request);
+Console.WriteLine(
+    validated.Match(
+        result =&gt; $<span class="hljs-string">"Success: {result}"</span>,
+        error =&gt; $<span class="hljs-string">"Error: {error}"</span>)
+    );
+</code></pre>
+<p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
+validation may fail.</p>
+<h2 id="show-me-the-code">Show me the code</h2>
+<p>You can find the definition of <code>Either</code> class in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Either%7BTL%2CTR%7D.cs">github repo</a>.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Weaving your domain classes with Fody</title>
@@ -975,80 +1108,6 @@ WHERE r<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">
 </blockquote>
 <p>Thanks to Erlang and Alexey for their help. I look forward to the servicing release!
 Happy coding!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>How we do message processing</title>
-        <link href="http://mikhail.io/2015/02/how-we-do-message-processing"/>
-        <updated>2015-02-05T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2015-02-05,/2015/02/how-we-do-message-processing</id>
-        <content type="html"><![CDATA[<p>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture:
-<img src="http://mikhail.io/2015/02/how-we-do-message-processing/architecture.jpg" alt="System architecture"></p>
-<p>The devices use communication channels to send messages to our gateway - the input point of our application. The application&#39;s goal is to understand what came in, do the required actions and save the information into the database for further processing. Let&#39;s consider the database to be the end point of processing. Sounds easy, right? But some difficulties appear with the growth of amount and diversity of incoming messages; so let&#39;s look at some of them.</p>
-<p>A few words on the target load level. Our system processes the messages from tens of thousands of devices, and we get from several hundreds to a thousand messages per second. If you numbers are different by orders of magnitude, it might be the case that your problems are going to look completely different and you&#39;ll need a different set of tools to solve them.</p>
-<p>Apart from the number of messages itself, there is a problem of irregularity and peak times. The application must be ready for relatively short peaks which might be about ten times higher than the average expectation. To address this problem we organize the system as a sequence of queues and corresponding processors.</p>
-<p>The input gateway doesn&#39;t do much of real job: it just receives a message from a client and puts it into the queue. This operation is very cheap, thus the gateway is capable of accepting a vast number of messages per second. Afterwards a separate process retrieves several messages - the amount it wants to get - from the queue and does the hard work. The processing happens asynchronously while the load on the system remains limited. Perhaps the time in the queue grows at peaks, but that&#39;s it.</p>
-<p>Normally the message processing is non-trivial and consists of several actions. Here we get to the next logical step: we break down the job into several stages, each one having a separate queue and a dedicated processor. The queues and processors are independent and may reside on separate physical servers; and we can tune and scale them independently:
-<img src="http://mikhail.io/2015/02/how-we-do-message-processing/sequence.jpg" alt="Sequence-based architecture"></p>
-<p>The first queue contains the messages from devices as-is, without decoding or transforming them. The first processor decodes them and puts them into the second queue. The second processor could, for instance, call a third-party service and enrich the message with some relevant information, and the third processor could save that information into the database.</p>
-<p>These are the basics, so what do we still need to consider?</p>
-<h3 id="define-your-values">Define your values</h3>
-<ol>
-<li><p>Simplicity of creation, change and support</p>
-<p> Asynchronous distributed message processing brings quite some extra complexity into the software product. You should constantly work on reducing this price. The code gets optimized to be, at first place, readable and straightforward for all the team members, cheap to be changed and supported. If nobody but the author can decrypt the code, no great architecture will make the team happy.</p>
-<p> This statements looks obvious, but it might take quite some time and effort before the team starts to consistently implement this principle and not just declare it. Do the regular refactoring whenever you feel you can make the code a bit better and simpler. All the source code should get reviewed and the most critical parts are better to be developed in pair.</p>
-</li>
-<li><p>Fault tolerance</p>
-<p> It makes sense to define your policies of hardware or subsystem failures handling from the very beginning. They will differ for different products. It might be the case that someone can throw away all the messages that come in during 5 minutes of a server reboot.</p>
-<p> In our system we don&#39;t want to lose messages. If a particular service is not currently available, a database call times out, or there is a random processing error, it must not result in information loss. The affected messages must be saved inside the queue and will be processed right after the problem is fixed.</p>
-<p> Suppose your code on one server calls a web service on another server in synchronous manner. If the second server is not available, the processing will fail, and you can&#39;t do anything but log the error. In case of asynchronous processing the message will wait for the second server to go live again.</p>
-</li>
-<li><p>Performance</p>
-<p> Processing rate per second, latency, load on the servers - all these are important parameters of application performance. That&#39;s why we choose the architecture to be flexible.</p>
-<p> Although, don&#39;t pay TOO much attention to optimization from the very beginning. Usually the majority of performance issues is created by relatively small pieces of code. Unfortunately people tend to be very bad at predicting where exactly those issues are going to appear. People write <a href="http://carlos.bueno.org/optimization/">books on pre-mature optimization</a>. So make sure that your architecture allows you to fine-tune the system and forget about optimization until the first load testing.</p>
-<p> At the same time, and for this reason, start running the load tests early on, and then include them into your standard testing procedure. Start optimizing only when the tests reveal a specific performance problem.</p>
-</li>
-</ol>
-<h3 id="fine-tune-your-mindset">Fine tune your mindset</h3>
-<ol>
-<li><p>Operate queues and asynchronous processors</p>
-<p> I already described this above. Our main tools are queues and processors. While the classic approach is &quot;get request, call remote code, wait for response, return it back to the originator&quot;, now we should always use &quot;get a message from a queue, process it, send a message to another queue&quot;. The right mix of these two approaches should enable both scalability and ease of development.</p>
-</li>
-<li><p>Break the processing down into several stages</p>
-<p> If message processing is complex enough to be split into several stages, do that by creating several queues and processors. Make sure that you don&#39;t make it too complex to understand by unneeded fragmentation: the right balance is important. Quite often you will see a split which feels natural for developers. If not, try thinking of possible failure points. If there are multiple reasons why a processor may fail, consider its breakdown.</p>
-</li>
-<li><p>Don&#39;t mix decoding and processing</p>
-<p> Usually the messages arrive encoded with a protocol which can be binary, XML, JSON, etc. Decode them into your native format as soon as possible. This will help you solve two problems. First, you might need to support multiple protocols; and after decoding you unify the format of all further messages. Second, logging and debugging gets simpler.</p>
-</li>
-<li><p>Make the queues topology configurable</p>
-<p> Structure your code in a way that allows you to change the configuration of queues relatively easy. Splitting a processor into two parts should not result in tons of refactoring. Don&#39;t make your code depend on a specific queue mechanism implementation: tomorrow you might want to change it.</p>
-</li>
-<li><p>Do batch processing</p>
-<p> Normally it makes sense to receive messages from a queue in batches, not one by one. The services that you use might accept arrays for faster processing and in this case one call will always be faster than a handful of small ones. One insertion of 100 rows into database is faster than 100 remote insertions.</p>
-</li>
-</ol>
-<h3 id="create-tooling">Create tooling</h3>
-<ol>
-<li><p>Implement total monitoring</p>
-<p> Invest into monitoring tools. It should be easy to see the charts of throughput, average processing time, queue size and time since last message with breakdown by queue.
-<img src="http://mikhail.io/2015/02/how-we-do-message-processing/monitoring.jpg" alt="Queue monitoring"></p>
-<p> We use monitoring tools not only on production and staging environments but also on testing servers and even developer&#39;s machines. Carefully baked charts are helpful during debug and load testing procedures.</p>
-</li>
-<li><p>Test everything</p>
-<p> Message processing systems are perfect fields to apply fully automated testing. Input data protocols are well-defined and there is no human interaction. Cover your code with unit tests. Make your queues pluggable so that you could mock your real queues out with test in-memory queues to run quick intercommunication tests. Finally, create full-blown integration tests which should be run on staging environment (and preferably also on production).</p>
-</li>
-<li><p>Store the failed messages</p>
-<p> Usually you don&#39;t want one erroneous message to stop the complete queue processing. Being able to diagnose the problem is equally important. So put all the failed messages into a specialized storage and put a spotlight on it. Make a tool to move messages back to the relevant queue as soon as the failure reason is addressed.</p>
-<p> Same or similar mechanism can be used to store the messages to be processed at some point of time in the future. Keep them in that special storage and check periodically if now is time to proceed.</p>
-</li>
-<li><p>Automate the deployment</p>
-<p> Application setup and update must require just one or two clicks. Strive for frequent updates on production; ideally - automated deployment on every commit to the dedicated branch. Deployment scripts or tools will help developers maintain their personal and testing environments up-to-date.</p>
-</li>
-</ol>
-<h3 id="wrapping-up">Wrapping up</h3>
-<p>Clean and understandable architecture provides developers with a good means of communication, helps figure out the similar vision and concepts. Architecture metaphor expressed in form of a picture or short document will bring you closer to smart design, will help find errors or plan a refactoring.</p>
-<p>Happy message processing!</p>
 ]]></content>
     </entry>
     

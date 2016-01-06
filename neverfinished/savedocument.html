@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Refactoring | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.4" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">.NET, SQL and Javascript programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                <li><a href="/">Blog</a></li>
+                <li><a href="/about">About</a></li>
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="http://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="http://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="row">
+        <div class="col-sm-12 col-md-10">
+            <article class="post">
+    <div class="post-date">Oct 14th, 2015</div>
+    
+    <h1>Refactoring</h1>
+    
+    <div class="post-content">
+        <p>Let&#39;s say we have a service which receives some scanned documents and put them into the database. You are new to the code but you got an assignment to fix a bug or implement a change request. Here is the code that you see:</p>
+<pre class="highlight"><code class="hljs cs">documentRepository.SaveDocument(
+    document,
+    @doc =&gt;
+    {
+        <span class="hljs-keyword">if</span> (@doc.HasContent &amp;&amp; @doc.Id &gt; <span class="hljs-number">0</span>)
+        {
+            <span class="hljs-keyword">if</span> (@doc.WorkflowGUID != Guid.Empty)
+            {
+                messageRepository.AddJobDocument(@doc.WorkflowGUID, @doc.GlobalBatchId);
+            }
+
+            notificationHub.EnqueuePacket(packetFactory.GetDocumentScanPacket(@doc));
+        }
+    });
+</code></pre>
+<p>So, what do we see from this piece of code?</p>
+<ol>
+<li><p>We call document repository to save the document to the database. This one is straightforward.</p>
+</li>
+<li><p>We also pass a callback which does some extra actions. This callback is probably called when save operation succeeds.</p>
+</li>
+<li><p>If some conditions are met, we also add a job document to message repository.</p>
+</li>
+<li><p>We send a package to notification hub.</p>
+</li>
+</ol>
+<p>The overall picture is probably clear, but a lot of questions appear once you start digging into details:</p>
+<ol>
+<li><p>Is the callback run on success or also on failure? The <code>@doc.Id &gt; 0</code> check looks like success/failure check.</p>
+</li>
+<li><p>What is the <code>@doc</code> variable? In IntelliSense we can see that it has the same type as <code>document</code>. Is it a reference to modified <code>document</code>? Is the <code>document</code> itself modified? Which properties are changed and which are not?</p>
+</li>
+<li><p>Is the callback called synchronosly? We don&#39;t remember having async code in repositories, but why is it a callback then? Can I use properties of <code>@doc</code> outside the callback (e.g. to return something from the method).</p>
+</li>
+</ol>
+<p>These questions are killing readability. It appears that you have to go and read the actual implementation of <code>DocumentRepository</code> to make any kind of significant change or judgement. Let&#39;s see which principles are violated by this implementation:</p>
+<ol>
+<li><p>Command-query separation. <code>SaveDocument</code> is the command but it also changes and returns some data.</p>
+</li>
+<li><p>Immutability. It&#39;s not totally clear from the code above, but the <code>document</code> is actually modified by the repository.</p>
+</li>
+<li><p>No simple imperative flow. The order of code execution is unclear.</p>
+</li>
+<li><p>Mixture of domain logic and orchestration in one block.</p>
+</li>
+</ol>
+<p>Here is my attempt to improve the code. First, let&#39;s get rid of the callback:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> documentIds = documentRepository.SaveDocument(document);
+<span class="hljs-keyword">if</span> (document.HasContent &amp;&amp; documentIds.Id &gt; <span class="hljs-number">0</span>)
+{
+    <span class="hljs-keyword">if</span> (documentIds.WorkflowGUID != Guid.Empty)
+    {
+        messageRepository.AddJobDocument(documentIds.WorkflowGUID, document.GlobalBatchId);
+    }
+
+    notificationHub.EnqueuePacket(packetFactory.GetDocumentScanPacket(document));
+}
+</code></pre>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov" data-size="large" data-count="none">Tweet</a>
+      <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/neverfinished/savedocumentindex.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/clean-code/'>clean code</a>
+    </div>
+    
+</article>
+            <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy C#, Javascript and SQL development and I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="http://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="http://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+            <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'http://mikhail.io/neverfinished/savedocument';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Refactoring';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2015 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
