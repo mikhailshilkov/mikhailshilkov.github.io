@@ -66,6 +66,103 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jan 13th, 2016</div>
+    
+    <h1><a href='/2016/01/fire-and-forget-in-service-fabric-actors'>Fire-and-forget in Service Fabric actors</a></h1>
+    
+    <div class="post-content">
+        <p>At the <a href="http://www.meetup.com/Webscale-Architecture-NL/events/225979118/">recent Webscale Architecture meetup</a> 
+we discussed two implementations of the Actor model in the .NET ecosystem: 
+<a href="http://akka.net">Akka.NET</a> and <a href="https://azure.microsoft.com/en-us/documentation/articles/service-fabric-reliable-actors-introduction/">Azure Service Fabric Actors</a>. 
+One important discussion was
+around <strong>Ask</strong> vs <strong>Tell</strong> call model. With <strong>Tell</strong> model, the Sender just sends the
+message to the Recepient without waiting for a result to come back. <strong>Ask</strong> model
+means the Sender will at some point get a response back from the Receiver, potencially
+blocking its own execution.</p>
+<p>The default model of Akka.NET is <strong>Tell</strong>:</p>
+<blockquote>
+<p><strong>Tell: Fire-forget</strong></p>
+<p>This is the preferred way of sending messages. No blocking waiting for 
+a message. This gives the best concurrency and scalability characteristics.</p>
+</blockquote>
+<p>On the contrary, the default model for Service Fabric Actors is RPC-like
+<strong>Ask</strong> model. Let&#39;s have a close look at this model, and then see how we can
+implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
+<p>Actor definition starts with an interface:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IHardWorkingActor</span> : <span class="hljs-title">IActor</span>
+{
+    <span class="hljs-function">Task <span class="hljs-title">DoWork</span><span class="hljs-params">(<span class="hljs-keyword">string</span> payload)</span></span>;
+}
+</code></pre><p>As you can see, the method does not return any useful data, which means
+the client code isn&#39;t really interested in waiting for the operation to
+complete. Here&#39;s how we implement this interface in the Actor class:</p>
+<pre class="highlight"><code class="hljs vala"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HardWorkingActor</span> : <span class="hljs-title">Actor</span>, <span class="hljs-title">IHardWorkingActor</span>
+</span>{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task DoWork(<span class="hljs-keyword">string</span> payload)
+    {
+        ActorEventSource.Current.ActorMessage(<span class="hljs-keyword">this</span>, <span class="hljs-string">"Doing Work"</span>);
+        await Task.Delay(<span class="hljs-number">500</span>);
+    }
+}
+</code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
+<p>Now, let&#39;s look at the client code. Let&#39;s say, the client receives the payloads
+from a queue or a web front-end and needs to go as fast as possible. It gets a payload,
+creates an actor proxy to dispatch the payload to, then it just wants 
+to continue with the next payload. Here is the &quot;Ask&quot; implementation based on 
+the Service Fabric samples:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>;
+<span class="hljs-keyword">var</span> timer = <span class="hljs-keyword">new</span> Stopwatch();
+timer.Start();
+<span class="hljs-keyword">while</span> (<span class="hljs-keyword">true</span>)
+{
+    <span class="hljs-keyword">var</span> proxy = ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), <span class="hljs-string">"fabric:/Application1"</span>);
+    <span class="hljs-keyword">await</span> proxy.DoWork($<span class="hljs-string">"Work ${i++}"</span>);
+    Console.WriteLine($<span class="hljs-string">@"Sent work to Actor {proxy.GetActorId()}, 
+                         rate is {i / timer.Elapsed.TotalSeconds}/sec"</span>);
+}
+</code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
+block until the actor work is complete. When we run the client, no surprise that
+we get the rate of about 2 messages per second:</p>
+<pre class="highlight"><code class="hljs applescript">Sent work <span class="hljs-keyword">to</span> Actor <span class="hljs-number">1647857287613311317</span>, rate <span class="hljs-keyword">is</span> <span class="hljs-number">1</span>,<span class="hljs-number">98643230380293</span>/sec
+</code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
+work and immediately proceed to the next one. Here&#39;s how the client call should
+look like:</p>
+<pre class="highlight"><code class="hljs bash">proxy.DoWork($<span class="hljs-string">"Work <span class="hljs-variable">${i++}</span>"</span>).FireAndForget();
+</code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
+extension method and proceed immediately. It appears that the implementation 
+of such extension method is trivial:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TaskHelper</span>
+{       
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">FireAndForget</span><span class="hljs-params">(<span class="hljs-keyword">this</span> Task task)</span>
+    </span>{
+        Task.Run(<span class="hljs-keyword">async</span>() =&gt; <span class="hljs-keyword">await</span> task).ConfigureAwait(<span class="hljs-keyword">false</span>);
+    }
+} 
+</code></pre><p>The result looks quite different from what we had before:</p>
+<pre class="highlight"><code class="hljs applescript">Sent work <span class="hljs-keyword">to</span> Actor -<span class="hljs-number">8450334792912439527</span>, rate <span class="hljs-keyword">is</span> <span class="hljs-number">408</span>,<span class="hljs-number">484162592517</span>/sec
+</code></pre><p>400 messages per second, which is some 200x difference... </p>
+<p>The conclusions are simple:</p>
+<ul>
+<li><p>Service Fabric is a powerful platform and programming paradigm which doesn&#39;t
+limit your choice of communication patterns</p>
+</li>
+<li><p>Design the communication models carefully based on your use case, don&#39;t
+take the defaults for granted</p>
+</li>
+</ul>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/actor-model/'>Actor model</a>, <a href='/tags/azure/'>Azure</a>, <a href='/tags/akka.net/'>Akka.NET</a>, <a href='/tags/service-fabric/'>Service Fabric</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jan 6th, 2016</div>
     
     <h1><a href='/2016/01/validation-with-either-data-type-in-csharp'>Validation with Either data type in C#</a></h1>
@@ -490,184 +587,17 @@ and push them to <code>azure</code> remote. Now you should be able to browse to 
     
 </article>
 
+
+
     <article class="post">
     <div class="post-date">Aug 11th, 2015</div>
-    
     <h1><a href='/2015/08/units-of-measurement-in-domain-design'>Units of measurement in domain design</a></h1>
-    
     <div class="post-content">
-        <p>If you have business application of any decent size, your most important code probably resides in domain logic.
-When working with 3rd party code, you can always find an answer on stack overflow or official documentation, but your domain is all yours. Try to make it as simple and readable as possible, and it will always pay you back.</p>
-<p>Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.</p>
-<h2 id="problem-statement">Problem statement</h2>
-<p>Our toy example will be about cars and fuel consumption. You receive some data about the trip of your car, e.g. an instance of</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
-{
-    <span class="hljs-keyword">double</span> FuelUsed { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">double</span> Distance { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = trip.FuelUsed / trip.Distance;
-</code></pre>
-<p>You get the value, but what is it? Let&#39;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
-{
-    <span class="hljs-keyword">double</span> FuelUsedInLiters { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">double</span> DistanceInKilometers { <span class="hljs-keyword">get</span>; }
-}
-
-<span class="hljs-keyword">var</span> fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * <span class="hljs-number">100.0</span> / trip.DistanceInKilometers;
-</code></pre>
-<p>Now it&#39;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
-<ol>
-<li><p>You will start measuring same things in different units. E.g. you will store the distance in meters in the database, so you&#39;ll have to multiply by 1000 somewhere in persistence layer.</p>
-</li>
-<li><p>If you need to convert metric to imperial and back, you will get lots of constants here and there.</p>
-</li>
-<li><p>String formatting will become a tedious task. Be sure to call a right formatter for each implicit unit.</p>
-</li>
-</ol>
-<p>This does not work well. The code smell is called <a href="http://blog.ploeh.dk/2011/05/25/DesignSmellPrimitiveObsession/">Primitive Obsession</a> and we should avoid this in production-grade code. Instead, we want the succinctness of first example in combination with strong compile-time checks and well-defined operations.</p>
-<h2 id="defining-the-units">Defining the units</h2>
-<p>I tried several options like generic classes for units, but I ended up having a struct per measurement. The code is very boring and repetitive, but it provides me with the strongest compile-time checks and nice readability. If you are too bored with typing, you can do some code generation or just use 3rd party that suits you.
-So, my end result looks like</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
-{
-    Volume FuelUsed { <span class="hljs-keyword">get</span>; }
-    Distance Distance { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>Let&#39;s see how Distance is defined (Volume will be almost exactly same):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">struct</span> Distance
-{
-    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">Distance</span><span class="hljs-params">(<span class="hljs-keyword">double</span> kilometers)</span>
-    </span>{
-        <span class="hljs-keyword">this</span>.Kilometers = kilometers;
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Kilometers { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Meters =&gt; <span class="hljs-keyword">this</span>.Kilometers / <span class="hljs-number">1000.0</span>;
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance Zero = <span class="hljs-keyword">new</span> Distance(<span class="hljs-number">0.0</span>);
-
-    ...
-}
-</code></pre>
-<p>Several important things to notice here:</p>
-<ol>
-<li><p>It&#39;s a struct.</p>
-</li>
-<li><p>It&#39;s immutable. Once an instance is created, its properties can&#39;t be changed anymore.</p>
-</li>
-<li><p>Constructor is private. I don&#39;t actually want people to create instances directly: <code>new Distance(123)</code> reads pretty horribly, keep reading to see better options.
-Of course, default constructor is still public, but you can only create a zero value with it.</p>
-</li>
-<li><p>Better way of creating zero distance is to call Zero static field.</p>
-</li>
-</ol>
-<h2 id="instantiation">Instantiation</h2>
-<p>So, how do we create measurement objects?</p>
-<h3 id="factory-method">Factory method</h3>
-<p>The classic way is a set of static factory methods:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromKilometers</span><span class="hljs-params">(<span class="hljs-keyword">double</span> kilometers)</span>
-</span>{
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Distance</span><span class="hljs-params">(kilometers)</span></span>;
-}
-
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromMeters</span><span class="hljs-params">(<span class="hljs-keyword">double</span> meters)</span>
-</span>{
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Distance</span><span class="hljs-params">(kilometers / <span class="hljs-number">1000.0</span>)</span></span>;
-}
-</code></pre>
-<p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
-<h3 id="extension-method">Extension method</h3>
-<p>Imagine you have the following code which converts an integer value of a database result into our units</p>
-<pre class="highlight"><code class="hljs cs">trip.Distance = Distance.FromMeters(database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
-                        .GetDefaultOrEmpty());
-</code></pre>
-<p>Such a long expression reads better with a fluent interface like</p>
-<pre class="highlight"><code class="hljs cs">trip.Distance = database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
-                        .GetDefaultOrEmpty()
-                        .MetersToDistance();
-</code></pre>
-<p><code>MetersToDistance</code> in this case is an extension method:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">DistanceExtensions</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">MetersToDistance</span><span class="hljs-params">(<span class="hljs-keyword">this</span> <span class="hljs-keyword">double</span> meters)</span>
-    </span>{
-        <span class="hljs-keyword">return</span> Distance.FromMeters(meters);
-    }
-}
-</code></pre>
-<h3 id="operator-with-static-class-using">Operator with static class using</h3>
-<p>C# 6 brings us a new language construct. Now we can import a static helper class</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">using</span> <span class="hljs-keyword">static</span> Units.Constants;
-</code></pre>
-<p>And then we can write something like</p>
-<pre class="highlight"><code class="hljs swift"><span class="hljs-keyword">var</span> <span class="hljs-built_in">distance</span> = <span class="hljs-number">10.0</span> * km;
-</code></pre><p>where liter is defined in that static class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Constants</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance km = Distance.FromKilometers(<span class="hljs-number">1.0</span>);
-}
-</code></pre>
-<p>This may not look like idiomatic C#, but I think it&#39;s very good at least for writing unit tests:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> Trip
-{
-    DistanceOnFoot = <span class="hljs-number">5</span> * km,
-    DistanceOnBicycle = <span class="hljs-number">10</span> * km,
-    DistanceOnCar = <span class="hljs-number">30</span> * km
-};
-target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span class="hljs-number">10</span> + <span class="hljs-number">5</span>) * km);
-</code></pre>
-<p>For this to compile you just need to define the operator overload:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-keyword">operator</span>*(<span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span>, Distance distance)
-{
-    <span class="hljs-keyword">return</span> Distance.FromKilometers(<span class="hljs-keyword">value</span> * distance.Kilometers);
-}
-</code></pre>
-<h2 id="conversion-and-printing">Conversion and printing</h2>
-<p>More advanced unit conversions are easy with unit classes. A common use case would be to convert metric units to imperial system. All you need to do is to add another calculated property</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Distance class</span>
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> MilesInKilometer = <span class="hljs-number">0.621371192</span>;
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> FeetInMeter = = <span class="hljs-number">3.2808399</span>;
-
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Miles =&gt; <span class="hljs-keyword">this</span>.Kilometers * MilesInKilometer;
-
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Feet =&gt; <span class="hljs-keyword">this</span>.Meters * FeetInMeter;
-</code></pre>
-<p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
-<ul>
-<li>Format based on user preferences (metric/imperial)</li>
-<li>Pick units based on the value (e.g. 30 m but 1.2 km, not 1200 m)</li>
-<li>Localization to different languages</li>
-<li>Rounding to some closest value</li>
-</ul>
-<p>If you do all that in the unit class, it&#39;s going to violate the single responsibility principle. Just create a separate class for formatting and put all those rules there.</p>
-<h2 id="unit-derivation">Unit derivation</h2>
-<p>Once you write more unit classes, you will definitely want to derive the calculation result of two units into the third one. In our example, we want to divide <code>Volume</code> of fuel used by <code>Distance</code> to get fuel <code>ConsumptionRate</code>.</p>
-<p>There&#39;s no magic that you could do here. You will have to define <code>ConsumptionRate</code> class the same way you defined the other two, and then just overload the operation</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ConsumptionRate <span class="hljs-keyword">operator</span>/(Volume volume, Distance distance)
-{
-    <span class="hljs-keyword">return</span> ConsumptionRate
-        .FromLitersPer100Kilometers(volume.Liters * <span class="hljs-number">100.0</span> / distance.Kilometers);
-}
-</code></pre>
-<p>Of course, you&#39;ll have to define all the required combinations explicitly.</p>
-<p>If you defined Constants as described above, you&#39;ll be able to instantiate values in your tests in the following way:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = <span class="hljs-number">7.5</span> * lit / (<span class="hljs-number">100</span> * km);
-</code></pre>
-<h2 id="should-i-use-3rd-party-libraries-for-that-">Should I use 3rd party libraries for that?</h2>
-<p>It depends. Of course, people implemented all this functionality about 1 million times before you, so there are numerous libraries on GitHub.</p>
-<p>I would say, if you start a new project and you don&#39;t have a strong opinion about the unit code, just go grab the library and try to use it.</p>
-<p>At the same time, for existing code base, it might be easier to introduce your own implementation which would resemble something that you already use.</p>
-<p>Also, I have another reason for my own implementation. I&#39;m using units all over the code base of domain logic, the very heart of the software, the exact place where I want full control. I find it a bit awkward to introduce a 3rd party dependency in domain layer.</p>
-
+        If you have business application of any decent size, your most important code probably resides in domain logic. When working with 3rd party code, you can always find an answer on stack overflow or official documentation, but your domain is all yours. Try to make it as simple and readable as possible, and it will always pay you back. Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.
     </div>
-
-    
+    <div class="post-goundercut">
+        <a href='/2015/08/units-of-measurement-in-domain-design'>Read further</a>
+    </div>
 
     
     <div class="post-tags">
@@ -675,8 +605,6 @@ target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span cl
     </div>
     
 </article>
-
-
 
     <article class="post">
     <div class="post-date">Jul 28th, 2015</div>
