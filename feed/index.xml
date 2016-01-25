@@ -3,13 +3,171 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-01-13T14:53:17.528Z</updated>
+    <updated>2016-01-25T11:20:04.936Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Monads explained in C#</title>
+        <link href="http://mikhail.io/2016/01/monads-explained-in-csharp"/>
+        <updated>2016-01-25T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-01-25,/2016/01/monads-explained-in-csharp</id>
+        <content type="html"><![CDATA[<p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
+what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
+developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
+loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
+it becomes kind of obvious once you read 3 or 5 &quot;explanations&quot; on the web. Here is my attempt.</p>
+<h2 id="monads-are-container-types">Monads are container types</h2>
+<p>Monads are containers which encapsulate some kind of functionality. It&#39;s that simple. The goals of monads
+are similar to generic goals of any encapsulation in software development practices: hide the implementation
+details from the client, but provide a proper way to use the hidden functionality. It&#39;s not because we 
+want to be able to change the implementation, it&#39;s because we want to make the client as simple as possible
+and to enforce the best way of code structure. Quite often monads provide the way to avoid imperative code
+in favor of functional style.</p>
+<p>Monads are flexible, so in C# they should be represented as generic types:</p>
+<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+{
+}
+</code></pre>
+<h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
+<p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should be a way to create an object
+of this class out of an instance of type <code>T</code>. In functional world this operation is known as <code>Return</code> 
+function. In C# it can be as simple as a constructor:</p>
+<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+{
+    public Monad(T instance)
+    {
+    }
+}
+</code></pre>
+<p>But usually it makes sense to define an extension method to enable fluent syntax of monad creation:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MonadExtensions</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Monad&lt;T&gt; Return&lt;T&gt;(<span class="hljs-keyword">this</span> T instance) =&gt; <span class="hljs-keyword">new</span> Monad&lt;T&gt;(instance);
+}
+</code></pre>
+<h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
+<p>This is the property which makes monads so useful, but also a bit confusing. In functional world this
+operation is known as functional composition and is expressed with the <code>Bind</code> function (or <code>&gt;&gt;=</code> operator).
+Here is the signature of <code>Bind</code> method in C#:</p>
+<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+{
+    public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
+    {
+    }
+}
+</code></pre>
+<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an argument of type <code>T</code> (not
+a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> where <code>TO</code> is another type. Now, our first instance
+of <code>Monad&lt;T&gt;</code> knows how to bind itself to this function to produce another instance of monad of the
+new type. The full power of monads comes when we compose several of them in one chain:</p>
+<pre class="highlight"><code class="hljs cs">initialValue
+    .Return()
+    .Bind(v1 =&gt; produceV2OutOfV1(v1))
+    .Bind(v2 =&gt; produceV3OutOfV2(v2))
+    .Bind(v3 =&gt; produceV4OutOfV3(v3))
+    <span class="hljs-comment">//...</span>
+</code></pre>
+<p>And that&#39;s about it. Let&#39;s have a look at some examples.</p>
+<h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
+<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach to dealing
+with &#39;no value&#39; value which is alternative to the concept <code>null</code>. Basically your object should
+never be null, but it can either have <code>Some</code> value or be <code>None</code>. F# has a maybe implementation
+built into the language: it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
+<pre class="highlight"><code class="hljs undefined">public class Maybe&lt;T&gt; where T : class
+{
+    private T value;
+
+    public Maybe(T someValue)
+    {
+        if (someValue == null)
+            throw new AgrumentNullException(nameof(someValue));
+        this.value = someValue;
+    }
+
+    private Maybe()
+    {
+    }
+
+    public Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func)
+    {
+        return value != null ? new Maybe&lt;TO&gt;(func(value)) : Maybe&lt;TO&gt;.None();
+    }
+
+    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;(null);
+}
+</code></pre>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MaybeExtensions</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Maybe&lt;T&gt; NullToMaybe&lt;T&gt;(T <span class="hljs-keyword">value</span>)
+    {
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">value</span> != <span class="hljs-keyword">null</span> ? <span class="hljs-keyword">new</span> Maybe&lt;T&gt;(<span class="hljs-keyword">value</span>) : Maybe&lt;T&gt;.None();
+    }
+}
+</code></pre>
+<p>Return function is implemented with a combination of a public constructor which accepts <code>Some</code> value
+(notice that <code>null</code> is not allowed) and a static <code>None</code> method returning an object of &#39;no value&#39;.
+<code>NullToMaybe</code> combines both of them in one call. </p>
+<p><code>Bind</code> function is implemented explicitly. </p>
+<p>Let&#39;s have a look at a use case. Imagine we have repositories which load the data from an external
+storage (I&#39;ll put them to a single class for the sake of brevity):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Repository</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Customer&gt; <span class="hljs-title">GetCustomer</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span>
+    </span>{
+        <span class="hljs-keyword">var</span> row = ReadRowFromDb(id); <span class="hljs-comment">// returns null if not found</span>
+        <span class="hljs-keyword">return</span> row.NullToMaybe().Bind(r =&gt; ConvertRowToCustomer(r));
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Address&gt; <span class="hljs-title">GetAddress</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Order&gt; <span class="hljs-title">GetOrder</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
+}
+</code></pre>
+<p>The repository reads a row from the database and then converts its value or null to a <code>Maybe&lt;DataRow&gt;</code>.
+Then it&#39;s immediately bound to a function which converts the row to a domain object (I&#39;ll omit this
+function&#39;s implementation but remember that it can also return a <code>Maybe&lt;Customer&gt;</code> if that&#39;s warranted
+by requirements).</p>
+<p>Now here is a more sophisticated example of <code>Bind</code> method composition:</p>
+<pre class="highlight"><code class="hljs cs">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+    repo.GetCustomer(customerId)
+        .Bind(c =&gt; repo.GetAddress(c.Address.Id))
+        .Bind(a =&gt; repo.GetOrder(a.LastOrder.Id))
+        .Bind(o =&gt; o.Shipper);
+</code></pre>
+<p>If you think that the syntax looks very much like a LINQ query with a bunch of <code>Select</code> statements, you are
+not the only one ;) One of the common implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface
+which allows a more C#-idiomatic binding composition. Actually:</p>
+<h2 id="ienumerable-selectmany-is-a-monad-">IEnumerable + SelectMany is a monad </h2>
+<p><code>IEnumerable</code> is an interface for enumerable containers.</p>
+<p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
+<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here is
+its signature:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
+    <span class="hljs-keyword">this</span> IEnumerable&lt;A&gt; first, 
+    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
+</code></pre>
+<p>And here is an example of composition:</p>
+<pre class="highlight"><code class="hljs cs">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
+    customers
+        .SelectMany(c =&gt; c.Addresses)
+        .SelectMany(a =&gt; a.Orders)
+        .SelectMany(o =&gt; o.Shippers);
+</code></pre>
+<p>The query has no idea about how the collections are stored (encapsulated in
+containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
+(<code>Bind</code> operation).</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>You should not be afraid of the &quot;M-word&quot; just because you are the C# programmer. C# does not have
+a notion of monads as predefined language constructs, but it doesn&#39;t mean we can&#39;t borrow some
+ideas from the functional world. Having said that, it&#39;s also true that C# is lacking some powerful
+ways to combine and generalize monads which are possible in Haskell and other functional languages.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Fire-and-forget in Service Fabric actors</title>
@@ -236,7 +394,7 @@ validation may fail.</p>
         <link href="http://mikhail.io/2015/12/weaving-your-domain-classes-with-fody"/>
         <updated>2015-12-22T00:00:00.000Z</updated>
         <id>tag:mikhail.io,2015-12-22,/2015/12/weaving-your-domain-classes-with-fody</id>
-        <content type="html"><![CDATA[<p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive craft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
+        <content type="html"><![CDATA[<p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive cruft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> trip = <span class="hljs-keyword">new</span> Trip(
     origin: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Paris"</span>, geoParis), 
     destination: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Amsterdam"</span>, geoAmsterdam),
@@ -992,112 +1150,6 @@ Happy reviews!</p>
 <p>You could write one test for all classes in a namespace or in assembly, if the pattern is applied consistently there! And it will let you know when one of your new classes violates the common rule, with zero extra effort.</p>
 <p>Does anyone know the library which would do that without me inventing the bicycle myself?</p>
 <p>Happy coding!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>The Green Hackfest - my first hackathon</title>
-        <link href="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon"/>
-        <updated>2015-03-15T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2015-03-15,/2015/03/the-green-hackfest-my-first-hackathon</id>
-        <content type="html"><![CDATA[<p>In this post I&#39;d like to share my experience about the first hackathon that I took part in. It was called <a href="http://the-hackfest.com/past-hacks/green-hackfest-utrecht-2014.html">The Green Hackfest</a> and took place in Utrecht, the Netherlands on 10-12 October 2014.</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/hackfest_banner.jpg" alt="Green Hackfest"></p>
-<p>A brief introduction on what hackathon is. A hackathon, or a hackfest in this case (people used these words interchangeably), is an event for programmers, engineers, designers and entrepreneurs where they can get together, form teams and work on solving problems in creative way. The time is very limited, usually from 12 to 24 hours, but in this case we had a &#39;marathon&#39; of 48 hours. At the start, teams get the challenge definitions and in the end they must pitch their ideas, prototypes and mock-ups to the judges to win the prizes. The participants are traditionally called hackers, which does not mean that they hack bank networks and that kind of stuff, but they rather strive to overcome the usual limitation in whatever area they are competing.</p>
-<p>I will start with the most useful part - I&#39;ll give several pieces of advice for those who are preparing to their first hackathon. And then I&#39;ll get to the description of what was happening this time, so expect quite some photos.</p>
-<h2 id="what-i-learnt">What I learnt</h2>
-<p>So, in case you are going to take part in one of those hackathons, here is what I can advise you:</p>
-<ul>
-<li><p>Definitely go. It will be quite a new experience for you, well worth the time.</p>
-</li>
-<li><p>Take a laptop with your favourite working environment and any other devices that might be useful. Apart from this and some small personal things, you won&#39;t probably need anything else.</p>
-</li>
-<li><p>Don&#39;t be late. Otherwise you may miss the important parts: briefs and team formation.</p>
-</li>
-<li><p>Don&#39;t worry if you don&#39;t have a team before the event, that&#39;s normal.</p>
-</li>
-<li><p>Always compete for a prize. Even if it&#39;s not particularly important for you, it will help you align your actions and get more drive and fun.</p>
-</li>
-<li><p>Don&#39;t be shy, talk to people. If you don&#39;t know how to start, just join some other discussion by saying hello and your name. Ask what people think about briefs, what their background is, what are they going to do next and so on. Don&#39;t be afraid to get out of comfort zone.</p>
-</li>
-<li><p>Be nice, smile, make jokes, be open and willing to help others, listen to them.</p>
-</li>
-<li><p>Try to join someone who has complementing background for your skills, not someone with the same skill set. If you are a software developer, search for designers, entrepreneurs and pitch speakers.</p>
-</li>
-<li><p>Don&#39;t come with anything done in advance. You are welcome to bring relevant ideas, but don&#39;t bring implementations. The briefs will be too specific for you to fit. And, in any case, it will be transparent to everyone whether you did your prototype on-site or beforehand. You won&#39;t have fun if you start cheating.</p>
-</li>
-<li><p>Focus on pitch preparation quite early. Think through your demo, and focus on making it shiny and impressive, and don&#39;t spend much time on anything else. During last hour, practice your speech and check that you fit into time limit.</p>
-</li>
-<li><p>If you are suggested to use a specific technology, use it, you might then compete for two prizes instead of one, which double your chances.</p>
-</li>
-<li><p>If you stay overnight, have some sleep. Take a sleeping bag or a mat with you.</p>
-</li>
-<li><p>Keep your prototype focused. You only need one impressive idea, not 10 boring ideas.</p>
-</li>
-<li><p>There will be someone from sponsors and technology partners to support you. Reach to them and take advice from people who are willing to help you.</p>
-</li>
-<li><p>Have fun!</p>
-</li>
-</ul>
-<h2 id="how-we-scored-at-green-hackfest">How we scored at Green Hackfest</h2>
-<p>So we gathered together on Friday evening, and stayed in the hackspace until Sunday night. Participants are provided with all the infrastructure during this time: power plugs, Wi-Fi, tables &amp; chairs, food, drinks and sleeping room. All free of charge.</p>
-<p>The whole story starts with introduction from hosts and then with briefs from sponsors. Here is Richard Kastelein, the event organizer, giving his kick-off speech:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Richard_Kastelein.jpg" alt="Richard Kastelein"></p>
-<p>This way we got the tasks for these 2 days. There were several tasks, so everyone could choose which one suits them the best. Some folks were late, so they were having troubles afterwards to get the idea of what&#39;s expected from them.</p>
-<p>I think there were about 70 participants in beginning, and about 50 of them made it to the end. Most people came alone or in pair; and I think there were two pre-formed teams of several people. </p>
-<p>Most people were Dutch, but a lot were not. Many international students, scientists and entrepreneurs live in the Netherlands these days, and they were all welcome. So, while some teams were speaking Dutch within the group, English was the default language for other communication all the time, which is very handy. Some participants came to the Netherlands specifically to take part in this event: I remember guys from UK, Belgium and even Serbia.</p>
-<p>I am the software developer and I expected the majority of hackers to be developers too, mostly on experienced side. But I was quite wrong. Many people were from entrepreneurial background, coming from ventures on early stage, or research environments. Many folks were students with no career set yet. In result, I was the only person who was able to write code in our team, and one of the most experienced programmers overall (my guess).</p>
-<p>So the first task for everyone was to build a team for yourself. There was no formal procedure for that. You just meet people, ask what they think about the challenges and try to start the discussion, then go to someone else, and repeat. Sooner or later, you should find someone with whom you are ready to spend the next 45 hours working on a project. The normal team is of 2 to 5 people, and you should ideally join diverse skills. So if you are a developer, search for entrepreneurs or other idea generators, and also someone with design skills.</p>
-<p>This time we had the following briefs, all of them were more or less related to green tech:</p>
-<ul>
-<li><p>Crowdfunding challenge: find new applications for an existing crowdfunding platform</p>
-</li>
-<li><p>Optimize manufacturing line based on monitoring data to use less energy without compromising the production schedule</p>
-</li>
-<li><p>Make people in Utrecht use more bicycles instead of cars (tough task, as Utrecht is one of the cities were pretty much everyone is already using bicycles)</p>
-</li>
-<li><p>Visualize the sustainability of electric car stations</p>
-</li>
-<li><p>Show off anything with IBM BlueMix platform</p>
-</li>
-</ul>
-<p>And there was the main prize for the best overall Hack Green.</p>
-<p>Here is the prize structure:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Prize_structure.jpg" alt="Prize structure"></p>
-<p>(the student award was eventually transformed to IBM technology award)</p>
-<p>Quite quickly I decided that Ebbits brief looks the most promising. First, it provided some test data and API to play with, so we had at least something to start with. Second, it did not sound as romantic as some other topics, so I hoped that not many teams would pick it. And last but not least, there were 3 prizes for this same brief, so any of the top 3 teams were going to cash!</p>
-<p>Here is the manager from Ebbits presenting his manufacturing brief:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Manufacturing_brief.jpg" alt="Manufacturing brief"></p>
-<p>So I joined several discussions until I found folks who were thinking more or less on the same page, and were equally enthusiastic about smart factory challenge.</p>
-<p>The hackspace was available for the whole 48 hours of the hackfest. There was one big open space containing many open cabins with tables, couches and chairs inside:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_cabin.jpg" alt="Hackspace four guys 2"></p>
-<p>So usually one team could fit into one cabin:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_one_team.jpg" alt="Hackspace three guys"></p>
-<p>Not too much space, but enough to put two or three laptops + cups or beers aside:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_tables.jpg" alt="Hackspace one guy"></p>
-<p>The gathering area was located in the centre of this room. People got together for all briefs, intermediate meet-ups, final pitches and prizes.</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_hall.jpg" alt="Hackspace"></p>
-<p>These guys had won the previous hackfest of same series, and I think they didn&#39;t speak to anyone, so nobody knew what they were doing:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Last_winners.jpg" alt="Hackspace four guys"></p>
-<p>We took the large space behind the scene, and also got a big white board for brainstorming:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Hackfest_our_team.jpg" alt="Hackspace our team"></p>
-<p>Wi-Fi was free and fast enough for the participants. Power plugs were everywhere, sometimes hanging from the ceiling:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Hackspace_wires.jpg" alt="Hackspace our team 2"></p>
-<p>Food and beverages (including beer) were also provided in effectively unlimited quantities. Breakfasts, lunches, dinners plus night snacks - all for free for hackers. Biological green food for green hack fest:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Food.jpg" alt="Food"></p>
-<p>There were two sleeping areas as well. I don&#39;t have any photos of those, but they were really basic: just separate empty rooms where you could put a sleeping bag and take a nap. I&#39;m not sure how many teams slayed late in the night, but we were lazy and went to sleep at midnight or so :)</p>
-<p>In terms of prize winning odds, the most important part of the whole process is the final pitch. Each team had just 2 minutes to make a demo and do the speech. The demo doesn&#39;t need to show off a finished product, but everyone had to prepare prototypes, some pieces of working UI. Powerpoint slides were not enough. After the demo, the jury had 3 to 5 minutes to ask questions, and then the next team takes over. There was a training on how to pitch effectively, but I skipped that one.</p>
-<p>So, you should leave quite some time before the pitch starts to actually prepare your demo. Focus on what you will say, and implement only the features that will be demoed, don&#39;t waste your time on anything else. Try showing something relatively small, specific and easy to understand, but also give a short overview of how you can see this can be expanded. Highlight the strengths of your team and why you are good candidates to do the job that you started.</p>
-<p>During the pitch, the team is standing next to a big screen. One member is showing the demo on his laptop, while another member explains the whole story behind. Here is how it looked like:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Pitch.jpg" alt="Pitch"></p>
-<p>There were four Judges in the jury, consisting of sponsor representatives and serial entrepreneurs. Here are those smart powerful guys:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Judges.jpg" alt="Judges"></p>
-<p>We ended up taking the second place in our category. As we chose to participate in a category with 3 prizes, we scored 1000 euros! This is our photo with the sponsor and our prize:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Our_prize.jpg" alt="Our prize"></p>
-<p>And this is the best overall hack team, congratulations to them:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/Winners.jpg" alt="Winners"></p>
-<p>Here are all the hackers who stayed at the fest until the very end:</p>
-<p><img src="http://mikhail.io/2015/03/the-green-hackfest-my-first-hackathon/All_hackers.jpg" alt="All hackers"></p>
-<p>Enjoyable experience, thanks everyone for sharing it.</p>
 ]]></content>
     </entry>
     
