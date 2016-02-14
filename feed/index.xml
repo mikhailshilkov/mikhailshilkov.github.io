@@ -3,13 +3,172 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-02-08T10:01:19.383Z</updated>
+    <updated>2016-02-14T13:27:09.890Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Building a Poker Bot: String and Number Recognition</title>
+        <link href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition"/>
+        <updated>2016-02-10T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-02-10,/2016/02/building-a-poker-bot-string-recognition</id>
+        <content type="html"><![CDATA[<p><em>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
+easy and very enjoyable. Here is the first part:
+<a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a>
+</em></p>
+<h2 id="why-string-recognition">Why string recognition</h2>
+<p>Reading cards and other fixed images was the first step. The bot should also
+be able to read different text-based information from the screen, e.g.</p>
+<ul>
+<li>Current blind levels</li>
+<li>Current pot size</li>
+<li>The size of bets made by each player</li>
+<li>Player names</li>
+<li>Stack sizes</li>
+<li>Chat messages (for advanced scenarios)</li>
+</ul>
+<p>We need this vital information to make proper decisions, so let&#39;s look at
+how to parse the textual data.</p>
+<h2 id="new-challenges">New challenges</h2>
+<p>String recognition has some specific difficulties when compared to fixed
+images like cards:</p>
+<ul>
+<li>The size of a string is not predefined. Obviously, the longer the string, the
+more space it takes on the screen</li>
+<li>The position of a string is not fixed either. Some strings are aligned to
+the center, others may diverge based on other variable parts like stakes or blinds</li>
+<li>Different strings might be rendered in different font size</li>
+</ul>
+<p>Here is what needs to be done to overcome these complications:</p>
+<ul>
+<li>Pick the layout which makes your life easier </li>
+<li>Adjust fonts and positions if possible </li>
+<li>Make sure that all important strings are always visible and not overlapping to other information</li>
+<li>For each string define a region where it belongs to in 100% cases. The background
+of this region should be more or less evenly filled with a color in contrast to the font color.</li>
+</ul>
+<h2 id="string-recognition-steps">String recognition steps</h2>
+<p>We start with a screenshot of a poker table again:</p>
+<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/table.png" alt="Poker table screenshot"></p>
+<p>We know our fixed regions where our labels are located, so we take those
+regions for processing:</p>
+<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/regions.png" alt="Regions of string recognition"></p>
+<p>For each region we trim away the blank margins around the text (i.e. left,
+top, right and bottom padding):</p>
+<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/nomargin.png" alt="Margins being removed"></p>
+<p>We find dark lines between bright symbols and we consider them as gaps
+between characters:</p>
+<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/splitchars.png" alt="Split to characters"></p>
+<p>The final step is to compare each symbol to the known patterns and find the best
+match (in case of my layout the match for symbols is always 100% perfect). Let&#39;s 
+look how these steps are implemented.</p>
+<h2 id="removing-padding-around-the-text">Removing padding around the text</h2>
+<p>Because the padding is removed from all 4 sides of the region, I decided to use
+<code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
+with black or white points defined as a helper type:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BW</span> </span>= B | W
+</code></pre>
+<p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
+like this:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> removePadding pixels =
+  <span class="hljs-keyword">let</span> allBlack s = Seq.exists ((=) W) s
+  <span class="hljs-keyword">let</span> maxWidth = Array2D.length1 pixels - <span class="hljs-number">1</span>
+  <span class="hljs-keyword">let</span> maxHeight = Array2D.length2 pixels - <span class="hljs-number">1</span>
+  <span class="hljs-keyword">let</span> firstX = [<span class="hljs-number">0.</span>.maxWidth] 
+    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
+  <span class="hljs-keyword">let</span> lastX = [<span class="hljs-number">0.</span>.maxWidth] 
+    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
+  <span class="hljs-keyword">let</span> firstY = [<span class="hljs-number">0.</span>.maxHeight] 
+    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
+  <span class="hljs-keyword">let</span> lastY = [<span class="hljs-number">0.</span>.maxHeight] 
+    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
+
+  <span class="hljs-keyword">match</span> (firstX, lastX, firstY, lastY) <span class="hljs-keyword">with</span>
+  | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
+  | _ -&gt; Array2D.init <span class="hljs-number">0</span> <span class="hljs-number">0</span> (<span class="hljs-keyword">fun</span> _ _ -&gt; B)
+</code></pre>
+<p>The first part finds the amount of fully-black columns and rows in the array.
+Then, if white points are found, the second part returns a sub array based on
+the indices, otherwise empty array is returned.</p>
+<h2 id="split-the-text-into-characters">Split the text into characters</h2>
+<p>First, we convert our 2D array into the list of lists, where each item in the
+top-level list represents a single column of pixels:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> pixelColumns =
+  [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
+  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)
+</code></pre>
+<p>Then we can fold this list of columns into the symbols, where each symbol itself
+is the list of columns:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> splitIntoSymbols (e : BW list) (state: BW list list list) = 
+  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
+  | cur::rest -&gt;
+      <span class="hljs-keyword">if</span> isSeparator e <span class="hljs-keyword">then</span>
+        <span class="hljs-keyword">match</span> cur <span class="hljs-keyword">with</span>
+        | _::_ -&gt; []::state <span class="hljs-comment">// add new list</span>
+        | _ -&gt; state        <span class="hljs-comment">// skip if we already have empty item</span>
+      <span class="hljs-keyword">else</span> (e::cur)::rest   <span class="hljs-comment">// add e to current list</span>
+  | _ -&gt; [[e]]
+
+Seq.foldBack splitIntoSymbols pixelColumns []
+</code></pre>
+<p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
+by introducing some intermediate type with descriptive name, but I decided
+to leave that part for now. Read it as list of symbols, which are lists of
+columns, which are lists of pixels.</p>
+<h2 id="match-the-symbols-vs-the-known-patterns">Match the symbols vs the known patterns</h2>
+<p>This part was already described in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
+Basically we compare the list of black or white points to the patterns of
+the known symbols:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> getChar patterns bws =
+  <span class="hljs-keyword">let</span> samePatterns h p =
+    Seq.zip h p
+    |&gt; Seq.forall (<span class="hljs-keyword">fun</span> (v1, v2) -&gt; v1 = v2)
+  <span class="hljs-keyword">let</span> matchingPattern = 
+    patterns 
+      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; List.length p.Pattern = List.length bws)
+      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; samePatterns bws p.Pattern)
+      |&gt; Array.tryHead
+  defaultArg (Option.map (<span class="hljs-keyword">fun</span> p -&gt; p.Char) matchingPattern) '?'
+</code></pre>
+<h2 id="putting-it-all-together">Putting it all together</h2>
+<p>The <code>recognizeString</code> function accepts lower-order functions to match 
+symbols and get pixels together with width and height of the region:</p>
+<pre class="highlight"><code class="hljs fs">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
+</code></pre>
+<p>It builds an array of pixels, removes padding and folds with recognition.</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeString matchSymbol getPixel width height =
+
+  <span class="hljs-keyword">let</span> pixels = 
+    Array2D.init width height (<span class="hljs-keyword">fun</span> x y -&gt; isWhite (getPixel x y))
+    |&gt; removePadding
+
+  <span class="hljs-keyword">let</span> pixelColumns =
+    [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
+    |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)      
+
+  Seq.foldBack splitIntoSymbols pixelColumns []
+  |&gt; List.map matchSymbol
+  |&gt; Array.ofSeq
+  |&gt; String.Concat
+</code></pre>
+<p>Then we use it with a specific recognition patterns, e.g. known digits in case
+of numbers recognition:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeNumber x =
+  recognizeString (getChar numberPatterns) x
+</code></pre>
+<p>A way to produce these patterns is discussed in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>String recognition takes a bit more steps to execute comparing to the recognition
+of fixed objects. Nevertheless it&#39;s pretty straightforward to implement once
+we split it into small and well-understood conversion steps. The full code 
+for card recognition can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/StringRecognition.fs">my github repo</a>.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Akka.NET-style actors in Service Fabric</title>
@@ -486,6 +645,7 @@ which are hard coded for a given table size.</p>
 much less that one could imagine for a task of image recognition. Similar code could be used to recognize other
 fixed objects at poker table: dealer button location, action buttons, checkboxes etc. In the next part of this
 series I will show how to recognize non-fixed parts: text and numbers.</p>
+<p><em>Proceed to <a href="http://mikhail.io/2016/02/building-a-poker-bot-string-number-recognition/">Part 2 of Building a Poker Bot: String and Number Recognition</a>.</em></p>
 ]]></content>
     </entry>
     
@@ -1292,144 +1452,6 @@ target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span cl
 <p>I would say, if you start a new project and you don&#39;t have a strong opinion about the unit code, just go grab the library and try to use it.</p>
 <p>At the same time, for existing code base, it might be easier to introduce your own implementation which would resemble something that you already use.</p>
 <p>Also, I have another reason for my own implementation. I&#39;m using units all over the code base of domain logic, the very heart of the software, the exact place where I want full control. I find it a bit awkward to introduce a 3rd party dependency in domain layer.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Aurelia element animation with custom attribute</title>
-        <link href="http://mikhail.io/2015/07/aurelia-element-animation-with-custom-attribute"/>
-        <updated>2015-07-28T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2015-07-28,/2015/07/aurelia-element-animation-with-custom-attribute</id>
-        <content type="html"><![CDATA[<p>I&#39;ve been exploring <a href="http://aurelia.io">Aurelia</a> javascript UI framework recently to get some experience needed
-for our next big project. One thing that I couldn&#39;t implement out of the box was a kind 
-of animation.</p>
-<p>I have a grid of values bound to View Model. View Model communicates to server, receives
-any updates of data and the grid got immediately updated, all that works great with Aurelia.
-Now I want to highlight the cell which has just received an updated value with a small
-background animation, like this:</p>
-<p><img src="http://mikhail.io/2015/07/aurelia-element-animation-with-custom-attribute/animation.gif" alt="Updated cell animation"></p>
-<p>Aurelia has a library called <a href="https://github.com/aurelia/animator-css">aurelia-animator-css</a> with a helper
-class to run CSS animation. If you use it directly in your View Model, you will end up with the code like</p>
-<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">this</span>.newMessageReceived =
-    msg =&gt; {
-        <span class="hljs-keyword">this</span>.data.filter(i =&gt; i.id === msg.id).forEach(t =&gt; {
-            <span class="hljs-keyword">let</span> editedItemIdx = <span class="hljs-keyword">this</span>.data.indexOf(i);
-            <span class="hljs-keyword">var</span> elem = <span class="hljs-keyword">this</span>.element.querySelectorAll(<span class="hljs-string">'tbody tr'</span>)[editedItemIdx + <span class="hljs-number">1</span>]
-                                   .querySelectorAll(<span class="hljs-string">'td'</span>)[<span class="hljs-number">3</span>];
-
-            <span class="hljs-keyword">this</span>.animator.addClass(elem, <span class="hljs-string">'background-animation'</span>).then(() =&gt; {
-                <span class="hljs-keyword">this</span>.animator.removeClass(elem, <span class="hljs-string">'background-animation'</span>);
-            });
-        });
-    };
-</code></pre>
-<p>So we get a new message, find the related item in our data, then find the index of that data. Then we use this
-index in query selector to get the exact row that needs animation, find the cell by hard coded index, and 
-finally use animator to highlight the background.</p>
-<p>Ouch... That smells. We spoiled our view model with view details, and all this code is very ugly and fragile.</p>
-<p>Good news: we can improve the solution with the Aurelia&#39;s feature called Custom Attributes. Let&#39;s create a new
-javascript file and call it <code>animateonchange.js</code>:</p>
-<pre class="highlight"><code class="hljs javascript">import {customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
-
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
-export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
-
-}
-</code></pre>
-<p>I declared a class for our new attribute, so far it&#39;s empty. I imported customAttribute decorator from
-Aurelia framework: that the way we can define a name for our custom attribute. This can be avoided: if I
-change the name to <code>AnimateonchangeCustomAttribute</code>, Aurelia will infer the name from class name, but I want
-to stay explicit and keep the class name readable. Note that capital letters are not allowed in attribute name.</p>
-<p>Now, let&#39;s declare the constructor of the new class and inject all the dependencies:</p>
-<pre class="highlight"><code class="hljs javascript">import {inject, customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
-import {CssAnimator} from <span class="hljs-string">'aurelia-animator-css'</span>;
-
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
-@inject(Element, CssAnimator)
-export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
-
-    constructor(element, animator) {
-        <span class="hljs-keyword">this</span>.element = element;
-        <span class="hljs-keyword">this</span>.animator = animator;
-    }
-
-}
-</code></pre>
-<p>I used dependency injection to get attribute&#39;s element and CSS animator and save them into class fields.
-Here&#39;s how to use them:</p>
-<pre class="highlight"><code class="hljs javascript">import {inject, customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
-import {CssAnimator} from <span class="hljs-string">'aurelia-animator-css'</span>;
-
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
-@inject(Element, CssAnimator)
-export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
-    constructor(element, animator) {
-        <span class="hljs-keyword">this</span>.element = element;
-        <span class="hljs-keyword">this</span>.animator = animator;
-        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">false</span>;
-    }
-
-    valueChanged(newValue){
-        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>.initialValueSet) {
-            <span class="hljs-keyword">this</span>.animator.addClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>).then(() =&gt; {
-                <span class="hljs-keyword">this</span>.animator.removeClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>);
-            });
-        }
-        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">true</span>;
-    }
-}
-</code></pre>
-<p>The new method <code>valueChanged</code> will be called every time the bound value changes. I want to ignore the
-first value (it&#39;s not an update yet), so I did that with <code>initialValueSet</code> flag. Then I just run CSS 
-animator. No DOM-related queries!</p>
-<p>Here is how we use the custom attribute from a view:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-title">template</span>&gt;</span>
-
-    <span class="hljs-tag">&lt;<span class="hljs-title">require</span> <span class="hljs-attribute">from</span>=<span class="hljs-value">"./animateonchange"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">require</span>&gt;</span>
-
-    <span class="hljs-tag">&lt;<span class="hljs-title">table</span> <span class="hljs-attribute">class</span>=<span class="hljs-value">"table"</span>&gt;</span>
-        <span class="hljs-tag">&lt;<span class="hljs-title">tr</span> <span class="hljs-attribute">repeat.for</span>=<span class="hljs-value">"item of data"</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value1}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value2}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span> <span class="hljs-attribute">animateonchange.bind</span>=<span class="hljs-value">"item.value3ToUpdate"</span>&gt;</span>${item.value3ToUpdate}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value4}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-        <span class="hljs-tag">&lt;/<span class="hljs-title">tr</span>&gt;</span>
-    <span class="hljs-tag">&lt;/<span class="hljs-title">table</span>&gt;</span>
-
-<span class="hljs-tag">&lt;/<span class="hljs-title">template</span>&gt;</span>
-</code></pre>
-<p>First, we use <code>require</code> element to import custom attribute definition (make sure the path is correct
-and no <code>.js</code> extension is present).</p>
-<p>Second, we use <code>animateonchange.bind</code> to bind the value to the custom attributes. And it works!</p>
-<p>Of course, you need to define the CSS class, e.g.</p>
-<pre class="highlight"><code class="hljs css"><span class="hljs-class">.background-animation-add</span> <span class="hljs-rules">{
-    <span class="hljs-rule"><span class="hljs-attribute">-webkit-animation</span>:<span class="hljs-value"> changeBack <span class="hljs-number">0.5s</span></span></span>;
-    <span class="hljs-rule"><span class="hljs-attribute">animation</span>:<span class="hljs-value"> changeBack <span class="hljs-number">0.5s</span></span></span>;
-<span class="hljs-rule">}</span></span>
-<span class="hljs-class">.background-animation-remove</span> <span class="hljs-rules">{
-    <span class="hljs-rule"><span class="hljs-attribute">-webkit-animation</span>:<span class="hljs-value"> fadeIn <span class="hljs-number">0.5s</span></span></span>;
-    <span class="hljs-rule"><span class="hljs-attribute">animation</span>:<span class="hljs-value"> fadeIn <span class="hljs-number">0.5s</span></span></span>;
-<span class="hljs-rule">}</span></span>
-<span class="hljs-at_rule">@<span class="hljs-keyword">-webkit-keyframes</span> changeBack </span>{
-    0% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-    50% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> lightgreen</span></span>; <span class="hljs-rule">}</span></span>
-    100% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-}
-<span class="hljs-at_rule">@<span class="hljs-keyword">keyframes</span> changeBack </span>{
-    0% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-    50% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> lightgreen</span></span>; <span class="hljs-rule">}</span></span>
-    100% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-}
-</code></pre>
-<p>Here is a <a href="http://plnkr.co/edit/oa0Kb1hf6D9M2jl22vWD">plunkr link to a complete example</a></p>
-<p>Happy coding!</p>
-<p>Useful links:</p>
-<ul>
-<li><p><a href="http://aurelia.io/docs.html#custom-attributes">Aurelia Custom Attributes documentation</a></p>
-</li>
-<li><p><a href="http://blog.durandal.io/2015/07/17/animating-apps-with-aurelia-part-1/">Animating Apps with Aurelia - Part 1 by Rob Eisenberg</a></p>
-</li>
-</ul>
 ]]></content>
     </entry>
     
