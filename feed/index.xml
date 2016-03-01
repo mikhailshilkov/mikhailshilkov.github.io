@@ -3,13 +3,123 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-02-23T14:05:54.661Z</updated>
+    <updated>2016-03-01T08:53:44.664Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Building a Poker Bot: Mouse Movements</title>
+        <link href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements"/>
+        <updated>2016-03-01T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-03-01,/2016/03/building-a-poker-bot-mouse-movements</id>
+        <content type="html"><![CDATA[<p><em>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
+easy and very enjoyable. Here are the previous parts:</em></p>
+<ul>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
+</ul>
+<p>In this short post I write about the last step of the poker bot flow: clicking
+the buttons. So, the screen is already recognized, the hand is understood,
+the decisions are made and now the bot needs to execute the actions. Except for
+the bet sizing, this simply means clicking the right button at the poker table.</p>
+<p>The stealthiness of such clicks is a valid concern here. Ideally, we want all
+the mouse movements to look as similar as possible to the movements produced
+by a human being. For this post, I will simplify the task to the following steps:</p>
+<ul>
+<li>Identify where the mouse cursor is right now</li>
+<li>Decide where the mouse should be moved to</li>
+<li>Gradually move the mouse cursor</li>
+<li>Click the button</li>
+</ul>
+<h2 id="cursor-position">Cursor Position</h2>
+<p>It&#39;s really easy to understand where the mouse cursor currently is: just
+use <code>Control.MousePosition</code> property from the standard library:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> currentPosition () = 
+  <span class="hljs-keyword">let</span> mp = System.Windows.Forms.Control.MousePosition
+  (mp.X, mp.Y)
+</code></pre>
+<p>Note that your application doesn&#39;t have to be based on WinForms, just reference
+the required assembly.</p>
+<h2 id="move-the-cursor">Move the Cursor</h2>
+<p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
+library to control the mouse and the keyboard programmatically. It uses some
+weird coordinate system, so the function to move the mouse cursor looks like this:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> simulator = <span class="hljs-keyword">new</span> InputSimulator()
+
+<span class="hljs-keyword">let</span> moveTo x y =
+  <span class="hljs-keyword">let</span> toX = <span class="hljs-number">65535.</span> * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
+  <span class="hljs-keyword">let</span> toY = <span class="hljs-number">65535.</span> * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
+  simulator.Mouse.MoveMouseTo(toX, toY)
+</code></pre>
+<p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
+the top-left corner of the screen.</p>
+<h2 id="move-it-smoothly">Move It Smoothly</h2>
+<p>Now we want to simulate the human-like movements. It won&#39;t be perfect, but
+at least it should look decent. For this gradual movement function I used
+a nice F# feature called asynchronous workflows. Effectively, it looks like
+a loop with async sleep statements inside.</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> moveToWorkflow step (toX, toY) = async {
+  <span class="hljs-keyword">let</span> (fromX, fromY) = currentPosition()
+  <span class="hljs-keyword">let</span> count = Math.Max(<span class="hljs-number">10</span>, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / <span class="hljs-number">20</span>)
+  <span class="hljs-keyword">for</span> i = <span class="hljs-number">0</span> <span class="hljs-keyword">to</span> count <span class="hljs-keyword">do</span>
+    <span class="hljs-keyword">let</span> x = step fromX toX count i |&gt; float
+    <span class="hljs-keyword">let</span> y = step fromY toY count i |&gt; float
+    moveTo x y
+    <span class="hljs-keyword">do</span>! Async.Sleep <span class="hljs-number">3</span>
+  }
+</code></pre>
+<p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
+Basically, it calculates a coordinate for n-th step of the movement. We can
+plug different implementations of this function to find the right balance of
+the movement style. Here is the simplest linear implementation:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> linearStep from until max i =
+  from + (until - from) * i / max
+</code></pre>
+<p>The sinus-based implementation is a bit more verbose because of float-int 
+conversions:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> sinStep (from:int) (until:int) (max:int) (index:int) =
+  <span class="hljs-keyword">let</span> fromf = from |&gt; float
+  <span class="hljs-keyword">let</span> untilf = until |&gt; float
+  <span class="hljs-keyword">let</span> maxf = max |&gt; float
+  <span class="hljs-keyword">let</span> indexf = index |&gt; float
+  fromf + (untilf - fromf) * Math.Sin(Math.PI / <span class="hljs-number">2.</span> * indexf / maxf) |&gt; int
+</code></pre>
+<p>The following animation illustrates the concept: </p>
+<svg width="778" height="190" viewbox="0 0 500 190">
+  <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+  <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+
+  <animate xlink:href="#mouse1" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" calcmode="discrete" id="img-anim1"></animate>
+  <animate xlink:href="#mouse2" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"></animate>
+  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate><br></svg>
+
+<p>The top mouse cursor just
+jumps from left to right and back (no animation). The middle cursor moves with
+linear speed (<code>linearStep</code> function above). The bottom cursor moves based on
+the <code>sinStep</code> function derived from sinus of time.</p>
+<h2 id="click-the-button">Click the Button</h2>
+<p>A button is a rectangle and we want to click a random point inside it. So, all
+we need is to pick random coordinates, move the mouse there and send a 
+click event via the simulator:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickButton (minX, minY, maxX, maxY) =
+  <span class="hljs-keyword">let</span> r = <span class="hljs-keyword">new</span> Random()
+  <span class="hljs-keyword">let</span> p = (r.Next(minX, maxX), r.Next(minY, maxY))
+  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
+  simulator.Mouse.LeftButtonClick()
+</code></pre>
+<h2 id="demo-time">Demo Time</h2>
+<p>Here is the demo of the mouse movements:</p>
+<p><img src="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/mouseclicking.gif" alt="Mouse clicking the button"></p>
+<p>It looks fun, doesn&#39;t it? The full code for the mouse movements can be found in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Unit testing Dapper repositories</title>
@@ -1378,20 +1488,6 @@ and push them to <code>azure</code> remote. Now you should be able to browse to 
 <li><p>You don&#39;t want to copy the files manually all the time, so make a PowerShell script or gulp task to do that for you. Remember, your changes will be applied whenever you push a new version to <code>azure</code> remote of your Git repo.</p>
 </li>
 </ol>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Review of the course &quot;Modern, Modular JavaScript with SystemJS and jspm&quot;</title>
-        <link href="http://mikhail.io/2015/11/review-of-jspm-course"/>
-        <updated>2015-11-24T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2015-11-24,/2015/11/review-of-jspm-course</id>
-        <content type="html"><![CDATA[<p>Recently I was playing with <a href="http://aurelia.io">Aurelia</a> SPA framework, which makes heavy use of jspm and SystemJS for modules/packaging. This package manager is new to me, and it looked a bit like magic sometimes. So when I saw a jspm course on Pluralsight, I decided to give it a try. And I did not regret: the course is great. It&#39;s so good, that I decided to write a review for it, even though I have never done that before. </p>
-<p>So, the full course name is &quot;<a href="https://www.pluralsight.com/courses/javascript-systemjs-jspm">Modern, Modular JavaScript with SystemJS and jspm</a>&quot; by Wes Higbee. The topic sounds pretty narrow (compare to something like &quot;Building a Web App with ASP.NET 5, MVC 6, EF7 and AngularJS&quot;), but the video track is surprisingly long: 7.5 hours. And every hour is packed with well structured in-depth material which lays the topic out from A to Z.</p>
-<p>The majority of online courses are focusing on just explaining the <em>What</em>&#39;s of a technology: where you get it, how you start quickly, how you solve typical tasks. Wes does not stop there: he is really focusing on <em>Why</em>&#39;s: not only why we should use ES2015 modules and jspm, but the complete logical flow from the best practices in other programming environments to the module patterns to the tools that enable us use the modern approaches in javascript today. The understanding of this reasoning chain sets the solid ground, and you actually start getting the What&#39;s deeper. </p>
-<p>But Wes goes even further: he mixes the <em>How</em>&#39;s in. I love watching him breaking the stuff to show why it fails and how to fix it. The references to module dependency graphs and internals of the tools are insightful; that&#39;s how &quot;the magic&quot; transforms into the comprehension of modern open source tools and libraries. </p>
-<p>Of course, just watching the course won&#39;t make me an expert in the topic. Now I need to put the knowledge into practice, ask more questions and find answers myself. But I will hopefully save hours of debugging and frustration and will maybe produce better products in the end. Wes and Pluralsight, I definitely need more of courses like this - focused, deep and engaging! </p>
-<p>P.S. It was a bit awkward to watch the course in the office because of solitaire cards being shown on my screen. Not sure what my colleagues thought I was doing ;)</p>
 ]]></content>
     </entry>
     
