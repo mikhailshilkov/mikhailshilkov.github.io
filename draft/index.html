@@ -7,7 +7,7 @@
 
     <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
 
-    <title>Building a Poker Bot: Mouse Movements | Mikhail Shilkov</title>
+    <title>Building a Poker Bot with Akka.NET Actors | Mikhail Shilkov</title>
     <meta name="author" content="Mikhail Shilkov">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
@@ -69,112 +69,113 @@
             <article class="post">
     <div class="post-date">Feb 25th, 2016</div>
     
-    <h1>Building a Poker Bot: Mouse Movements</h1>
+    <h1>Building a Poker Bot with Akka.NET Actors</h1>
     
     <div class="post-content">
-        <p><em>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+        <p><em>This is the fourth part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
 to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
 easy and very enjoyable. Here are the previous parts:</em></p>
 <ul>
 <li><a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
 <li><a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
+<li><a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/"><em>Building a Poker Bot: Mouse Movements</em></a></li>
 </ul>
-<p>In this short post I write about the last step of the poker bot flow: clicking
-the buttons. So, the screen is already recognized, the hand is understood,
-the decisions are made and now the bot needs to execute the actions. Except for
-the bet sizing, this simply means clicking the right button at the poker table.</p>
-<p>The stealthiness of such clicks is a valid concern here. Ideally, we want all
-the mouse movements to look as similar as possible to the movements produced
-by a human being. For this post, I will simplify the task to the following steps:</p>
+<p>This post lays out the most exciting part of the bot. I&#39;ll compose recognition, flow, decision and mouse clicking
+parts together into the bot application. The application is a console executable interacting with multiple 
+windows of poker room software.</p>
+<h2 id="flow">Flow</h2>
+<p>The following picture shows the outline of the application flow:</p>
+<p>(Find tables) -&gt; (Recognize each screen) -&gt; (Understand what happened) -&gt; (Make decision) -&gt; (Click the button)</p>
+<p>Find tables - Every half a second or so we scan the all windows and search for open poker tables among them.
+For each poker table we make a screenshot and send those to recognition.</p>
+<p>Recognize a screen - Parse the data from the screenshot. Check whether it&#39;s our turn to make a play now, what
+the <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">cards</a> and 
+<a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">stacks</a> are, etc.</p>
+<p>Understand what happened - Understand if that&#39;s a new hand or there was a past history before. See
+what your villains did and which new cards we got. Obviously, the history of current hand state should be 
+preserved here.</p>
+<p>Make decision - Here the secret sauce comes to play and produces a move to be made. This is actually the meat
+that makes the whole application useful, but I won&#39;t discuss it in details in this post.</p>
+<p>Click the button - Based on the decision made, click the right buttons. It should be done with proper delays
+and <a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">human-like movements</a> so that the villain
+and poker room don&#39;t understand that it&#39;s bot that is playing.</p>
+<h2 id="let-the-actors-play">Let the Actors Play</h2>
+<p>Because of the multi-tabling that I mentioned, the application is intinsically multi-threaded. At the same time,
+the different parts of the flow are executed at different cadence:</p>
 <ul>
-<li>Identify where the mouse cursor is right now</li>
-<li>Decide where the mouse should be moved to</li>
-<li>Gradually move the mouse cursor</li>
-<li>Click the button</li>
+<li>Finding tables is triggered by time and is single-threaded</li>
+<li>Screen recognition, history detection and decision making run in sequence and can be executed parallely
+for multiple tables</li>
+<li>Clicking the buttons is again single-threaded, and it must syncronize the outputs from the previous steps,
+put them in sequence with appropriate delays</li>
 </ul>
-<h2 id="cursor-position">Cursor Position</h2>
-<p>It&#39;s really easy to understand where the mouse cursor currently is: just
-use <code>Control.MousePosition</code> property from the standard library:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> currentPosition () = 
-  <span class="hljs-keyword">let</span> mp = System.Windows.Forms.Control.MousePosition
-  (mp.X, mp.Y)
-</code></pre>
-<p>Note that your application doesn&#39;t have to be based on WinForms, just reference
-the required assembly.</p>
-<h2 id="move-the-cursor">Move the Cursor</h2>
-<p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
-library to control the mouse and the keyboard programmatically. It uses some
-weird coordinate system, so the function to move the mouse cursor looks like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> simulator = <span class="hljs-keyword">new</span> InputSimulator()
+<p>Here are the other threats of the flow:</p>
+<ul>
+<li>It is reactive and event based</li>
+<li>The flow is unidirectional, the output of one step goes to the input of the next step</li>
+<li>Most steps are stateless, but the history state needs to be preserved and, ideally, isolated from the other
+steps</li>
+</ul>
+<p>This list of features made me pick the Actor-based <a href="http://getakka.net">Akka.NET</a> framework to implement the flow.
+For sure, the application could be done with a bunch of procedural code instead. But I found actors to be
+a useful modeling tecnique to be employed. Also, I was curious how F# and Akka.NET would work together.</p>
+<h2 id="supervision-hierachy">Supervision Hierachy</h2>
+<p>In Akka.NET each actor has a supervisor actor who is managing its lifecycle. All actors together form a
+supervision tree. Here is the tree shown for the Player application:</p>
+<p>(TODO)</p>
+<p>There is just one copy of both Table Finder and Button Clicker actors and they are supervised by the root
+User actor. For each poker table a Recognition actor gets created. These actors are managed by Table 
+Finder. Each Recognizer actor creates an instance of History actors to track the hand history, and each
+History actor creates an instance of Decision actor to make decisions for a given hand history. Finally,
+all decisions are sent to one centralized Clicker actor whose job is to click all the tables with proper
+delays and in order.</p>
+<h2 id="implementation-pattern">Implementation Pattern</h2>
+<p>All actors are implementation using one pattern. Here is the definition of this structure:</p>
+<pre class="highlight"><code class="hljs rust"><span class="hljs-keyword">type</span> <span class="hljs-title">ThisActorMessage</span> = { <span class="hljs-comment">/* fields of the message */</span> }
 
-<span class="hljs-keyword">let</span> moveTo x y =
-  <span class="hljs-keyword">let</span> toX = <span class="hljs-number">65535.</span> * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
-  <span class="hljs-keyword">let</span> toY = <span class="hljs-number">65535.</span> * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
-  simulator.Mouse.MoveMouseTo(toX, toY)
-</code></pre>
-<p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
-the top-left corner of the screen.</p>
-<h2 id="move-it-smoothly">Move It Smoothly</h2>
-<p>Now we want to simulate the human-like movements. It won&#39;t be perfect, but
-at least it should look decent. For this gradual movement function I used
-a nice F# feature called asynchronous workflows. Effectively, it looks like
-a loop with async sleep statements inside.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> moveToWorkflow step (toX, toY) = async {
-  <span class="hljs-keyword">let</span> (fromX, fromY) = currentPosition()
-  <span class="hljs-keyword">let</span> count = Math.Max(<span class="hljs-number">10</span>, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / <span class="hljs-number">20</span>)
-  <span class="hljs-keyword">for</span> i = <span class="hljs-number">0</span> <span class="hljs-keyword">to</span> count <span class="hljs-keyword">do</span>
-    <span class="hljs-keyword">let</span> x = step fromX toX count i |&gt; float
-    <span class="hljs-keyword">let</span> y = step fromY toY count i |&gt; float
-    moveTo x y
-    <span class="hljs-keyword">do</span>! Async.Sleep <span class="hljs-number">3</span>
-  }
-</code></pre>
-<p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
-Basically, it calculates a coordinate for n-th step of the movement. We can
-plug different implementations of this function to find the right balance of
-the movement style. Here is the simplest linear implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> linearStep from until max i =
-  from + (until - from) * i / max
-</code></pre>
-<p>The sinus-based implementation is a bit more verbose because of float-int 
-conversions:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> sinStep (from:int) (until:int) (max:int) (index:int) =
-  <span class="hljs-keyword">let</span> fromf = from |&gt; float
-  <span class="hljs-keyword">let</span> untilf = until |&gt; float
-  <span class="hljs-keyword">let</span> maxf = max |&gt; float
-  <span class="hljs-keyword">let</span> indexf = index |&gt; float
-  fromf + (untilf - fromf) * Math.Sin(Math.PI / <span class="hljs-number">2.</span> * indexf / maxf) |&gt; int
-</code></pre>
-<p>The following animation illustrates the concept: </p>
-<svg width="778" height="190" viewbox="0 0 500 190">
-  <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="mouse_cursor-16.png"></image>
-  <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="mouse_cursor-16.png"></image>
-  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="mouse_cursor-16.png"></image>
+<span class="hljs-keyword">let</span> actor messageProcessingFunction knownReferences =
+  <span class="hljs-comment">// define mutable actor state here</span>
+  <span class="hljs-comment">// ...</span>
+  <span class="hljs-keyword">let</span> imp (mailbox : Actor&lt;'a&gt;) (msg : ThisActorMessage) =    
+    <span class="hljs-keyword">let</span> outputMsg = messageProcessingFunction msg
+    <span class="hljs-comment">// send output message to another actor from known references or internal state</span>
+    <span class="hljs-comment">// ...</span>
+imp
+</code></pre><p>Let&#39;s look at some examples to understand this structure better.</p>
+<h2 id="clicker-actor">Clicker Actor</h2>
+<p>Clicker actor has the simplest implementation beacause it does not send messages to other actors:</p>
+<pre class="highlight"><code class="hljs ocaml"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickTarget</span> </span>= (<span class="hljs-built_in">int</span> * <span class="hljs-built_in">int</span> * <span class="hljs-built_in">int</span> * <span class="hljs-built_in">int</span>)
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickerMessage</span> </span>= {
+  WindowTitle: <span class="hljs-built_in">string</span>
+  Clicks: ClickTarget[]
+}
 
-  <animate xlink:href="#mouse1" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" calcmode="discrete" id="img-anim1"></animate>
-  <animate xlink:href="#mouse2" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"></animate>
-  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate><br></svg>
-
-<p>The top mouse cursor just
-jumps from left to right and back (no animation). The middle cursor moves with
-linear speed (<code>linearStep</code> function above). The bottom cursor moves based on
-the <code>sinStep</code> function derived from sinus of time.</p>
-<h2 id="click-the-button">Click the Button</h2>
-<p>A button is a rectangle and we want to click a random point inside it. So, all
-we need is to pick random coordinates, move the mouse there and send a 
-click event via the simulator:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickButton (minX, minY, maxX, maxY) =
-  <span class="hljs-keyword">let</span> r = <span class="hljs-keyword">new</span> Random()
-  <span class="hljs-keyword">let</span> p = (r.Next(minX, maxX), r.Next(minY, maxY))
-  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
-  simulator.Mouse.LeftButtonClick()
+<span class="hljs-keyword">let</span> clickerActor click =
+  <span class="hljs-keyword">let</span> imp _ (msg: ClickerMessage) = click msg
+  imp
+</code></pre><p>Basically, there are just 3 parts here:</p>
+<ol>
+<li>Clicker Message with window information and targets to be clicked.</li>
+<li>A <code>click</code> function of type <code>ClickerMessage -&gt; unit</code> which executes button clicks with proper
+delays etc.</li>
+<li>The actor implementation <code>imp</code>, which is an adapter function between the type of <code>click</code> and the type 
+that is expected by Akka.NET. The <code>mailbox</code> parameter is ignored.</li>
+</ol>
+<p>Here is how the actor is created:</p>
+<pre class="highlight"><code class="hljs 1c">let clickerRef = 
+  clickerActor click'
+  <span class="hljs-string">|&gt; actorOf2 </span>
+  <span class="hljs-string">|&gt; spawn system "</span>clicker-actor<span class="hljs-string">"</span>
+</code></pre><p>Actor goes under supervision by actor system with <code>click&#39;</code> as message handler.</p>
+<h2 id="recognizer-actor">Recognizer Actor</h2>
+<pre class="highlight"><code class="hljs nimrod"><span class="hljs-keyword">let</span> actor recognize decider =
+  <span class="hljs-keyword">let</span> mutable decideRef = null
+  <span class="hljs-keyword">let</span> imp (mailbox : <span class="hljs-type">Actor</span>&lt;'a&gt;) (window : <span class="hljs-type">WindowInfo</span>) =
+    <span class="hljs-keyword">let</span> <span class="hljs-literal">result</span> = recognize window.<span class="hljs-type">Bitmap</span>
+    <span class="hljs-keyword">if</span> decideRef = null then decideRef &lt;- spawn mailbox.<span class="hljs-type">Context</span> <span class="hljs-string">"decide-actor"</span> (actorOf2 &lt;| decider)
+    decideRef &lt;! { <span class="hljs-type">WindowTitle</span> = window.<span class="hljs-type">Title</span>; <span class="hljs-type">TableName</span> = window.<span class="hljs-type">TableName</span>; <span class="hljs-type">Screen</span> = <span class="hljs-literal">result</span>; <span class="hljs-type">Bitmap</span> = window.<span class="hljs-type">Bitmap</span> }
+  imp
 </code></pre>
-<h2 id="demo-time">Demo Time</h2>
-<p>Here is the demo of the mouse movements:</p>
-<p><img src="/draft/mouseclicking.gif" alt="Mouse clicking the button"></p>
-<p>It looks fun, doesn&#39;t it? The full code for the mouse movements can be found in 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
-
     </div>
 
     
@@ -189,7 +190,7 @@ click event via the simulator:</p>
 
     
     <div class="post-tags">
-        Posted In: <a href='/tags/poker-bot/'>poker bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/human-like-behavior/'>human-like behavior</a>
+        Posted In: <a href='/tags/poker-bot/'>poker bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/akka.net/'>akka.net</a>, <a href='/tags/actors/'>actors</a>
     </div>
     
 </article>
@@ -211,7 +212,7 @@ click event via the simulator:</p>
     var disqus_shortname = 'mikhailio';
     var disqus_url = 'http://mikhail.io/draft';
     var disqus_identifier = disqus_url;
-    var disqus_title = 'Building a Poker Bot: Mouse Movements';
+    var disqus_title = 'Building a Poker Bot with Akka.NET Actors';
 
     (function() {
         var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;

@@ -3,13 +3,132 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-03-01T08:53:44.664Z</updated>
+    <updated>2016-03-11T13:48:38.441Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Aurelia Map Component with Leaflet</title>
+        <link href="http://mikhail.io/2016/03/aurelia-map-component-with-leaflet"/>
+        <updated>2016-03-11T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-03-11,/2016/03/aurelia-map-component-with-leaflet</id>
+        <content type="html"><![CDATA[<p>This is a short tutorial on how to create a map control in <a href="http://aurelia.io">Aurelia.js</a> 
+application. I am using the <a href="http://leafletjs.com">Leaflet</a> library with custom tile
+source and I also show the way to implement your own overlay layer. Here is what
+my map looks like:</p>
+<p><img src="http://mikhail.io/2016/03/aurelia-map-component-with-leaflet/map.png" alt="Map"></p>
+<p>So, I assume you already have an existing aurelia application, and let&#39;s start.</p>
+<h2 id="install-leaflet">Install Leaflet</h2>
+<p>The following command will install Leaflet module to the application:</p>
+<pre class="highlight"><code class="hljs cmake">jspm <span class="hljs-keyword">install</span> leaflet
+</code></pre><p>If you are using TypeScript, don&#39;t forget to add type definitions</p>
+<pre class="highlight"><code class="hljs cmake">tsd <span class="hljs-keyword">install</span> leaflet
+</code></pre><h2 id="define-a-map-component">Define a Map Component</h2>
+<p>Create a new <code>map.html</code> file and put the following contents there:</p>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-title">template</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">require</span> <span class="hljs-attribute">from</span>=<span class="hljs-value">"leaflet/dist/leaflet.css"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">require</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">div</span> <span class="hljs-attribute">id</span>=<span class="hljs-value">"mapid"</span> <span class="hljs-attribute">style</span>=<span class="hljs-value">"height: 100%"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">div</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-title">template</span>&gt;</span>
+</code></pre>
+<p>We import the CSS required by leaflet and define the <code>div</code> element to host
+the map in. Then, create a new <code>map.js</code> file (or <code>map.ts</code> for typescript),
+here is the minimum code:</p>
+<pre class="highlight"><code class="hljs javascript">export <span class="hljs-keyword">class</span> Map {
+}
+</code></pre>
+<h2 id="load-the-map-with-tiles">Load the Map with Tiles</h2>
+<p>First, import the leaflet module in your codebehind:</p>
+<pre class="highlight"><code class="hljs javascript">import * as L from <span class="hljs-string">'leaflet'</span>;
+</code></pre>
+<p>Now, define the <code>attached</code> function, which would be called by Aurelia when
+control&#39;s HTML is loaded, and make a map there:</p>
+<pre class="highlight"><code class="hljs javascript">export <span class="hljs-keyword">class</span> Map {
+  attached() {
+    <span class="hljs-keyword">let</span> map = L.map(<span class="hljs-string">'mapid'</span>).setView([<span class="hljs-number">51.505</span>, -<span class="hljs-number">0.09</span>], <span class="hljs-number">13</span>);
+
+    <span class="hljs-keyword">let</span> urlTemplate = <span class="hljs-string">'http://{s}.tile.osm.org/{z}/{x}/{y}.png'</span>;
+    map.addLayer(L.tileLayer(urlTemplate, { minZoom: <span class="hljs-number">4</span> }));
+  }
+}
+</code></pre>
+<p>The example above uses the URL template of Open Street Maps as per the Leaflet&#39;s
+tutorial, but I needed to use our privately hosted maps, so I changed it to
+something like:</p>
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">let</span> urlTemplate = <span class="hljs-string">'http://www.mysite.com/tiles?layer=background&amp;level={z}&amp;x={x}&amp;y={y}'</span>;
+map.addLayer(L.tileLayer(urlTemplate, { minZoom: <span class="hljs-number">4</span>, zoomOffset: <span class="hljs-number">8</span> }));
+</code></pre>
+<p>The <code>zoomOffset</code> parameter was required to fix impedence mismatch of zoom levels.</p>
+<h2 id="custom-overlay-layer">Custom Overlay Layer</h2>
+<p>For our custom maps we needed to show two layers on top of each other:</p>
+<ul>
+<li>The usual tile layer for the map background</li>
+<li>The overlay layer for the map labels and additional information</li>
+</ul>
+<p>The overlay layer can&#39;t be broken down into tiles (not supported by our map provider),
+so we need to show the whole layer as a single picture and then refresh it every
+time user pans or zooms the map.</p>
+<p>The overlay layer can be implemented with <code>onAdd</code> and <code>onRemove</code> functions
+and then feeding an image element to the Leaflet as a layer. Here is the code:</p>
+<pre class="highlight"><code class="hljs javascript">import * as L from <span class="hljs-string">'leaflet'</span>;
+
+export <span class="hljs-keyword">class</span> LabelOverlayLayer {
+  map;
+  image;
+
+  onAdd(map) {
+    <span class="hljs-keyword">this</span>.map = map;
+
+    <span class="hljs-keyword">this</span>.image = L.DomUtil.create(<span class="hljs-string">'img'</span>, <span class="hljs-string">'leaflet-tile-loaded'</span>);
+    map.getPanes().overlayPane.appendChild(<span class="hljs-keyword">this</span>.image);
+
+    map.on(<span class="hljs-string">'moveend'</span>, <span class="hljs-keyword">this</span>.render, <span class="hljs-keyword">this</span>);
+    <span class="hljs-keyword">this</span>.render();
+  }
+
+  onRemove (map) {
+    map.getPanes().overlayPane.removeChild(<span class="hljs-keyword">this</span>.image);
+    map.off(<span class="hljs-string">'moveend'</span>, <span class="hljs-keyword">this</span>.render, <span class="hljs-keyword">this</span>);
+  }
+
+  render() {
+    <span class="hljs-keyword">let</span> bounds = <span class="hljs-keyword">this</span>.map.getBounds(), mapSize = <span class="hljs-keyword">this</span>.map.getSize();
+    <span class="hljs-keyword">let</span> se = bounds.getSouthEast(), nw = bounds.getNorthWest();
+
+    <span class="hljs-keyword">let</span> tileUrl = `http:<span class="hljs-comment">//www.mysite.com/tiles?layer=labels&amp;lonmin=${nw.lng}&amp;latmin=${se.lat}&amp;lonmax=${se.lng}&amp;latmax=${nw.lat}&amp;width=${Math.floor(mapSize.x)}&amp;height=${Math.floor(mapSize.y)}`;</span>
+    <span class="hljs-keyword">this</span>.image.src = tileUrl;
+
+    <span class="hljs-keyword">let</span> pos = <span class="hljs-keyword">this</span>.map.latLngToLayerPoint(nw);
+    L.DomUtil.setPosition(<span class="hljs-keyword">this</span>.image, pos, <span class="hljs-literal">false</span>);
+  }
+};
+</code></pre>
+<p>The usage of this layer in the map component is trivial:</p>
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">this</span>.map.addLayer(<span class="hljs-keyword">new</span> LabelOverlayLayer());
+</code></pre>
+<h2 id="use-the-map-component">Use the Map Component</h2>
+<p>The map component is ready to be used in the application:</p>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-title">require</span> <span class="hljs-attribute">from</span>=<span class="hljs-value">"./components/map"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">require</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-title">div</span>  <span class="hljs-attribute">style</span>=<span class="hljs-value">"height: 700px"</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">map</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">map</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-title">div</span>&gt;</span>
+</code></pre>
+<p>The container around the map should have a non-zero height, so I made it fixed
+in the example above.</p>
+<p>Don&#39;t forget to bundle the leaflet assets by including the following lines
+into your <code>bundles.json</code>:</p>
+<pre class="highlight"><code class="hljs undefined">"includes": [
+  "aurelia-framework",
+  // ...
+  "leaflet",
+  "leaflet/dist/leaflet.css!text"
+],
+</code></pre>
+]]></content>
+    </entry>
     
     <entry>
         <title>Building a Poker Bot: Mouse Movements</title>
@@ -1445,49 +1564,6 @@ PM&gt; Install-Package Equals.Fody
     Vehicle : Vehicle }
 </code></pre>
 <p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Deploy your SPA to Azure</title>
-        <link href="http://mikhail.io/2015/12/deploy-your-spa-to-azure"/>
-        <updated>2015-12-14T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2015-12-14,/2015/12/deploy-your-spa-to-azure</id>
-        <content type="html"><![CDATA[<p>In this post I want to share a simple tutorial on how to deploy your single page application into the Azure cloud.</p>
-<h2 id="the-goal">The goal</h2>
-<p>Here is the initial setup:</p>
-<ul>
-<li><p>I have a Single Page Application (SPA) done with HTML/JavaScript in a separate local Git repository</p>
-</li>
-<li><p>I have a ASP.NET 4.6 Web API service which serves the data for SPA in another local Git repository</p>
-</li>
-<li><p>Now I want to deploy both to the Azure cloud, and make it easy to deploy changes in the future</p>
-</li>
-</ul>
-<h2 id="the-solution">The solution</h2>
-<p>We will deploy our application to Azure Cloud Services / Web application.</p>
-<ol>
-<li><p>Go to <a href="https://portal.azure.com">Azure Portal</a> then <code>App Services -&gt; Add</code> and follow the wizard to create your Web app. Here is mine:
-<img src="http://mikhail.io/2015/12/deploy-your-spa-to-azure/azurewebapp.jpg" alt="Azure web app"></p>
-</li>
-<li><p>Follow <a href="https://azure.microsoft.com/en-us/documentation/articles/web-sites-publish-source-control/">this guide</a> to create a new Git repository and setup continuous deployment from this repository to Azure web application. You are good once you see this working (step 6):
-<img src="http://mikhail.io/2015/12/deploy-your-spa-to-azure/git-hello-git.png" alt="Hello git running in Azure"></p>
-</li>
-<li><p>Copy your SPA files into the root of the new Git repository, here is my repo after I did that:
-<img src="http://mikhail.io/2015/12/deploy-your-spa-to-azure/spa-copied-to-repo.jpg" alt="SPA files in the repo">
-and push them to <code>azure</code> remote. Now you should be able to browse to the web app and see your SPA screen, but with all calls to Web API failing.</p>
-</li>
-<li><p>Inside your new Git repository, create a sub-folder to host Web API services. My SPA expects them under <code>/api</code> folder, so that&#39;s the folder name that I created:
-<img src="http://mikhail.io/2015/12/deploy-your-spa-to-azure/webapi-copied-to-repo.jpg" alt="Web API files in the repo"></p>
-</li>
-<li><p>Copy your binary compiled files of your Web API to <code>/api</code> sub-folder. This includes the bin folder, config files, asax files etc - whatever you would need in your local IIS deployment. DO NOT copy the sln/csproj files, otherwise the Azure will also try to do the compilation himself and will change the root of your web application to the folder with csproj files. So, my <code>/api</code> folder looks like this:
-<img src="http://mikhail.io/2015/12/deploy-your-spa-to-azure/api-folder.jpg" alt="Web API folder contents"></p>
-</li>
-<li><p>Commit the changes and Git push to <code>azure</code> remote. Once the files are deployed, your SPA app should be up and running. Well done!</p>
-</li>
-<li><p>You don&#39;t want to copy the files manually all the time, so make a PowerShell script or gulp task to do that for you. Remember, your changes will be applied whenever you push a new version to <code>azure</code> remote of your Git repo.</p>
-</li>
-</ol>
 ]]></content>
     </entry>
     
