@@ -3,13 +3,190 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-03-21T08:37:34.983Z</updated>
+    <updated>2016-04-09T18:53:16.367Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Building a Poker Bot with Akka.NET Actors</title>
+        <link href="http://mikhail.io/2016/04/building-a-poker-bot-with-akka-net-actors"/>
+        <updated>2016-04-09T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-04-09,/2016/04/building-a-poker-bot-with-akka-net-actors</id>
+        <content type="html"><![CDATA[<p><em>This is the fourth part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
+easy and very enjoyable. Here are the previous parts:</em></p>
+<ul>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
+<li><a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/"><em>Building a Poker Bot: Mouse Movements</em></a></li>
+</ul>
+<p>This post lays out the most exciting part of the bot. I&#39;ll compose the recognition, flow, decision and mouse clicking
+parts together into the bot application. The application is a console executable interacting with multiple 
+windows of poker room software.</p>
+<h2 id="flow">Flow</h2>
+<p>The following picture shows the outline of the application data flow:</p>
+<p><img src="http://mikhail.io/2016/04/building-a-poker-bot-with-akka-net-actors/pokeractors.png" alt="Actor Diagram"></p>
+<p><strong>Find Tables</strong> - Every half a second or so we scan all the windows and search for open poker tables among them.
+For each poker table we make a screenshot and send those to recognition.</p>
+<p><strong>Recognize Screen</strong> - Parse the data from the screenshot. Check whether it&#39;s our turn to make a play now, what
+the <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">hole cards</a> and 
+<a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">stacks</a> are, produce the detailed
+screen information and send it to decision maker.</p>
+<p><strong>Make Decision</strong> - Understand if that&#39;s a new hand or there was a past history before. See
+what the villains did and which new cards we got. Here the secret sauce comes to play and produces 
+a move to be made. Send the action to the mouse clicker.</p>
+<p><strong>Click Buttons</strong> - Based on the decision made, click the right buttons. It should be done with proper delays
+and <a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">human-like movements</a> so that the villain
+and poker room don&#39;t understand that it&#39;s bot who is playing.</p>
+<hr>
+<h2 id="let-the-actors-play">Let the Actors Play</h2>
+<p>Because of the multi-tabling, the application is intrinsically multi-threaded. At the same time,
+the different parts of the flow are executed at different cadence:</p>
+<ul>
+<li>Finding tables is triggered by time and is single-threaded</li>
+<li>Screen recognition, history detection and decision making run in sequence and can be executed in parallel
+for multiple tables</li>
+<li>Clicking the buttons is again single-threaded, as it must synchronize the outputs from the previous steps,
+put them in sequence with appropriate delays</li>
+</ul>
+<p>Here are the other treats of the flow:</p>
+<ul>
+<li>It is reactive and event based</li>
+<li>The flow is unidirectional, the output of one step goes to the input of the next step</li>
+<li>Most steps are stateless, but the history state needs to be preserved and, ideally, isolated from the other
+steps</li>
+</ul>
+<p>This list of features made me pick the Actor-based <a href="http://getakka.net">Akka.NET</a> framework to implement the flow.</p>
+<p>For sure, the application could be done with a bunch of procedural code instead. 
+But I found actors to be a useful modeling technique to be employed. 
+It goes well with reactive nature of the application and builds the nice 
+foundation for more complicated scenarios in the future.</p>
+<p>Also, I was curious how F# and Akka.NET would work together.</p>
+<h2 id="supervision-hierachy">Supervision Hierachy</h2>
+<p>In Akka.NET each actor has a supervisor actor who is managing its lifecycle. All actors together form a
+supervision tree. Here is the tree shown for the Player application:</p>
+<p><img src="http://mikhail.io/2016/04/building-a-poker-bot-with-akka-net-actors/actorhierachy.png" alt="Actor Hierachy"></p>
+<p>There is just one copy of both Table Finder and Button Clicker actors and they are supervised by the root
+User actor. </p>
+<p>For each poker table a Recognizer actor gets created. These actors are managed by Table 
+Finder. </p>
+<p>Each Recognizer actor creates an instance of Decision actor who keeps the hand history
+and makes decisions. </p>
+<p>Finally, all decisions are sent to one centralized Button Clicker actor whose job is 
+to click all the tables with proper delays and in order.</p>
+<hr>
+<h2 id="implementation-patterns">Implementation Patterns</h2>
+<p>All actors are implemented with <a href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">Functional Actor Patterns</a>
+which are described in <a href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">my previous post</a>.</p>
+<p>The basic idea is that each actor is defined in functional style with these
+building blocks:</p>
+<ul>
+<li>Type of incoming and, if needed, outgoing messages</li>
+<li>A domain function with business logic</li>
+<li>Actor function which puts those parts together</li>
+<li>Expression to spawn an actor based on actor function</li>
+</ul>
+<p>Let&#39;s look at the examples to understand this structure better.</p>
+<h2 id="table-finder">Table Finder</h2>
+<p>Table Finder does not have any meaningful input message. It gets a message from
+Akka.NET scheduling system just to be periodically activated.</p>
+<p>The domain function is called <code>findWindows</code> and has the type <code>unit -&gt; WindowInfo seq</code>.
+It returns the poker window screenshots and titles.</p>
+<p>Actor function of type <code>int -&gt; seq&lt;string * WindowInfo&gt;</code> is used by the 
+<a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to 
+define the behavior. The ouput tuple defines an ID of an output actor and a
+message to send to it:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> findActor msg = 
+  findWindows ()
+  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; (<span class="hljs-string">"recognizer-actor-"</span> + x.TableName, x))
+</code></pre>
+<p>Here is how I spawn the singleton instance of this actor:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tableFinderRef = 
+  actorOfRouteToChildren findActor (spawnChild recognizer)
+  |&gt; spawn system <span class="hljs-string">"table-finder-actor"</span>
+</code></pre>
+<p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
+<code>spawn</code> function with proper parameter order:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> spawnChild childActor name (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) = 
+  spawn mailbox.Context name childActor
+</code></pre>
+<p>We can also extend it to debug messages when new actors get created.</p>
+<h2 id="recognizer">Recognizer</h2>
+<p>Recognizer receives the <code>WindowInfo</code> produced by the Table Finder.</p>
+<p>The domain function has the type of <code>Bitmap -&gt; Screen</code>. You can read more about table
+recognition in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Part 1</a> and
+<a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">Part 2</a>
+of these series.</p>
+<p>Actor function is an implementation of 
+<a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern. 
+The output is a decision message for Decision Maker actor which is a supervised 
+child of the Recognizer. Here is the actor function:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeActor (window : WindowInfo) =
+  <span class="hljs-keyword">let</span> result = recognize window.Bitmap
+  { WindowTitle = window.Title 
+    TableName = window.TableName 
+    Screen = result 
+    Bitmap = window.Bitmap }
+</code></pre>
+<p>And here is the spawn function:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizer = actorOfConvertToChild recognizeActor (spawnChild decider <span class="hljs-string">"decider"</span>)
+</code></pre>
+<p>Notice how this expression was used in Table Finder instantiation above.</p>
+<h2 id="decision-maker">Decision Maker</h2>
+<p>Decision Maker actor function is an implementation of 
+<a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#StatefulConverter">Stateful Converter</a> pattern. It receives
+a decision message from a Recognizer. The output is a click message for a 
+singleton Clicker actor. It also needs to preserve some state between two calls.
+In the minimalistic implementation this state holds the previous screen that
+it received, so that if the same message is received twice, the later message is 
+ignored.</p>
+<p>This way the actor function has the type of 
+<code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code> 
+and looks like this:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decisionActor msg lastScreen =
+  <span class="hljs-keyword">let</span> screen = msg.Screen
+  <span class="hljs-keyword">match</span> lastScreen <span class="hljs-keyword">with</span>
+  | Some s <span class="hljs-keyword">when</span> s = screen -&gt; (None, lastScreen)
+  | _ -&gt;
+    <span class="hljs-keyword">let</span> action = decide screen
+    <span class="hljs-keyword">let</span> outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
+    (Some outMsg, Some screen)
+</code></pre>
+<p>Here is the spawn function:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decider = actorOfStatefulConvert decisionActor None clickerRef
+</code></pre>
+<p>where <code>None</code> represents the initial state.</p>
+<h2 id="button-clicker">Button Clicker</h2>
+<p>Clicker actor has the simplest implementation because it does not send messages to other actors.
+Here is the message that it receives from Decision Maker:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickTarget</span> </span>= (int * int * int * int)
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickerMessage</span> </span>= {
+  WindowTitle: string
+  Clicks: ClickTarget[]
+}
+</code></pre>
+<p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
+clicks as side effect. You can read more about the mouse movements in 
+<a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">Part 3</a>
+of these series.</p>
+<p><a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
+pattern is used for this actor, so actor function isn&#39;t
+really needed. We spawn the singleton instance with the following statement:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickerRef = actorOfSink click |&gt; spawn system <span class="hljs-string">"clicker-actor"</span>
+</code></pre>
+<p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>The top layer of poker player application is composed of small single-purpose
+actors which talk to each other by sending messages. </p>
+<p>Thanks to succinct F# language and functional actor patterns this layer is
+very thin, and thus easy to understand and maintain. </p>
+<p>The business logic is isolated and by itself has no dependency on Akka.NET.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Functional Actor Patterns with Akka.NET and F#</title>
@@ -60,6 +237,7 @@ define </p>
 <li>an example of actor instantiation using the two functions above</li>
 </ul>
 <hr>
+<p><a name="MessageSink" href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
 <h2 id="message-sink">Message Sink</h2>
 <p>Stateless Message Sink is the simplest type of actor.</p>
 <p><img src="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/messagesink.png" alt="Message Sink actor"></p>
@@ -89,6 +267,7 @@ printActorRef &lt;! <span class="hljs-number">3</span>
 <p>That&#39;s the simplicity that I&#39;m searching for. Let&#39;s look at a slightly more
 complex example.</p>
 <hr>
+<p><a name="Converter" href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
 <h2 id="converter">Converter</h2>
 <p>Stateless Converter maps the incoming message into another message and sends
 it to another predefined actor.</p>
@@ -157,6 +336,7 @@ printActorRef &lt;! <span class="hljs-number">4</span>
 <span class="hljs-comment">// "Message [2] received: 4" is printed</span>
 </code></pre>
 <hr>
+<p><a name="StatefulConverter" href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
 <h2 id="stateful-converter">Stateful Converter</h2>
 <p>By now, the core function of the Stateful Converter actor should be a no-brainer for you. The actor
 would have two input parameters and two outputs (in a tuple). One of the outputs
@@ -195,6 +375,7 @@ squareAndSumActorRef &lt;! <span class="hljs-number">4</span>
 <span class="hljs-comment">// "Message [2] received: 25" is printed</span>
 </code></pre>
 <hr>
+<p><a name="ConverterSupervisor" href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
 <h2 id="converter-supervisor">Converter-Supervisor</h2>
 <p>In the previous patterns the Converter actors were sending messages 
 to predefined actor references which were not managed (or supervised in Akka terms)
@@ -238,6 +419,7 @@ completely separated from the business logic of the actors.</p>
 (<code>g</code>-actor):</p>
 <p><img src="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/multiparents.png" alt="Multiple Parents and Children actor"></p>
 <hr>
+<p><a name="RouterSupervisor" href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
 <h2 id="router-supervisor">Router-Supervisor</h2>
 <p>Routers are the kind of actors which forward each incoming message to one
 or more downstream actors. In this example the downstream actors are supervised
@@ -1517,141 +1699,6 @@ limit your choice of communication patterns</p>
 take the defaults for granted</p>
 </li>
 </ul>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Validation with Either data type in C#</title>
-        <link href="http://mikhail.io/2016/01/validation-with-either-data-type-in-csharp"/>
-        <updated>2016-01-06T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2016-01-06,/2016/01/validation-with-either-data-type-in-csharp</id>
-        <content type="html"><![CDATA[<p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
-code more expressive and easier to maintain.</p>
-<h2 id="problem">Problem</h2>
-<p>Let&#39;s say we get a request from some client code and we need to check if this
-request is actually valid. If it&#39;s not valid, we want to make a detailed description
-of the problems that we identified. If it is valid, we want to produce a response
-about the successful acceptance of the request. Let&#39;s define the classes:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Request</span> { ... }
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span> { ... }
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ValidationError</span> { ... }
-</code></pre>
-<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
-or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
-<h2 id="throw-an-exception">Throw an exception</h2>
-<p>Validation <em>error</em> sounds like it could be an exception:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r)</span>
-</span>{
-   <span class="hljs-keyword">if</span> (!Valid(r))
-       <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ValidationException</span><span class="hljs-params">(<span class="hljs-keyword">new</span> ValidationError(...)</span>)</span>;
-
-   <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
-}
-</code></pre>
-<p>This approach is really bad though. You have to declare a special exception
-class to hold the validation error. But even worse, exception handling is not
-explicit - you don&#39;t see the exception type when you look at method signature.
-Client processing code is going to be messed up because of exception handling.
-Never use exceptions for your business logic flow.</p>
-<h2 id="output-parameter">Output parameter</h2>
-<p>We could make an output parameter of <code>ValidationError</code> type:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r, <span class="hljs-keyword">out</span> ValidationError error)</span>
-</span>{
-    <span class="hljs-keyword">if</span> (Valid(r))
-    { 
-        error = <span class="hljs-keyword">new</span> ValidationError(...);
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
-    }
-
-    error = <span class="hljs-keyword">null</span>;
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
-}
-</code></pre>
-<p>Now the interface is more explicit: client won&#39;t be able to completely ignore
-the fact that an error is possible. But output parameters are not really
-easy to use in C#, especially in fluent-style client code. Moreover, we are
-using nulls as a way to represent missing object, which is a smell by itself,
-because nulls are not explicit. Never use nulls in your business logic.</p>
-<h2 id="return-the-combined-result">Return the combined result</h2>
-<p>We could declare a container class which would keep both <code>Response</code> and 
-<code>ValidationError</code>, and then return it from the method.</p>
-<pre class="highlight"><code class="hljs undefined">public class Both&lt;TData, TError&gt;
-{
-    public TData Data { get; set; }
-    public TErrro Error { get; set; }
-}
-...
-public Both&lt;Response, ValidationError&gt; Validate(Request r)
-{
-    return Valid(r) 
-        ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
-        : new Both&lt;Response, ValidationError&gt; { Data = new ValidationError(...) };
-}
-</code></pre>
-<p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
-and output parameters, but we still use null for result state representation.
-Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
-<h2 id="introducing-either">Introducing Either</h2>
-<p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
-with just one of them. When constructing an object, you can specify either
-a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
-<pre class="highlight"><code class="hljs undefined">public class Either&lt;TL, TR&gt;
-{
-    private readonly TL left;
-    private readonly TR right;
-    private readonly bool isLeft;
-
-    public Either(TL left)
-    {
-        this.left = left;
-        this.isLeft = true;
-    }
-
-    public Either(TR right)
-    {
-        this.right = right;
-        this.isLeft = false;
-    }
-}
-</code></pre>
-<p>Now, the main difference is in how the client uses it. There are no properties
-to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
-    =&gt; <span class="hljs-keyword">this</span>.isLeft ? leftFunc(<span class="hljs-keyword">this</span>.left) : rightFunc(<span class="hljs-keyword">this</span>.right);
-</code></pre>
-<p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
-is specified, <code>Match</code> will return the result of the left function, otherwise the result
-of the right function.</p>
-<p>Another improvement would be to create explicit operators for easy conversions
-from left and right types:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TL left) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(left);
-
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TR right) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(right);
-</code></pre>
-<p>Let&#39;s have a look at a complete example.</p>
-<h2 id="why-it-s-great">Why it&#39;s great</h2>
-<p>Here is the service code written with <code>Either</code>:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Either&lt;Response, ValidationError&gt; Validate(Request r)
-{
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-title">Valid</span><span class="hljs-params">(r)</span> 
-        ? Data </span>= <span class="hljs-keyword">new</span> Response(r)
-        : <span class="hljs-keyword">new</span> ValidationError(...);
-}
-</code></pre>
-<p>Clean and nice! Now a simplistic client:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> validated = service.Validate(request);
-Console.WriteLine(
-    validated.Match(
-        result =&gt; $<span class="hljs-string">"Success: {result}"</span>,
-        error =&gt; $<span class="hljs-string">"Error: {error}"</span>)
-    );
-</code></pre>
-<p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
-validation may fail.</p>
-<h2 id="show-me-the-code">Show me the code</h2>
-<p>You can find the definition of <code>Either</code> class in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Either%7BTL%2CTR%7D.cs">github repo</a>.</p>
-<p><strong>Update.</strong> Here is a link to an awesome talk on this topic: 
-<a href="https://vimeo.com/113707214">Railway oriented programming: Error handling in functional languages by Scott Wlaschin</a></p>
 ]]></content>
     </entry>
     
