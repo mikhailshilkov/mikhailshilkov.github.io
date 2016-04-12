@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.4" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">.NET, SQL and Javascript programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                <li><a href="/">Blog</a></li>
+                <li><a href="/about">About</a></li>
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="http://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="http://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    
+    <article class="post">
+    <div class="post-date">Jan 6th, 2016</div>
+    
+    <h1><a href='/2016/01/validation-with-either-data-type-in-csharp'>Validation with Either data type in C#</a></h1>
+    
+    <div class="post-content">
+        <p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
+code more expressive and easier to maintain.</p>
+<h2 id="problem">Problem</h2>
+<p>Let&#39;s say we get a request from some client code and we need to check if this
+request is actually valid. If it&#39;s not valid, we want to make a detailed description
+of the problems that we identified. If it is valid, we want to produce a response
+about the successful acceptance of the request. Let&#39;s define the classes:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Request</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ValidationError</span> { ... }
+</code></pre>
+<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
+or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
+<h2 id="throw-an-exception">Throw an exception</h2>
+<p>Validation <em>error</em> sounds like it could be an exception:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r)</span>
+</span>{
+   <span class="hljs-keyword">if</span> (!Valid(r))
+       <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ValidationException</span><span class="hljs-params">(<span class="hljs-keyword">new</span> ValidationError(...)</span>)</span>;
+
+   <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+}
+</code></pre>
+<p>This approach is really bad though. You have to declare a special exception
+class to hold the validation error. But even worse, exception handling is not
+explicit - you don&#39;t see the exception type when you look at method signature.
+Client processing code is going to be messed up because of exception handling.
+Never use exceptions for your business logic flow.</p>
+<h2 id="output-parameter">Output parameter</h2>
+<p>We could make an output parameter of <code>ValidationError</code> type:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r, <span class="hljs-keyword">out</span> ValidationError error)</span>
+</span>{
+    <span class="hljs-keyword">if</span> (Valid(r))
+    { 
+        error = <span class="hljs-keyword">new</span> ValidationError(...);
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+    }
+
+    error = <span class="hljs-keyword">null</span>;
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+}
+</code></pre>
+<p>Now the interface is more explicit: client won&#39;t be able to completely ignore
+the fact that an error is possible. But output parameters are not really
+easy to use in C#, especially in fluent-style client code. Moreover, we are
+using nulls as a way to represent missing object, which is a smell by itself,
+because nulls are not explicit. Never use nulls in your business logic.</p>
+<h2 id="return-the-combined-result">Return the combined result</h2>
+<p>We could declare a container class which would keep both <code>Response</code> and 
+<code>ValidationError</code>, and then return it from the method.</p>
+<pre class="highlight"><code class="hljs undefined">public class Both&lt;TData, TError&gt;
+{
+    public TData Data { get; set; }
+    public TErrro Error { get; set; }
+}
+...
+public Both&lt;Response, ValidationError&gt; Validate(Request r)
+{
+    return Valid(r) 
+        ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
+        : new Both&lt;Response, ValidationError&gt; { Data = new ValidationError(...) };
+}
+</code></pre>
+<p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
+and output parameters, but we still use null for result state representation.
+Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
+<h2 id="introducing-either">Introducing Either</h2>
+<p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
+with just one of them. When constructing an object, you can specify either
+a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
+<pre class="highlight"><code class="hljs undefined">public class Either&lt;TL, TR&gt;
+{
+    private readonly TL left;
+    private readonly TR right;
+    private readonly bool isLeft;
+
+    public Either(TL left)
+    {
+        this.left = left;
+        this.isLeft = true;
+    }
+
+    public Either(TR right)
+    {
+        this.right = right;
+        this.isLeft = false;
+    }
+}
+</code></pre>
+<p>Now, the main difference is in how the client uses it. There are no properties
+to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
+    =&gt; <span class="hljs-keyword">this</span>.isLeft ? leftFunc(<span class="hljs-keyword">this</span>.left) : rightFunc(<span class="hljs-keyword">this</span>.right);
+</code></pre>
+<p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
+is specified, <code>Match</code> will return the result of the left function, otherwise the result
+of the right function.</p>
+<p>Another improvement would be to create explicit operators for easy conversions
+from left and right types:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TL left) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(left);
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TR right) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(right);
+</code></pre>
+<p>Let&#39;s have a look at a complete example.</p>
+<h2 id="why-it-s-great">Why it&#39;s great</h2>
+<p>Here is the service code written with <code>Either</code>:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Either&lt;Response, ValidationError&gt; Validate(Request r)
+{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-title">Valid</span><span class="hljs-params">(r)</span> 
+        ? Data </span>= <span class="hljs-keyword">new</span> Response(r)
+        : <span class="hljs-keyword">new</span> ValidationError(...);
+}
+</code></pre>
+<p>Clean and nice! Now a simplistic client:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> validated = service.Validate(request);
+Console.WriteLine(
+    validated.Match(
+        result =&gt; $<span class="hljs-string">"Success: {result}"</span>,
+        error =&gt; $<span class="hljs-string">"Error: {error}"</span>)
+    );
+</code></pre>
+<p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
+validation may fail.</p>
+<h2 id="show-me-the-code">Show me the code</h2>
+<p>You can find the definition of <code>Either</code> class in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Either%7BTL%2CTR%7D.cs">github repo</a>.</p>
+<p><strong>Update.</strong> Here is a link to an awesome talk on this topic: 
+<a href="https://vimeo.com/113707214">Railway oriented programming: Error handling in functional languages by Scott Wlaschin</a></p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/functional-programming/'>functional programming</a>, <a href='/tags/clean-code/'>clean code</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Dec 22nd, 2015</div>
+    
+    <h1><a href='/2015/12/weaving-your-domain-classes-with-fody'>Weaving your domain classes with Fody</a></h1>
+    
+    <div class="post-content">
+        <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive cruft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> trip = <span class="hljs-keyword">new</span> Trip(
+    origin: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Paris"</span>, geoParis), 
+    destination: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Amsterdam"</span>, geoAmsterdam),
+    vehicle: <span class="hljs-keyword">new</span> Vehicle(<span class="hljs-string">"TBL-12-H"</span>, Type.HeavyTruck)
+</code></pre>
+<p>Let&#39;s include these requirements as parts of our trip model:</p>
+<ul>
+<li>It has a constructor which accepts three arguments (see above)</li>
+<li>It has 3 read-only properties which are assigned from constructor parameters</li>
+<li>It should not allow null values to be assigned to these properties via constructor</li>
+<li>It should be a Value object, that is two objects with same properties should be equal</li>
+</ul>
+<h2 id="initial-version">Initial version</h2>
+<p>First, let&#39;s implement these requirement in a usual way:</p>
+<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+{
+    public Trip(Location origin, Location destination, Vehicle vehicle)
+    {
+        if (origin == null) throw new ArgumentNullException(nameof(origin));
+        if (destination == null) throw new ArgumentNullException(nameof(destination));
+        if (vehicle == null) throw new ArgumentNullException(nameof(vehicle));
+
+        this.Origin = origin;
+        this.Destination = destination;
+        this.Vehicle = vehicle;
+    }
+
+    public Location Origin { get; }
+    public Location Destination { get; }
+    public Vehicle Vehicle { get; }
+
+    public bool Equals(Trip other)
+    {
+        return Equals(this.Origin, other.Origin) 
+            &amp;&amp; Equals(this.Destination, other.Destination) 
+            &amp;&amp; Equals(this.Vehicle, other.Vehicle);
+    }
+
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(null, obj))
+        {
+            return false;
+        }
+        if (ReferenceEquals(this, obj))
+        {
+            return true;
+        }
+        if (obj.GetType() != this.GetType())
+        {
+            return false;
+        }
+        return Equals((Trip)obj);
+    }
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var hashCode = this.Origin.GetHashCode();
+            hashCode = (hashCode * 397) ^ this.Destination.GetHashCode();
+            hashCode = (hashCode * 397) ^ this.Vehicle.GetHashCode();
+            return hashCode;
+        }
+    }
+
+    public static bool operator ==(Trip tripA, Trip tripB)
+    {
+        return object.Equals(tripA, tripB);
+    }
+
+    public static bool operator !=(Trip tripA, Trip tripB)
+    {
+        return !object.Equals(tripA, tripB);
+    }
+}
+</code></pre>
+<p>That&#39;s a lot of code! It&#39;s very repetitive but it&#39;s also tricky: you can implement it incorrectly in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
+<p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still a heavy luggage to carry on. This class is hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
+<p>Are there other options?</p>
+<h2 id="introducing-fody">Introducing Fody</h2>
+<p><a href="https://github.com/Fody/Fody">Fody</a> is an extensible tool for weaving .NET assemblies. It means that you can use it to improve your code automatically at the time of compilation. Fody itself doesn&#39;t do much to the code, but it has a collection of plugins to actually change it. For this example I will use two of them: </p>
+<ul>
+<li><a href="https://github.com/Fody/NullGuard"><strong>NullGuard</strong></a> - guards all the input parameters, output parameters and return values of all types in a current assembly not to be null. If null value is passed or returned, the weaved code with throw an exception.</li>
+<li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
+</ul>
+<p>To install them just execute </p>
+<pre class="highlight"><code class="hljs ps">PM&gt; Install-Package NullGuard.Fody
+PM&gt; Install-Package Equals.Fody
+</code></pre>
+<p>The root of your project will now contain the following configuration file:</p>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-pi">&lt;?xml version="1.0" encoding="utf-8"?&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-title">Weavers</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">NullGuard</span> <span class="hljs-attribute">IncludeDebugAssert</span>=<span class="hljs-value">"false"</span> /&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">Equals</span> /&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-title">Weavers</span>&gt;</span>
+</code></pre>
+<p>(I&#39;ve added <code>IncludeDebugAssert</code> attribute manually to disable assert statements in debug mode)</p>
+<p>Let&#39;s adjust our class to make use of the plugins:</p>
+<pre class="highlight"><code class="hljs cs">[Equals]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Trip</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Origin = origin;
+        <span class="hljs-keyword">this</span>.Destination = destination;
+        <span class="hljs-keyword">this</span>.Vehicle = vehicle;
+    }
+
+    <span class="hljs-keyword">public</span> Location Origin { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Location Destination { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Vehicle Vehicle { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
+<ul>
+<li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So this plugin is in <em>opt-in</em> mode.</li>
+<li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
+</ul>
+<p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
+</span>{
+    <span class="hljs-keyword">bool</span> flag = origin == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"origin"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">bool</span> flag2 = destination == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag2)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"destination"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">bool</span> flag3 = vehicle == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag3)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"vehicle"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField = origin;
+    <span class="hljs-keyword">this</span>.&lt;Destination&gt;k__BackingField = destination;
+    <span class="hljs-keyword">this</span>.&lt;Vehicle&gt;k__BackingField = vehicle;
+}
+</code></pre>
+<p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Location Origin
+{
+    [CompilerGenerated]
+    <span class="hljs-keyword">get</span>
+    {
+        Location expr_06 = <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField;
+        <span class="hljs-keyword">if</span> (expr_06 == <span class="hljs-keyword">null</span>)
+        {
+            <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">InvalidOperationException</span><span class="hljs-params">(<span class="hljs-string">"[NullGuard] Return value of property 'ETA.Domain.Location ETA.Domain.Trip::Origin()' is null."</span>)</span></span>;
+        }
+        <span class="hljs-keyword">return</span> expr_06;
+    }
+}
+</code></pre>
+<p>It doesn&#39;t make much sense to me, so I configured Fody on assembly level to check only arguments and return values:</p>
+<pre class="highlight"><code class="hljs cs">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]
+</code></pre>
+<p>Here is a set of operations related to equality (I&#39;ll skip the body in sake of brevity):</p>
+<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+{
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    private static bool EqualsInternal(Trip left, Trip right) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override bool Equals(Trip other) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override bool Equals(object obj) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override int GetHashCode() { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public static bool operator ==(Trip left, Trip right) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public static bool operator !=(Trip left, Trip right) { ... }
+}
+</code></pre>
+<p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
+<h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
+<p>Here is how you actually should define similar types:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Trip</span> </span>= 
+  { Origin : Location
+    Destination : Location
+    Vehicle : Vehicle }
+</code></pre>
+<p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/code-generation/'>code generation</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Dec 14th, 2015</div>
+    
+    <h1><a href='/2015/12/deploy-your-spa-to-azure'>Deploy your SPA to Azure</a></h1>
+    
+    <div class="post-content">
+        <p>In this post I want to share a simple tutorial on how to deploy your single page application into the Azure cloud.</p>
+<h2 id="the-goal">The goal</h2>
+<p>Here is the initial setup:</p>
+<ul>
+<li><p>I have a Single Page Application (SPA) done with HTML/JavaScript in a separate local Git repository</p>
+</li>
+<li><p>I have a ASP.NET 4.6 Web API service which serves the data for SPA in another local Git repository</p>
+</li>
+<li><p>Now I want to deploy both to the Azure cloud, and make it easy to deploy changes in the future</p>
+</li>
+</ul>
+<h2 id="the-solution">The solution</h2>
+<p>We will deploy our application to Azure Cloud Services / Web application.</p>
+<ol>
+<li><p>Go to <a href="https://portal.azure.com">Azure Portal</a> then <code>App Services -&gt; Add</code> and follow the wizard to create your Web app. Here is mine:
+<img src="/2015/12/deploy-your-spa-to-azure/azurewebapp.jpg" alt="Azure web app"></p>
+</li>
+<li><p>Follow <a href="https://azure.microsoft.com/en-us/documentation/articles/web-sites-publish-source-control/">this guide</a> to create a new Git repository and setup continuous deployment from this repository to Azure web application. You are good once you see this working (step 6):
+<img src="/2015/12/deploy-your-spa-to-azure/git-hello-git.png" alt="Hello git running in Azure"></p>
+</li>
+<li><p>Copy your SPA files into the root of the new Git repository, here is my repo after I did that:
+<img src="/2015/12/deploy-your-spa-to-azure/spa-copied-to-repo.jpg" alt="SPA files in the repo">
+and push them to <code>azure</code> remote. Now you should be able to browse to the web app and see your SPA screen, but with all calls to Web API failing.</p>
+</li>
+<li><p>Inside your new Git repository, create a sub-folder to host Web API services. My SPA expects them under <code>/api</code> folder, so that&#39;s the folder name that I created:
+<img src="/2015/12/deploy-your-spa-to-azure/webapi-copied-to-repo.jpg" alt="Web API files in the repo"></p>
+</li>
+<li><p>Copy your binary compiled files of your Web API to <code>/api</code> sub-folder. This includes the bin folder, config files, asax files etc - whatever you would need in your local IIS deployment. DO NOT copy the sln/csproj files, otherwise the Azure will also try to do the compilation himself and will change the root of your web application to the folder with csproj files. So, my <code>/api</code> folder looks like this:
+<img src="/2015/12/deploy-your-spa-to-azure/api-folder.jpg" alt="Web API folder contents"></p>
+</li>
+<li><p>Commit the changes and Git push to <code>azure</code> remote. Once the files are deployed, your SPA app should be up and running. Well done!</p>
+</li>
+<li><p>You don&#39;t want to copy the files manually all the time, so make a PowerShell script or gulp task to do that for you. Remember, your changes will be applied whenever you push a new version to <code>azure</code> remote of your Git repo.</p>
+</li>
+</ol>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/asp-net-web-api/'>ASP.NET Web API</a>, <a href='/tags/spa/'>SPA</a>, <a href='/tags/continuous-deployment/'>Continuous deployment</a>, <a href='/tags/git/'>Git</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Nov 24th, 2015</div>
+    
+    <h1><a href='/2015/11/review-of-jspm-course'>Review of the course &quot;Modern, Modular JavaScript with SystemJS and jspm&quot;</a></h1>
+    
+    <div class="post-content">
+        <p>Recently I was playing with <a href="http://aurelia.io">Aurelia</a> SPA framework, which makes heavy use of jspm and SystemJS for modules/packaging. This package manager is new to me, and it looked a bit like magic sometimes. So when I saw a jspm course on Pluralsight, I decided to give it a try. And I did not regret: the course is great. It&#39;s so good, that I decided to write a review for it, even though I have never done that before. </p>
+<p>So, the full course name is &quot;<a href="https://www.pluralsight.com/courses/javascript-systemjs-jspm">Modern, Modular JavaScript with SystemJS and jspm</a>&quot; by Wes Higbee. The topic sounds pretty narrow (compare to something like &quot;Building a Web App with ASP.NET 5, MVC 6, EF7 and AngularJS&quot;), but the video track is surprisingly long: 7.5 hours. And every hour is packed with well structured in-depth material which lays the topic out from A to Z.</p>
+<p>The majority of online courses are focusing on just explaining the <em>What</em>&#39;s of a technology: where you get it, how you start quickly, how you solve typical tasks. Wes does not stop there: he is really focusing on <em>Why</em>&#39;s: not only why we should use ES2015 modules and jspm, but the complete logical flow from the best practices in other programming environments to the module patterns to the tools that enable us use the modern approaches in javascript today. The understanding of this reasoning chain sets the solid ground, and you actually start getting the What&#39;s deeper. </p>
+<p>But Wes goes even further: he mixes the <em>How</em>&#39;s in. I love watching him breaking the stuff to show why it fails and how to fix it. The references to module dependency graphs and internals of the tools are insightful; that&#39;s how &quot;the magic&quot; transforms into the comprehension of modern open source tools and libraries. </p>
+<p>Of course, just watching the course won&#39;t make me an expert in the topic. Now I need to put the knowledge into practice, ask more questions and find answers myself. But I will hopefully save hours of debugging and frustration and will maybe produce better products in the end. Wes and Pluralsight, I definitely need more of courses like this - focused, deep and engaging! </p>
+<p>P.S. It was a bit awkward to watch the course in the office because of solitaire cards being shown on my screen. Not sure what my colleagues thought I was doing ;)</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/pluralsight/'>pluralsight</a>, <a href='/tags/course/'>course</a>, <a href='/tags/learning/'>learning</a>, <a href='/tags/javascript/'>javascript</a>, <a href='/tags/es2015/'>ES2015</a>, <a href='/tags/jspm/'>jspm</a>, <a href='/tags/systemjs/'>SystemJS</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Aug 11th, 2015</div>
+    
+    <h1><a href='/2015/08/units-of-measurement-in-domain-design'>Units of measurement in domain design</a></h1>
+    
+    <div class="post-content">
+        <p>If you have business application of any decent size, your most important code probably resides in domain logic.
+When working with 3rd party code, you can always find an answer on stack overflow or official documentation, but your domain is all yours. Try to make it as simple and readable as possible, and it will always pay you back.</p>
+<p>Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.</p>
+<h2 id="problem-statement">Problem statement</h2>
+<p>Our toy example will be about cars and fuel consumption. You receive some data about the trip of your car, e.g. an instance of</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+{
+    <span class="hljs-keyword">double</span> FuelUsed { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">double</span> Distance { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = trip.FuelUsed / trip.Distance;
+</code></pre>
+<p>You get the value, but what is it? Let&#39;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+{
+    <span class="hljs-keyword">double</span> FuelUsedInLiters { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">double</span> DistanceInKilometers { <span class="hljs-keyword">get</span>; }
+}
+
+<span class="hljs-keyword">var</span> fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * <span class="hljs-number">100.0</span> / trip.DistanceInKilometers;
+</code></pre>
+<p>Now it&#39;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
+<ol>
+<li><p>You will start measuring same things in different units. E.g. you will store the distance in meters in the database, so you&#39;ll have to multiply by 1000 somewhere in persistence layer.</p>
+</li>
+<li><p>If you need to convert metric to imperial and back, you will get lots of constants here and there.</p>
+</li>
+<li><p>String formatting will become a tedious task. Be sure to call a right formatter for each implicit unit.</p>
+</li>
+</ol>
+<p>This does not work well. The code smell is called <a href="http://blog.ploeh.dk/2011/05/25/DesignSmellPrimitiveObsession/">Primitive Obsession</a> and we should avoid this in production-grade code. Instead, we want the succinctness of first example in combination with strong compile-time checks and well-defined operations.</p>
+<h2 id="defining-the-units">Defining the units</h2>
+<p>I tried several options like generic classes for units, but I ended up having a struct per measurement. The code is very boring and repetitive, but it provides me with the strongest compile-time checks and nice readability. If you are too bored with typing, you can do some code generation or just use 3rd party that suits you.
+So, my end result looks like</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+{
+    Volume FuelUsed { <span class="hljs-keyword">get</span>; }
+    Distance Distance { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>Let&#39;s see how Distance is defined (Volume will be almost exactly same):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">struct</span> Distance
+{
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">Distance</span><span class="hljs-params">(<span class="hljs-keyword">double</span> kilometers)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Kilometers = kilometers;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Kilometers { <span class="hljs-keyword">get</span>; }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Meters =&gt; <span class="hljs-keyword">this</span>.Kilometers / <span class="hljs-number">1000.0</span>;
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance Zero = <span class="hljs-keyword">new</span> Distance(<span class="hljs-number">0.0</span>);
+
+    ...
+}
+</code></pre>
+<p>Several important things to notice here:</p>
+<ol>
+<li><p>It&#39;s a struct.</p>
+</li>
+<li><p>It&#39;s immutable. Once an instance is created, its properties can&#39;t be changed anymore.</p>
+</li>
+<li><p>Constructor is private. I don&#39;t actually want people to create instances directly: <code>new Distance(123)</code> reads pretty horribly, keep reading to see better options.
+Of course, default constructor is still public, but you can only create a zero value with it.</p>
+</li>
+<li><p>Better way of creating zero distance is to call Zero static field.</p>
+</li>
+</ol>
+<h2 id="instantiation">Instantiation</h2>
+<p>So, how do we create measurement objects?</p>
+<h3 id="factory-method">Factory method</h3>
+<p>The classic way is a set of static factory methods:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromKilometers</span><span class="hljs-params">(<span class="hljs-keyword">double</span> kilometers)</span>
+</span>{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Distance</span><span class="hljs-params">(kilometers)</span></span>;
+}
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromMeters</span><span class="hljs-params">(<span class="hljs-keyword">double</span> meters)</span>
+</span>{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Distance</span><span class="hljs-params">(kilometers / <span class="hljs-number">1000.0</span>)</span></span>;
+}
+</code></pre>
+<p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
+<h3 id="extension-method">Extension method</h3>
+<p>Imagine you have the following code which converts an integer value of a database result into our units</p>
+<pre class="highlight"><code class="hljs cs">trip.Distance = Distance.FromMeters(database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
+                        .GetDefaultOrEmpty());
+</code></pre>
+<p>Such a long expression reads better with a fluent interface like</p>
+<pre class="highlight"><code class="hljs cs">trip.Distance = database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
+                        .GetDefaultOrEmpty()
+                        .MetersToDistance();
+</code></pre>
+<p><code>MetersToDistance</code> in this case is an extension method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">DistanceExtensions</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">MetersToDistance</span><span class="hljs-params">(<span class="hljs-keyword">this</span> <span class="hljs-keyword">double</span> meters)</span>
+    </span>{
+        <span class="hljs-keyword">return</span> Distance.FromMeters(meters);
+    }
+}
+</code></pre>
+<h3 id="operator-with-static-class-using">Operator with static class using</h3>
+<p>C# 6 brings us a new language construct. Now we can import a static helper class</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">using</span> <span class="hljs-keyword">static</span> Units.Constants;
+</code></pre>
+<p>And then we can write something like</p>
+<pre class="highlight"><code class="hljs swift"><span class="hljs-keyword">var</span> <span class="hljs-built_in">distance</span> = <span class="hljs-number">10.0</span> * km;
+</code></pre><p>where liter is defined in that static class:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Constants</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance km = Distance.FromKilometers(<span class="hljs-number">1.0</span>);
+}
+</code></pre>
+<p>This may not look like idiomatic C#, but I think it&#39;s very good at least for writing unit tests:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> Trip
+{
+    DistanceOnFoot = <span class="hljs-number">5</span> * km,
+    DistanceOnBicycle = <span class="hljs-number">10</span> * km,
+    DistanceOnCar = <span class="hljs-number">30</span> * km
+};
+target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span class="hljs-number">10</span> + <span class="hljs-number">5</span>) * km);
+</code></pre>
+<p>For this to compile you just need to define the operator overload:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-keyword">operator</span>*(<span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span>, Distance distance)
+{
+    <span class="hljs-keyword">return</span> Distance.FromKilometers(<span class="hljs-keyword">value</span> * distance.Kilometers);
+}
+</code></pre>
+<h2 id="conversion-and-printing">Conversion and printing</h2>
+<p>More advanced unit conversions are easy with unit classes. A common use case would be to convert metric units to imperial system. All you need to do is to add another calculated property</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Distance class</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> MilesInKilometer = <span class="hljs-number">0.621371192</span>;
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> FeetInMeter = = <span class="hljs-number">3.2808399</span>;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Miles =&gt; <span class="hljs-keyword">this</span>.Kilometers * MilesInKilometer;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Feet =&gt; <span class="hljs-keyword">this</span>.Meters * FeetInMeter;
+</code></pre>
+<p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
+<ul>
+<li>Format based on user preferences (metric/imperial)</li>
+<li>Pick units based on the value (e.g. 30 m but 1.2 km, not 1200 m)</li>
+<li>Localization to different languages</li>
+<li>Rounding to some closest value</li>
+</ul>
+<p>If you do all that in the unit class, it&#39;s going to violate the single responsibility principle. Just create a separate class for formatting and put all those rules there.</p>
+<h2 id="unit-derivation">Unit derivation</h2>
+<p>Once you write more unit classes, you will definitely want to derive the calculation result of two units into the third one. In our example, we want to divide <code>Volume</code> of fuel used by <code>Distance</code> to get fuel <code>ConsumptionRate</code>.</p>
+<p>There&#39;s no magic that you could do here. You will have to define <code>ConsumptionRate</code> class the same way you defined the other two, and then just overload the operation</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ConsumptionRate <span class="hljs-keyword">operator</span>/(Volume volume, Distance distance)
+{
+    <span class="hljs-keyword">return</span> ConsumptionRate
+        .FromLitersPer100Kilometers(volume.Liters * <span class="hljs-number">100.0</span> / distance.Kilometers);
+}
+</code></pre>
+<p>Of course, you&#39;ll have to define all the required combinations explicitly.</p>
+<p>If you defined Constants as described above, you&#39;ll be able to instantiate values in your tests in the following way:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = <span class="hljs-number">7.5</span> * lit / (<span class="hljs-number">100</span> * km);
+</code></pre>
+<h2 id="should-i-use-3rd-party-libraries-for-that-">Should I use 3rd party libraries for that?</h2>
+<p>It depends. Of course, people implemented all this functionality about 1 million times before you, so there are numerous libraries on GitHub.</p>
+<p>I would say, if you start a new project and you don&#39;t have a strong opinion about the unit code, just go grab the library and try to use it.</p>
+<p>At the same time, for existing code base, it might be easier to introduce your own implementation which would resemble something that you already use.</p>
+<p>Also, I have another reason for my own implementation. I&#39;m using units all over the code base of domain logic, the very heart of the software, the exact place where I want full control. I find it a bit awkward to introduce a 3rd party dependency in domain layer.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/units-of-measurement/'>units of measurement</a>, <a href='/tags/domain-design/'>domain design</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/clean-code/'>clean code</a>
+    </div>
+    
+</article>
+
+
+<div class="page-nav">
+    
+    <a class="page-nav-newer" href="/2"><span class="icon icon-arrow-left-2"></span> Next page</a>
+    
+    
+    <a class="page-nav-older" href="/4">Previous page <span class="icon icon-arrow-right-2"></span></a>
+    
+</div>
+
+<div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy C#, Javascript and SQL development and I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="http://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="http://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2016 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
