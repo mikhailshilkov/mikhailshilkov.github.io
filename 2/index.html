@@ -66,6 +66,132 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Feb 23rd, 2016</div>
+    
+    <h1><a href='/2016/02/unit-testing-dapper-repositories'>Unit testing Dapper repositories</a></h1>
+    
+    <div class="post-content">
+        <p><a href="https://github.com/StackExchange/dapper-dot-net">Dapper</a> is a micro-ORM library which is 
+very simple and super fast. In our projects we use Dapper for the tasks where something like
+EntityFramework or NHibernate would be an overkill.</p>
+<p>Quite often the data access code is difficult to be unit tested. Objects like
+database connections, commands, transactions and contexts are hard to mock, and
+thus the data access code is not easily isolated. Dapper relies heavily on SQL
+statements inside C# code, which gives an extra complication. Some people would
+argue that unit tests are not warranted for data access layer, and integration
+tests should be used instead. Let&#39;s have a look at another possibility.</p>
+<h2 id="an-example-of-a-repository">An Example of a Repository</h2>
+<p>Let&#39;s say we have a simple class and we want to populate instances of this class
+from the database:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Product</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Description { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>To be able to use Dapper for data access, we need an instance of <code>IDbConnection</code>.
+As we want to be able to mock the connection for unit tests, we need to create
+a factory interface to abstract it away:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IDatabaseConnectionFactory</span>
+{
+    <span class="hljs-function">IDbConnection <span class="hljs-title">GetConnection</span><span class="hljs-params">()</span></span>;
+}
+</code></pre>
+<p>Now the repository would get a connection from this factory and execute 
+Dapper queries on it:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ProductRepository</span>
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> IDatabaseConnectionFactory connectionFactory;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ProductRepository</span><span class="hljs-params">(IDatabaseConnectionFactory connectionFactory)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.connectionFactory = connectionFactory;
+    }
+
+    <span class="hljs-keyword">public</span> Task&lt;IEnumerable&lt;Product&gt;&gt; GetAll()
+    {
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">this</span>.connectionFactory.GetConnection().QueryAsync&lt;Product&gt;(
+            <span class="hljs-string">"select * from Product"</span>);
+    }
+}
+</code></pre>
+<h2 id="testing-without-a-real-database">Testing Without a real Database</h2>
+<p>Here is my approach to testing the repository:</p>
+<ol>
+<li>Use an in-memory <a href="https://www.sqlite.org/">SQLite3</a> database.</li>
+<li>Create a table there and put some data in.</li>
+<li>Run the repository against this database.</li>
+<li>Compare the result to the expected values.</li>
+</ol>
+<p>Here is a helper class which uses another micro-ORM library <a href="http://ormlite.com/">OrmLite</a> to talk
+to SQLite database:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">InMemoryDatabase</span>
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> OrmLiteConnectionFactory dbFactory = 
+        <span class="hljs-keyword">new</span> OrmLiteConnectionFactory(<span class="hljs-string">":memory:"</span>, SqliteOrmLiteDialectProvider.Instance);
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> IDbConnection <span class="hljs-title">OpenConnection</span><span class="hljs-params">()</span> </span>=&gt; <span class="hljs-keyword">this</span>.dbFactory.OpenDbConnection();
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> Insert&lt;T&gt;(IEnumerable&lt;T&gt; items)
+    {
+        <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> db = <span class="hljs-keyword">this</span>.OpenConnection())
+        {
+            db.CreateTableIfNotExists&lt;T&gt;();
+            <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> item <span class="hljs-keyword">in</span> items)
+            {
+                db.Insert(item);
+            }
+        }
+    }
+}
+</code></pre>
+<p>And here is the test for our <code>ProductRepository</code> class:</p>
+<pre class="highlight"><code class="hljs cs">[Test]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">QueryTest</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-comment">// Arrange</span>
+    <span class="hljs-keyword">var</span> products = <span class="hljs-keyword">new</span> List&lt;Product&gt;
+    {
+        <span class="hljs-keyword">new</span> Product { ... },
+        <span class="hljs-keyword">new</span> Product { ... }
+    };
+    <span class="hljs-keyword">var</span> db = <span class="hljs-keyword">new</span> InMemoryDatabase();
+    db.Insert(products);
+    connectionFactoryMock.Setup(c =&gt; c.GetConnection()).Returns(db.OpenConnection());
+
+    <span class="hljs-comment">// Act</span>
+    <span class="hljs-keyword">var</span> result = <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ProductRepository</span><span class="hljs-params">(connectionFactoryMock.Object)</span>.<span class="hljs-title">GetAll</span><span class="hljs-params">()</span></span>;
+
+    <span class="hljs-comment">// Assert</span>
+    result.ShouldBeEquivalentTo(products);
+}
+</code></pre>
+<h2 id="is-it-a-unit-test-">Is It a Unit Test?</h2>
+<p>Well, not completely. This approach does not mock the database, but instead puts
+an in-memory database in place of the normal one. The problem is that we don&#39;t 
+control all the details how it works, so it might not be as flexible as we need.
+For instance, SQLite type system is quite simplistic, so while <code>INT</code> and <code>BIGINT</code>
+are different column types in SQL Server, they are the same <code>INTEGER</code> type in
+SQLite. This can lead to false positive or false negative tests in edge cases.</p>
+<p>Nevertheless, the concept is simple and requires very little amount of code,
+so it&#39;s useful to have it in the toolbox anyway. The resulting tests are fast,
+have no external dependencies and are always consistent between multiple runs.
+That makes them better than real integration tests for the simple scenarios 
+during TDD development.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/unit-testing/'>unit testing</a>, <a href='/tags/dapper/'>Dapper</a>, <a href='/tags/orm/'>ORM</a>, <a href='/tags/tdd/'>TDD</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 10th, 2016</div>
     
     <h1><a href='/2016/02/building-a-poker-bot-string-recognition'>Building a Poker Bot: String and Number Recognition</a></h1>
@@ -897,103 +1023,6 @@ ways to combine and generalize monads which are possible in Haskell and other fu
     
     <div class="post-tags">
         Posted In: <a href='/tags/functional-programming/'>functional programming</a>, <a href='/tags/monads/'>monads</a>, <a href='/tags/maybe/'>maybe</a>, <a href='/tags/linq/'>LINQ</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jan 13th, 2016</div>
-    
-    <h1><a href='/2016/01/fire-and-forget-in-service-fabric-actors'>Fire-and-forget in Service Fabric actors</a></h1>
-    
-    <div class="post-content">
-        <p>At the <a href="http://www.meetup.com/Webscale-Architecture-NL/events/225979118/">recent Webscale Architecture meetup</a> 
-we discussed two implementations of the Actor model in the .NET ecosystem: 
-<a href="http://akka.net">Akka.NET</a> and <a href="https://azure.microsoft.com/en-us/documentation/articles/service-fabric-reliable-actors-introduction/">Azure Service Fabric Actors</a>. 
-One important discussion was
-around <strong>Ask</strong> vs <strong>Tell</strong> call model. With <strong>Tell</strong> model, the Sender just sends the
-message to the Recepient without waiting for a result to come back. <strong>Ask</strong> model
-means the Sender will at some point get a response back from the Receiver, potencially
-blocking its own execution.</p>
-<p>The default model of Akka.NET is <strong>Tell</strong>:</p>
-<blockquote>
-<p><strong>Tell: Fire-forget</strong></p>
-<p>This is the preferred way of sending messages. No blocking waiting for 
-a message. This gives the best concurrency and scalability characteristics.</p>
-</blockquote>
-<p>On the contrary, the default model for Service Fabric Actors is RPC-like
-<strong>Ask</strong> model. Let&#39;s have a close look at this model, and then see how we can
-implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
-<p>Actor definition starts with an interface:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IHardWorkingActor</span> : <span class="hljs-title">IActor</span>
-{
-    <span class="hljs-function">Task <span class="hljs-title">DoWork</span><span class="hljs-params">(<span class="hljs-keyword">string</span> payload)</span></span>;
-}
-</code></pre><p>As you can see, the method does not return any useful data, which means
-the client code isn&#39;t really interested in waiting for the operation to
-complete. Here&#39;s how we implement this interface in the Actor class:</p>
-<pre class="highlight"><code class="hljs vala"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HardWorkingActor</span> : <span class="hljs-title">Actor</span>, <span class="hljs-title">IHardWorkingActor</span>
-</span>{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task DoWork(<span class="hljs-keyword">string</span> payload)
-    {
-        ActorEventSource.Current.ActorMessage(<span class="hljs-keyword">this</span>, <span class="hljs-string">"Doing Work"</span>);
-        await Task.Delay(<span class="hljs-number">500</span>);
-    }
-}
-</code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
-<p>Now, let&#39;s look at the client code. Let&#39;s say, the client receives the payloads
-from a queue or a web front-end and needs to go as fast as possible. It gets a payload,
-creates an actor proxy to dispatch the payload to, then it just wants 
-to continue with the next payload. Here is the &quot;Ask&quot; implementation based on 
-the Service Fabric samples:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>;
-<span class="hljs-keyword">var</span> timer = <span class="hljs-keyword">new</span> Stopwatch();
-timer.Start();
-<span class="hljs-keyword">while</span> (<span class="hljs-keyword">true</span>)
-{
-    <span class="hljs-keyword">var</span> proxy = ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), <span class="hljs-string">"fabric:/Application1"</span>);
-    <span class="hljs-keyword">await</span> proxy.DoWork($<span class="hljs-string">"Work ${i++}"</span>);
-    Console.WriteLine($<span class="hljs-string">@"Sent work to Actor {proxy.GetActorId()}, 
-                         rate is {i / timer.Elapsed.TotalSeconds}/sec"</span>);
-}
-</code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
-block until the actor work is complete. When we run the client, no surprise that
-we get the rate of about 2 messages per second:</p>
-<pre class="highlight"><code class="hljs applescript">Sent work <span class="hljs-keyword">to</span> Actor <span class="hljs-number">1647857287613311317</span>, rate <span class="hljs-keyword">is</span> <span class="hljs-number">1</span>,<span class="hljs-number">98643230380293</span>/sec
-</code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
-work and immediately proceed to the next one. Here&#39;s how the client call should
-look like:</p>
-<pre class="highlight"><code class="hljs bash">proxy.DoWork($<span class="hljs-string">"Work <span class="hljs-variable">${i++}</span>"</span>).FireAndForget();
-</code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
-extension method and proceed immediately. It appears that the implementation 
-of such extension method is trivial:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TaskHelper</span>
-{       
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">FireAndForget</span><span class="hljs-params">(<span class="hljs-keyword">this</span> Task task)</span>
-    </span>{
-        Task.Run(<span class="hljs-keyword">async</span>() =&gt; <span class="hljs-keyword">await</span> task).ConfigureAwait(<span class="hljs-keyword">false</span>);
-    }
-} 
-</code></pre><p>The result looks quite different from what we had before:</p>
-<pre class="highlight"><code class="hljs applescript">Sent work <span class="hljs-keyword">to</span> Actor -<span class="hljs-number">8450334792912439527</span>, rate <span class="hljs-keyword">is</span> <span class="hljs-number">408</span>,<span class="hljs-number">484162592517</span>/sec
-</code></pre><p>400 messages per second, which is some 200x difference... </p>
-<p>The conclusions are simple:</p>
-<ul>
-<li><p>Service Fabric is a powerful platform and programming paradigm which doesn&#39;t
-limit your choice of communication patterns</p>
-</li>
-<li><p>Design the communication models carefully based on your use case, don&#39;t
-take the defaults for granted</p>
-</li>
-</ul>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/actor-model/'>Actor model</a>, <a href='/tags/azure/'>Azure</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/service-fabric/'>Service Fabric</a>
     </div>
     
 </article>
