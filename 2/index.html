@@ -66,6 +66,126 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Mar 1st, 2016</div>
+    
+    <h1><a href='/2016/03/building-a-poker-bot-mouse-movements'>Building a Poker Bot: Mouse Movements</a></h1>
+    
+    <div class="post-content">
+        <p><em>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
+easy and very enjoyable. Here are the previous parts:</em></p>
+<ul>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
+</ul>
+<p>In this short post I write about the last step of the poker bot flow: clicking
+the buttons. So, the screen is already recognized, the hand is understood,
+the decisions are made and now the bot needs to execute the actions. Except for
+the bet sizing, this simply means clicking the right button at the poker table.</p>
+<p>The stealthiness of such clicks is a valid concern here. Ideally, we want all
+the mouse movements to look as similar as possible to the movements produced
+by a human being. For this post, I will simplify the task to the following steps:</p>
+<ul>
+<li>Identify where the mouse cursor is right now</li>
+<li>Decide where the mouse should be moved to</li>
+<li>Gradually move the mouse cursor</li>
+<li>Click the button</li>
+</ul>
+<h2 id="cursor-position">Cursor Position</h2>
+<p>It&#39;s really easy to understand where the mouse cursor currently is: just
+use <code>Control.MousePosition</code> property from the standard library:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> currentPosition () = 
+  <span class="hljs-keyword">let</span> mp = System.Windows.Forms.Control.MousePosition
+  (mp.X, mp.Y)
+</code></pre>
+<p>Note that your application doesn&#39;t have to be based on WinForms, just reference
+the required assembly.</p>
+<h2 id="move-the-cursor">Move the Cursor</h2>
+<p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
+library to control the mouse and the keyboard programmatically. It uses some
+weird coordinate system, so the function to move the mouse cursor looks like this:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> simulator = <span class="hljs-keyword">new</span> InputSimulator()
+
+<span class="hljs-keyword">let</span> moveTo x y =
+  <span class="hljs-keyword">let</span> toX = <span class="hljs-number">65535.</span> * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
+  <span class="hljs-keyword">let</span> toY = <span class="hljs-number">65535.</span> * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
+  simulator.Mouse.MoveMouseTo(toX, toY)
+</code></pre>
+<p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
+the top-left corner of the screen.</p>
+<h2 id="move-it-smoothly">Move It Smoothly</h2>
+<p>Now we want to simulate the human-like movements. It won&#39;t be perfect, but
+at least it should look decent. For this gradual movement function I used
+a nice F# feature called asynchronous workflows. Effectively, it looks like
+a loop with async sleep statements inside.</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> moveToWorkflow step (toX, toY) = async {
+  <span class="hljs-keyword">let</span> (fromX, fromY) = currentPosition()
+  <span class="hljs-keyword">let</span> count = Math.Max(<span class="hljs-number">10</span>, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / <span class="hljs-number">20</span>)
+  <span class="hljs-keyword">for</span> i = <span class="hljs-number">0</span> <span class="hljs-keyword">to</span> count <span class="hljs-keyword">do</span>
+    <span class="hljs-keyword">let</span> x = step fromX toX count i |&gt; float
+    <span class="hljs-keyword">let</span> y = step fromY toY count i |&gt; float
+    moveTo x y
+    <span class="hljs-keyword">do</span>! Async.Sleep <span class="hljs-number">3</span>
+  }
+</code></pre>
+<p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
+Basically, it calculates a coordinate for n-th step of the movement. We can
+plug different implementations of this function to find the right balance of
+the movement style. Here is the simplest linear implementation:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> linearStep from until max i =
+  from + (until - from) * i / max
+</code></pre>
+<p>The sinus-based implementation is a bit more verbose because of float-int 
+conversions:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> sinStep (from:int) (until:int) (max:int) (index:int) =
+  <span class="hljs-keyword">let</span> fromf = from |&gt; float
+  <span class="hljs-keyword">let</span> untilf = until |&gt; float
+  <span class="hljs-keyword">let</span> maxf = max |&gt; float
+  <span class="hljs-keyword">let</span> indexf = index |&gt; float
+  fromf + (untilf - fromf) * Math.Sin(Math.PI / <span class="hljs-number">2.</span> * indexf / maxf) |&gt; int
+</code></pre>
+<p>The following animation illustrates the concept: </p>
+<svg width="778" height="190" viewbox="0 0 500 190">
+  <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+  <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+
+  <animate xlink:href="#mouse1" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" calcmode="discrete" id="img-anim1"></animate>
+  <animate xlink:href="#mouse2" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"></animate>
+  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate><br></svg>
+
+<p>The top mouse cursor just
+jumps from left to right and back (no animation). The middle cursor moves with
+linear speed (<code>linearStep</code> function above). The bottom cursor moves based on
+the <code>sinStep</code> function derived from sinus of time.</p>
+<h2 id="click-the-button">Click the Button</h2>
+<p>A button is a rectangle and we want to click a random point inside it. So, all
+we need is to pick random coordinates, move the mouse there and send a 
+click event via the simulator:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickButton (minX, minY, maxX, maxY) =
+  <span class="hljs-keyword">let</span> r = <span class="hljs-keyword">new</span> Random()
+  <span class="hljs-keyword">let</span> p = (r.Next(minX, maxX), r.Next(minY, maxY))
+  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
+  simulator.Mouse.LeftButtonClick()
+</code></pre>
+<h2 id="demo-time">Demo Time</h2>
+<p>Here is the demo of the mouse movements:</p>
+<p><img src="/2016/03/building-a-poker-bot-mouse-movements/mouseclicking.gif" alt="Mouse clicking the button"></p>
+<p>It looks fun, doesn&#39;t it? The full code for the mouse movements can be found in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/poker-bot/'>poker bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/human-like-behavior/'>human-like behavior</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 23rd, 2016</div>
     
     <h1><a href='/2016/02/unit-testing-dapper-repositories'>Unit testing Dapper repositories</a></h1>
@@ -855,174 +975,6 @@ series I will show how to recognize non-fixed parts: text and numbers.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/poker-bot/'>poker bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/image-recognition/'>image recognition</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jan 25th, 2016</div>
-    
-    <h1><a href='/2016/01/monads-explained-in-csharp'>Monads explained in C#</a></h1>
-    
-    <div class="post-content">
-        <p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
-what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
-developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
-loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
-it becomes kind of obvious once you read 3 or 5 &quot;explanations&quot; on the web. Here is my attempt.</p>
-<h2 id="monads-are-container-types">Monads are container types</h2>
-<p>Monads are containers which encapsulate some kind of functionality. It&#39;s that simple. The goals of monads
-are similar to generic goals of any encapsulation in software development practices: hide the implementation
-details from the client, but provide a proper way to use the hidden functionality. It&#39;s not because we 
-want to be able to change the implementation, it&#39;s because we want to make the client as simple as possible
-and to enforce the best way of code structure. Quite often monads provide the way to avoid imperative code
-in favor of functional style.</p>
-<p>Monads are flexible, so in C# they should be represented as generic types:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
-{
-}
-</code></pre>
-<h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
-<p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should be a way to create an object
-of this class out of an instance of type <code>T</code>. In functional world this operation is known as <code>Return</code> 
-function. In C# it can be as simple as a constructor:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
-{
-    public Monad(T instance)
-    {
-    }
-}
-</code></pre>
-<p>But usually it makes sense to define an extension method to enable fluent syntax of monad creation:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MonadExtensions</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Monad&lt;T&gt; Return&lt;T&gt;(<span class="hljs-keyword">this</span> T instance) =&gt; <span class="hljs-keyword">new</span> Monad&lt;T&gt;(instance);
-}
-</code></pre>
-<h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
-<p>This is the property which makes monads so useful, but also a bit confusing. In functional world this
-operation is known as functional composition and is expressed with the <code>Bind</code> function (or <code>&gt;&gt;=</code> operator).
-Here is the signature of <code>Bind</code> method in C#:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
-{
-    public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
-    {
-    }
-}
-</code></pre>
-<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an argument of type <code>T</code> (not
-a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> where <code>TO</code> is another type. Now, our first instance
-of <code>Monad&lt;T&gt;</code> knows how to bind itself to this function to produce another instance of monad of the
-new type. The full power of monads comes when we compose several of them in one chain:</p>
-<pre class="highlight"><code class="hljs cs">initialValue
-    .Return()
-    .Bind(v1 =&gt; produceV2OutOfV1(v1))
-    .Bind(v2 =&gt; produceV3OutOfV2(v2))
-    .Bind(v3 =&gt; produceV4OutOfV3(v3))
-    <span class="hljs-comment">//...</span>
-</code></pre>
-<p>And that&#39;s about it. Let&#39;s have a look at some examples.</p>
-<h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
-<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach to dealing
-with &#39;no value&#39; value which is alternative to the concept <code>null</code>. Basically your object should
-never be null, but it can either have <code>Some</code> value or be <code>None</code>. F# has a maybe implementation
-built into the language: it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
-<pre class="highlight"><code class="hljs undefined">public class Maybe&lt;T&gt; where T : class
-{
-    private T value;
-
-    public Maybe(T someValue)
-    {
-        if (someValue == null)
-            throw new AgrumentNullException(nameof(someValue));
-        this.value = someValue;
-    }
-
-    private Maybe()
-    {
-    }
-
-    public Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func)
-    {
-        return value != null ? new Maybe&lt;TO&gt;(func(value)) : Maybe&lt;TO&gt;.None();
-    }
-
-    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;(null);
-}
-</code></pre>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MaybeExtensions</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Maybe&lt;T&gt; NullToMaybe&lt;T&gt;(T <span class="hljs-keyword">value</span>)
-    {
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">value</span> != <span class="hljs-keyword">null</span> ? <span class="hljs-keyword">new</span> Maybe&lt;T&gt;(<span class="hljs-keyword">value</span>) : Maybe&lt;T&gt;.None();
-    }
-}
-</code></pre>
-<p>Return function is implemented with a combination of a public constructor which accepts <code>Some</code> value
-(notice that <code>null</code> is not allowed) and a static <code>None</code> method returning an object of &#39;no value&#39;.
-<code>NullToMaybe</code> combines both of them in one call. </p>
-<p><code>Bind</code> function is implemented explicitly. </p>
-<p>Let&#39;s have a look at a use case. Imagine we have repositories which load the data from an external
-storage (I&#39;ll put them to a single class for the sake of brevity):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Repository</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Customer&gt; <span class="hljs-title">GetCustomer</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span>
-    </span>{
-        <span class="hljs-keyword">var</span> row = ReadRowFromDb(id); <span class="hljs-comment">// returns null if not found</span>
-        <span class="hljs-keyword">return</span> row.NullToMaybe().Bind(r =&gt; ConvertRowToCustomer(r));
-    }
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Address&gt; <span class="hljs-title">GetAddress</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Order&gt; <span class="hljs-title">GetOrder</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
-}
-</code></pre>
-<p>The repository reads a row from the database and then converts its value or null to a <code>Maybe&lt;DataRow&gt;</code>.
-Then it&#39;s immediately bound to a function which converts the row to a domain object (I&#39;ll omit this
-function&#39;s implementation but remember that it can also return a <code>Maybe&lt;Customer&gt;</code> if that&#39;s warranted
-by requirements).</p>
-<p>Now here is a more sophisticated example of <code>Bind</code> method composition:</p>
-<pre class="highlight"><code class="hljs cs">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
-    repo.GetCustomer(customerId)
-        .Bind(c =&gt; repo.GetAddress(c.Address.Id))
-        .Bind(a =&gt; repo.GetOrder(a.LastOrder.Id))
-        .Bind(o =&gt; o.Shipper);
-</code></pre>
-<p>If you think that the syntax looks very much like a LINQ query with a bunch of <code>Select</code> statements, you are
-not the only one ;) One of the common implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface
-which allows a more C#-idiomatic binding composition. Actually:</p>
-<h2 id="ienumerable-selectmany-is-a-monad-">IEnumerable + SelectMany is a monad </h2>
-<p><code>IEnumerable</code> is an interface for enumerable containers.</p>
-<p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
-<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here is
-its signature:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
-    <span class="hljs-keyword">this</span> IEnumerable&lt;A&gt; first, 
-    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
-</code></pre>
-<p>And here is an example of composition:</p>
-<pre class="highlight"><code class="hljs cs">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
-    customers
-        .SelectMany(c =&gt; c.Addresses)
-        .SelectMany(a =&gt; a.Orders)
-        .SelectMany(o =&gt; o.Shippers);
-</code></pre>
-<p>The query has no idea about how the collections are stored (encapsulated in
-containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
-(<code>Bind</code> operation).</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>You should not be afraid of the &quot;M-word&quot; just because you are the C# programmer. C# does not have
-a notion of monads as predefined language constructs, but it doesn&#39;t mean we can&#39;t borrow some
-ideas from the functional world. Having said that, it&#39;s also true that C# is lacking some powerful
-ways to combine and generalize monads which are possible in Haskell and other functional languages.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/functional-programming/'>functional programming</a>, <a href='/tags/monads/'>monads</a>, <a href='/tags/maybe/'>maybe</a>, <a href='/tags/linq/'>LINQ</a>
     </div>
     
 </article>

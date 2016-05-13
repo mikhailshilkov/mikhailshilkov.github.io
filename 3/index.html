@@ -66,6 +66,174 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jan 25th, 2016</div>
+    
+    <h1><a href='/2016/01/monads-explained-in-csharp'>Monads explained in C#</a></h1>
+    
+    <div class="post-content">
+        <p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
+what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
+developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
+loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
+it becomes kind of obvious once you read 3 or 5 &quot;explanations&quot; on the web. Here is my attempt.</p>
+<h2 id="monads-are-container-types">Monads are container types</h2>
+<p>Monads are containers which encapsulate some kind of functionality. It&#39;s that simple. The goals of monads
+are similar to generic goals of any encapsulation in software development practices: hide the implementation
+details from the client, but provide a proper way to use the hidden functionality. It&#39;s not because we 
+want to be able to change the implementation, it&#39;s because we want to make the client as simple as possible
+and to enforce the best way of code structure. Quite often monads provide the way to avoid imperative code
+in favor of functional style.</p>
+<p>Monads are flexible, so in C# they should be represented as generic types:</p>
+<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+{
+}
+</code></pre>
+<h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
+<p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should be a way to create an object
+of this class out of an instance of type <code>T</code>. In functional world this operation is known as <code>Return</code> 
+function. In C# it can be as simple as a constructor:</p>
+<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+{
+    public Monad(T instance)
+    {
+    }
+}
+</code></pre>
+<p>But usually it makes sense to define an extension method to enable fluent syntax of monad creation:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MonadExtensions</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Monad&lt;T&gt; Return&lt;T&gt;(<span class="hljs-keyword">this</span> T instance) =&gt; <span class="hljs-keyword">new</span> Monad&lt;T&gt;(instance);
+}
+</code></pre>
+<h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
+<p>This is the property which makes monads so useful, but also a bit confusing. In functional world this
+operation is known as functional composition and is expressed with the <code>Bind</code> function (or <code>&gt;&gt;=</code> operator).
+Here is the signature of <code>Bind</code> method in C#:</p>
+<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+{
+    public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
+    {
+    }
+}
+</code></pre>
+<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an argument of type <code>T</code> (not
+a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> where <code>TO</code> is another type. Now, our first instance
+of <code>Monad&lt;T&gt;</code> knows how to bind itself to this function to produce another instance of monad of the
+new type. The full power of monads comes when we compose several of them in one chain:</p>
+<pre class="highlight"><code class="hljs cs">initialValue
+    .Return()
+    .Bind(v1 =&gt; produceV2OutOfV1(v1))
+    .Bind(v2 =&gt; produceV3OutOfV2(v2))
+    .Bind(v3 =&gt; produceV4OutOfV3(v3))
+    <span class="hljs-comment">//...</span>
+</code></pre>
+<p>And that&#39;s about it. Let&#39;s have a look at some examples.</p>
+<h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
+<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach to dealing
+with &#39;no value&#39; value which is alternative to the concept <code>null</code>. Basically your object should
+never be null, but it can either have <code>Some</code> value or be <code>None</code>. F# has a maybe implementation
+built into the language: it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
+<pre class="highlight"><code class="hljs undefined">public class Maybe&lt;T&gt; where T : class
+{
+    private T value;
+
+    public Maybe(T someValue)
+    {
+        if (someValue == null)
+            throw new AgrumentNullException(nameof(someValue));
+        this.value = someValue;
+    }
+
+    private Maybe()
+    {
+    }
+
+    public Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func)
+    {
+        return value != null ? new Maybe&lt;TO&gt;(func(value)) : Maybe&lt;TO&gt;.None();
+    }
+
+    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;(null);
+}
+</code></pre>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MaybeExtensions</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Maybe&lt;T&gt; NullToMaybe&lt;T&gt;(T <span class="hljs-keyword">value</span>)
+    {
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">value</span> != <span class="hljs-keyword">null</span> ? <span class="hljs-keyword">new</span> Maybe&lt;T&gt;(<span class="hljs-keyword">value</span>) : Maybe&lt;T&gt;.None();
+    }
+}
+</code></pre>
+<p>Return function is implemented with a combination of a public constructor which accepts <code>Some</code> value
+(notice that <code>null</code> is not allowed) and a static <code>None</code> method returning an object of &#39;no value&#39;.
+<code>NullToMaybe</code> combines both of them in one call. </p>
+<p><code>Bind</code> function is implemented explicitly. </p>
+<p>Let&#39;s have a look at a use case. Imagine we have repositories which load the data from an external
+storage (I&#39;ll put them to a single class for the sake of brevity):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Repository</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Customer&gt; <span class="hljs-title">GetCustomer</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span>
+    </span>{
+        <span class="hljs-keyword">var</span> row = ReadRowFromDb(id); <span class="hljs-comment">// returns null if not found</span>
+        <span class="hljs-keyword">return</span> row.NullToMaybe().Bind(r =&gt; ConvertRowToCustomer(r));
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Address&gt; <span class="hljs-title">GetAddress</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Order&gt; <span class="hljs-title">GetOrder</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
+}
+</code></pre>
+<p>The repository reads a row from the database and then converts its value or null to a <code>Maybe&lt;DataRow&gt;</code>.
+Then it&#39;s immediately bound to a function which converts the row to a domain object (I&#39;ll omit this
+function&#39;s implementation but remember that it can also return a <code>Maybe&lt;Customer&gt;</code> if that&#39;s warranted
+by requirements).</p>
+<p>Now here is a more sophisticated example of <code>Bind</code> method composition:</p>
+<pre class="highlight"><code class="hljs cs">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+    repo.GetCustomer(customerId)
+        .Bind(c =&gt; repo.GetAddress(c.Address.Id))
+        .Bind(a =&gt; repo.GetOrder(a.LastOrder.Id))
+        .Bind(o =&gt; o.Shipper);
+</code></pre>
+<p>If you think that the syntax looks very much like a LINQ query with a bunch of <code>Select</code> statements, you are
+not the only one ;) One of the common implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface
+which allows a more C#-idiomatic binding composition. Actually:</p>
+<h2 id="ienumerable-selectmany-is-a-monad-">IEnumerable + SelectMany is a monad </h2>
+<p><code>IEnumerable</code> is an interface for enumerable containers.</p>
+<p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
+<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here is
+its signature:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
+    <span class="hljs-keyword">this</span> IEnumerable&lt;A&gt; first, 
+    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
+</code></pre>
+<p>And here is an example of composition:</p>
+<pre class="highlight"><code class="hljs cs">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
+    customers
+        .SelectMany(c =&gt; c.Addresses)
+        .SelectMany(a =&gt; a.Orders)
+        .SelectMany(o =&gt; o.Shippers);
+</code></pre>
+<p>The query has no idea about how the collections are stored (encapsulated in
+containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
+(<code>Bind</code> operation).</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>You should not be afraid of the &quot;M-word&quot; just because you are the C# programmer. C# does not have
+a notion of monads as predefined language constructs, but it doesn&#39;t mean we can&#39;t borrow some
+ideas from the functional world. Having said that, it&#39;s also true that C# is lacking some powerful
+ways to combine and generalize monads which are possible in Haskell and other functional languages.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/functional-programming/'>functional programming</a>, <a href='/tags/monads/'>monads</a>, <a href='/tags/maybe/'>maybe</a>, <a href='/tags/linq/'>LINQ</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jan 13th, 2016</div>
     
     <h1><a href='/2016/01/fire-and-forget-in-service-fabric-actors'>Fire-and-forget in Service Fabric actors</a></h1>
@@ -561,30 +729,6 @@ and push them to <code>azure</code> remote. Now you should be able to browse to 
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/asp-net-web-api/'>ASP.NET Web API</a>, <a href='/tags/spa/'>SPA</a>, <a href='/tags/continuous-deployment/'>Continuous deployment</a>, <a href='/tags/git/'>Git</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Nov 24th, 2015</div>
-    
-    <h1><a href='/2015/11/review-of-jspm-course'>Review of the course &quot;Modern, Modular JavaScript with SystemJS and jspm&quot;</a></h1>
-    
-    <div class="post-content">
-        <p>Recently I was playing with <a href="http://aurelia.io">Aurelia</a> SPA framework, which makes heavy use of jspm and SystemJS for modules/packaging. This package manager is new to me, and it looked a bit like magic sometimes. So when I saw a jspm course on Pluralsight, I decided to give it a try. And I did not regret: the course is great. It&#39;s so good, that I decided to write a review for it, even though I have never done that before. </p>
-<p>So, the full course name is &quot;<a href="https://www.pluralsight.com/courses/javascript-systemjs-jspm">Modern, Modular JavaScript with SystemJS and jspm</a>&quot; by Wes Higbee. The topic sounds pretty narrow (compare to something like &quot;Building a Web App with ASP.NET 5, MVC 6, EF7 and AngularJS&quot;), but the video track is surprisingly long: 7.5 hours. And every hour is packed with well structured in-depth material which lays the topic out from A to Z.</p>
-<p>The majority of online courses are focusing on just explaining the <em>What</em>&#39;s of a technology: where you get it, how you start quickly, how you solve typical tasks. Wes does not stop there: he is really focusing on <em>Why</em>&#39;s: not only why we should use ES2015 modules and jspm, but the complete logical flow from the best practices in other programming environments to the module patterns to the tools that enable us use the modern approaches in javascript today. The understanding of this reasoning chain sets the solid ground, and you actually start getting the What&#39;s deeper. </p>
-<p>But Wes goes even further: he mixes the <em>How</em>&#39;s in. I love watching him breaking the stuff to show why it fails and how to fix it. The references to module dependency graphs and internals of the tools are insightful; that&#39;s how &quot;the magic&quot; transforms into the comprehension of modern open source tools and libraries. </p>
-<p>Of course, just watching the course won&#39;t make me an expert in the topic. Now I need to put the knowledge into practice, ask more questions and find answers myself. But I will hopefully save hours of debugging and frustration and will maybe produce better products in the end. Wes and Pluralsight, I definitely need more of courses like this - focused, deep and engaging! </p>
-<p>P.S. It was a bit awkward to watch the course in the office because of solitaire cards being shown on my screen. Not sure what my colleagues thought I was doing ;)</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/pluralsight/'>pluralsight</a>, <a href='/tags/course/'>course</a>, <a href='/tags/learning/'>learning</a>, <a href='/tags/javascript/'>javascript</a>, <a href='/tags/es2015/'>ES2015</a>, <a href='/tags/jspm/'>jspm</a>, <a href='/tags/systemjs/'>SystemJS</a>
     </div>
     
 </article>

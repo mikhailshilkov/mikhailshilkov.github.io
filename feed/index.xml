@@ -3,13 +3,182 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-04-15T21:48:20.040Z</updated>
+    <updated>2016-05-13T14:33:15.636Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Tweaking immutable objects with C# and Fody</title>
+        <link href="http://mikhail.io/2016/05/tweaking-immutable-objects-with-csharp-and-fody"/>
+        <updated>2016-05-13T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-05-13,/2016/05/tweaking-immutable-objects-with-csharp-and-fody</id>
+        <content type="html"><![CDATA[<p>Immutable data structures provide a lot of benefits
+to programmers, especially when representing domain 
+<a href="https://lostechies.com/joeocampo/2007/04/23/a-discussion-on-domain-driven-design-value-objects/">value objects</a>. 
+Immutability is an essential part of functional programming paradigm.
+The concept is useful in object-oriented languages too, but you have
+to pay some price to get this advantage.</p>
+<p>In C# immutable classes are usually implemented with read-only
+properties which are populated from constructor parameters. One of the 
+disadvantages of this approach is the verbosity of creating a copy of an object
+with one property value modified.</p>
+<h2 id="example">Example</h2>
+<p>Let&#39;s have a look at an illustration of this problem. Let&#39;s say we have a value
+type representing poker player statistics:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">PlayerStats</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">PlayerStats</span><span class="hljs-params">(
+        <span class="hljs-keyword">int</span> hands, 
+        <span class="hljs-keyword">int</span> daysOnline,
+        Money won, 
+        Money expectedValue)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Hands = hands;
+        <span class="hljs-keyword">this</span>.DaysOnline = daysOnline;
+        <span class="hljs-keyword">this</span>.Won = won;
+        <span class="hljs-keyword">this</span>.ExpectedValue = expectedValue;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Hands { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> DaysOnline { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Money Won { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Money ExpectedValue { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>We already see that it&#39;s quite verbose: basically we repeat each property name
+five times. But the issue I&#39;m discussing today is related to how we create 
+a new object based on another object. Let&#39;s say we need to make a copy of 
+a given statistics, but with <code>Hands</code> property increased by 1:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = <span class="hljs-keyword">new</span> PlayerStats(
+    existing.Hands + <span class="hljs-number">1</span>,
+    existing.DaysOnline,
+    existing.Won,
+    existing.ExpectedValue);
+</code></pre>
+<p>Not as simple as we could hope. Also, there is some room for mistakes here. For 
+instance, we could swap <code>Won</code> and <code>ExpectedValue</code> property calls
+and compiler won&#39;t let us know because the types are the same. So we probably
+want to use explicit constructor parameter names:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = <span class="hljs-keyword">new</span> PlayerStats(
+    hands: existing.Hands + <span class="hljs-number">1</span>,
+    daysOnline: existing.DaysOnline,
+    won: existing.Won,
+    expectedValue: existing.ExpectedValue);
+</code></pre>
+<p>But that leads to even more typing and repetition...</p>
+<h2 id="inspiration">Inspiration</h2>
+<p>F# is a functional-first language with immutability as first-class concept.
+In F# value objects are usually modelled with Records, here is our example
+reimplemented:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">PlayerStats</span> </span>= {
+    Hands: int
+    DaysOnline: int
+    Won: Money
+    ExpectedValue: Money
+}
+</code></pre>
+<p>Creation of new objects based on other objects is also solved properly in F#,
+thanks to the <strong><code>with</code></strong> keyword :</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> increasedHands = { existing <span class="hljs-keyword">with</span> Hands = existing.Hands + <span class="hljs-number">1</span> }
+</code></pre>
+<p>All the properties are copied from the source record except for the ones
+explicitly mentioned in the expression.</p>
+<h2 id="defining-with-in-c-">Defining With in C#</h2>
+<p>There&#39;s no <strong><code>with</code></strong> operator in C#, but we can try to come up with an
+alternative. We can define some fluent methods which would change
+property values one by one (they don&#39;t change the original object, but
+return a copy with changed value):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithHands</span><span class="hljs-params">(<span class="hljs-keyword">int</span> hands)</span> 
+</span>{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">PlayerStats</span><span class="hljs-params">(
+        hands: hands,
+        daysOnline: existing.DaysOnline,
+        won: existing.Won,
+        expectedValue: existing.ExpectedValue)</span></span>;
+}
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithDaysOnline</span><span class="hljs-params">(<span class="hljs-keyword">int</span> daysOnline)</span> </span>{ ... }
+<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithWon</span><span class="hljs-params">(Money won)</span> </span>{ ... }
+<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithExpectedValue</span> <span class="hljs-params">(Money expectedValue)</span> </span>{ ... }
+</code></pre>
+<p>The method implementation is very tedious but the usage gets much cleaner:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = existing.WithHands(existing.Hands + <span class="hljs-number">1</span>);
+</code></pre>
+<p>One way to avoid repetitive code is to generate it.</p>
+<h2 id="with-fody-plugin">With.Fody Plugin</h2>
+<p>In <a href="http://mikhail.io/2015/12/weaving-your-domain-classes-with-fody/">one of my previous posts</a>
+I described how C# value objects can be made less painful with 
+<a href="https://github.com/Fody/Fody">Fody</a> - a tool which changes your assembly at
+compilation time to provide some desired properties in automated and reliable
+fashion.</p>
+<p>Please welcome the new Fody plugin <a href="https://github.com/mikhailshilkov/With.Fody"><strong>With.Fody</strong></a> 
+which auto-implements <code>With</code> method bodies for C# immutable classes.</p>
+<p>Here is how to use this plugin for our imaginary example.</p>
+<p>First, add a reference to NuGet pakages <code>Fody</code> and <code>With.Fody</code>.</p>
+<p>Then, keep the <code>PlayerStats</code> class definition, but get rid of the bodies
+of <code>WithXyz</code> methods. Keep the signature but return something trivial like
+<code>null</code> or <code>this</code>:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithHands</span><span class="hljs-params">(<span class="hljs-keyword">int</span> hands)</span> </span>=&gt; <span class="hljs-keyword">this</span>;
+<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithDaysOnline</span><span class="hljs-params">(<span class="hljs-keyword">int</span> daysOnline)</span> </span>=&gt; <span class="hljs-keyword">this</span>;
+<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithWon</span><span class="hljs-params">(Money won)</span> </span>=&gt; <span class="hljs-keyword">this</span>;
+<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithExpectedValue</span> <span class="hljs-params">(Money expectedValue)</span> </span>=&gt; <span class="hljs-keyword">this</span>;
+</code></pre>
+<p>Compile the project and you will see the following line in Build Output:</p>
+<pre class="highlight"><code class="hljs oxygene">&gt;      Fody/<span class="hljs-keyword">With</span>:   Added <span class="hljs-function"><span class="hljs-keyword">method</span> '<span class="hljs-title">With</span>' <span class="hljs-title">to</span> <span class="hljs-title">type</span> '<span class="hljs-title">PlayerStats</span>'.
+</span></code></pre><p>It means that the method bodies were re-implemented with calls to 
+class constructor with proper parameter values.</p>
+<p>The method stubs are needed to satisfy code completion tools like 
+IntelliSense and Resharper, otherwise we could skip them altogether.</p>
+<h2 id="single-with-for-multiple-properties">Single With() for Multiple Properties</h2>
+<p>In case you avoid <a href="http://mikhail.io/2015/08/units-of-measurement-in-domain-design/">Primitive Obsession</a>
+antipattern, you will often end up with classes which have unique types of 
+properties, e.g.</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripProfile</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">TripProfile</span><span class="hljs-params">(
+        Distance totalDistance,
+        Speed averageSpeed,
+        Volume fuelConsumed)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.TotalDistance = totalDistance;
+        <span class="hljs-keyword">this</span>.AverageSpeed = averageSpeed;
+        <span class="hljs-keyword">this</span>.FuelConsumed = fuelConsumed;
+    }
+
+    <span class="hljs-keyword">public</span> Distance TotalDistance { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Speed AverageSpeed { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Volume FuelConsumed { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>In this case, the plugin can be smart enough to figure out which property
+you want to modify just by looking at the type of the argument. The single stub
+method can look like this:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> TripProfile With&lt;T&gt;(T <span class="hljs-keyword">value</span>) =&gt; <span class="hljs-keyword">this</span>;
+</code></pre>
+<p>This would get compiled into 3 strongly typed <code>With</code> methods with <code>Distance</code>,
+<code>Speed</code> and <code>Volume</code> arguments respectively. Resharper is still happy. And
+if you make a mistake and try to call the generic <code>With</code> method with an
+argument of wrong type (say <code>int</code>), the compiler will give you an error.</p>
+<p>It is safe to call <code>With</code> methods in the same assembly where the class is defined:
+the calls get adapted to the real implementation automatically.</p>
+<h2 id="how-to-get-started-with-your-classes">How to Get Started with Your Classes</h2>
+<p>Here are the requirements for the classes to be picked up by <strong><code>Fody.With</code></strong>:</p>
+<ol>
+<li>Have a single constructor.</li>
+<li>The constructor should have more than one argument.</li>
+<li>For each constructor agrument, there must be a gettable property with
+same name (case insensitive).</li>
+<li>At least one <code>With</code> stub must be defined as described above.</li>
+</ol>
+<p>You can check out more examples, look at the source code or raise an issue in
+<a href="https://github.com/mikhailshilkov/With.Fody">With.Fody github repository</a>.</p>
+<p>Give it a try and let me know what your think!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>T-SQL MERGE statement is underrated</title>
@@ -1571,164 +1740,6 @@ much less that one could imagine for a task of image recognition. Similar code c
 fixed objects at poker table: dealer button location, action buttons, checkboxes etc. In the next part of this
 series I will show how to recognize non-fixed parts: text and numbers.</p>
 <p><em>Proceed to <a href="http://mikhail.io/2016/02/building-a-poker-bot-string-number-recognition/">Part 2 of Building a Poker Bot: String and Number Recognition</a>.</em></p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Monads explained in C#</title>
-        <link href="http://mikhail.io/2016/01/monads-explained-in-csharp"/>
-        <updated>2016-01-25T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2016-01-25,/2016/01/monads-explained-in-csharp</id>
-        <content type="html"><![CDATA[<p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
-what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
-developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
-loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
-it becomes kind of obvious once you read 3 or 5 &quot;explanations&quot; on the web. Here is my attempt.</p>
-<h2 id="monads-are-container-types">Monads are container types</h2>
-<p>Monads are containers which encapsulate some kind of functionality. It&#39;s that simple. The goals of monads
-are similar to generic goals of any encapsulation in software development practices: hide the implementation
-details from the client, but provide a proper way to use the hidden functionality. It&#39;s not because we 
-want to be able to change the implementation, it&#39;s because we want to make the client as simple as possible
-and to enforce the best way of code structure. Quite often monads provide the way to avoid imperative code
-in favor of functional style.</p>
-<p>Monads are flexible, so in C# they should be represented as generic types:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
-{
-}
-</code></pre>
-<h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
-<p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should be a way to create an object
-of this class out of an instance of type <code>T</code>. In functional world this operation is known as <code>Return</code> 
-function. In C# it can be as simple as a constructor:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
-{
-    public Monad(T instance)
-    {
-    }
-}
-</code></pre>
-<p>But usually it makes sense to define an extension method to enable fluent syntax of monad creation:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MonadExtensions</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Monad&lt;T&gt; Return&lt;T&gt;(<span class="hljs-keyword">this</span> T instance) =&gt; <span class="hljs-keyword">new</span> Monad&lt;T&gt;(instance);
-}
-</code></pre>
-<h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
-<p>This is the property which makes monads so useful, but also a bit confusing. In functional world this
-operation is known as functional composition and is expressed with the <code>Bind</code> function (or <code>&gt;&gt;=</code> operator).
-Here is the signature of <code>Bind</code> method in C#:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
-{
-    public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
-    {
-    }
-}
-</code></pre>
-<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an argument of type <code>T</code> (not
-a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> where <code>TO</code> is another type. Now, our first instance
-of <code>Monad&lt;T&gt;</code> knows how to bind itself to this function to produce another instance of monad of the
-new type. The full power of monads comes when we compose several of them in one chain:</p>
-<pre class="highlight"><code class="hljs cs">initialValue
-    .Return()
-    .Bind(v1 =&gt; produceV2OutOfV1(v1))
-    .Bind(v2 =&gt; produceV3OutOfV2(v2))
-    .Bind(v3 =&gt; produceV4OutOfV3(v3))
-    <span class="hljs-comment">//...</span>
-</code></pre>
-<p>And that&#39;s about it. Let&#39;s have a look at some examples.</p>
-<h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
-<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach to dealing
-with &#39;no value&#39; value which is alternative to the concept <code>null</code>. Basically your object should
-never be null, but it can either have <code>Some</code> value or be <code>None</code>. F# has a maybe implementation
-built into the language: it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
-<pre class="highlight"><code class="hljs undefined">public class Maybe&lt;T&gt; where T : class
-{
-    private T value;
-
-    public Maybe(T someValue)
-    {
-        if (someValue == null)
-            throw new AgrumentNullException(nameof(someValue));
-        this.value = someValue;
-    }
-
-    private Maybe()
-    {
-    }
-
-    public Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func)
-    {
-        return value != null ? new Maybe&lt;TO&gt;(func(value)) : Maybe&lt;TO&gt;.None();
-    }
-
-    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;(null);
-}
-</code></pre>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MaybeExtensions</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Maybe&lt;T&gt; NullToMaybe&lt;T&gt;(T <span class="hljs-keyword">value</span>)
-    {
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">value</span> != <span class="hljs-keyword">null</span> ? <span class="hljs-keyword">new</span> Maybe&lt;T&gt;(<span class="hljs-keyword">value</span>) : Maybe&lt;T&gt;.None();
-    }
-}
-</code></pre>
-<p>Return function is implemented with a combination of a public constructor which accepts <code>Some</code> value
-(notice that <code>null</code> is not allowed) and a static <code>None</code> method returning an object of &#39;no value&#39;.
-<code>NullToMaybe</code> combines both of them in one call. </p>
-<p><code>Bind</code> function is implemented explicitly. </p>
-<p>Let&#39;s have a look at a use case. Imagine we have repositories which load the data from an external
-storage (I&#39;ll put them to a single class for the sake of brevity):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Repository</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Customer&gt; <span class="hljs-title">GetCustomer</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span>
-    </span>{
-        <span class="hljs-keyword">var</span> row = ReadRowFromDb(id); <span class="hljs-comment">// returns null if not found</span>
-        <span class="hljs-keyword">return</span> row.NullToMaybe().Bind(r =&gt; ConvertRowToCustomer(r));
-    }
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Address&gt; <span class="hljs-title">GetAddress</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> Maybe&lt;Order&gt; <span class="hljs-title">GetOrder</span><span class="hljs-params">(<span class="hljs-keyword">int</span> id)</span> </span>=&gt; ... <span class="hljs-comment">// similar implementation</span>
-}
-</code></pre>
-<p>The repository reads a row from the database and then converts its value or null to a <code>Maybe&lt;DataRow&gt;</code>.
-Then it&#39;s immediately bound to a function which converts the row to a domain object (I&#39;ll omit this
-function&#39;s implementation but remember that it can also return a <code>Maybe&lt;Customer&gt;</code> if that&#39;s warranted
-by requirements).</p>
-<p>Now here is a more sophisticated example of <code>Bind</code> method composition:</p>
-<pre class="highlight"><code class="hljs cs">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
-    repo.GetCustomer(customerId)
-        .Bind(c =&gt; repo.GetAddress(c.Address.Id))
-        .Bind(a =&gt; repo.GetOrder(a.LastOrder.Id))
-        .Bind(o =&gt; o.Shipper);
-</code></pre>
-<p>If you think that the syntax looks very much like a LINQ query with a bunch of <code>Select</code> statements, you are
-not the only one ;) One of the common implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface
-which allows a more C#-idiomatic binding composition. Actually:</p>
-<h2 id="ienumerable-selectmany-is-a-monad-">IEnumerable + SelectMany is a monad </h2>
-<p><code>IEnumerable</code> is an interface for enumerable containers.</p>
-<p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
-<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here is
-its signature:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
-    <span class="hljs-keyword">this</span> IEnumerable&lt;A&gt; first, 
-    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
-</code></pre>
-<p>And here is an example of composition:</p>
-<pre class="highlight"><code class="hljs cs">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
-    customers
-        .SelectMany(c =&gt; c.Addresses)
-        .SelectMany(a =&gt; a.Orders)
-        .SelectMany(o =&gt; o.Shippers);
-</code></pre>
-<p>The query has no idea about how the collections are stored (encapsulated in
-containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
-(<code>Bind</code> operation).</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>You should not be afraid of the &quot;M-word&quot; just because you are the C# programmer. C# does not have
-a notion of monads as predefined language constructs, but it doesn&#39;t mean we can&#39;t borrow some
-ideas from the functional world. Having said that, it&#39;s also true that C# is lacking some powerful
-ways to combine and generalize monads which are possible in Haskell and other functional languages.</p>
 ]]></content>
     </entry>
     
