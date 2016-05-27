@@ -3,13 +3,245 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-05-13T14:33:15.636Z</updated>
+    <updated>2016-05-27T14:44:59.189Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Dependency Inversion Implies Interfaces Are Owned by High-level Modules</title>
+        <link href="http://mikhail.io/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules"/>
+        <updated>2016-05-27T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-05-27,/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules</id>
+        <content type="html"><![CDATA[<p>Dependency Inversion is one of the five principles of widely known and 
+acknowledged S.O.L.I.D. design guidelines. This principle is very powerful
+and useful when applied consistently. But in my experience, it&#39;s actually
+quite easy to misunderstand the idea, or at least to mentally simplify it
+to somewhat less profound technique of Dependency Injection.</p>
+<p>In this post I will try to give my understanding of the principle, and 
+the difference between <em>Inversion</em> and <em>Injection</em>.</p>
+<p>Let&#39;s start with the Dependency Inversion principle definition. It was given
+by Uncle Bob Martin, and consists of two parts.</p>
+<h2 id="part-1-abstractions">Part 1: Abstractions</h2>
+<blockquote>
+<p>High-level modules should not depend on low-level modules. 
+Both should depend on abstractions.</p>
+</blockquote>
+<p>Ok, this is easy to understand. High-level modules are also high-importance
+modules, they are about the business domain and are not specific about
+technical details. Low-level modules are about wiring those high-level
+functions to execution environment, tools and third parties. </p>
+<p>Thus, the implementation of high level policy should not depend on 
+implementation of low level code, but rather on interfaces (or other
+abstractions).</p>
+<p>Let&#39;s take a look at an example. Our high-level business domain is about
+planning and executing trips from geographical point A to point B. Our
+low-level code talks to a service which knows how to calculate the time 
+required for a vehicle to go from A to B:</p>
+<p><img src="http://mikhail.io/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules/uml-dependency-inversion-violated.png" alt="UML: dependency inversion violated"></p>
+<p>So the following code <strong>violates</strong> the first part of the Dependency Inversion:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">namespace</span> <span class="hljs-title">Mapping</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">RouteCalculator</span>
+    {
+        <span class="hljs-function"><span class="hljs-keyword">public</span> TimeSpan <span class="hljs-title">CalculateDuration</span><span class="hljs-params">(
+            <span class="hljs-keyword">double</span> fromLat, <span class="hljs-keyword">double</span> fromLng, <span class="hljs-keyword">double</span> toLat, <span class="hljs-keyword">double</span> toLng)</span>
+        </span>{
+            <span class="hljs-comment">// Call a 3rd party web service</span>
+        }
+    }
+}
+
+<span class="hljs-keyword">namespace</span> <span class="hljs-title">Planning</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripPlanner</span>
+    {
+        <span class="hljs-function"><span class="hljs-keyword">public</span> DateTime <span class="hljs-title">ExpectedArrival</span><span class="hljs-params">(Trip trip)</span>
+        </span>{
+            <span class="hljs-keyword">var</span> calculator = <span class="hljs-keyword">new</span> RouteCalculator();
+            <span class="hljs-keyword">var</span> duration = calculator.CalculateDuration(
+                trip.Origin.Latitude, 
+                trip.Origin.Longitude, 
+                trip.Destination.Latitude, 
+                trip.Destination.Longitude);
+            <span class="hljs-keyword">return</span> trip.Start.Add(duration);
+        }
+    }
+}
+</code></pre>
+<p>It&#39;s not compliant to the principle because the high-level code (<code>TripPlanner</code>)
+explicitly depends on low-level service (<code>RouteCalculator</code>). Note that I&#39;ve put
+them to distinct namespaces to emphasize the required separation.</p>
+<p>To improve on that, we might introduce an interface to decouple the 
+implementations:</p>
+<p><img src="http://mikhail.io/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules/uml-dependency-inversion-with-dependency-injection.png" alt="UML: dependency inversion with dependency injection"></p>
+<p>In Trip Planner we accept the interface as constructor parameter, and we&#39;ll get the 
+specific implementation at run time:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">namespace</span> <span class="hljs-title">Mapping</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">IRouteCalculator</span>
+    {
+        <span class="hljs-function">TimeSpan <span class="hljs-title">CalculateDuration</span><span class="hljs-params">(
+            <span class="hljs-keyword">double</span> fromLat, <span class="hljs-keyword">double</span> fromLng, <span class="hljs-keyword">double</span> toLat, <span class="hljs-keyword">double</span> toLng)</span></span>;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">RouteCalculator</span> : <span class="hljs-title">IRouteCalculator</span>
+    {
+        <span class="hljs-comment">// Same implementation as before...</span>
+    }
+}
+
+<span class="hljs-keyword">namespace</span> <span class="hljs-title">Planning</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripPlanner</span>
+    {
+        <span class="hljs-keyword">private</span> IRouteCalculator calculator;
+
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">TripPlanner</span><span class="hljs-params">(IRouteCalculator calculator)</span>
+        </span>{
+            <span class="hljs-keyword">this</span>.calculator = calculator;
+        }
+
+        <span class="hljs-function"><span class="hljs-keyword">public</span> DateTime <span class="hljs-title">ExpectedArrival</span><span class="hljs-params">(Trip trip)</span>
+        </span>{
+            <span class="hljs-keyword">var</span> duration = <span class="hljs-keyword">this</span>.calculator.CalculateDuration(
+                trip.Origin.Latitude, 
+                trip.Origin.Longitude, 
+                trip.Destination.Latitude, 
+                trip.Destination.Longitude);
+            <span class="hljs-keyword">return</span> trip.Start.Add(duration);
+        }
+    }
+}
+</code></pre>
+<p>This technique is called <em>dependency 
+injection</em> or, more specifically, <em>constructor injection</em>. This way 
+we can easily substitute the implementation later or inject a test 
+double while unit testing.</p>
+<p>But that&#39;s just one part of the principle. Let&#39;s move on to part 2.</p>
+<h2 id="part-2-details">Part 2: Details</h2>
+<p>The second part of the principle says</p>
+<blockquote>
+<p>Abstractions should not depend upon details. 
+Details should depend upon abstractions.</p>
+</blockquote>
+<p>I find this wording unfortunate because it might be confusing. There are 
+some valid examples which explain it with base and derived classes. 
+But in our example we solved the part 1 with an interface. So now we are told that
+the abstraction (interface) should not depend upon details (implementation).</p>
+<p>That probably means that the interface should not leak any entities which
+are specific to the given implementation, to make other implementation
+equally possible.</p>
+<p>While this is try, this second part of the principle may seem to be subordinate
+to part one, reducing to an idea &quot;design your interfaces well&quot;. So 
+many people tend to leave the part 2 out (
+<a href="https://scotch.io/bar-talk/s-o-l-i-d-the-first-five-principles-of-object-oriented-design#dependency-inversion-principle">example 1</a>,
+<a href="http://www.codeproject.com/Articles/495019/Dependency-Inversion-Principle-and-the-Dependency">example 2</a>), focusing 
+solely on part 1 - the Dependency Injection.</p>
+<h2 id="interface-ownership">Interface Ownership</h2>
+<p>But Dependency Inversion is <strong>not</strong> just Dependency Injection. So, to revive
+the part 2 I would add the following statement to make it clearer:</p>
+<blockquote>
+<p><strong>Abstractions should be owned by higher-level modules and implemented by
+lower-level modules.</strong></p>
+</blockquote>
+<p>This rule is violated in our last example. The interface is defined together
+with implementation, and is basically just extracted from it. It&#39;s <strong>owned</strong>
+by the mapping namespace. </p>
+<p>To improve the design, we can transfer the interface ownership to domain
+level:</p>
+<p><img src="http://mikhail.io/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules/uml-dependency-inversion.png" alt="UML: dependency inversion"></p>
+<p>As you can see, I also renamed the interface. The name should reflect the way
+how the domain experts would think of this abstraction. Here is the result:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">namespace</span> <span class="hljs-title">Planning</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">IDurationCalculator</span>
+    {
+        <span class="hljs-function">TimeSpan <span class="hljs-title">CalculateDuration</span><span class="hljs-params">(Hub origin, Hub destination)</span></span>;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripPlanner</span>
+    {
+        <span class="hljs-keyword">private</span> IDurationCalculator calculator;
+
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">TripPlanner</span><span class="hljs-params">(IDurationCalculator calculator)</span>
+        </span>{
+            <span class="hljs-keyword">this</span>.calculator = calculator;
+        }
+
+        <span class="hljs-function"><span class="hljs-keyword">public</span> DateTime <span class="hljs-title">ExpectedArrival</span><span class="hljs-params">(Trip trip)</span>
+        </span>{
+            <span class="hljs-keyword">var</span> duration = <span class="hljs-keyword">this</span>.calculator.CalculateDuration(
+                trip.Origin, trip.Destination);
+            <span class="hljs-keyword">return</span> trip.Start.Add(duration);
+        }
+    }
+}
+
+<span class="hljs-keyword">namespace</span> <span class="hljs-title">Mapping</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">RouteCalculator</span> : <span class="hljs-title">IRouteCalculator</span>
+    {
+        <span class="hljs-function"><span class="hljs-keyword">public</span> TimeSpan <span class="hljs-title">CalculateDuration</span><span class="hljs-params">(Hub origin, Hub destination)</span>
+        </span>{
+            <span class="hljs-comment">// Extract latitude and longitude from Hubs</span>
+            <span class="hljs-comment">// Call a 3rd party web service</span>
+        }
+    }
+}
+</code></pre>
+<p>Now, the interface is defined in <code>Planning</code> namespace, close to its <em>Client</em>,
+not its <em>Implementation</em>. That&#39;s the dependency inversion in action. Even
+more importantly, it&#39;s defined in terms of our domain - notice the use of
+<code>Hub</code> in the interface instead of low-level <code>double</code>.</p>
+<h2 id="why-high-level-code-should-own-interfaces">Why High Level Code Should Own Interfaces</h2>
+<p>There are multiple benefits to this approach, here are the most important
+advantages:</p>
+<h3 id="concise-readable-high-level-code">Concise, readable high-level code</h3>
+<p>The high-level domain code has the highest value, so the ultimate goal
+is to keep it as clean as possible. The interface ownership enables us to
+design the most concise interfaces to achieve this goal. We avoid any kind
+of adaptation of domain entities to whatever lower-level details.</p>
+<h3 id="better-abstractions">Better abstractions</h3>
+<p>The interfaces themselves get better as well. They are closer to business,
+so abstractions get more ubiquitous and better understood by everyone.</p>
+<p>They tend to live longer, just because they are born from the domain side, 
+not the infrastructure side.</p>
+<h3 id="dependencies-in-outer-layers">Dependencies in outer layers</h3>
+<p>Code organization tends to improve too. If an interface is defined in the 
+same module as the implementation, the domain module now has
+to reference the infrastructure module just to use the interface.</p>
+<p>With domain-level interface, the reference goes in the other direction, so
+dependencies are pushed up to the outer layers of application. </p>
+<p>This principle is the foundation of domain-centric architectures
+<a href="https://blog.8thlight.com/uncle-bob/2012/08/13/the-clean-architecture.html">Clean architecture</a>,
+<a href="http://alistair.cockburn.us/Hexagonal+architecture">Ports and Adapters</a> and the likes.</p>
+<h3 id="less-cross-domain-dependencies">Less cross-domain dependencies</h3>
+<p>In large systems, the business domains should be split into smaller sub-domains, or
+bounded contexts. Still, sub-domains are not totally isolated and must 
+cooperate to achieve the ultimate business goal. </p>
+<p>It might be compelling to reference the interfaces of one sub-domain 
+from another sub-domain and then say that the dependency is minimal because
+they are hidden behind abstractions.</p>
+<p>But coupling with abstractions is still coupling. Instead, each domain should
+operate its own abstractions at the high level, and then different abstractions
+should be wired together on lower level with techniques like adapters, facades,
+context mapping etc.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Here is my working definition of Dependency Inversion principle:</p>
+<blockquote>
+<p>High-level modules should not depend on low-level modules. 
+Both should depend on abstractions.</p>
+<p>Abstractions should not depend upon details. 
+Details should depend upon abstractions.</p>
+<p>Abstractions should be owned by higher-level modules and implemented by
+lower-level modules.</p>
+</blockquote>
+]]></content>
+    </entry>
     
     <entry>
         <title>Tweaking immutable objects with C# and Fody</title>
@@ -1597,149 +1829,6 @@ super powerful setup regarding cluster resource management, state replication, f
 tolerance and reliable communication. We can borrow some approaches that are used in Akka.NET
 framework to improve the developer experience who wants to leverage the power
 of Service Fabric.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Building a Poker Bot: Card Recognition</title>
-        <link href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition"/>
-        <updated>2016-02-01T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2016-02-01,/2016/02/building-a-poker-bot-card-recognition</id>
-        <content type="html"><![CDATA[<p><em>This is the first part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
-for online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
-easy and very enjoyable.</em></p>
-<h2 id="screen-recognition">Screen recognition</h2>
-<p>For a human, the very first step to the ability to play poker is to understand the cards, what a hand is and 
-what the value of your hand is. E.g. in Texas Holdem each player gets 2 hole cards which form a hand. At 
-the showdown the player with the best hand wins.</p>
-<p>Poker bots are no different, they also need to be taught the notion of cards and hands. A bot should &quot;watch&quot; 
-the table and see which cards he is dealt with. There are several ways to achieve that but I go for a technique
-called screen recognition, i.e. the bot makes a screenshot of a table and then reads the pixels to understand
-what&#39;s going on. Very similar to what people do.</p>
-<p>Image recognition in general is a tough task. Human beings are very good at interpreting vague images and
-recognizing familiar objects. It&#39;s much more difficult for computers. General image recognition (think showing
-a photo to your computer and asking whether there is an animal there) is very tough; corporations like Google
-and Microsoft are spending numerous man-years and employ techniques like machine learning and neural networks.</p>
-<p>Fortunately, poker table recognition is much easier. The images to be recognized are machine-generated, so
-the same things are rendered more or less the same way all the time. It makes sense to keep the poker table
-size fixed to some predefined value which makes recognition task fairly easy.</p>
-<h2 id="card-recognition-steps">Card recognition steps</h2>
-<p>There are 13 card faces (from Deuce to Ace) and 4 suits. All of them are just fixed-size images which we need to be able to
-match with. So we start with a screenshot of a poker table:</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/table.png" alt="Poker table screenshot"></p>
-<p>The table size is fixed, so are the left and the top pixel positions of hole cards. So, our first step is to extract
-the small images of cards out of the big screenshot:</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/cards.png" alt="Extracted card images"></p>
-<p>Now, we can take the recognition of card faces and suits separately. In our sample layout, suits are color coded.
-This is very friendly to humans and super simple for the bot. We pick the suit based on the color (ignoring 
-the white pixels):</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/suits.png" alt="Recognized suits"></p>
-<p>This leaves us with the task of choosing between 13 card faces. The color information is not important
-here, we can make the image grey-scale. Moreover, we can reduce the color information to the single bit per 
-pixel - call it white or black:</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/blackandwhite.png" alt="Black and white pixels"></p>
-<p>Now this mask is very simple, and we can compare it with 13 predefined masks for 13 cards pixel by pixel.
-The one with the biggest amount of matches wins.</p>
-<h2 id="suit-recognition">Suit recognition</h2>
-<p>Let&#39;s put some code at the table. We start with suit recognition. <code>getSuit</code> function has type 
-<code>Color -&gt; string option</code> and converts the color of a pixel into the suit name, if possible. Hearts (&quot;h&quot;)
-are red, Diamonds (&quot;d&quot;) are blue, Clubs (&quot;c&quot;) are green and Spades (&quot;s&quot;) are black:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> getSuit (c : Color) =
-  <span class="hljs-keyword">match</span> c <span class="hljs-keyword">with</span>
-  | _ <span class="hljs-keyword">when</span> c.B &lt; <span class="hljs-number">127</span>uy &amp;&amp; c.G &lt; <span class="hljs-number">127</span>uy &amp;&amp; c.R &gt; <span class="hljs-number">127</span>uy -&gt; Some <span class="hljs-string">"h"</span>
-  | _ <span class="hljs-keyword">when</span> c.B &gt; <span class="hljs-number">127</span>uy &amp;&amp; c.G &lt; <span class="hljs-number">127</span>uy &amp;&amp; c.R &lt; <span class="hljs-number">127</span>uy -&gt; Some <span class="hljs-string">"d"</span>
-  | _ <span class="hljs-keyword">when</span> c.B &lt; <span class="hljs-number">127</span>uy &amp;&amp; c.G &gt; <span class="hljs-number">127</span>uy &amp;&amp; c.R &lt; <span class="hljs-number">127</span>uy -&gt; Some <span class="hljs-string">"c"</span>
-  | _ <span class="hljs-keyword">when</span> c.B &lt; <span class="hljs-number">127</span>uy &amp;&amp; c.G &lt; <span class="hljs-number">127</span>uy &amp;&amp; c.R &lt; <span class="hljs-number">127</span>uy -&gt; Some <span class="hljs-string">"s"</span>
-  | _ -&gt; None
-</code></pre>
-<p>This function is used by <code>getCardSuit</code> function of type <code>(int -&gt; int -&gt; Color) -&gt; int -&gt; int -&gt; string</code>.
-Its first argument is a function which returns the color of a pixel based on <code>(x, y)</code>
-relative coordinates (starting with 0). The next two arguments are width and height of the cards. Result is
-the same suit name that we described above. The function loops through all the pixels, gets a suit per
-pixel and then returns the suit which is the most popular among them. Alternatively, we could just return
-the first suit found, but my implementation looks more resilient:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> getCardSuit getPixel width height =    
-  seq { <span class="hljs-keyword">for</span> x <span class="hljs-keyword">in</span> <span class="hljs-number">0</span> .. width - <span class="hljs-number">1</span> <span class="hljs-keyword">do</span>
-          <span class="hljs-keyword">for</span> y <span class="hljs-keyword">in</span> <span class="hljs-number">0</span> .. height - <span class="hljs-number">1</span> <span class="hljs-keyword">do</span>
-            <span class="hljs-keyword">yield</span> getSuit (getPixel x y) }
-  |&gt; Seq.choose id
-  |&gt; Seq.countBy id
-  |&gt; Seq.maxBy (<span class="hljs-keyword">fun</span> (v, c) -&gt; c)
-  |&gt; fst
-</code></pre>
-<h2 id="producing-the-black-white-pattern">Producing the black &amp; white pattern</h2>
-<p><code>getCardPattern</code> accepts the same parameters as <code>getSuits</code> but returns <code>seq&lt;BW&gt;</code> instead. This is
-a sequence of black or white pixels with a helper union type:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BW</span> </span>= B | W
-</code></pre>
-<p>The function body enumerates the pixels and return black or white result as a flat sequence:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> getCardPattern getPixel width height =
-  <span class="hljs-keyword">let</span> isWhite (c : Color) =
-    <span class="hljs-keyword">if</span> c.B &gt; <span class="hljs-number">127</span>uy &amp;&amp; c.G &gt; <span class="hljs-number">127</span>uy &amp;&amp; c.R &gt; <span class="hljs-number">127</span>uy <span class="hljs-keyword">then</span> W
-    <span class="hljs-keyword">else</span> B
-
-  seq { <span class="hljs-keyword">for</span> x <span class="hljs-keyword">in</span> <span class="hljs-number">0</span> .. width - <span class="hljs-number">1</span> <span class="hljs-keyword">do</span>
-          <span class="hljs-keyword">for</span> y <span class="hljs-keyword">in</span> <span class="hljs-number">0</span> .. height - <span class="hljs-number">1</span> <span class="hljs-keyword">do</span>
-            <span class="hljs-keyword">yield</span> isWhite (getPixel x y) }
-</code></pre>
-<h2 id="card-face-recognition">Card face recognition</h2>
-<p>Having a black and white pattern, we can compare it with the predefined patterns and pick the
-most similar one. A pattern is defined with a helper type</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">CardPattern</span> </span>= {
-  Card: string
-  Pattern: BW array
-}
-</code></pre>
-<p><code>Pattern</code> is a sequence which is equivalent to the sequence we got on the previous step. 
-<code>Card</code> is a string of hand face value 2, 3, 4 .. A. <code>getCardFace</code> has the type 
-<code>CardPattern[] -&gt; seq&lt;BW&gt; -&gt; string</code>, it accepts an array of known patterns and a pattern
-of the card to be recognized. It compares patterns pixel by pixel and returns the card
-which has the biggest amount of matches:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> getCardFace patterns bws =
-  <span class="hljs-keyword">let</span> matchCount h p =
-    Seq.zip h p
-    |&gt; Seq.map (<span class="hljs-keyword">fun</span> (v1, v2) -&gt; <span class="hljs-keyword">if</span> v1 = v2 <span class="hljs-keyword">then</span> <span class="hljs-number">1</span> <span class="hljs-keyword">else</span> <span class="hljs-number">0</span>)
-    |&gt; Seq.sum
-    |&gt; decimal
-  <span class="hljs-keyword">let</span> maxPattern = patterns |&gt; Array.maxBy (<span class="hljs-keyword">fun</span> p -&gt; matchCount bws p.Pattern)
-  maxPattern.Card
-</code></pre>
-<h2 id="getting-the-known-patterns">Getting the known patterns</h2>
-<p>So how do we create an array of known patterns? It&#39;s tedious to do manually, so
-we use a bit of code generation.
-Basically we just take several screenshots of poker tables and feed them to the following 
-helper function:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> parsePattern getPixel width height =
-  getCardPattern getPixel width height
-  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; <span class="hljs-keyword">if</span> x = B <span class="hljs-keyword">then</span> <span class="hljs-string">"B"</span> <span class="hljs-keyword">else</span> <span class="hljs-string">"W"</span>) 
-  |&gt; String.concat <span class="hljs-string">";"</span>
-</code></pre>
-<p>The function creates a string which can be copy-pasted into F# array of <code>BW</code>.</p>
-<h2 id="putting-it-all-together">Putting it all together</h2>
-<p>Here is the facade function that will be called from the outside:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> recognizeCard getPixel width height = 
-  <span class="hljs-keyword">let</span> value = 
-    getCardPattern getPixel width height 
-    |&gt; getCardValue patterns
-  <span class="hljs-keyword">let</span> suit = getCardSuit getPixel width height
-  value + suit
-</code></pre>
-<p>The calling code looks like this:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> image = <span class="hljs-keyword">new</span> Bitmap(<span class="hljs-string">"..."</span>);
-
-<span class="hljs-keyword">let</span> getPixel offsetX offsetY x y = 
-  image.GetPixel(offsetX + x, offsetY + y)
-
-<span class="hljs-keyword">let</span> hand = (recognizeCard (getPixel leftX top) width height) + (recognizeCard (getPixel rightX top) width height)
-</code></pre>
-<p><code>leftX</code>, <code>rightX</code>, <code>top</code>, <code>width</code> and <code>height</code> are well-known parameters of cards locations within a screenshot, 
-which are hard coded for a given table size.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>The full code for card recognition can be found in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/HandRecognition.fs">github repo</a>. It&#39;s just 75 lines of code which is
-much less that one could imagine for a task of image recognition. Similar code could be used to recognize other
-fixed objects at poker table: dealer button location, action buttons, checkboxes etc. In the next part of this
-series I will show how to recognize non-fixed parts: text and numbers.</p>
-<p><em>Proceed to <a href="http://mikhail.io/2016/02/building-a-poker-bot-string-number-recognition/">Part 2 of Building a Poker Bot: String and Number Recognition</a>.</em></p>
 ]]></content>
     </entry>
     

@@ -66,6 +66,165 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Apr 8th, 2015</div>
+    
+    <h1><a href='/2015/04/unit-testing-null-parameter-checks'>Unit testing null parameter checks</a></h1>
+    
+    <div class="post-content">
+        <p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClass</span> : <span class="hljs-title">IVeryUsefulClass</span>
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomething something;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomethingElse somethingElse;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(ISomething something, ISomethingElse somethingElse)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.something = something;
+        <span class="hljs-keyword">this</span>.somethingElse = somethingElse;
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> AwesomeResponse <span class="hljs-title">DoUsefullStaff</span><span class="hljs-params">(ImportantRequest request)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.something.DoSomething();
+        <span class="hljs-keyword">this</span>.somethingElse.DoSomethingElse();
+        <span class="hljs-keyword">return</span> ...;
+    }
+}
+</code></pre><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
+<pre class="highlight"><code class="hljs cs">[TestFixture]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
+{
+    [Test]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+    </span>{
+        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
+            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object));
+    }
+
+    [Test]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+    </span>{
+        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
+            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, <span class="hljs-keyword">null</span>));
+    }
+
+    [Test]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+    </span>{
+        <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, 
+            <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object);
+        ...
+    }
+
+    ...
+}
+</code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
+<h2 id="make-it-better">Make it better</h2>
+<p>Now let&#39;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
+<pre class="highlight"><code class="hljs r">public VeryUsefulClass(ISomething something, 
+    ISomethingElse somethingElse, 
+    ISomethingNew somethingNew)
+{
+    <span class="hljs-keyword">...</span>
+}
+</code></pre><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&#39;s refactor the tests. First, let&#39;s declare all mocks as private fields and create them in set-up method:</p>
+<pre class="highlight"><code class="hljs cs">[TestFixture]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
+{
+    <span class="hljs-keyword">private</span> Mock&lt;ISomething&gt; something;
+    <span class="hljs-keyword">private</span> Mock&lt;ISomethingElse&gt; somethingElse;
+
+    [SetUp]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SetUp</span><span class="hljs-params">()</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;();
+        <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;();
+    }
+...
+</code></pre><p>This way the same clean mocks will be available for each and every test. To make use of them, let&#39;s create GetTarget method which will create an instance of class under test</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> VeryUsefulClass <span class="hljs-title">GetTarget</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(<span class="hljs-keyword">this</span>.something.Object, <span class="hljs-keyword">this</span>.somethingElse.Object)</span></span>;
+}
+</code></pre><p>Now we are ready to rewrite our test methods with less duplication</p>
+<pre class="highlight"><code class="hljs cs">[Test]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">null</span>;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
+}
+
+[Test]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">null</span>;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
+}
+
+[Test]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">this</span>.GetTarget();
+    ...
+}
+</code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
+<p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
+<h2 id="make-it-shine">Make it shine</h2>
+<p>I&#39;m still not quite satisfied with the amount of code we have to write for such a simple thing as the validation of ArgumentNullException being thrown from constructors. Imagine this: we have hundreds or thousands of classes which follow this same pattern, and we end up writing thousands tests which look almost exactly the same... </p>
+<p>I solved it with a simple helper method:</p>
+<pre class="highlight"><code class="hljs undefined">public void ConstructorMustThrowArgumentNullException(Type type)
+{
+    foreach (var constructor in type.GetConstructors())
+    {
+        var parameters = constructor.GetParameters();
+        var mocks = parameters.Select(
+            p =&gt;
+                {
+                    Type mockType = typeof(Mock&lt;&gt;).MakeGenericType(
+                        new[] { p.ParameterType });
+                    return (Mock)Activator.CreateInstance(mockType);
+                }).ToArray();
+
+        for (int i = 0; i &lt; parameters.Length; i++)
+        {
+            var mocksCopy = mocks.Select(m =&gt; m.Object).ToArray();
+            mocksCopy[i] = null;
+            try
+            {
+                constructor.Invoke(mocksCopy);
+                Assert.Fail("ArgumentNullException expected for parameter {0} of 
+                             constructor, but no exception was thrown", 
+                             parameters[i].Name);
+            }
+            catch (TargetInvocationException ex)
+            {
+                Assert.AreEqual(typeof(ArgumentNullException), 
+                    ex.InnerException.GetType(), 
+                    string.Format("ArgumentNullException expected for parameter {0} of 
+                        constructor, but exception of type {1} was thrown", 
+                        parameters[i].Name, ex.InnerException.GetType()));
+            }
+        }
+    }
+}
+</code></pre>
+<p>It accepts a type as its only input parameter (obviously, it&#39;s easy to make it generic or an extension method). Then, using the reflection, it iterates through the input parameters of a constructor, and passes one null value and mocks all other parameters. It expects ArgumentNullException to be thrown on each call.</p>
+<p>You could write one test for all classes in a namespace or in assembly, if the pattern is applied consistently there! And it will let you know when one of your new classes violates the common rule, with zero extra effort.</p>
+<p>Does anyone know the library which would do that without me inventing the bicycle myself?</p>
+<p>Happy coding!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/unit-testing/'>unit testing</a>, <a href='/tags/dependency-injection/'>dependency injection</a>, <a href='/tags/guard/'>guard</a>, <a href='/tags/clean-code/'>clean code</a>, <a href='/tags/best-practices/'>best practices</a>, <a href='/tags/reflection/'>reflection</a>, <a href='/tags/c#/'>C#</a>, <a href='/tags/code-samples/'>code samples</a>, <a href='/tags/tdd/'>TDD</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Mar 15th, 2015</div>
     
     <h1><a href='/2015/03/the-green-hackfest-my-first-hackathon'>The Green Hackfest - my first hackathon</a></h1>
@@ -464,48 +623,6 @@ on queue 'dbo.<span class="hljs-type">XQueue</span>' output the following:
     
     <div class="post-tags">
         Posted In: <a href='/tags/bugs/'>Bugs</a>, <a href='/tags/error-log/'>Error log</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/sql-server-service broker/'>SQL Server Service Broker</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jun 3rd, 2014</div>
-    
-    <h1><a href='/2014/06/03/sql-produce-resultset-with-n-rows'>SQL: produce resultset with N rows</a></h1>
-    
-    <div class="post-content">
-        <p>Let&#39;s talk about T-SQL today.</p>
-<p>Sometimes you need to produce a result set, which would contain N rows with numbers 1...N in each row. For example, I needed to calculate some statistics per week for N weeks starting from today and going back to the past.</p>
-<p>Here is a table funtion which does the enumeration:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">FUNCTION</span> dbo.fnEnumerateNumbers(@<span class="hljs-keyword">max</span> <span class="hljs-built_in">int</span>) 
-<span class="hljs-keyword">RETURNS</span> <span class="hljs-keyword">TABLE</span> 
-<span class="hljs-keyword">RETURN</span> 
-<span class="hljs-keyword">WITH</span>
- E1(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
-           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
-           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
-           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span>),                 <span class="hljs-comment">--10E1  or 10 rows</span>
- E2(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E1 a, E1 b), <span class="hljs-comment">--10E2  or 100 rows</span>
- E4(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E2 a, E2 b), <span class="hljs-comment">--10E4  or 10000 rows</span>
- E8(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E4 a, E4 b)  <span class="hljs-comment">--10E8  or 100000000 rows</span>
-<span class="hljs-keyword">SELECT</span> TOP (@<span class="hljs-keyword">max</span>) N = ROW_NUMBER() OVER (<span class="hljs-keyword">ORDER</span> <span class="hljs-keyword">BY</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-literal">NULL</span>)) 
-  <span class="hljs-keyword">FROM</span> E8
-</span></code></pre><p>Usage is trivial:</p>
-<pre class="highlight"><code class="hljs stylus">SELECT N
-  FROM dbo.<span class="hljs-function"><span class="hljs-title">fnEnumerateNumbers</span><span class="hljs-params">(<span class="hljs-number">100</span>)</span></span>
-</code></pre><p>And here is how I solved the task of enumerating weeks:</p>
-<pre class="highlight"><code class="hljs stylus">SELECT <span class="hljs-function"><span class="hljs-title">dateadd</span><span class="hljs-params">(week, <span class="hljs-number">1</span> - N, getutcdate()</span></span>) 
-  FROM dbo.<span class="hljs-function"><span class="hljs-title">fnEnumerateNumbers</span><span class="hljs-params">(<span class="hljs-number">100</span>)</span></span>
-</code></pre><p>There are multiple possibilities to implement similar function, but I believe this way is the best one in terms of performance. No temporary tables, no table reads, no dependencies on table existance, and you can define your maximum yourself.</p>
-<p>Happy coding!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/performance/'>performance</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/t-sql/'>T-SQL</a>
     </div>
     
 </article>
