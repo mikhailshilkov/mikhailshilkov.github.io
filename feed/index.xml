@@ -3,13 +3,116 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2016-07-22T13:47:12.148Z</updated>
+    <updated>2016-07-27T07:52:38.374Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Mocking API calls in Aurelia</title>
+        <link href="http://mikhail.io/2016/07/mocking-api-calls-in-aurelia"/>
+        <updated>2016-07-27T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2016-07-27,/2016/07/mocking-api-calls-in-aurelia</id>
+        <content type="html"><![CDATA[<p><a href="http://aurelia.io">Aurelia</a> is a modern and slick single-page application framework. 
+&quot;Single-page application&quot; aspect means that it&#39;s loaded
+into the browser once, and then the navigation happens on the client side and
+all the data are loaded from a REST API endpoint.</p>
+<p>Let&#39;s say that our front-end Aurelia app is hosted at
+<code>myaureliaapp.com</code> while the REST API is hosted at
+<code>myaureliaapp.com/api</code>. The REST API is a server-side application,
+which can be implemented in .NET, Java, Node.JS etc., and it talks to
+a database of some kinds.</p>
+<p>For the front-end development purpose, it&#39;s usually useful to be able to
+mock the connection to API with some static manually generated data. This
+cuts the hard dependency between the client code, the backend code and database.
+It&#39;s much easier to mock the exact data set which is needed for the current
+development task.</p>
+<p>Fortunately, it can be easily done, and here is how.</p>
+<h2 id="identify-your-requests">Identify your requests</h2>
+<p>Create a list of the requests that you need to mock. For our example let&#39;s
+say you do the following requests from the application:</p>
+<pre class="highlight"><code class="hljs groovy">GET <span class="hljs-regexp">/api/</span>products
+GET <span class="hljs-regexp">/api/</span>products/{id}
+POST <span class="hljs-regexp">/api/</span>products
+</code></pre><h2 id="put-your-mock-data-into-files">Put your mock data into files</h2>
+<p>Go to the root folder of your Aurelia app and create an <code>/api</code> folder. </p>
+<p>Create a <code>/api/products</code> subfolder and put a new file called <code>GET.json</code>. This
+file should contain the JSON of the product list, e.g.</p>
+<pre class="highlight"><code class="hljs json">[ { "<span class="hljs-attribute">id</span>": <span class="hljs-value"><span class="hljs-number">1</span></span>, "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"Keyboard"</span></span>, "<span class="hljs-attribute">price</span>": <span class="hljs-value"><span class="hljs-string">"60$"</span> </span>},
+  { "<span class="hljs-attribute">id</span>": <span class="hljs-value"><span class="hljs-number">2</span></span>, "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"Mouse"</span></span>, "<span class="hljs-attribute">price</span>": <span class="hljs-value"><span class="hljs-string">"20$"</span> </span>},
+  { "<span class="hljs-attribute">id</span>": <span class="hljs-value"><span class="hljs-number">3</span></span>, "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"Headphones"</span></span>, "<span class="hljs-attribute">price</span>": <span class="hljs-value"><span class="hljs-string">"80$"</span> </span>}
+]
+</code></pre>
+<p>Create a new file called <code>POST.json</code> in the same folder. POST response won&#39;t 
+return any data, so the file can be as simple as</p>
+<pre class="highlight"><code class="hljs json">{}
+</code></pre>
+<p>Create subfolders <code>1</code>, <code>2</code> and <code>3</code> under <code>products</code> and create a <code>GET.json</code> 
+file in each of them. Every file contains the data for a specific product, e.g.</p>
+<pre class="highlight"><code class="hljs json">{ "<span class="hljs-attribute">id</span>": <span class="hljs-value"><span class="hljs-number">1</span></span>, 
+  "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"Keyboard"</span></span>, 
+  "<span class="hljs-attribute">price</span>": <span class="hljs-value"><span class="hljs-string">"60$"</span></span>,
+  "<span class="hljs-attribute">category</span>": <span class="hljs-value"><span class="hljs-string">"Computer Accessories"</span></span>,
+  "<span class="hljs-attribute">brand</span>": <span class="hljs-value"><span class="hljs-string">"Mousytech"</span>
+</span>}
+</code></pre>
+<h2 id="configure-browsersync-to-mock-your-api-calls">Configure BrowserSync to mock your API calls</h2>
+<p>For the purpose of this post, I assume you are using 
+<a href="https://github.com/aurelia/skeleton-navigation">Aurelia Skeleton Navigation</a>
+starter kit, specifically 
+<a href="https://github.com/aurelia/skeleton-navigation/tree/master/skeleton-esnext">the version with Gulp-based tasks and BrowserSync</a>.
+If so, you should be familiar with <code>gulp serve</code> command, which serves your 
+application at <code>http://localhost:9000</code>. We will extend this command to host
+your API mock too.</p>
+<p>Navigate to <code>/build/tasks</code> folder and edit the <code>serve.js</code> file. Change the 
+definition of <code>serve</code> task to the following code:</p>
+<pre class="highlight"><code class="hljs javascript">gulp.task(<span class="hljs-string">'serve'</span>, [<span class="hljs-string">'build'</span>], <span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(done)</span> </span>{
+  browserSync({
+    online: <span class="hljs-literal">false</span>,
+    open: <span class="hljs-literal">false</span>,
+    port: <span class="hljs-number">9000</span>,
+    server: {
+      baseDir: [<span class="hljs-string">'.'</span>],
+      middleware: <span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(req, res, next)</span> </span>{
+        res.setHeader(<span class="hljs-string">'Access-Control-Allow-Origin'</span>, <span class="hljs-string">'*'</span>);
+
+        <span class="hljs-comment">// Mock API calls</span>
+        <span class="hljs-keyword">if</span> (req.url.indexOf(<span class="hljs-string">'/api/'</span>) &gt; -<span class="hljs-number">1</span>) {
+          <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[serve] responding '</span> + req.method + <span class="hljs-string">' '</span> + req.originalUrl);
+
+          <span class="hljs-keyword">var</span> jsonResponseUri = req._parsedUrl.pathname + <span class="hljs-string">'/'</span> + req.method + <span class="hljs-string">'.json'</span>;
+
+          <span class="hljs-comment">// Require file for logging purpose, if not found require will </span>
+          <span class="hljs-comment">// throw an exception and middleware will cancel the retrieve action</span>
+          <span class="hljs-keyword">var</span> jsonResponse = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../..'</span> + jsonResponseUri);
+
+          <span class="hljs-comment">// Replace the original call with retrieving json file as reply</span>
+          req.url = jsonResponseUri;
+          req.method = <span class="hljs-string">'GET'</span>;
+        }
+
+        next();
+      }
+    }
+  }, done);
+});
+</code></pre>
+<h2 id="run-it">Run it</h2>
+<p>Now just run <code>gulp serve</code> (or <code>gulp watch</code>, which does <code>serve</code> and then watches
+files for changes). Every time your app makes an API call, you will see
+a line in the gulp console:</p>
+<pre class="highlight"><code class="hljs gradle">[serve] responding GET <span class="hljs-regexp">/api/</span>products
+</code></pre><p>If you happen to make an invalid request with no mock defined, you will
+get an error:</p>
+<pre class="highlight"><code class="hljs vbnet">[serve] responding <span class="hljs-keyword">GET</span> /api/notproducts
+<span class="hljs-keyword">Error</span>: Cannot find <span class="hljs-keyword">module</span> <span class="hljs-comment">'../../api/notproducts/GET.json'</span>
+</code></pre><p>A complete example can be found in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/aurelia-api-mocks">my github repository</a>.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Building a Poker Bot: Functional Fold as Decision Tree Pattern</title>
@@ -71,7 +174,7 @@ will be handled by other sub-graphs.</p>
 all the parameters that are required for this sub-graph. Do not accept any parameters
 which are not related. </p>
 <p>The last parameter of each function should be a 
-<a href="http://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/2016/01/monads-explained-in-csharp/#maybe">Maybe</a> of Decision,
+<a href="http://mikhail.io/2016/01/monads-explained-in-csharp/#maybe">Maybe</a> of Decision,
 so should be the function&#39;s return type.</p>
 <p><strong>Produce a flat list</strong> of all the sub-graph functions. Partially apply the parameters
 to those functions to unify the signature of all of them.</p>
@@ -1430,165 +1533,6 @@ so it&#39;s useful to have it in the toolbox anyway. The resulting tests are fas
 have no external dependencies and are always consistent between multiple runs.
 That makes them better than real integration tests for the simple scenarios 
 during TDD development.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Building a Poker Bot: String and Number Recognition</title>
-        <link href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition"/>
-        <updated>2016-02-10T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2016-02-10,/2016/02/building-a-poker-bot-string-recognition</id>
-        <content type="html"><![CDATA[<p><em>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
-to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
-easy and very enjoyable. Here is the first part:
-<a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a>
-</em></p>
-<h2 id="why-string-recognition">Why string recognition</h2>
-<p>Reading cards and other fixed images was the first step. The bot should also
-be able to read different text-based information from the screen, e.g.</p>
-<ul>
-<li>Current blind levels</li>
-<li>Current pot size</li>
-<li>The size of bets made by each player</li>
-<li>Player names</li>
-<li>Stack sizes</li>
-<li>Chat messages (for advanced scenarios)</li>
-</ul>
-<p>We need this vital information to make proper decisions, so let&#39;s look at
-how to parse the textual data.</p>
-<h2 id="new-challenges">New challenges</h2>
-<p>String recognition has some specific difficulties when compared to fixed
-images like cards:</p>
-<ul>
-<li>The size of a string is not predefined. Obviously, the longer the string, the
-more space it takes on the screen</li>
-<li>The position of a string is not fixed either. Some strings are aligned to
-the center, others may diverge based on other variable parts like stakes or blinds</li>
-<li>Different strings might be rendered in different font size</li>
-</ul>
-<p>Here is what needs to be done to overcome these complications:</p>
-<ul>
-<li>Pick the layout which makes your life easier </li>
-<li>Adjust fonts and positions if possible </li>
-<li>Make sure that all important strings are always visible and not overlapping to other information</li>
-<li>For each string define a region where it belongs to in 100% cases. The background
-of this region should be more or less evenly filled with a color in contrast to the font color.</li>
-</ul>
-<h2 id="string-recognition-steps">String recognition steps</h2>
-<p>We start with a screenshot of a poker table again:</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/table.png" alt="Poker table screenshot"></p>
-<p>We know our fixed regions where our labels are located, so we take those
-regions for processing:</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/regions.png" alt="Regions of string recognition"></p>
-<p>For each region we trim away the blank margins around the text (i.e. left,
-top, right and bottom padding):</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/nomargin.png" alt="Margins being removed"></p>
-<p>We find dark lines between bright symbols and we consider them as gaps
-between characters:</p>
-<p><img src="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/splitchars.png" alt="Split to characters"></p>
-<p>The final step is to compare each symbol to the known patterns and find the best
-match (in case of my layout the match for symbols is always 100% perfect). Let&#39;s 
-look how these steps are implemented.</p>
-<h2 id="removing-padding-around-the-text">Removing padding around the text</h2>
-<p>Because the padding is removed from all 4 sides of the region, I decided to use
-<code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
-with black or white points defined as a helper type:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BW</span> </span>= B | W
-</code></pre>
-<p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
-like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> removePadding pixels =
-  <span class="hljs-keyword">let</span> allBlack s = Seq.exists ((=) W) s
-  <span class="hljs-keyword">let</span> maxWidth = Array2D.length1 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> maxHeight = Array2D.length2 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> firstX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> lastX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> firstY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
-  <span class="hljs-keyword">let</span> lastY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
-
-  <span class="hljs-keyword">match</span> (firstX, lastX, firstY, lastY) <span class="hljs-keyword">with</span>
-  | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
-  | _ -&gt; Array2D.init <span class="hljs-number">0</span> <span class="hljs-number">0</span> (<span class="hljs-keyword">fun</span> _ _ -&gt; B)
-</code></pre>
-<p>The first part finds the amount of fully-black columns and rows in the array.
-Then, if white points are found, the second part returns a sub array based on
-the indices, otherwise empty array is returned.</p>
-<h2 id="split-the-text-into-characters">Split the text into characters</h2>
-<p>First, we convert our 2D array into the list of lists, where each item in the
-top-level list represents a single column of pixels:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> pixelColumns =
-  [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)
-</code></pre>
-<p>Then we can fold this list of columns into the symbols, where each symbol itself
-is the list of columns:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> splitIntoSymbols (e : BW list) (state: BW list list list) = 
-  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
-  | cur::rest -&gt;
-      <span class="hljs-keyword">if</span> isSeparator e <span class="hljs-keyword">then</span>
-        <span class="hljs-keyword">match</span> cur <span class="hljs-keyword">with</span>
-        | _::_ -&gt; []::state <span class="hljs-comment">// add new list</span>
-        | _ -&gt; state        <span class="hljs-comment">// skip if we already have empty item</span>
-      <span class="hljs-keyword">else</span> (e::cur)::rest   <span class="hljs-comment">// add e to current list</span>
-  | _ -&gt; [[e]]
-
-Seq.foldBack splitIntoSymbols pixelColumns []
-</code></pre>
-<p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
-by introducing some intermediate type with descriptive name, but I decided
-to leave that part for now. Read it as list of symbols, which are lists of
-columns, which are lists of pixels.</p>
-<h2 id="match-the-symbols-vs-the-known-patterns">Match the symbols vs the known patterns</h2>
-<p>This part was already described in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
-Basically we compare the list of black or white points to the patterns of
-the known symbols:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> getChar patterns bws =
-  <span class="hljs-keyword">let</span> samePatterns h p =
-    Seq.zip h p
-    |&gt; Seq.forall (<span class="hljs-keyword">fun</span> (v1, v2) -&gt; v1 = v2)
-  <span class="hljs-keyword">let</span> matchingPattern = 
-    patterns 
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; List.length p.Pattern = List.length bws)
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; samePatterns bws p.Pattern)
-      |&gt; Array.tryHead
-  defaultArg (Option.map (<span class="hljs-keyword">fun</span> p -&gt; p.Char) matchingPattern) '?'
-</code></pre>
-<h2 id="putting-it-all-together">Putting it all together</h2>
-<p>The <code>recognizeString</code> function accepts lower-order functions to match 
-symbols and get pixels together with width and height of the region:</p>
-<pre class="highlight"><code class="hljs fs">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
-</code></pre>
-<p>It builds an array of pixels, removes padding and folds with recognition.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeString matchSymbol getPixel width height =
-
-  <span class="hljs-keyword">let</span> pixels = 
-    Array2D.init width height (<span class="hljs-keyword">fun</span> x y -&gt; isWhite (getPixel x y))
-    |&gt; removePadding
-
-  <span class="hljs-keyword">let</span> pixelColumns =
-    [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-    |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)      
-
-  Seq.foldBack splitIntoSymbols pixelColumns []
-  |&gt; List.map matchSymbol
-  |&gt; Array.ofSeq
-  |&gt; String.Concat
-</code></pre>
-<p>Then we use it with a specific recognition patterns, e.g. known digits in case
-of numbers recognition:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeNumber x =
-  recognizeString (getChar numberPatterns) x
-</code></pre>
-<p>A way to produce these patterns is discussed in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>String recognition takes a bit more steps to execute comparing to the recognition
-of fixed objects. Nevertheless it&#39;s pretty straightforward to implement once
-we split it into small and well-understood conversion steps. The full code 
-for card recognition can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/StringRecognition.fs">my github repo</a>.</p>
 ]]></content>
     </entry>
     
