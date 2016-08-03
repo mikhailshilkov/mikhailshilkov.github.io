@@ -66,6 +66,113 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Feb 17th, 2015</div>
+    
+    <h1><a href='/2015/02/how-i-fixed-a-bug-in-sql-server'>How I fixed a bug in SQL Server</a></h1>
+    
+    <div class="post-content">
+        <p>Well, not really... I just reported it to Microsoft and then it got fixed. Anyway, here is the story.</p>
+<p>Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, <a href="http://blogs.msdn.com/b/psssql/archive/2014/04/01/sql-server-2014-s-new-cardinality-estimator-part-1.aspx">the new cardinality estimator was introduced</a>. In two words, cardinality estimator is a piece of SQL functionality which estimates how many rows the engine might get for a specific query or a query part. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &quot;new&quot; also means &quot;less tested&quot;...</p>
+<p>Immediately after migration we found out that one of the stored procedures got much slower than before. That stored procedure was retrieving thousands of rows from a queue, and then did a series of transformations which took ages to complete. During the investigation we found that the query plan is far from being optimal, with massive scans of partitioned tables; and the reason was in ridiculously high estimations on one of the tables. That table was of moderate size (millions of rows), our query touched only some hundreds rows, while the estimate was... millions!</p>
+<p>Here is a repro to show this issue on any test database (database must be in SQL Server 2014 compatibility mode):</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> [dbo].[Store](
+    Id <span class="hljs-built_in">int</span> <span class="hljs-keyword">IDENTITY</span>(<span class="hljs-number">1</span>,<span class="hljs-number">1</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+    City <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+    <span class="hljs-keyword">Size</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+    Name <span class="hljs-built_in">varchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-literal">NULL</span>,
+    <span class="hljs-keyword">CONSTRAINT</span> [PK_Store] <span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED ([Id] <span class="hljs-keyword">ASC</span>)
+ ) 
+
+ <span class="hljs-keyword">GO</span>
+
+ <span class="hljs-keyword">CREATE</span> NONCLUSTERED <span class="hljs-keyword">INDEX</span> [IX_Store] <span class="hljs-keyword">ON</span> [dbo].[Store]
+(
+    City <span class="hljs-keyword">ASC</span>,
+    <span class="hljs-keyword">Size</span> <span class="hljs-keyword">ASC</span>
+)
+
+<span class="hljs-keyword">GO</span>
+ <span class="hljs-keyword">TRUNCATE</span> <span class="hljs-keyword">TABLE</span> Store
+<span class="hljs-keyword">INSERT</span> Store 
+<span class="hljs-keyword">SELECT</span> i % <span class="hljs-number">101</span>, i % <span class="hljs-number">11</span>, <span class="hljs-string">'Store '</span> + <span class="hljs-keyword">CAST</span>(i <span class="hljs-keyword">AS</span> <span class="hljs-built_in">VARCHAR</span>)
+  <span class="hljs-keyword">FROM</span> 
+ (<span class="hljs-keyword">SELECT</span> TOP <span class="hljs-number">100000</span> ROW_NUMBER() OVER (<span class="hljs-keyword">ORDER</span> <span class="hljs-keyword">BY</span> s1.[object_id]) <span class="hljs-keyword">AS</span> i
+  <span class="hljs-keyword">FROM</span> sys.all_objects  s1, sys.all_objects  s2) numbers
+<span class="hljs-keyword">GO</span>
+
+<span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> StoreRequest (City <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>, <span class="hljs-keyword">Size</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>)
+
+<span class="hljs-keyword">GO</span>
+<span class="hljs-keyword">DELETE</span> StoreRequest
+<span class="hljs-keyword">INSERT</span> StoreRequest <span class="hljs-keyword">values</span> (<span class="hljs-number">55</span>, <span class="hljs-number">1</span>)
+<span class="hljs-keyword">INSERT</span> StoreRequest <span class="hljs-keyword">values</span> (<span class="hljs-number">66</span>, <span class="hljs-number">2</span>)
+
+<span class="hljs-keyword">GO</span>
+
+ <span class="hljs-keyword">SELECT</span> s.City
+   <span class="hljs-keyword">FROM</span> StoreRequest <span class="hljs-keyword">AS</span> r
+        <span class="hljs-keyword">INNER</span> <span class="hljs-keyword">JOIN</span> Store <span class="hljs-keyword">AS</span> s  <span class="hljs-keyword">WITH</span>(<span class="hljs-keyword">INDEX</span>(IX_Store), FORCESEEK) 
+                    <span class="hljs-keyword">ON</span> s.City = r.City <span class="hljs-keyword">AND</span> s.<span class="hljs-keyword">Size</span> = r.<span class="hljs-keyword">Size</span>
+  <span class="hljs-keyword">WHERE</span> r.<span class="hljs-keyword">Size</span> &lt;&gt; <span class="hljs-number">1</span> <span class="hljs-keyword">OR</span> s.City &lt;&gt; <span class="hljs-number">55</span>
+</span></code></pre><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
+<p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
+<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server/2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
+<p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
+<p>Good news: it&#39;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
+<pre class="highlight"><code class="hljs stylus"> SELECT s<span class="hljs-class">.City</span>
+   FROM StoreRequest AS r
+        INNER JOIN Store AS s  <span class="hljs-function"><span class="hljs-title">WITH</span><span class="hljs-params">(INDEX(IX_Store)</span></span>, FORCESEEK) 
+                    ON s<span class="hljs-class">.City</span> = r<span class="hljs-class">.City</span> AND s<span class="hljs-class">.Size</span> = r<span class="hljs-class">.Size</span>
+  WHERE s<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">1</span> OR s<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">55</span>
+</code></pre><p>Estimator is able to handle this situation correctly:</p>
+<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server/2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
+<p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
+<p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
+<pre class="highlight"><code class="hljs stylus"> SELECT s<span class="hljs-class">.City</span>
+   FROM StoreRequest AS r
+        INNER JOIN Store AS s  <span class="hljs-function"><span class="hljs-title">WITH</span><span class="hljs-params">(INDEX(IX_Store)</span></span>, FORCESEEK) 
+                    ON s<span class="hljs-class">.City</span> = r<span class="hljs-class">.City</span> AND s<span class="hljs-class">.Size</span> = r<span class="hljs-class">.Size</span>
+  WHERE r<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">1</span> OR s<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">55</span>
+ <span class="hljs-function"><span class="hljs-title">OPTION</span><span class="hljs-params">(QUERYTRACEON <span class="hljs-number">9481</span>)</span></span> 
+</code></pre><p>And then we get this:</p>
+<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server/2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
+<p>Which is as good as the best attempt of SQL Server 2014 and much-much better than the worst one.</p>
+<p>I posted this repro to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server forum</a>. Here is the comment that I got from Erland Sommarskog, SQL Server MVP:</p>
+<blockquote>
+<p>The estimate here is clearly incorrect. SQL Server knows the density of Size and City. It knows the cardinality of the temp table. The density information gives how many rows the join will produce. The WHERE clause will then remove a certain number of rows. With no statistics for the temp table, it does not know how many, but it will apply some standard guess.</p>
+<p>50000 is a completely bogus number, because the join cannot produce that many rows, and SQL Server is able to compute the join with out the WHERE clause decently. (Well, it estimates 90, when the number is 180.) No, this is obviously a case of the cardinality estimator giving up completely.</p>
+<p>It is worth noting that both these WHERE clauses gives reasonable estimates:</p>
+<pre class="highlight"><code class="hljs stylus">WHERE r<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR r<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+WHERE s<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR s<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+</code></pre><p>Whereas these two gives the spooky 50000:</p>
+<pre class="highlight"><code class="hljs stylus">WHERE s<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR r<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+WHERE r<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR s<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+</code></pre><ul>
+<li>Erland Sommarskog</li>
+</ul>
+</blockquote>
+<p>Then I also posted it to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server feedback issue tracker</a> and after a couple of weeks got a reply from Microsoft employee:</p>
+<blockquote>
+<p>Thank you for reporting this issue. I am happy to let you know that we have a fix for this problem, which will be available in one of the upcoming servicing releases for SQL Server 2014 (the details will be published in a KB).</p>
+<ul>
+<li>Thanks, Alexey, SQL Development</li>
+</ul>
+</blockquote>
+<p>Thanks to Erlang and Alexey for their help. I look forward to the servicing release!
+Happy coding!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/execution-plan/'>execution plan</a>, <a href='/tags/query-plan/'>query plan</a>, <a href='/tags/database/'>database</a>, <a href='/tags/repro/'>repro</a>, <a href='/tags/erland-sommarskog/'>Erland Sommarskog</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 5th, 2015</div>
     
     <h1><a href='/2015/02/how-we-do-message-processing'>How we do message processing</a></h1>
@@ -330,33 +437,6 @@ Have a nice application start-up boost!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/-net/'>.NET</a>, <a href='/tags/asp-net/'>ASP.NET</a>, <a href='/tags/c#/'>C#</a>, <a href='/tags/debugging/'>debugging</a>, <a href='/tags/msbuild/'>MSBuild</a>, <a href='/tags/performance/'>performance</a>, <a href='/tags/sgen/'>Sgen</a>, <a href='/tags/xmlserializer/'>XmlSerializer</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jan 6th, 2013</div>
-    
-    <h1><a href='/2013/01/06/poker-money-application-for-windows-store'>Poker Money application for Windows Store</a></h1>
-    
-    <div class="post-content">
-        <p>Windows 8 / Windows RT / Windows Store all arrived in October 2012.</p>
-<p>I&#39;ve decided to take a shot on writing a commercial application for this new platform. And that&#39;s how Poker Money app appeared.</p>
-<p>Here are the links to it:</p>
-<p><a href="http://pokermoneyapp.com" title="Poker money app official website">Poker Money app official website</a></p>
-<p><a href="http://apps.microsoft.com/windows/ru-RU/app/poker-money/47c61b67-94ec-4aae-a9c4-f60a37d7cc03" title="Poker Money in Windows Store">Windows Store application page</a></p>
-<p><a href="http://forumserver.twoplustwo.com/45/software/poker-money-app-1282491/" title="Support thread for Poker Money">Support thread on 2+2</a></p>
-<p>Poker Money is a basic tool for tracking online poker results, which supports all game types for the two major poker rooms: PokerStars and FullTiltPoker.</p>
-<p>Here is a sample screen:
-<img src="/2013/01/06/poker-money-application-for-windows-store/pokermoneyapp-screen.png" alt="Poker Money app on Windows 8"></p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/full-tilt-poker/'>Full Tilt Poker</a>, <a href='/tags/poker/'>Poker</a>, <a href='/tags/poker-money/'>Poker Money</a>, <a href='/tags/poker-money-application/'>Poker Money application</a>, <a href='/tags/poker-stars/'>Poker Stars</a>, <a href='/tags/windows-8/'>Windows 8</a>, <a href='/tags/windows-rt/'>Windows RT</a>, <a href='/tags/windows-store/'>Windows Store</a>
     </div>
     
 </article>
