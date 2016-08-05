@@ -66,12 +66,13 @@
 <div class="container">
     
     <article class="post">
-    <div class="post-date">Aug 3rd, 2016</div>
+    <div class="post-date">Aug 5th, 2016</div>
     
     <h1><a href='/2016/08/comparing-scala-to-fsharp'>Comparing Scala to F#</a></h1>
     
     <div class="post-content">
-        <p>F# and Scala are quite similar languages from 10.000 feet view. Both are
+        <p><em>Post updated based on comments by Mark Lewis and Giacomo Citi.</em></p>
+<p>F# and Scala are quite similar languages from 10.000 feet view. Both are
 functional-first languages developed for the virtual machines where imperative
 languages dominate. C# for .NET and Java for JVM are still <em>lingua franca</em>, 
 but alternatives are getting stronger.</p>
@@ -114,15 +115,6 @@ sense, but I would love to have a shorter way of writing lambda in</p>
 <pre class="highlight"><code class="hljs fs">empoyees |&gt; List.sort (<span class="hljs-keyword">fun</span> e -&gt; e.dateOfBirth)
 </code></pre>
 <p>Any hint how?</p>
-<h2 id="pattern-matching-anonymous-functions">Pattern Matching Anonymous Functions</h2>
-<p>This feature has a similar spirit: provide a way to reduce boilerplate while writing
-lambda functions. Instead of naming parameters and typing <code>=&gt; x match</code> you
-can just start matching immediately</p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">b</span> =</span> <span class="hljs-type">List</span>(<span class="hljs-number">1</span>, <span class="hljs-number">2</span>)
-b map({<span class="hljs-keyword">case</span> <span class="hljs-number">1</span> =&gt; <span class="hljs-string">"one"</span>
-       <span class="hljs-keyword">case</span> <span class="hljs-number">2</span> =&gt; <span class="hljs-string">"two"</span>})
-</code></pre>
-<p>Kudos!</p>
 <h2 id="tail-recursion-mark">Tail-Recursion Mark</h2>
 <p>Any recursive function in Scala can be marked with <code>@tailrec</code> annotation,
 which would result in compilation error if the function is not tail-recursive.
@@ -137,6 +129,43 @@ This guarantees that you won&#39;t get a nasty stack overflow exception. </p>
 compiler.</p>
 <p>The feature sounds very reasonable, although I must admit that I have 
 never needed it in <em>my</em> F# code yet.</p>
+<h2 id="call-by-name">Call By Name</h2>
+<p>When you call a function in F#, the parameter values are evaluated before
+the function body. This style of function substitution model is known as
+Call by Value.</p>
+<p>Same is the default in Scala. But there is an alternative: you can defer the
+evaluation of parameters by marking them with an <code>=&gt;</code> symbol:</p>
+<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">callByName</span>(</span>x: =&gt; <span class="hljs-type">Int</span>) = {
+  println(<span class="hljs-string">"x is "</span> + x)
+}
+</code></pre>
+<p>This style is known as Call by Name, and the evaluation is defered until the
+parameter is actually used. So, if parameter is never used, its value
+will never be evaluated. This code:</p>
+<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">a</span>:</span><span class="hljs-type">Option</span>[<span class="hljs-type">Int</span>] = <span class="hljs-type">Some</span>(<span class="hljs-number">1</span>)
+<span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">b</span> =</span> a getOrElse (<span class="hljs-number">2</span>/<span class="hljs-number">0</span>)
+</code></pre>
+<p>will set <code>b</code> to <code>1</code>, and no error will be thrown, even though we are dividing by zero 
+in function parameter. This is because the parameter of <code>getOrElse</code> is passed
+by name.</p>
+<p>The F# alternative <code>defaultArg</code> doesn&#39;t work this way, so the following code
+will blow up:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> a = Some(<span class="hljs-number">1</span>)
+<span class="hljs-keyword">let</span> b = defaultArg b (<span class="hljs-number">2</span>/<span class="hljs-number">0</span>) <span class="hljs-comment">// boom</span>
+</code></pre>
+<p>You can get lazy evaluation by using <code>Lazy</code> type:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> defaultArgLazy o (p:<span class="hljs-attribute">'a</span> Lazy) = 
+  <span class="hljs-keyword">match</span> o <span class="hljs-keyword">with</span> | Some v -&gt; v | None -&gt; p.Force()
+
+<span class="hljs-keyword">let</span> b1 = defaultArgLazy a (<span class="hljs-keyword">lazy</span> (<span class="hljs-number">2</span>/<span class="hljs-number">0</span>))
+</code></pre>
+<p>or passing a function</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> defaultArgFunc o (f: unit -&gt; <span class="hljs-attribute">'a</span>) = 
+  <span class="hljs-keyword">match</span> o <span class="hljs-keyword">with</span> | Some v -&gt; v | None -&gt; f()
+
+<span class="hljs-keyword">let</span> b2 = defaultArgFunc a (<span class="hljs-keyword">fun</span> () -&gt; <span class="hljs-number">2</span> / <span class="hljs-number">0</span>)
+</code></pre>
+<p>That&#39;s essentially what happens in Scala too, but the syntax is arguably cleaner.</p>
 <h2 id="lack-of-type-inference">Lack of Type Inference</h2>
 <p>Slowly moving towards language design flavours, I&#39;ll start with Type Inference.
 Well, unfortunately Scala barely has any type inference at all. Yes, you don&#39;t have to
