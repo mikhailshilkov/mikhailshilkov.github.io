@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Getting started with Azure Application Insights in Aurelia | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.4" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">.NET, SQL and JavaScript programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                <li><a href="/">Blog</a></li>
+                <li><a href="/about">About</a></li>
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="http://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="http://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="row">
+        <div class="col-sm-12 col-md-10">
+            <article class="post">
+    <div class="post-date">Aug 21st, 2016</div>
+    
+    <h1>Getting started with Azure Application Insights in Aurelia</h1>
+    
+    <div class="post-content">
+        <p><a href="https://azure.microsoft.com/en-us/documentation/articles/app-insights-overview/">Azure Application Insights</a>
+is an analytics service to monitor live web applications,
+diagnose performance issues, and understand what users actually do with the app. 
+<a href="http://aurelia.io">Aurelia</a> is a modern and slick single-page application framework.
+Unfortunately, there&#39;s not much guidance on the web about how to use AppInsights and
+Aurelia together in a proper manner. The task gets even more challenging in case you are
+using TypeScript and want to stay in type-safe land. This post will set you up and
+running in no time.</p>
+<h2 id="get-your-appinsights-instrumentation-key">Get Your AppInsights Instrumentation Key</h2>
+<p>If not done yet, go register in Azure Application Insights portal. To start sending
+telemetry data from your application you would need a unique identifier of 
+your web application, which is called an Instrumentation Key (it&#39;s just a guid). 
+See <a href="https://azure.microsoft.com/en-us/documentation/articles/app-insights-javascript/">Application Insights for web pages</a>
+walk-through.</p>
+<h2 id="install-a-jspm-package">Install a JSPM Package</h2>
+<p>I&#39;m using JSPM as a front-end package manager for Aurelia applications. If you use it
+as well, run the following command to install AppInsights package:</p>
+<pre class="highlight"><code class="hljs cmake">jspm <span class="hljs-keyword">install</span> github:Microsoft/ApplicationInsights-js
+</code></pre><p>it will add a line to <code>config.js</code> file:</p>
+<pre class="highlight"><code class="hljs r">map: {
+  <span class="hljs-string">"Microsoft/ApplicationInsights-js"</span>: <span class="hljs-string">"github:Microsoft/ApplicationInsights-js@1.0.0"</span>,
+<span class="hljs-keyword">...</span>
+</code></pre><p>To keep the names simple, change the line to </p>
+<pre class="highlight"><code class="hljs perl">  <span class="hljs-string">"ApplicationInsights"</span>: <span class="hljs-string">"github:Microsoft/ApplicationInsights-js<span class="hljs-variable">@1</span>.0.0"</span>,
+</code></pre><p>Do exactly the same change in <code>project.json</code> file, <code>jspm</code> -&gt; <code>dependencies</code> section.</p>
+<h2 id="create-an-aurelia-plugin">Create an Aurelia Plugin</h2>
+<p>In order to track Aurelia page views, we are going to plug into the routing pipeline
+with a custom plugin. Here is how my plugin looks like in JavaScript (see TypeScript
+version below):</p>
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-comment">// app-insights.js</span>
+export <span class="hljs-keyword">class</span> AppInsights {
+  client;
+
+  constructor() {
+    <span class="hljs-keyword">let</span> snippet = {
+      config: {
+        instrumentationKey: <span class="hljs-string">'YOUR INSTRUMENTATION KEY GUID'</span>
+      }
+    };
+    <span class="hljs-keyword">let</span> init = <span class="hljs-keyword">new</span> Microsoft.ApplicationInsights.Initialization(snippet);
+    <span class="hljs-keyword">this</span>.client = init.loadAppInsights();
+  }
+
+  run(routingContext, next) {
+    <span class="hljs-keyword">this</span>.client.trackPageView(routingContext.fragment, <span class="hljs-built_in">window</span>.location.href);
+    <span class="hljs-keyword">return</span> next();
+  }
+}
+</code></pre>
+<p>The constructor instantiates an AppInsights client. It is used inside a <code>run</code> method,
+which would be called by Aurelia pipeline during page navigation.</p>
+<h2 id="add-the-plugin-to-aurelia-pipeline">Add the Plugin to Aurelia Pipeline</h2>
+<p>Go the the <code>App</code> class of your Aurelia application. Import the new plugin</p>
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-comment">// app.js</span>
+import {AppInsights} from <span class="hljs-string">'./app-insights'</span>;
+</code></pre>
+<p>and change the <code>configureRouter</code> method to register a new pipeline step:</p>
+<pre class="highlight"><code class="hljs javascript">configureRouter(config, router): <span class="hljs-keyword">void</span> {
+  config.addPipelineStep(<span class="hljs-string">'modelbind'</span>, AppInsights);
+  config.map(<span class="hljs-comment">/*routes are initialized here*/</span>);
+}
+</code></pre>
+<p>After re-building the application, you should be all set to go. Navigate several pages
+and wait for events to appear in Application Insights portal.</p>
+<h2 id="typescript-obtain-the-definition-file">TypeScript: Obtain the Definition File</h2>
+<p>If you are using TypeScript, you are not done yet. In order to compile the <code>AppInsights</code>
+plugin you need the type definitions for <code>ApplicationInsights</code> package. Unfortunately,
+at the time of writing there is no canonical definition in <code>typings</code> registry, so
+you will have to provide a custom <code>.d.ts</code> file. You can download mine from
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/aurelia-app-insights/applicationinsights.d.ts">my github</a>. 
+I created it based on a file from 
+<a href="https://www.nuget.org/packages/Microsoft.ApplicationInsights.TypeScript">this NuGet repository</a>.</p>
+<p>I&#39;ve put it into the <code>custom_typings</code> folder and then made the following adjustment
+to <code>build/paths.js</code> file of Aurelia setup:</p>
+<pre class="highlight"><code class="hljs gherkin">  dtsSrc: [
+    'typings/<span class="hljs-keyword">*</span><span class="hljs-keyword">*</span>/<span class="hljs-keyword">*</span>.d.ts',
+    'custom_typings/<span class="hljs-keyword">*</span><span class="hljs-keyword">*</span>/<span class="hljs-keyword">*</span>.d.ts'
+  ],
+</code></pre><p>For the reference, here is my TypeScript version of the <code>AppInsights</code> plugin:</p>
+<pre class="highlight"><code class="hljs ts"><span class="hljs-keyword">import</span> {NavigationInstruction, Next} from <span class="hljs-string">'aurelia-router'</span>;
+<span class="hljs-keyword">import</span> {Microsoft} from <span class="hljs-string">'ApplicationInsights'</span>;
+
+<span class="hljs-keyword">export</span> <span class="hljs-keyword">class</span> AppInsights {
+  <span class="hljs-keyword">private</span> client: Microsoft.ApplicationInsights.AppInsights;
+
+  <span class="hljs-constructor"><span class="hljs-keyword">constructor</span>() </span>{
+    <span class="hljs-keyword">let</span> snippet = {
+      config: {
+        instrumentationKey: <span class="hljs-string">'YOUR INSTRUMENTATION KEY GUID'</span>
+      },
+      queue: []
+    };
+    <span class="hljs-keyword">let</span> init = <span class="hljs-keyword">new</span> Microsoft.ApplicationInsights.Initialization(snippet);
+    <span class="hljs-keyword">this</span>.client = init.loadAppInsights();
+  }
+
+  run(routingContext: NavigationInstruction, next: Next): Promise&lt;<span class="hljs-built_in">any</span>&gt; {
+    <span class="hljs-keyword">this</span>.client.trackPageView(routingContext.fragment, <span class="hljs-built_in">window</span>.location.href);
+    <span class="hljs-keyword">return</span> next();
+  }
+}
+</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>This walk-through should get you started with Azure Application Insights in your
+Aurelia application. Once you have page view metrics coming into the dashboard,
+spend more time to discover all the exciting ways to improve your application
+with Application Insights.</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2016/08/getting-started-with-azure-application-insights-in-aurelia/index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/appinsights/'>AppInsights</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/javascript/'>JavaScript</a>, <a href='/tags/typescript/'>TypeScript</a>, <a href='/tags/cloud/'>Cloud</a>
+    </div>
+    
+</article>
+            <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy C#, Javascript and SQL development and I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="http://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="http://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+            <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'http://mikhail.io/2016/08/getting-started-with-azure-application-insights-in-aurelia';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Getting started with Azure Application Insights in Aurelia';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2016 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
