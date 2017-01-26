@@ -66,301 +66,6 @@
 <div class="container">
     
     <article class="post">
-    <div class="post-date">Mar 21st, 2016</div>
-    
-    <h1><a href='/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp'>Functional Actor Patterns with Akka.NET and F#</a></h1>
-    
-    <div class="post-content">
-        <p>My exploration of Actor model started with <a href="http://getakka.net">Akka.NET</a> framework - a .NET port of
-JVM-based <a href="http://akka.io">Akka</a>. Actor programming model made a lot of sense to me, but once
-I started playing with it, some questions arose. Most of those questions were related to the
-following <a href="http://doc.akka.io/docs/akka/2.4.2/general/actors.html">definition</a>:</p>
-<blockquote>
-<p>An actor is a container for <code>State</code>, <code>Behavior</code>, a <code>Mailbox</code>, <code>Children</code> and a <code>Supervisor Strategy</code>.</p>
-</blockquote>
-<p>So, based on the <a href="https://github.com/petabridge/akka-bootcamp">Akka.NET Bootcamp</a> course I understood that
-an Actor</p>
-<ul>
-<li>knows what kind of messages it can accept</li>
-<li>does some processing of each message</li>
-<li>holds some state which is changed during message processing</li>
-<li>potentially changes its behavior based on the current state</li>
-<li>creates and stores references to child actors</li>
-<li>obtains references to other actors</li>
-<li>sends messages to children and other actors</li>
-</ul>
-<p>While it&#39;s nice that the framework enables us to develop for different aspects of actor 
-behavior, it might also be dangerous in case you do all the things in one place. Ball of spaghetti mud
-was where I ended up during my first attempt. My actors were doing all the things from 
-the above list and the code got messy very quick. So, the following questions popped up
-in my head:</p>
-<p><em>How do I avoid mixing several concerns in one piece of code?</em></p>
-<p><em>How do I make the code easily testable?</em></p>
-<p><em>How do I minimize the usage of mutable state?</em></p>
-<p><em>How do I avoid boilerplate code when it&#39;s not needed?</em></p>
-<h2 id="functional-actors">Functional Actors</h2>
-<p>I am now developing the actor-based application in F#, the functional first
-language. Functions are easy to reason about, reusable and testable. But the
-actors are usually defined in terms of objects and classes. F# supports classes
-but that&#39;s not the path that I&#39;m willing to go.</p>
-<p>How do we make actors out of functions? Well, most of the time actors don&#39;t 
-need all the features of the framework. In this case we can define the required actor
-behavior in terms of a minimal function and then use creational patterns to
-spawn actor instances out of it.</p>
-<p>Let&#39;s look at some common patterns that I identified. For each pattern, I will
-define </p>
-<ul>
-<li>an example of a core function which implements the business logic</li>
-<li>a generic function to create actors with behavior of a core function</li>
-<li>an example of actor instantiation using the two functions above</li>
-</ul>
-<hr>
-<p><a name="MessageSink" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
-<h2 id="message-sink">Message Sink</h2>
-<p>Stateless Message Sink is the simplest type of actor.</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/messagesink.png" alt="Message Sink actor"></p>
-<p>It receives a message and executes some action on it. The action is not related
-to any other actors, and there is no state, so the processing of each message
-is always the same. Obviously, it&#39;s related to some kind of side effects:
-logging the message, saving the data to the external storage and so on.</p>
-<p>So, we don&#39;t need the majority of actor features in this case. The whole actor
-processing could be represented by a function of type <code>&#39;a -&gt; unit</code>. Here 
-is an example of a core function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> print msg =
-  printn <span class="hljs-string">"Message received: %A"</span> msg
-</code></pre>
-<p>So how do we make an actor out of this function? Well, it&#39;s already implemented
-as <code>actorOf</code> helper function in Akka.NET F# extensions:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfSink (f : <span class="hljs-attribute">'a</span> -&gt; unit) = actorOf f
-</code></pre>
-<p>And here is how we spawn an actor instance:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printActorRef = 
-  actorOfSink print 
-  |&gt; spawn system <span class="hljs-string">"print-actor"</span>
-
-printActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message received: 3" is printed</span>
-</code></pre>
-<p>That&#39;s the simplicity that I&#39;m searching for. Let&#39;s look at a slightly more
-complex example.</p>
-<hr>
-<p><a name="Converter" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
-<h2 id="converter">Converter</h2>
-<p>Stateless Converter maps the incoming message into another message and sends
-it to another predefined actor.</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/converter.png" alt="Converter actor"></p>
-<p>The core of this actor is a classic function with one input and one output
-parameter (type <code>&#39;a - &#39;b</code>):</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> square msg =
-  msg * msg
-</code></pre>
-<p>The actor function is similar to the one of Message Sink, but it also accepts
-a reference to the output actor and knows how to send messages to it:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvert f outputRef =
-  actorOf2 (<span class="hljs-keyword">fun</span> _ msg -&gt; outputRef &lt;! f msg)
-</code></pre>
-<p>Here is how we spawn an instance of a Converter using our <code>print-actor</code> as the
-output:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareActorRef = 
-  actorOfConvert square printActorRef 
-  |&gt; spawn system <span class="hljs-string">"square-actor"</span>
-
-squareActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message received: 9" is printed</span>
-</code></pre>
-<p>Both actor patterns had no notion of state so far. Let&#39;s see how we can 
-treat the statefulness in a functional way.</p>
-<hr>
-<h2 id="stateful-sink">Stateful Sink</h2>
-<p>Let&#39;s get back to our Message Sink actor with side-effects, and make it
-dependent on its internal state. The state is affected by the incoming 
-messages and is preserved until the next message comes in.</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/statefulsink.png" alt="Stateful Sink actor"></p>
-<p>Does not look very functional, right? But this impression is wrong in fact.
-We can represent the state before a message came in - as an extra input parameter, 
-and  the state after the message got processed - as an output parameter. 
-We start with an initial state and the output of the
-first message becomes the input state of the second message:</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/statefulsinkfunctional.png" alt="Stateful Sink functional actor"></p>
-<p>Here is an example of a function which prints out the index of a message together
-with the message contents:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printIndex index msg =
-  printn <span class="hljs-string">"Message [%i] received: %A"</span> index msg
-  index + <span class="hljs-number">1</span>
-</code></pre>
-<p>For the actor implementation we need a recursive function so we can&#39;t use 
-<code>actorOf2</code> anymore. Actor workflow is a bit more lines but still very simple:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulSink f initialState (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
-
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
-    actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
-      <span class="hljs-keyword">let</span> newState = f msg lastState
-      <span class="hljs-keyword">return</span>! imp newState
-    }
-
-  imp initialState
-</code></pre>
-<p>And here is a usage example:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printIndexActorRef = 
-  actorOfSink printIndex <span class="hljs-number">1</span>
-  |&gt; spawn system <span class="hljs-string">"print-ix-actor"</span>
-
-printActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message [1] received: 3" is printed</span>
-
-printActorRef &lt;! <span class="hljs-number">4</span>
-<span class="hljs-comment">// "Message [2] received: 4" is printed</span>
-</code></pre>
-<hr>
-<p><a name="StatefulConverter" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
-<h2 id="stateful-converter">Stateful Converter</h2>
-<p>By now, the core function of the Stateful Converter actor should be a no-brainer for you. The actor
-would have two input parameters and two outputs (in a tuple). One of the outputs
-is a message and goes to another actor, the other output becomes an input for the
-next actor:</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/statefulconverter.png" alt="Stateful Converter actor"></p>
-<p>Here is a function which squares the messaged number, then calculates the running total
-and sends it forward:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareAndSum sum msg =
-  <span class="hljs-keyword">let</span> result = sum + msg*msg
-  (result, result)
-</code></pre>
-<p>In this particular case the output message and state are equal, but they don&#39;t
-have to be. Here is the actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
-
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
-    actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
-      <span class="hljs-keyword">let</span> (result, newState) = f msg lastState
-      outputRef &lt;! result
-      <span class="hljs-keyword">return</span>! imp newState
-    }
-
-  imp initialState
-</code></pre>
-<p>And a usage example:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareAndSumActorRef = 
-  actorOfConvert square <span class="hljs-number">0</span> printIndexActorRef 
-  |&gt; spawn system <span class="hljs-string">"square-sum-actor"</span>
-
-squareAndSumActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message [1] received: 9" is printed</span>
-
-squareAndSumActorRef &lt;! <span class="hljs-number">4</span>
-<span class="hljs-comment">// "Message [2] received: 25" is printed</span>
-</code></pre>
-<hr>
-<p><a name="ConverterSupervisor" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
-<h2 id="converter-supervisor">Converter-Supervisor</h2>
-<p>In the previous patterns the Converter actors were sending messages 
-to predefined actor references which were not managed (or supervised in Akka terms)
-by those actors. Now, let&#39;s say that the actor needs to create a child
-to send converted messages to it afterwards: </p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/supervisedchild.png" alt="Supervised Child actor"></p>
-<p>We can treat such child reference as the state and instantiate it when the first message
-comes in. (We can&#39;t spawn it before the first message because the
-<code>mailbox</code> object is required.) The message goes to the actor
-reference that we store in the state, something like this:</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/childasstate.png" alt="Supervised Child as State"></p>
-<p>Here is the generic actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvertToChild f spawnChild (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
-
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp state =
-    actor {
-      <span class="hljs-keyword">let</span> newstate =
-        <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
-        | Some s -&gt; s
-        | None -&gt; spawnChild mailbox
-
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
-      newstate &lt;! f msg
-      <span class="hljs-keyword">return</span>! imp (Some newstate)
-    }
-
-  imp None
-</code></pre>
-<p>The only difference is that we accept a <code>spawnChild</code> function instead of
-pre-baked actor reference. Here is the first calculator example refactored
-to Print actor being a child of Square actor.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareWithChildRef = 
-  actorOfConvertToChild print (spawnChild square <span class="hljs-string">"print-actor"</span>)
-  |&gt; spawn system <span class="hljs-string">"square-with-child-actor"</span>
-</code></pre>
-<p>Notice that the <code>square</code> and <code>print</code> functions have exactly the same signatures
-and implementations as we used before, and the concern of actor hierarchy is 
-completely separated from the business logic of the actors.</p>
-<p>This hierarchy is handy whenever you need multiple instances of one actor type
-(<code>f</code>-actor from the picture) and corresponding instances of another actor type
-(<code>g</code>-actor):</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/multiparents.png" alt="Multiple Parents and Children actor"></p>
-<hr>
-<p><a name="RouterSupervisor" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharpundefined"></a></p>
-<h2 id="router-supervisor">Router-Supervisor</h2>
-<p>Routers are the kind of actors which forward each incoming message to one
-or more downstream actors. In this example the downstream actors are supervised
-by the Router itself.
-So, the Router-Supervisor can have multiple children and send the result of 
-message processing to one or more of them:</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/router.png" alt="Router actor"></p>
-<p>To keep the spirit of functional actors, we represent the router logic with a function
-of type <code>&#39;a -&gt; seq&lt;string * &#39;b&gt;</code>, where <code>&#39;a</code> is the type of incoming messages,
-<code>&#39;b</code> is the type of outgoing messages, and <code>string</code> represents the identifier of the 
-actor to get the message. Here is a sample implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> routeSensorData msg = 
-  msg |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; (<span class="hljs-string">"sensor-actor-"</span> + x.SensorId, x.Temperature))
-</code></pre>
-<p>Based on the incoming metadata (sensor identifier) the actor forwards its
-temperature to corresponding sensor-specific actor. </p>
-<p>Here is the implementation of the generic actor function:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
-
-  <span class="hljs-keyword">let</span> getActor id = 
-    <span class="hljs-keyword">let</span> actorRef = mailbox.Context.Child(id)
-    <span class="hljs-keyword">if</span> actorRef.IsNobody() <span class="hljs-keyword">then</span>
-      spawnChild id mailbox
-    <span class="hljs-keyword">else</span> 
-      actorRef
-
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp () =
-    actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
-      f msg |&gt; Seq.iter (<span class="hljs-keyword">fun</span> (id, x) -&gt; (getActor id) &lt;! x) 
-      <span class="hljs-keyword">return</span>! imp ()
-    }
-
-  imp ()
-</code></pre><p>And a usage example:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> sensorRouterRef = 
-  actorOfRouteToChildren routeSensorData (spawnChild square)
-  |&gt; spawn system <span class="hljs-string">"route-sensor-actor"</span>
-</code></pre>
-<p>Note that <code>spawnChild</code> does not accept the child ID anymore because it&#39;s being
-controlled by the router itself.</p>
-<hr>
-<h2 id="conclusion">Conclusion</h2>
-<p>With the patterns that we have so far we should be able to build quite powerful
-hierarchies like the one shown below:</p>
-<p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/usecase.png" alt="Actor use case"></p>
-<p>There might be many other scenarios and types of actors that would make sense
-in your use case. I&#39;m just showing the basic patterns, but more importantly the way of 
-reasoning about the code. Don&#39;t 
-let the multitude of actor aspects push you into the world of poorly structured 
-code.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/akka-net/'>akka.net</a>, <a href='/tags/actor-model/'>actor model</a>, <a href='/tags/functional-programming/'>functional programming</a>, <a href='/tags/patterns/'>patterns</a>
-    </div>
-    
-</article>
-
-    <article class="post">
     <div class="post-date">Mar 11th, 2016</div>
     
     <h1><a href='/2016/03/aurelia-map-component-with-leaflet'>Aurelia Map Component with Leaflet</a></h1>
@@ -900,6 +605,352 @@ for card recognition can be found in <a href="https://github.com/mikhailshilkov/
     
     <div class="post-tags">
         Posted In: <a href='/tags/poker-bot/'>poker bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/image-recognition/'>image recognition</a>, <a href='/tags/ocr/'>OCR</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Feb 8th, 2016</div>
+    
+    <h1><a href='/2016/02/akka-net-style-actors-in-service-fabric'>Akka.NET-style actors in Service Fabric</a></h1>
+    
+    <div class="post-content">
+        <p>Akka.NET and Service Fabric are the two actor frameworks that emerged in .NET world in the last year.
+The two implementations of actor models are quite different. These differences are multi-faceted but
+today I want to focus on API to define an actor and to communicate to it.</p>
+<h2 id="service-fabric-actors">Service Fabric Actors</h2>
+<p>Every actor in Service Fabric has a public interface which describes its behaviour. For this article
+I&#39;m going to use a toy example based on weather reports. Our actor will be able to get whether reports
+and then return the maximum temperature for a given period. An instance of actor will be created
+for each city (geo partitioning). Here is our interface in Service Fabric:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IWeatherActor</span> : <span class="hljs-title">IActor</span>
+{
+    <span class="hljs-function">Task <span class="hljs-title">AddWeatherReport</span><span class="hljs-params">(WeatherReport report)</span></span>;
+
+    Task&lt;<span class="hljs-keyword">int</span>?&gt; GetMaxTemperature(Period period);
+}
+</code></pre>
+<p>We have two operations: a command and a query. They are both async (return <code>Task</code>). The data classes
+are required to be mutable DTOs based on <code>DataContract</code>:</p>
+<pre class="highlight"><code class="hljs cs">[DataContract]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherReport</span>
+{
+    [DataMember]
+    <span class="hljs-keyword">public</span> DateTime Moment { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Temperature { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Humidity { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+[DataContract]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Period</span>
+{
+    [DataMember]
+    <span class="hljs-keyword">public</span> DateTime From { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    <span class="hljs-keyword">public</span> DateTime Until { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>And here is the implementation of the weather actor:</p>
+<pre class="highlight"><code class="hljs undefined">internal class WeatherActor : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
+{
+    public Task AddWeatherReport(WeatherReport report)
+    {
+        this.State = this.State ?? new List&lt;WeatherReport&gt;();
+        this.State.Add(report);
+        return Task.FromResult(0);
+    }
+
+    public Task&lt;int?&gt; GetMaxTemperature(Period period)
+    {
+        return Task.FromResult(
+            (this.State ?? Enumerable.Empty&lt;WeatherReport&gt;())
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (int?)r.Temperature));
+    }
+}
+</code></pre>
+<p>Service Fabric provides reliable storage out of the box, so we are using it to
+store our reports. There&#39;s no code required to instantiate an actor. Here is the
+code to use it:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>));
+actor.AddWeatherReport(
+    <span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> });
+
+<span class="hljs-comment">// Make a query somewhere else</span>
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>));
+<span class="hljs-keyword">var</span> result = actor.GetMaxTemperature(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+</code></pre>
+<h2 id="akka-net-actors">Akka.NET Actors</h2>
+<p>Actors in Akka.NET are message-based. The messages are immutable POCOs, which 
+is a great design decision. Here are the messages for our scenario:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherReport</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WeatherReport</span><span class="hljs-params">(DateTime moment, <span class="hljs-keyword">int</span> temperature, <span class="hljs-keyword">int</span> humidity)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Moment = moment;
+        <span class="hljs-keyword">this</span>.Temperature = temperature;
+        <span class="hljs-keyword">this</span>.Humidity = humidity;
+    }
+
+    <span class="hljs-keyword">public</span> DateTime Moment { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Temperature { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Humidity { <span class="hljs-keyword">get</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Period</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Period</span><span class="hljs-params">(DateTime <span class="hljs-keyword">from</span>, DateTime until)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.From = <span class="hljs-keyword">from</span>;
+        <span class="hljs-keyword">this</span>.Until = until;
+    }
+
+    <span class="hljs-keyword">public</span> DateTime From { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> DateTime Until { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>There&#39;s no need to define any interfaces. The basic actor implementation derives from
+<code>ReceiveActor</code> and calls <code>Receive</code> generic method to setup a callback which is called
+when a message of specified type is received:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherActor</span> : <span class="hljs-title">ReceiveActor</span>
+{
+    <span class="hljs-keyword">private</span> List&lt;WeatherReport&gt; state = <span class="hljs-keyword">new</span> List&lt;WeatherReport&gt;();
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WeatherActor</span><span class="hljs-params">()</span>
+    </span>{
+        Receive&lt;WeatherReport&gt;(<span class="hljs-keyword">this</span>.AddWeatherReport);
+        Receive&lt;Period&gt;(<span class="hljs-keyword">this</span>.GetMaxTemperature);
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">AddWeatherReport</span><span class="hljs-params">(WeatherReport report)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.state.Add(report);
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">GetMaxTemperature</span><span class="hljs-params">(Period period)</span>
+    </span>{
+        <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">this</span>.state
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (<span class="hljs-keyword">int</span>?)r.Temperature);
+        Sender.Tell(response, Self);
+    }
+}
+</code></pre>
+<p>Note a couple more differences in this implementation comparing to Fabric style:</p>
+<ul>
+<li><p>State is stored in a normal class field and is not persistent or replicated
+by default. This can be solved by Akka.NET Persistence, which would save all
+messages (and potentially snapshots) to the external database. Still, it won&#39;t
+be the same level of convenience as in-built Service Fabric statefullness.</p>
+</li>
+<li><p><code>GetMaxTemperature</code> method does not return anything, because nobody would look
+at the returned value. Instead, it sends yet another message to the sender actor.
+So, <code>Request-Response</code> workflow is supported but is a bit less convenient and
+explicit.</p>
+</li>
+</ul>
+<p>Let&#39;s have a look at the client code. <code>ActorSelection</code> is the closest notion to
+Fabric&#39;s <code>ActorProxy</code>: it does not create an actor, but just gets an endpoint
+based on the name. Note that Akka.NET actor needs to be explicitly created by
+another actor, but lifetime management is a separate discussion, so we&#39;ll skip 
+it for now. Here is the report sender:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
+<span class="hljs-keyword">var</span> msg = <span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> };
+Context.ActorSelection(<span class="hljs-string">"/user/weather/Amsterdam"</span>).Tell(msg);
+</code></pre>
+<p>Asking <code>ActorSelection</code> is not directly possible, we would need to setup an
+inbox and receive callback messages. We&#39;ll pretend that we have an <code>ActorRef</code>
+for the sake of simplicity:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Make a query somewhere else</span>
+ActoRef actor = ... ; <span class="hljs-comment">// we have it</span>
+<span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> actor.Ask(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+</code></pre>
+<h2 id="the-best-of-two-worlds">The Best of Two Worlds</h2>
+<p>Now my goals is to come up with an implementation of Service Fabric actors with
+the properties that combine the good parts of both frameworks (without explicitly
+using Akka.NET), i.e.</p>
+<ul>
+<li>Use the full power of Service Fabric actors, including lifetime management,
+cluster management and reliable state</li>
+<li>Use the simplicity of Request-Response pattern implementation of Service Fabric</li>
+<li>Support immutable POCO messages instead of <code>DataContract</code> DTOs</li>
+<li>Use <code>ReceiveActor</code>-like API for message processing</li>
+</ul>
+<p>Here is the third implementation of our Weather Actor (the definitions of messages
+from Akka.NET example are intact):</p>
+<pre class="highlight"><code class="hljs undefined">[ActorService(Name = "WeatherActor")]
+public class WeatherActor : StetefulReceiveActor&lt;List&lt;WeatherReport&gt;&gt;
+{
+    public WeatherActor()
+    {
+        Receive&lt;WeatherReport&gt;(this.AddWeatherReport);
+        Receive&lt;Period, int&gt;(this.GetMaxTemperature);
+    }
+
+    public Task&lt;List&lt;WeatherReport&gt;&gt; AddWeatherReport(
+        List&lt;WeatherReport&gt; state, WeatherReport report)
+    {
+        state = state ?? new List&lt;WeatherReport&gt;();
+        state.Add(report);
+        return Task.FromResult(state);
+    }
+
+    public Task&lt;int?&gt; GetMaxTemperature(List&lt;WeatherReport&gt; state, Period period)
+    {
+        return Task.FromResult(
+            (state ?? Enumerable.Empty&lt;WeatherReport&gt;())
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (int?)r.Temperature));
+    }
+}
+</code></pre>
+<p>The base <code>ReceiveActor</code> class is not defined yet, we&#39;ll do it in the next section. Here is
+how it&#39;s being used:</p>
+<ul>
+<li>The base class is generic and it accepts the type of the state (similar to normal Fabric actors)</li>
+<li>Constructor registers two <code>Receive</code> handlers: message handler and request handler. Note
+that the later one accepts two type parameters: request type and response type</li>
+<li>Both handlers get the current state as the first argument instead of pulling it from the property of
+the base class</li>
+<li>The both return <code>Task</code>&#39;ed data. Message handler is allowed to change the state, while
+request handler does  not change the state but just returns the response back</li>
+<li><code>ServiceName</code> attribute is required because there are (may be) multiple classes implementing
+the same interface</li>
+</ul>
+<p>The client code uses our own <code>MessageActorProxy</code> class to create non-generic proxies which
+are capable to <code>Tell</code> (send a message one way) and <code>Ask</code> (do request and wait for response):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
+<span class="hljs-keyword">var</span> actor = MessageActorProxy.Create(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>), <span class="hljs-string">"WeatherActor"</span>);
+actor.Tell(<span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> });
+
+<span class="hljs-comment">// Make a query somewhere else</span>
+<span class="hljs-keyword">var</span> actor = MessageActorProxy.Create(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>), <span class="hljs-string">"WeatherActor"</span>);
+<span class="hljs-keyword">var</span> result = actor.Ask(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+</code></pre>
+<h2 id="implementation-of-receiveactor">Implementation of ReceiveActor</h2>
+<p>Let&#39;s start with the interface definition:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IReceiveActor</span> : <span class="hljs-title">IActor</span>
+{
+    <span class="hljs-function">Task <span class="hljs-title">Tell</span><span class="hljs-params">(<span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message)</span></span>;
+
+    [Readonly]
+    Task&lt;<span class="hljs-keyword">byte</span>[]&gt; Ask(<span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message);
+}
+</code></pre>
+<p>The two methods for <code>Tell</code> and <code>Ask</code> accept serializes data together with fully qualified
+type name. This will allow passing any kind of objects which can be handled by a serializer
+of choice (I used Newtonsoft JSON serializer).</p>
+<p>Actor implementation derives from <code>StatefulActor</code> and uses another type/bytes pair to store
+the serialized state:</p>
+<pre class="highlight"><code class="hljs undefined">    public abstract class StatefulReceiveActor : StatefulActor&lt;StateContainer&gt;, 
+                                                 IReceiveActor
+    {
+        // ...
+    }
+
+    [DataContract]
+    public class StateContainer
+    {
+        [DataMember]
+        public string TypeName { get; set; }
+
+        [DataMember]
+        public byte[] Data { get; set; }
+    }
+</code></pre>
+<p>The simplistic implementation of <code>Receive</code> generic methods uses two dictionaries
+to store the handlers:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt; handlers;
+<span class="hljs-keyword">private</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt; askers;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ReceiveActor</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">this</span>.handlers = <span class="hljs-keyword">new</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt;();
+    <span class="hljs-keyword">this</span>.askers = <span class="hljs-keyword">new</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt;();
+}
+
+<span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> Receive&lt;T&gt;(Func&lt;<span class="hljs-keyword">object</span>, T, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt; handler)
+    =&gt; <span class="hljs-keyword">this</span>.handlers.Add(<span class="hljs-keyword">typeof</span>(T), <span class="hljs-keyword">async</span> (s, m) =&gt; <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-title">handler</span><span class="hljs-params">(s, (T)</span>m))</span>;
+
+<span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> Receive&lt;TI, TO&gt;(Func&lt;<span class="hljs-keyword">object</span>, TI, Task&lt;TO&gt;&gt; asker)
+    =&gt; <span class="hljs-keyword">this</span>.askers.Add(<span class="hljs-keyword">typeof</span>(TI), <span class="hljs-keyword">async</span> (s, m) =&gt; <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-title">asker</span><span class="hljs-params">(s, (TI)</span>m))</span>;
+</code></pre>
+<p>The <code>Tell</code> method deserializes the message and state, then picks a handler based on
+the message type, executes it and serializes the produced state back:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">Tell</span><span class="hljs-params">(<span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message)</span>
+</span>{
+    <span class="hljs-keyword">var</span> type = Type.GetType(typeName);
+    <span class="hljs-keyword">var</span> typedMessage = <span class="hljs-keyword">this</span>.serializer.Deserialize(message, type);
+
+    <span class="hljs-keyword">var</span> typedState = <span class="hljs-keyword">this</span>.State != <span class="hljs-keyword">null</span>
+        ? <span class="hljs-keyword">this</span>.serializer.Deserialize(<span class="hljs-keyword">this</span>.State.Data, Type.GetType(<span class="hljs-keyword">this</span>.State.TypeName))
+        : <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">var</span> handler = <span class="hljs-keyword">this</span>.handlers.FirstOrDefault(t =&gt; t.Key.IsAssignableFrom(type)).Value;
+    <span class="hljs-keyword">if</span> (handler != <span class="hljs-keyword">null</span>)
+    {
+        <span class="hljs-keyword">var</span> newState = <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-title">handler</span><span class="hljs-params">(typedState, typedMessage)</span></span>;
+        <span class="hljs-keyword">this</span>.State =
+            newState != <span class="hljs-keyword">null</span>
+            ? <span class="hljs-keyword">new</span> StateContainer 
+              { 
+                  Data = <span class="hljs-keyword">this</span>.serializer.Serialize(newState), 
+                  TypeName = newState.GetType().AssemblyQualifiedName 
+              }
+            : <span class="hljs-keyword">null</span>;
+    }
+}
+</code></pre>
+<p>The implementation of <code>Ask</code> is almost identical, so I&#39;ll skip it. <code>MessageActorProxy</code> 
+encapsulates the serialization around passing data to normal <code>ActorProxy</code> class:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MessageActorProxy</span>
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> IStatefulMessageActor proxy;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISerializer serializer = <span class="hljs-keyword">new</span> JsonByteSerializer();
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">MessageActorProxy</span><span class="hljs-params">(ActorId actorId, <span class="hljs-keyword">string</span> serviceName)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.proxy = ActorProxy.Create&lt;IReceiveActor&gt;(actorId, serviceName: serviceName);
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">Tell</span><span class="hljs-params">(<span class="hljs-keyword">object</span> message)</span>
+    </span>{
+        <span class="hljs-keyword">var</span> serialized = <span class="hljs-keyword">this</span>.serializer.Serialize(message);
+        <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.proxy.Send(message.GetType().AssemblyQualifiedName, serialized);
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task&lt;T&gt; Ask&lt;T&gt;(<span class="hljs-keyword">object</span> message)
+    {
+        <span class="hljs-keyword">var</span> serialized = <span class="hljs-keyword">this</span>.serializer.Serialize(message);
+        <span class="hljs-keyword">var</span> fullName = message.GetType().AssemblyQualifiedName;
+        <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.proxy.Ask(fullName, serialized);
+        <span class="hljs-keyword">return</span> (T)<span class="hljs-keyword">this</span>.serializer.Deserialize(response, <span class="hljs-keyword">typeof</span>(T));
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> MessageActorProxy <span class="hljs-title">Create</span><span class="hljs-params">(ActorId actorId, <span class="hljs-keyword">string</span> serviceType)</span>
+    </span>{
+        <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">MessageActorProxy</span><span class="hljs-params">(actorId, serviceType)</span></span>;
+    }
+}
+</code></pre>
+<p>Let&#39;s briefly wrap it up.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>At this stage Azure Service Fabric lacks support of some actor model best practices
+like message-based API and immutable POCO classes. At the same time, it provides
+super powerful setup regarding cluster resource management, state replication, fault
+tolerance and reliable communication. We can borrow some approaches that are used in Akka.NET
+framework to improve the developer experience who wants to leverage the power
+of Service Fabric.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/service-fabric/'>service fabric</a>, <a href='/tags/akka-net/'>akka.net</a>, <a href='/tags/actor-model/'>actor model</a>
     </div>
     
 </article>
