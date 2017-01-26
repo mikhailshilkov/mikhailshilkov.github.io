@@ -70,67 +70,7 @@ you to join me in solving Advent of Code 2017.</p>
 <p>Kudos to <a href="https://twitter.com/ericwastl">Eric Wastl</a> for creating and 
 maintaining the <a href="http://adventofcode.com">Advent of Code web site</a>.</p>
 ]]></content>
-    </entry>
-    
-    <entry>
-        <title>NEventStore</title>
-        <link href="http://mikhail.io/draft/index2"/>
-        <updated>2017-01-10T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-01-10,/draft/index2</id>
-        <content type="html"><![CDATA[<p>In <a href="http://mikhail.io/draft/index2">my previous post about Event Store read complexity</a> I discussed how
-the amount of reads to the event database might grow quadratically in
-relation to amount of event in aggregate.</p>
-<p>On the higher level, it&#39;s clear that the event database should be optimized
-for reads rather that writes, which is not always obvious from the definition
-of the &quot;append-only store&quot;.</p>
-<h2 id="neventstore">NEventStore</h2>
-<p>I this post I want to look at <a href="http://mikhail.io/draft/index2">NEventStore</a> of top of <a href="http://mikhail.io/draft/index2">SQL Database</a>
-which is the combination we currently use as Event Store in Azure-based
-web application.</p>
-<p>NEventStore is a C# abstraction over Event Store with multiple providers
-for several database backends. We use <a href="http://mikhail.io/draft/index2">SQL provider</a>. When you intialize
-is with a connection string to an empty database, the provider will go
-on and create two tables with schema, indices etc. The most important
-table is <code>Commits</code> and it gets the following schema:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span>
-</span></code></pre>
-<p>The primary key is an <code>IDENTITY</code> column, which means the new events (commits)
-are appended to the end of the clustered index. Clearly, this is good
-for <code>INSERT</code> performance.</p>
-<p>There is a number of secondary non-clustered indexes that are optimized
-for reach API of NEventStore library, e.g. TODO</p>
-<h2 id="our-use-case">Our Use Case</h2>
-<p>It turns out that we don&#39;t need those extended API provided by <code>NEventStore</code>.
-Effectivly, we only need two operations to be supported:</p>
-<ul>
-<li>Add a new event to a stream</li>
-<li>Read all events of a stream</li>
-</ul>
-<p>Our experience of running production-like workloads showed that the read
-operation performance suffers a lot when the size of a stream grows. Here
-is a sample query plan for the read query with the default schema:</p>
-<p>TODO: comment</p>
-<h2 id="tuning-for-reads">Tuning for Reads</h2>
-<p>After seing this, we decided to try re-thinking the indexing schema of the
-<code>Commits</code> table. Here is what we came down to:</p>
-<pre class="highlight"><code class="hljs sql">
-</code></pre>
-<p>TODO: comment</p>
-<p>The change makes INSERT&#39;s less efficient. It&#39;s not a simple append to the 
-end of the clustered index anymore.</p>
-<p>But at this price, the reads just got much faster. Here is the plan for 
-the same query over the new schema:</p>
-<p>TODO: comment</p>
-<h2 id="our-results">Our Results</h2>
-<p>The results looks great for us. We are able to run our 50 GB Commits table
-on a 100-DTU SQL Database instance, with typical load of 15 to 30 percent.
-The reads are still taking the biggest chunk of the load, with insert still
-being far behind.</p>
-<p>The mileage may vary, so be sure to test your NEventStore schema versus
-your workload.</p>
-<h2 id="further-improvements">Further Improvements</h2>
-]]></content>
-    </entry>
+    </entry>    
     
     <entry>
         <title>My Functional Programming &amp; F# Talks at Webscale Architecture Meetup</title>
