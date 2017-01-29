@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Event Sourcing: Optimizing NEventStore SQL read performance | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.4" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">F#, C#, JS, SQL, Azure programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                <li><a href="/">Blog</a></li>
+                <li><a href="/about">About</a></li>
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="http://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="http://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="row">
+        <div class="col-sm-12 col-md-10">
+            <article class="post">
+    <div class="post-date">Jan 29th, 2017</div>
+    
+    <h1>Event Sourcing: Optimizing NEventStore SQL read performance</h1>
+    
+    <div class="post-content">
+        <p>In <a href="http://mikhail.io/2016/11/event-sourcing-and-io-complexity/">my previous post about Event Store read complexity</a> 
+I described how the growth of reads from the event database might be 
+quadratic in respect to amount of events per aggregate.</p>
+<p>On the higher level, the conclusion was that the event sourced database should be optimized
+for reads rather that writes, which is not always obvious from the definition
+of the &quot;append-only store&quot;.</p>
+<h2 id="neventstore">NEventStore</h2>
+<p>In this post I want to look at 
+<a href="https://github.com/NEventStore/NEventStore">NEventStore</a> on top of 
+<a href="https://azure.microsoft.com/en-us/services/sql-database/">Azure SQL Database</a>
+which is the combination we currently use for event sourcing in Azure-based
+web application.</p>
+<p>NEventStore library provides a C# abstraction over event store with multiple 
+providers for several database backends. We use the
+<a href="https://github.com/NEventStore/NEventStore.Persistence.SQL">Persistence.SQL provider</a>. 
+When you initialize
+it with a connection string to an empty database, the provider will go
+on and create two tables with schema, indexes etc. The most important
+table is <code>Commits</code> and it gets the following schema:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> dbo.Commits
+(
+  BucketId          <span class="hljs-built_in">varchar</span>(<span class="hljs-number">40</span>),
+  StreamId          <span class="hljs-built_in">char</span>(<span class="hljs-number">40</span>),
+  StreamRevision    <span class="hljs-built_in">int</span>,
+  Items             tinyint,
+  CommitId          uniqueidentifier,
+  CommitSequence    <span class="hljs-built_in">int</span>,
+  CheckpointNumber  <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">IDENTITY</span>(<span class="hljs-number">1</span>, <span class="hljs-number">1</span>),
+  Payload           varbinary(<span class="hljs-keyword">max</span>),
+  CommitStamp       datetime2
+)
+<span class="hljs-keyword">GO</span>
+<span class="hljs-keyword">ALTER</span> <span class="hljs-keyword">TABLE</span> dbo.Commits 
+<span class="hljs-keyword">ADD</span> <span class="hljs-keyword">CONSTRAINT</span> PK_Commits 
+<span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (CheckpointNumber)
+</span></code></pre>
+<p>I removed several columns, most indexes and constraints to make the script
+more readable.</p>
+<p>The primary key is based upon <code>CheckpointNumber</code> - an <code>IDENTITY</code> column, which means 
+the new events (commits) are appended to the end of the clustered index. 
+Clearly, this is good for <code>INSERT</code> performance.</p>
+<p>There is a number of secondary non-clustered indexes that are optimized
+for rich API of NEventStore library, e.g. dispatching events to observers,
+searching for streams, time-based queries etc.</p>
+<h2 id="our-use-case">Our Use Case</h2>
+<p>It turns out that we don&#39;t need those extended API provided by <code>NEventStore</code>.
+Effectively, we only need two operations to be supported:</p>
+<ul>
+<li>Add a new event to a stream</li>
+<li>Read all events of a stream</li>
+</ul>
+<p>Our experience of running production-like workloads showed that the read
+operation performance suffers a lot when the size of a stream grows. Here
+is a sample query plan for the read query with the default schema:</p>
+<p><img src="/2017/01/event-sourcing-optimizing-neventstore-sql-read-performance/defaultqueryplan.png" alt="Query Plan with default primary key"></p>
+<p>SQL Server uses non-clustered index to find all events of the given
+steam, and then does key lookups, which might get very expensive for
+large streams with hundreds or thousands of events.</p>
+<h2 id="tuning-for-reads">Tuning for Reads</h2>
+<p>After seeing this, I decided to re-think the primary index of the
+<code>Commits</code> table. Here is what I came down to:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">ALTER</span> <span class="hljs-keyword">TABLE</span> dbo.Commits 
+<span class="hljs-keyword">ADD</span> <span class="hljs-keyword">CONSTRAINT</span> PK_Commits 
+<span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (BucketId, StreamId, CommitSequence)
+</span></code></pre>
+<p>Now, all the commits of one stream are physically located together in the
+clustered index.</p>
+<p>The change makes <code>INSERT</code>&#39;s less efficient. It&#39;s not a simple append to the 
+end of the clustered index anymore.</p>
+<p>But at this price, the reads just got much faster. Here is the plan for 
+the same query over the new schema:</p>
+<p><img src="/2017/01/event-sourcing-optimizing-neventstore-sql-read-performance/optimizedqueryplan.png" alt="Query Plan with the new primary key"></p>
+<p>Simple, beautiful and fast!</p>
+<h2 id="our-results">Our Results</h2>
+<p>The results look great for us. We are able to run our 50 GB Commits table
+on a 100-DTU SQL Database instance, with typical load of 10 to 25 percent.
+The reads are still taking the biggest chunk of the load, with writes
+being far behind.</p>
+<p>The mileage may vary, so be sure to test your NEventStore schema versus
+your workload.</p>
+<h2 id="further-improvements">Further Improvements</h2>
+<p>Here are some further steps that we might want to take to make <code>Commits</code>
+table even faster:</p>
+<ul>
+<li><p>The table comes with 5 non-clustered indexes. One of them became our
+clustered index. Two indexes are unique, so they might be useful for 
+duplicate prevention (e.g. in concurrency scenarios). The remaining two
+are non-unique, so they can probably be safely deleted unless we start
+using other queries that they are intended for.</p>
+</li>
+<li><p>There are several columns which are not used in our implementation:
+<code>StreamIdOriginal</code>, <code>Dispatched</code> and <code>Headers</code> to name a few. We could 
+replace the table with a view of the same name, and always return defaults
+for those columns in any <code>SELECT</code>, ignoring the values in any <code>INSERT</code>.</p>
+</li>
+</ul>
+<p>But I expect these changes to have moderate impact on performance in contrast
+to the primary key change discussed above.</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2017/01/event-sourcing-optimizing-neventstore-sql-read-performance/index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/event-sourcing/'>event sourcing</a>, <a href='/tags/neventstore/'>neventstore</a>, <a href='/tags/sql-server/'>sql server</a>, <a href='/tags/performance/'>performance</a>
+    </div>
+    
+</article>
+            <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy F#, C#, Javascript and SQL development, reasoning about distributed systems, data processing pipelines, cloud and web apps. I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="http://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="http://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+            <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'http://mikhail.io/2017/01/event-sourcing-optimizing-neventstore-sql-read-performance';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Event Sourcing: Optimizing NEventStore SQL read performance';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2016 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
