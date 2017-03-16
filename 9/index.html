@@ -70,6 +70,53 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">May 21st, 2014</div>
+    
+    <h1><a href='/2014/05/21/sgen-to-precompile-classes-for-xmpserializer'>Sgen to precompile classes for XmlSerializer</a></h1>
+    
+    <div class="post-content">
+        <p>During my investigation of our ASP.NET application performance issue, I&#39;ve found out that XmlSerializer may require a long warm-up. The first time, when it&#39;s used for a specific class (de-)serialization, can take up to 500 ms om my machine! We use XmlSerializer to encode/decode user preferences. Having 40 different classes being deserialized at user login lead to a massive delay of 14 seconds. This is only for the first user login after the application start-up, but you do quite a lot of &#39;first times&#39; every day while developing the application.</p>
+<p>These delays are caused by the runtime which prepares and compiles the strongly typed classes for serialization in runtime. Not sure why it&#39;s SO slow, but probably things might go wrong.</p>
+<p>There is a simple solution for this problem: create those helper classes at build time, pack it into an assembly and ship it as part of your .NET application. The tool that does this is called Sgen.exe, and it is a part of .NET SDK. So, we just need to use it in our project.</p>
+<p>The easiest way is to add a post-build event in your CS project properties. The event would look like</p>
+<p>sgen.exe /force /assembly:&quot;$(TargetPath)&quot;
+After re-compiling the project, you should see a new assembly in Bin directory, which has the name ending with XmlSerializers.dll. That&#39;s the new assembly which will save you several seconds on each application start-up. It will be automatically copied to Bin directory of the projects which reference the original assembly with your serializable classes, so no other actions needed.</p>
+<p>However, this command might fail. Sgen tool will try to prepare the helper classes for each class in your assembly, which might not be possible. Then you&#39;ll get some error messages in Visual Studio. In this case, you might want to add a &quot;/types&quot; parameter, explicitly listing the class names to precompile. But I have a better solution for you.</p>
+<p>It&#39;s quite possible that you use MSBuild for regular automated builds of your project. We do. In this case a post-build event in the project properties won&#39;t work during those build. Then, do not add any post-build events, but instead open your .csproj file in plain text editor, and search for the following commented section:</p>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-comment">&lt;!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+   Other similar extension points exist, see Microsoft.Common.targets.
+&lt;Target Name="BeforeBuild"&gt;
+&lt;/Target&gt;
+&lt;Target Name="AfterBuild"&gt;
+&lt;/Target&gt;
+--&gt;</span>
+</code></pre><p>Uncomment the second XML node and substitute it with something like this:</p>
+<pre class="highlight"><code class="hljs nix">&lt;Target <span class="hljs-variable">Name=</span><span class="hljs-string">"AfterBuild"</span> <span class="hljs-variable">DependsOnTargets=</span><span class="hljs-string">"AssignTargetPaths;Compile;ResolveKeySource"</span> <span class="hljs-variable">Inputs=</span><span class="hljs-string">"$(MSBuildAllProjects);@(IntermediateAssembly)"</span> <span class="hljs-variable">Outputs=</span><span class="hljs-string">"$(OutputPath)$(_SGenDllName)"</span>&gt;
+    &lt;ItemGroup&gt;
+      &lt;SgenTypes <span class="hljs-variable">Include=</span><span class="hljs-string">"MyNamespace.MySerializableClass1"</span> /&gt;
+      &lt;SgenTypes <span class="hljs-variable">Include=</span><span class="hljs-string">"MyNamespace.MySerializableClass2"</span> /&gt;
+      &lt;SgenTypes <span class="hljs-variable">Include=</span><span class="hljs-string">"MyNamespace.MySerializableClassN"</span> /&gt;
+    &lt;/ItemGroup&gt;
+    &lt;Delete <span class="hljs-variable">Files=</span><span class="hljs-string">"$(TargetDir)$(TargetName).XmlSerializers.dll"</span> <span class="hljs-variable">ContinueOnError=</span><span class="hljs-string">"true"</span> /&gt;
+    &lt;SGen <span class="hljs-variable">BuildAssemblyName=</span><span class="hljs-string">"$(TargetFileName)"</span> <span class="hljs-variable">BuildAssemblyPath=</span><span class="hljs-string">"$(OutputPath)"</span> <span class="hljs-variable">References=</span><span class="hljs-string">"@(ReferencePath)"</span> <span class="hljs-variable">ShouldGenerateSerializer=</span><span class="hljs-string">"true"</span> <span class="hljs-variable">UseProxyTypes=</span><span class="hljs-string">"false"</span> <span class="hljs-variable">KeyContainer=</span><span class="hljs-string">"$(KeyContainerName)"</span> <span class="hljs-variable">KeyFile=</span><span class="hljs-string">"$(KeyOriginatorFile)"</span> <span class="hljs-variable">DelaySign=</span><span class="hljs-string">"$(DelaySign)"</span> <span class="hljs-variable">ToolPath=</span><span class="hljs-string">"$(SGenToolPath)"</span> <span class="hljs-variable">Types=</span><span class="hljs-string">"@(SgenTypes)"</span>&gt;
+      &lt;Output <span class="hljs-variable">TaskParameter=</span><span class="hljs-string">"SerializationAssembly"</span> <span class="hljs-variable">ItemName=</span><span class="hljs-string">"SerializationAssembly"</span> /&gt;
+    &lt;/SGen&gt;
+&lt;/Target&gt;
+</code></pre><p>The ItemGroup lists all the classes that you need to precompile. You can omit this section and Types attribute of SGen node if you want to compile all classes in assembly.
+Have a nice application start-up boost!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/-net/'>.NET</a>, <a href='/tags/asp-net/'>ASP.NET</a>, <a href='/tags/c#/'>C#</a>, <a href='/tags/debugging/'>Debugging</a>, <a href='/tags/msbuild/'>MSBuild</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/sgen/'>Sgen</a>, <a href='/tags/xmlserializer/'>XmlSerializer</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jan 6th, 2013</div>
     
     <h1><a href='/2013/01/06/poker-money-application-for-windows-store'>Poker Money application for Windows Store</a></h1>
@@ -162,41 +209,6 @@
     
     <div class="post-tags">
         Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/gamification/'>gamification</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Sep 2nd, 2012</div>
-    
-    <h1><a href='/2012/09/02/use-fiddler-to-debug-urlfetch-requests-in-google-appengine'>Use Fiddler to debug urlfetch requests in Google AppEngine</a></h1>
-    
-    <div class="post-content">
-        <p>In <a href="http://www.tripbenefit.com" title="TripBenefit.com - travel in St. Petersburg, Russia">TripBenefit</a> application, we use a lot of web crawling to get data from third-party websites. As the application works on top of Google AppEngine, the <a href="https://developers.google.com/appengine/docs/python/urlfetch/fetchfunction?hl=ru" title="urlfetch.fetch() docs">urlfetch.fetch()</a> function is used to send HTTP requests and get responses.</p>
-<p>Some crawling is not as easy as just a simple GET request, so we have to send specific POST data, cookies and HTTP headers. And all this needs to be debugged. <a href="http://www.fiddler2.com" title="Fiddler2 web debugging tool">Fiddler2</a> is the gold standard for web debugging tools, so I&#39;d like to use it in this case too. I.e. I want to see urlfetch requests displayed in Fiddler, while I&#39;m on development env.<strong>
-</strong></p>
-<p>However, to make it work, I have to make AppEngine run all fetch requests through the Fiddler&#39;s proxy: localhost:8888. As proxies aren&#39;t supported within Google production environment, it&#39;s not supported by development engine either. There&#39;s simply no such &#39;proxy&#39; parameter in urlfetch!</p>
-<p>It seems that the only way to overcome this limitation is to modify the code of AppEngine development server. It isn&#39;t that tricky as it sounds! :)</p>
-<p>Stop all your developmenet AppEngine instances. Go to your AppEngine folder, and then to \google\appengine\api. Edit urlfetch_stub.py (make a backup beforehand). Search for &quot;connection =&quot; line, something like</p>
-<pre class="highlight"><code class="hljs stylus"><span class="hljs-keyword">if</span> _CONNECTION_SUPPORTS_TIMEOUT:
-  connection = <span class="hljs-function"><span class="hljs-title">connection_class</span><span class="hljs-params">(host, timeout=deadline)</span></span>
-<span class="hljs-keyword">else</span>:
-  connection = <span class="hljs-function"><span class="hljs-title">connection_class</span><span class="hljs-params">(host)</span></span>
-</code></pre><p>Substitute it with </p>
-<pre class="highlight"><code class="hljs stylus">connection = <span class="hljs-function"><span class="hljs-title">connection_class</span><span class="hljs-params">(<span class="hljs-string">'127.0.0.1'</span>, <span class="hljs-number">8888</span>)</span></span>
-</code></pre><p>Then, search for &quot;connection.request&quot; method call similar to</p>
-<pre class="highlight"><code class="hljs nimrod">connection.request(<span class="hljs-keyword">method</span>, full_path, payload, adjusted_headers)
-</code></pre><p>and insert another line before it:</p>
-<pre class="highlight"><code class="hljs ini"><span class="hljs-setting">full_path = <span class="hljs-value">protocol + <span class="hljs-string">"://"</span> + host + full_path</span></span>
-</code></pre><p>Done! After you run the dev server and Fiddler2, you should be able to see urlfetch requests in web debugger. Have a nice debugging session!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/appengine/'>AppEngine</a>, <a href='/tags/debugging/'>Debugging</a>, <a href='/tags/fiddler/'>Fiddler</a>, <a href='/tags/google-appengine/'>Google AppEngine</a>, <a href='/tags/python/'>Python</a>
     </div>
     
 </article>
