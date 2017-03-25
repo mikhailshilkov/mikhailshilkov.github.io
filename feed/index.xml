@@ -3,13 +3,129 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2017-03-16T16:08:29.038Z</updated>
+    <updated>2017-03-25T21:26:48.658Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Visualizing Dependency Tree from DI Container</title>
+        <link href="http://mikhail.io/2017/03/visualizing-dependency-tree-from-di-container"/>
+        <updated>2017-03-25T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-03-25,/2017/03/visualizing-dependency-tree-from-di-container</id>
+        <content type="html"><![CDATA[<p>So you are a C# developer. And you need to read the code and understand its
+structure. Maybe you&#39;ve just joined the project, or it&#39;s your own code you
+wrote 1 year ago. In any case, reading code is hard.</p>
+<p>Luckily, some good thought was applied to this particular piece of code.
+It&#39;s all broken down into small classes (they might even be SOLID!), and all 
+the dependencies are injected via constructors. It looks like it&#39;s your
+code indeed.</p>
+<p>So, you figured out that the entry point for your current use case is the
+class called <code>ThingService</code>. It&#39;s probably doing something with <code>Thing</code>&#39;s
+and that&#39;s what you need. The signature of the class constructor looks 
+like this:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ThingService</span><span class="hljs-params">(
+    IGetThings readRepository,
+    ISaveThing saveRepository,
+    IParseAndValidateExcel&lt;Thing, <span class="hljs-keyword">string</span>&gt; fileParser,
+    IThingChangeDetector thingChangeDetector,
+    IMap&lt;Thing, ThingDTO&gt; thingToDtoMapper,
+    IMap&lt;<span class="hljs-keyword">int</span>, ThingDTO, Thing&gt; dtoToThingMapper)</span>
+</span></code></pre>
+<p>OK, so we clearly have 6 dependencies here, and they are all interfaces.
+We don&#39;t know where those interfaces are implemented, but hey - we&#39;ve got
+the best tooling in the industry, so right click on <code>IGetThings</code>, then 
+<code>Go To Implementation</code>.</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">DapperThingRepository</span><span class="hljs-params">(
+    ICRUDAdapter adapter,
+    IDatabaseConnectionFactory connectionFactory,
+    IMap&lt;Thing, ThingRow&gt; thingRowMapper,
+    IMap&lt;ThingRow, Thing&gt; thingMapper)</span>
+</span></code></pre>
+<p>Now we know that we get <code>Thing</code> from Dapper, so probably from a SQL database.
+Let&#39;s go one level deeper and check where those Mappers are implemented.
+Right click, <code>Go To Implementation</code>... But instead of navigating to another code
+file you see</p>
+<pre class="highlight"><code class="hljs mathematica"><span class="hljs-keyword">Find</span> <span class="hljs-keyword">Symbol</span> Result - <span class="hljs-number">28</span> matches found
+</code></pre><p>Oh, right, looks like we use <code>IMap&lt;T, U&gt;</code> in more places. OK, we&#39;ll find the
+right one later, let&#39;s first check the connection factory... 
+Right click, <code>Go To Implementation</code>. Nah:</p>
+<pre class="highlight"><code class="hljs nginx"><span class="hljs-title">The</span> symbol has <span class="hljs-built_in">no</span> implementation
+</code></pre><p>What? But the application works! Ah, <code>IDatabaseConnectionFactory</code> comes
+from an internal library, so most probably the implementation is also 
+inside that library.</p>
+<p>Clearly, navigation doesn&#39;t go that well so far.</p>
+<h2 id="dependency-graph">Dependency Graph</h2>
+<p>When code reading gets tricky, usually an image can boost the understanding.
+The picture below actually shows the graph of class dependencies from our
+example:</p>
+<p><img src="http://mikhail.io/2017/03/visualizing-dependency-tree-from-di-container/class-dependency-graph.png" alt="Class Dependency Graph"></p>
+<p>Each node is a class, each arrow is a dependency - an interface injected
+into the constructor. </p>
+<p>Just by looking at the picture for a minute of two you can start seeing some 
+structure, and get at least the high-level opinion about the application
+complexity and class relationships.</p>
+<p>Picture is also a great way of communication. Once you understand the structure,
+you can explain it to a colleague much easier with boxes and lines
+on the screen in addition to a plain wall of code.</p>
+<p>You can enrich such picture with comments at the time of writing and leave 
+it to your future self or anyone who would read the code in 2 years time.</p>
+<p>But now the question is - what&#39;s the easiest way to draw such dependency graph?</p>
+<h2 id="di-container">DI Container</h2>
+<p>The assumption of this post is that a dependency injection (DI) container
+of some kind is used in the project. If so, chances are that you can get such
+dependency graph from the container registrations.</p>
+<p>My example is based on <a href="https://simpleinjector.org/">Simple Injector</a> DI 
+container which is used by ourselves. So, further on I will explain how to
+draw a dependency graph from Simple Injector container.</p>
+<p>My guess is that any mature DI library will provide you with such possibility,
+mostly because the dependency graphs are built internally by any container 
+during its normal operations.</p>
+<h2 id="implementation">Implementation</h2>
+<p>The implementation idea of dependency graph visualization is quite simple, as
+the biggest chunk of work is done by Simple Injector itself. Here are the steps:</p>
+<ol>
+<li><p>Run all your DI registrations as you do in the actual application. This will
+initialize Container to the desired state.</p>
+</li>
+<li><p>Define which class should be the root of the dependency tree under study. 
+You can refine later, but you need to start somewhere.</p>
+</li>
+<li><p>Call <code>GetRegistration</code> method of DI container for the selected type. An instance
+of <code>InstanceProducer</code> type is returned.</p>
+</li>
+<li><p>Call <code>GetRelationships</code> method of the instance producer to retrieve all 
+interface/class pairs that the given type depends on. Save each relation into
+your output list.</p>
+</li>
+<li><p>Navigate through each dependency recursively to load further layers of the graph.
+Basically, do the depth-first search and save all found relations.</p>
+</li>
+<li><p>Convert the list of found relations into <a href="https://en.wikipedia.org/wiki/Graphviz">GraphViz</a>
+textual graph description.</p>
+</li>
+<li><p>Use a tool like <a href="http://www.webgraphviz.com/">WebGraphviz</a> do the actual
+visualization by converting text to picture.</p>
+</li>
+</ol>
+<p>There are several potential pitfalls on the way, like cyclic graphs, decorator
+registrations etc. To help you avoid those I&#39;ve created a small library to automate 
+steps 3 to 6 from the list above. See my 
+<a href="https://github.com/mikhailshilkov/SimpleInjector.Visualization">SimpleInjector.Visualization github repo</a> 
+and let me know if you find it useful.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>People are good at making sense of visual representations - use that skill to
+improve understanding and communication within your development team.</p>
+<p>Dependency injection practice requires a lot of ceremony to set it up and
+running. Leverage this work for the best: check what kind of insights you
+can get from that setup. Dependency graph visualization is one example of 
+such leverage, but there might be other gems in there. </p>
+<p>Just keep searching!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Azure Functions as a Facade for Azure Monitoring</title>
@@ -1300,131 +1416,6 @@ is recorded and shown on the map.</p>
 <li><a href="http://mikhail.io/demos/leaflet-corridor/">Demo page</a> to try it out</li>
 <li><a href="http://stackoverflow.com/questions/26206636/is-there-any-method-to-draw-path-polyline-on-leaflet-with-constant-width-strok/40064379">Stackoverflow question</a> which inspired me to open-source the implementation</li>
 </ul>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Azure SQL Databases: Backups, Disaster Recovery, Import and Export</title>
-        <link href="http://mikhail.io/2016/10/azure-sql-databases-backups-disaster-recovery-import-export"/>
-        <updated>2016-10-11T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2016-10-11,/2016/10/azure-sql-databases-backups-disaster-recovery-import-export</id>
-        <content type="html"><![CDATA[<p>Azure SQL Database is a managed cloud database-as-a-service. It provides
-application developers with SQL Server databases which are hosted in the
-cloud and fully managed by Microsoft.</p>
-<p>The service is very easy to start with. Several clicks in the portal and
-you have a database running. Now you can copy the connection string to
-your application config file, and boom - you have all up and running.
-No installation, no license to buy - just pay the hourly fee.</p>
-<p>Any production database is a very important asset, so we are used to 
-give it a good care in self-hosted scenario. A number of questions appear
-when you try to apply those practices to the cloud offering:</p>
-<ul>
-<li>How do I make a backup of my database? Where should I store it?</li>
-<li>How do I move my database including schema and data from on-premise 
-to the cloud?</li>
-<li>How do I move it from the cloud to my local server?</li>
-<li>What is a point-in-time restore offered by Azure?</li>
-<li>Should I use geo-replication? What is geo-restore?</li>
-</ul>
-<p>In this post I&#39;ll give the short answers to these questions and the links
-for further reading. </p>
-<h2 id="what-is-point-in-time-restore-">What is Point-in-time Restore?</h2>
-<p>All your databases are always automatically backed-up by Azure. They take
-full, differential and log backups in the background to guarantee you always
-have your data safe.</p>
-<p>These backups are retained for 7 days for Basic, 14 days for Standard and 
-35 days for Premium tier.</p>
-<p>Within this period, you can choose any <em>minute</em> and restore your database
-to that point in time. The restore always happens to a <strong>new</strong> database,
-it does not overwrite your current database. </p>
-<p><img src="http://mikhail.io/2016/10/azure-sql-databases-backups-disaster-recovery-import-export/PointInTimeRestore.png" alt="Point-in-time Restore"></p>
-<p>That&#39;s very handy to recover from &quot;oops&quot; operations when data was deleted 
-from one or more tables by a human or code error. In this case, you restore 
-a copy of the database, and then move the data missing without stopping
-the original database.</p>
-<p>If the restored database must replace the current one, be prepared to change
-connection strings once the restore operation is done. Alternatively, you
-can rename both databases to point applications to the new database without
-any other configuration changes.</p>
-<p>Depending on the database size, the restore may take long time, up to several
-hours, 12 hours max guaranteed. So, point-in-time restore is very flexible 
-but not instant.</p>
-<p>Further reading: 
-<a href="https://azure.microsoft.com/en-us/blog/azure-sql-database-point-in-time-restore/">Azure SQL Database Point in Time Restore</a></p>
-<h2 id="what-about-disaster-recovery-">What about disaster recovery?</h2>
-<p>The same Point-in-time Restore can be used for disaster recovery. The backups
-are automatically replicated to other Azure regions, and can be restored
-in <em>any</em> Azure region. This is called <strong>Geo Restore</strong>.</p>
-<p>In case of failure of the primary region, you can immediately start restoring
-the database in another region. Remember that the restore might still take
-up to several hours depending on the database size.</p>
-<p>Also, because the replication is done asynchronously, the geo-restore will 
-probably lead to some data loss. Usually it will be under 5 minutes of data,
-but guarantee is 1 hour at max.</p>
-<p>Further reading: 
-<a href="https://azure.microsoft.com/en-us/blog/azure-sql-database-geo-restore/">Azure SQL Database Geo-Restore</a></p>
-<h2 id="can-i-reduce-the-downtime-and-data-loss-">Can I reduce the downtime and data loss?</h2>
-<p>If you want to be prepared to the failure of the database&#39;s Azure region
-and be able to fail over much faster, you can use <strong>Active Geo Replication</strong>. 
-Effectively, you are creating other (up to 5 in total) database(s) which
-would be replicated from the primary database.</p>
-<p><img src="http://mikhail.io/2016/10/azure-sql-databases-backups-disaster-recovery-import-export/GeoReplication.png" alt="Geo Replication"></p>
-<p>The replication happens asynchronously, which means that the latency
-of the primary database does not increase. That also means that some data
-may be lost when replica database is promoted to be the new primary.
-Microsoft guarantees that the loss will be limited to 5 seconds worth of data.</p>
-<p>The failover can be done any time, manually or by your script.</p>
-<p>Having replica databases means that you pay for them too. The performance
-level (and the fee) is configurable per database.</p>
-<p>As a bonus, you can use secondary databases as read-only replicas. Just
-remember that the data might be slightly stale.</p>
-<p>Geo Replication is only available for Standard and Premium pricing tiers.</p>
-<p>Further reading: 
-<a href="https://azure.microsoft.com/ru-ru/blog/spotlight-on-sql-database-active-geo-replication/">Spotlight on SQL Database Active Geo-Replication</a>,
-<a href="https://azure.microsoft.com/en-us/documentation/articles/sql-database-geo-replication-overview/">Overview: SQL Database Active Geo-Replication</a></p>
-<h2 id="do-i-still-need-to-make-manual-backups-">Do I still need to make manual backups?</h2>
-<p>Well, it&#39;s possible that you don&#39;t have to.</p>
-<p>But there are at least two scenarios when you might still need to make 
-manual backups:</p>
-<ol>
-<li><p>You need to keep a copy of your database for longer period than 
-Point-in-time restore allows (7 to 35 days depending on the service tier).</p>
-</li>
-<li><p>You need a copy of your Azure database to be restored on premise.</p>
-</li>
-</ol>
-<p>Let&#39;s look at manual backups.</p>
-<h2 id="how-do-i-make-a-bak-file-from-my-azure-database-">How do I make a BAK file from my Azure Database?</h2>
-<p>The <code>BAK</code> backup files are not directly supported by Azure SQL Databases. 
-Instead, there is a feature called <code>Export Data tier application</code>, which
-creates a <code>BACPAC</code> file in Azure Storage account.</p>
-<p>The easiest way to do that is to use SQL Server Management Studio, connect to
-Azure SQL Database, then right-click and select <code>Tasks -&gt; Export Data tier application</code>
-in the menu. </p>
-<p><img src="http://mikhail.io/2016/10/azure-sql-databases-backups-disaster-recovery-import-export/ExportDataTier.png" alt="Export Data Tier Application"></p>
-<p>You can export the file to the local storage name or Azure Storage account. </p>
-<p><img src="http://mikhail.io/2016/10/azure-sql-databases-backups-disaster-recovery-import-export/ExportSettings.png" alt="Export Settings"></p>
-<p>Export will take some time and will consume your database DTUs, so you shouldn&#39;t
-do it too often.</p>
-<p>Export can also be triggered from Azure Portal and PowerShell scripts.</p>
-<h2 id="how-do-i-restore-a-copy-of-my-cloud-database-to-a-local-server-">How do I restore a copy of my cloud database to a local server?</h2>
-<p>Now, when you have a <code>BACPAC</code> file, it&#39;s really easy to restore it to any
-SQL server instance. Right-click <code>Databases</code> node in SQL Server Management
-Studio and select <code>Import Data-tier Application...</code>. </p>
-<p><img src="http://mikhail.io/2016/10/azure-sql-databases-backups-disaster-recovery-import-export/ImportDataTier.png" alt="Import Data Tier Application"></p>
-<p>Then pick the location of the saved file.</p>
-<h2 id="how-do-i-move-my-existing-database-to-azure-sql-database-">How do I move my existing database to Azure SQL Database?</h2>
-<p>The process is exactly the same as described above, just the other direction:</p>
-<ul>
-<li>Export Data-tier Application from your local SQL Server to Azure Storage</li>
-<li>Import Data-tier Application to a new Azure SQL Database</li>
-</ul>
-<h2 id="summary">Summary</h2>
-<p>Azure SQL Database is a production-ready fully managed service, which can
-dramatically reduce the amount of manual administration compared to on-premise
-setup. You can choose between several disaster recovery scenarios based on
-your objectives and budget. Import and export of databases are available,
-allowing operators to move databases between the cloud and self-hosted servers.</p>
 ]]></content>
     </entry>
     
