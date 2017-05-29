@@ -3,13 +3,227 @@
     <title>Mikhail Shilkov</title>
     <link href="http://mikhail.io/feed/" rel="self"/>
     <link href="http://mikhail.io"/>
-    <updated>2017-05-08T21:00:20.970Z</updated>
+    <updated>2017-05-29T14:13:40.648Z</updated>
     <id>http://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Reliable Consumer of Azure Event Hubs</title>
+        <link href="http://mikhail.io/2017/05/reliable-consumer-of-azure-event-hubs"/>
+        <updated>2017-05-29T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-05-29,/2017/05/reliable-consumer-of-azure-event-hubs</id>
+        <content type="html"><![CDATA[<p><a href="https://azure.microsoft.com/en-us/services/event-hubs/">Azure Event Hubs</a> is
+a log-based messaging system-as-a-service in Azure cloud. It&#39;s designed to be able to handle huge
+amount of data, and naturally supports multiple consumers.</p>
+<h2 id="event-hubs-and-service-bus">Event Hubs and Service Bus</h2>
+<p>While Event Hubs are formally part of Azure Service Bus family of products,
+in fact its model is quite different.</p>
+<p>&quot;Traditional&quot; Service Bus service is organized around queues (subscriptions
+are just queues with the topic being the source of messages). Each consumer 
+can peek messages from the queue, do the required processing and then
+complete the message to remove it from the queue, or abort the processing.
+Abortion will leave the message at the queue, or will move it to the Dead Letter
+Queue. Completion/abortion are granular per message; and the status of each
+message is managed by the Service Bus broker.</p>
+<p><img src="http://mikhail.io/2017/05/reliable-consumer-of-azure-event-hubs/service-bus-processors.png" alt="Service Bus Processors"></p>
+<p>Event Hubs service is different. Each Hub represnts a log of messages.
+Event producer appends data to the end of the log, and consumers can read this log,
+but they can&#39;t remove or change the status of events there.</p>
+<p>Each event has an offset associated with it. And the only operation that is
+supported for consumers is &quot;give me some messages starting at the offset X&quot;.</p>
+<p><img src="http://mikhail.io/2017/05/reliable-consumer-of-azure-event-hubs/event-hub-processors.png" alt="Event Hub Processors"></p>
+<p>While this approach might seem simplistic, it actually  makes consumers 
+more powerful:</p>
+<ul>
+<li><p>The messages do not disappear from the Hub after being processed for the
+first time. So, if needed, the consumer can go back and re-process older
+events again;</p>
+</li>
+<li><p>Multiple consumers are always supported, out of the box. They just read
+the same log, after all;</p>
+</li>
+<li><p>Each consumer can go at its own pace, drop and resume processing whenever
+needed, with no effect on other consumers.</p>
+</li>
+</ul>
+<p>There are some disadvantages too:</p>
+<ul>
+<li><p>Consumers have to manage their own state of the processing progress, i.e.
+they have to save the offset of the last processed event;</p>
+</li>
+<li><p>There is no way to mark any specific event as failed to be able to reprocess
+it later. There&#39;s no notion of Dead Letter Queue either.</p>
+</li>
+</ul>
+<h2 id="event-processor-host">Event Processor Host</h2>
+<p>To overcome the first complication, Microsoft provides the consumer API called
+<a href="https://github.com/Microsoft/azure-docs/blob/master/articles/event-hubs/event-hubs-programming-guide.md">EventProcessorHost</a>.
+This API has an implementation of consumers based on checkpointing. All you
+need to do is to provide a callback to process a batch of events, and then call
+<code>CheckpointAsync</code> method, which saves the current offset of the last message
+into Azure Blob Storage. If the consumer restarts at any point in time, it will
+read the last checkpoint to find the current offset, and will then continue
+processing from that point on.</p>
+<p>It works great for some scenarios, but the event delivery/processing guarantees
+are relatively low in this case:</p>
+<ul>
+<li><p>Any failures are ignored: there&#39;s no retry or Dead Letter Queue</p>
+</li>
+<li><p>There are no transactions between event hub checkpoints and the data sinks
+that the processor works with (i.e. data stores where processed messages 
+end up at)</p>
+</li>
+</ul>
+<p>In this post I want to focus on a way to process events with higher consistency
+requirements, in particular:</p>
+<ul>
+<li><p>Event Hub processor modifies data in a SQL Database, and such 
+processing is transactional per batch of messages</p>
+</li>
+<li><p>Each event should be (successfully) processed exactly once</p>
+</li>
+<li><p>If event processing failed, it should be marked as failed and kept 
+available to be reprocessed at later point in time</p>
+</li>
+</ul>
+<p>While end-to-end exactly-once processing would require changes of the 
+producers too, we will only focus on consumer side in this post.</p>
+<h2 id="transactional-checkpoints-in-sql">Transactional Checkpoints in SQL</h2>
+<p>If checkpoint information is stored in Azure Blobs, there is no obvious way to
+implement distributed transactions between SQL Database and Azure Storage.</p>
+<p>However, we can override the default checkpointing mechanism and 
+implement our own checkpoints based on a SQL table. This way each 
+checkpoint update can become part of a SQL transaction and be committed
+or rolled back with normal guarantees provided by SQL Server.</p>
+<p>Here is a table that I created to hold my checkpoints:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubCheckpoint (
+  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  Offset <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubCheckpoint <span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
+)
+</span></code></pre>
+<p>For each topic and partition of Event Hubs, we store two values: sequence
+number and offset, which together uniquely identify the consumer position.</p>
+<p>Conveniently, Event Host Processor provides an extensibility point to
+override the default checkpoint manager with a custom one. For that we
+need to implement <code>ICheckpointManager</code> interface to work with our SQL
+table.</p>
+<p>The implementation mainly consists of 3 methods: <code>CreateCheckpointIfNotExistsAsync</code>,
+<code>GetCheckpointAsync</code> and <code>UpdateCheckpointAsync</code>. The names are pretty
+much self-explanatory, and my Dapper-based implementation is quite trivial.
+You can find the code <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLCheckpointManager.cs">here</a>.</p>
+<p>For now, I&#39;m ignoring the related topic of lease management and corresponding
+interface <code>ILeaseManager</code>. It&#39;s quite a subject on its own; for the sake
+of simplicity I&#39;ll assume we have just one consumer process per partition,
+which makes proper lease manager redundand.</p>
+<h2 id="dead-letter-queue">Dead Letter Queue</h2>
+<p>Now, we want to be able to mark some messages as failed and to 
+re-process them later. To make Dead Letters transactional, we need another
+SQL table to hold the failed events:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubDeadLetter (
+  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  Offset <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  FailedAt datetime <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  Error <span class="hljs-keyword">nvarchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubDeadLetter <span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
+)
+</span></code></pre>
+<p>This table looks very similar to <code>EventHubCheckpoint</code> that I
+defined above. That is because they are effectively storing pointers to
+events in a hub. Dead Letters have two additional columns to store error
+timestamp and text.</p>
+<p>There is no need to store the message content, because failed events still
+sit in the event hub anyway. You could still log it for diagnostics purpose - just make an extra
+<code>varbinary</code> column.</p>
+<p>There&#39;s no notion of dead letters in Event Hubs SDK, so I defined my own
+interface <code>IDeadLetterManager</code> with a single <code>AddFailedEvents</code> method:</p>
+<pre class="highlight"><code class="hljs undefined">public interface IDeadLetterManager
+{
+    Task AddFailedEvents(IEnumerable&lt;DeadLetter&lt;EventData&gt;&gt; deadLetters);
+}
+
+public class DeadLetter&lt;T&gt;
+{
+    public T Data { get; set; }
+    public DateTime FailureTime { get; set; }
+    public Exception Exception { get; set; }
+}
+</code></pre>
+<p>Dapper-based implementation is trivial again, you can find the code 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLDeadLetterManager.cs">here</a>.</p>
+<h2 id="putting-it-together-event-host">Putting It Together: Event Host</h2>
+<p>My final solution is still using <code>EventHostProcessor</code>. I pass <code>SQLCheckpointManager</code> 
+into its constructor, and then I implement <code>IEventProcessor</code>&#39;s 
+<code>ProcessEventsAsync</code> method in the following way:</p>
+<ol>
+<li>Instantiate a list of items to store failed events</li>
+<li>Start a SQL transaction</li>
+<li>Loop through all the received events in the batch</li>
+<li>Process each item inside a try-catch block</li>
+<li>If exception happens, add the current event to the list of failed events</li>
+<li>After all items are processed, save failed events to Dead Letter table</li>
+<li>Update the checkpoint pointer</li>
+<li>Commit the transaction</li>
+</ol>
+<p>The code block that illustrates this workflow:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">ProcessEventsAsync</span><span class="hljs-params">(
+    PartitionContext context, 
+    IEnumerable&lt;EventData&gt; eventDatas)</span>
+</span>{
+    <span class="hljs-comment">// 1. Instantiate a list of items to store failed events</span>
+    <span class="hljs-keyword">var</span> failedItems = <span class="hljs-keyword">new</span> List&lt;DeadLetter&lt;EventData&gt;&gt;();
+
+    <span class="hljs-comment">// 2. Start a SQL transaction</span>
+    <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> scope = <span class="hljs-keyword">new</span> TransactionScope())
+    {
+        <span class="hljs-comment">// 3. Loop through all the received events in the batch</span>
+        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> eventData <span class="hljs-keyword">in</span> eventDatas)
+        {
+            <span class="hljs-keyword">try</span>
+            {
+                <span class="hljs-comment">// 4. Process each item inside a try-catch block</span>
+                <span class="hljs-keyword">var</span> item = <span class="hljs-keyword">this</span>.Deserialize(eventData);
+                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.DoWork(item);
+            }
+            <span class="hljs-keyword">catch</span> (Exception ex)
+            {
+                <span class="hljs-comment">// 5. Add a failed event to the list</span>
+                failedItems.Add(<span class="hljs-keyword">new</span> DeadLetter&lt;EventData&gt;(eventData, DateTime.UtcNow, ex));
+            }
+        }
+
+        <span class="hljs-keyword">if</span> (failedItems.Any())
+        {
+            <span class="hljs-comment">// 6. Save failed items to Dead Letter table</span>
+            <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.dlq.AddFailedEvents(failedItems);
+        }
+
+        <span class="hljs-comment">// 7. Update the checkpoint pointer</span>
+        <span class="hljs-keyword">await</span> context.CheckpointAsync();
+
+        <span class="hljs-comment">// 8. Commit the transaction</span>
+        scope.Complete();
+    }
+}
+</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>My implementation of Event Hubs consumer consists of 3 parts: checkpoint 
+manager that saves processing progress per partition into a SQL table;
+dead letter manager that persists information about processing errors;
+and an event host which uses both to provide transactional processing
+of events.</p>
+<p>The transaction scope is limited to SQL Server databases, but it might be
+sufficient for many real world scenarios.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Why F# and Functional Programming Talk at .NET Development Nederland Meetup</title>
@@ -1333,88 +1547,6 @@ follow-ups:</p>
 <li>Using 3rd parties for all of that</li>
 <li>Documentation and formal analysis</li>
 </ul>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Event Sourcing and IO Complexity</title>
-        <link href="http://mikhail.io/2016/11/event-sourcing-and-io-complexity"/>
-        <updated>2016-11-18T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2016-11-18,/2016/11/event-sourcing-and-io-complexity</id>
-        <content type="html"><![CDATA[<p><strong>Event Sourcing</strong> is an approach, when an append-only store is used to record the full series of events that 
-describe actions taken on a particular domain entity. This event store becomes the main source of truth 
-to reconstruct the current state of the entity and its complete history.</p>
-<p>In essence, that means that we store the log of all business events that occurred in the system, and then
-we use them to make new decisions and produce new events. </p>
-<h2 id="how-event-souring-works">How Event Souring Works</h2>
-<p>Event Sourcing is usually used in combination with <strong>Command-Query Responsibility Segregation</strong>, when all writes 
-to the event store are initiated by commands. </p>
-<p>The following picture illustrates the storage and command handling:</p>
-<p><img src="http://mikhail.io/2016/11/event-sourcing-and-io-complexity/event-store.png" alt="Event Store Command Handler"></p>
-<p>Every time a new command comes in (1), the command handler understands 
-which entity is affected and retrieves all the previous events from the store (2).</p>
-<p>The handler aggregates the events and derives the current state of the entity (3). If command is valid given that 
-state, the command handler produces a new event or several events (4), and writes them back to the event store (5).</p>
-<h2 id="disk-space-usage">Disk Space Usage</h2>
-<p>It&#39;s quite obvious that Event Sourcing requires more storage space than traditional approach of only storing 
-the current state. The storage size is proportional to the total amount of events in the system, 
-i.e. it&#39;s <code>O(n)</code> or <code>O(e * l)</code> where <code>e</code> is the count of entities in the system and <code>l</code> is the average 
-amount of events per entity.</p>
-<p>Here is the chart of disk space usage in a simplified situation of events of equal size:</p>
-<p><img src="http://mikhail.io/2016/11/event-sourcing-and-io-complexity/disk-space.png" alt="Disk space simulation"></p>
-<p>We saved 1000 events and consumed 1000 storage units. The disk space is cheap, so we are willing to take 
-the trade-off of extra storage for the benefits that Event Sourcing provides.</p>
-<h2 id="disk-io-usage">Disk IO Usage</h2>
-<p>Let&#39;s look at how much IO operations we are going to perform over time. Let&#39;s say that reading or writing of
-one event consumes one unit of IO capacity.</p>
-<p>Every time a new event is received, we consume one write operation: it&#39;s still linear. The storage is append-only, 
-so it makes sense that disk space and writes are essentially the same thing.</p>
-<p>Reads are a different beast. Every time we receive a command, we need to perform <code>i</code> reads, where <code>i</code> 
-is the amount of events so far for the entity. Let&#39;s have a look at several examples, each one is a
-simulation of saving a thousand of new events.</p>
-<p>In the <strong>first scenario</strong> we have a steady flow of incoming events. Events belong to different entities (aggregates) 
-with <strong>10</strong> events per entity on average:</p>
-<p><img src="http://mikhail.io/2016/11/event-sourcing-and-io-complexity/reads-low.png" alt="Reads for low amount of events per entity"></p>
-<p>We can see that we do 5x more reads than writes. That is because for each event written we have to read 
-all the previous events for the same entity, and on average there are 5 of them.</p>
-<p>In the <strong>second scenario</strong> we receive the same amount of events in total. While most entities still have 
-10 events on average, there is just one outlier entity which received <strong>100</strong> events, all in this time period.</p>
-<p><img src="http://mikhail.io/2016/11/event-sourcing-and-io-complexity/reads-outlier.png" alt="Reads with an outlier entity"></p>
-<p>Hey, the amount of reads almost doubled! The line also doesn&#39;t look linear anymore...</p>
-<p>Let&#39;s look at the <strong>third extreme scenario</strong> when all 1000 events were generated by the <strong>same entity</strong>:</p>
-<p><img src="http://mikhail.io/2016/11/event-sourcing-and-io-complexity/reads-single.png" alt="Reads from single entity"></p>
-<p>The amount of reads skyrockets to <strong>100 times more</strong> compared to the first scenario. It&#39;s clearly quadratic!
-The amount of reads for a single entity is <code>O(l)</code> where <code>l</code> is the event count for that entity.</p>
-<h2 id="real-life-scenario">Real-Life Scenario</h2>
-<p>In many use cases it&#39;s unlikely that you get outlier entities which have orders of magnitude difference in amount 
-of events per entity. E.g. if your entity is an order in a webshop, there&#39;s just a few events that humans can 
-generate about it.</p>
-<p>However, if the events are generated from telemetry data or IoT devices, or if the entities tend to live for very 
-long time (like bank accounts), that&#39;s a good sign you should not ignore the potential problem. A handful of anomaly 
-devices can bring the whole storage to its knees, if protection is not carefully designed.</p>
-<p>If your domain has a chance to belong to the second group, you better get prepared.</p>
-<h2 id="capacity-planning-and-monitoring">Capacity Planning and Monitoring</h2>
-<p>It&#39;s not enough to know just the total number of events in your store, nor is the incoming rate of new events
-descriptive enough. </p>
-<p>Start with modeling your Event Store against real data. Put some monitoring in place to see the distribution of 
-event density per entity. Average number is not descriptive enough, so you need to build percentiles and 
-know the maximum too.</p>
-<p>Monitor the amount of reads on your data store. Set the baseline based on the real data
-pattern, not imaginary numbers.</p>
-<h2 id="throttling-sampling">Throttling / Sampling</h2>
-<p>In IoT scenarios the easiest way out could be to discard events if they arrive too frequently from the same device, 
-or use some sampling/aggregation at the ingress point. Only your business domain can define what kind of
-data loss is acceptable, if any.</p>
-<h2 id="snapshots">Snapshots</h2>
-<p>Event Sourcing concept provides the solution for the reads problem in form of Snapshots. Once in every <code>x</code> events, 
-you should produce a snapshot of the entity state. The next time an event comes in, you just read
-the snapshot and the events which happened after the latest snapshot time (amount is less than <code>x</code>).</p>
-<p>It might be tricky to come up with a good snapshot strategy in some cases, especially when the business domain
-requires multiple projections to be built. </p>
-<p>The snapshot size might also grow over time, if entity keeps some internal event-based lists. But snapshots 
-seem to be the only real solution when the amount of events gets out of control. Choose your Event Store 
-technology with this consideration in mind.</p>
-<p>Happy Event Sourcing!</p>
 ]]></content>
     </entry>
     

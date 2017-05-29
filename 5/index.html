@@ -70,6 +70,193 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Apr 9th, 2016</div>
+    
+    <h1><a href='/2016/04/building-a-poker-bot-with-akka-net-actors'>Building a Poker Bot with Akka.NET Actors</a></h1>
+    
+    <div class="post-content">
+        <p><em>This is the fourth part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
+easy and very enjoyable. Here are the previous parts:</em></p>
+<ul>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
+<li><a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
+<li><a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/"><em>Building a Poker Bot: Mouse Movements</em></a></li>
+</ul>
+<p>This post lays out the most exciting part of the bot. I&#39;ll compose the recognition, flow, decision and mouse clicking
+parts together into the bot application. The application is a console executable interacting with multiple 
+windows of poker room software.</p>
+<h2 id="flow">Flow</h2>
+<p>The following picture shows the outline of the application data flow:</p>
+<p><img src="/2016/04/building-a-poker-bot-with-akka-net-actors/pokeractors.png" alt="Actor Diagram"></p>
+<p><strong>Find Tables</strong> - Every half a second or so we scan all the windows and search for open poker tables among them.
+For each poker table we make a screenshot and send those to recognition.</p>
+<p><strong>Recognize Screen</strong> - Parse the data from the screenshot. Check whether it&#39;s our turn to make a play now, what
+the <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">hole cards</a> and 
+<a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">stacks</a> are, produce the detailed
+screen information and send it to decision maker.</p>
+<p><strong>Make Decision</strong> - Understand if that&#39;s a new hand or there was a past history before. See
+what the villains did and which new cards we got. Here the secret sauce comes to play and produces 
+a move to be made. Send the action to the mouse clicker.</p>
+<p><strong>Click Buttons</strong> - Based on the decision made, click the right buttons. It should be done with proper delays
+and <a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">human-like movements</a> so that the villain
+and poker room don&#39;t understand that it&#39;s bot who is playing.</p>
+<hr>
+<h2 id="let-the-actors-play">Let the Actors Play</h2>
+<p>Because of the multi-tabling, the application is intrinsically multi-threaded. At the same time,
+the different parts of the flow are executed at different cadence:</p>
+<ul>
+<li>Finding tables is triggered by time and is single-threaded</li>
+<li>Screen recognition, history detection and decision making run in sequence and can be executed in parallel
+for multiple tables</li>
+<li>Clicking the buttons is again single-threaded, as it must synchronize the outputs from the previous steps,
+put them in sequence with appropriate delays</li>
+</ul>
+<p>Here are the other treats of the flow:</p>
+<ul>
+<li>It is reactive and event based</li>
+<li>The flow is unidirectional, the output of one step goes to the input of the next step</li>
+<li>Most steps are stateless, but the history state needs to be preserved and, ideally, isolated from the other
+steps</li>
+</ul>
+<p>This list of features made me pick the Actor-based <a href="http://getakka.net">Akka.NET</a> framework to implement the flow.</p>
+<p>For sure, the application could be done with a bunch of procedural code instead. 
+But I found actors to be a useful modeling technique to be employed. 
+It goes well with reactive nature of the application and builds the nice 
+foundation for more complicated scenarios in the future.</p>
+<p>Also, I was curious how F# and Akka.NET would work together.</p>
+<h2 id="supervision-hierachy">Supervision Hierachy</h2>
+<p>In Akka.NET each actor has a supervisor actor who is managing its lifecycle. All actors together form a
+supervision tree. Here is the tree shown for the Player application:</p>
+<p><img src="/2016/04/building-a-poker-bot-with-akka-net-actors/actorhierachy.png" alt="Actor Hierachy"></p>
+<p>There is just one copy of both Table Finder and Button Clicker actors and they are supervised by the root
+User actor. </p>
+<p>For each poker table a Recognizer actor gets created. These actors are managed by Table 
+Finder. </p>
+<p>Each Recognizer actor creates an instance of Decision actor who keeps the hand history
+and makes decisions. </p>
+<p>Finally, all decisions are sent to one centralized Button Clicker actor whose job is 
+to click all the tables with proper delays and in order.</p>
+<hr>
+<h2 id="implementation-patterns">Implementation Patterns</h2>
+<p>All actors are implemented with <a href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">Functional Actor Patterns</a>
+which are described in <a href="http://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">my previous post</a>.</p>
+<p>The basic idea is that each actor is defined in functional style with these
+building blocks:</p>
+<ul>
+<li>Type of incoming and, if needed, outgoing messages</li>
+<li>A domain function with business logic</li>
+<li>Actor function which puts those parts together</li>
+<li>Expression to spawn an actor based on actor function</li>
+</ul>
+<p>Let&#39;s look at the examples to understand this structure better.</p>
+<h2 id="table-finder">Table Finder</h2>
+<p>Table Finder does not have any meaningful input message. It gets a message from
+Akka.NET scheduling system just to be periodically activated.</p>
+<p>The domain function is called <code>findWindows</code> and has the type <code>unit -&gt; WindowInfo seq</code>.
+It returns the poker window screenshots and titles.</p>
+<p>Actor function of type <code>int -&gt; seq&lt;string * WindowInfo&gt;</code> is used by the 
+<a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to 
+define the behavior. The ouput tuple defines an ID of an output actor and a
+message to send to it:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> findActor msg = 
+  findWindows ()
+  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; (<span class="hljs-string">"recognizer-actor-"</span> + x.TableName, x))
+</code></pre>
+<p>Here is how I spawn the singleton instance of this actor:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tableFinderRef = 
+  actorOfRouteToChildren findActor (spawnChild recognizer)
+  |&gt; spawn system <span class="hljs-string">"table-finder-actor"</span>
+</code></pre>
+<p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
+<code>spawn</code> function with proper parameter order:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> spawnChild childActor name (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) = 
+  spawn mailbox.Context name childActor
+</code></pre>
+<p>We can also extend it to debug messages when new actors get created.</p>
+<h2 id="recognizer">Recognizer</h2>
+<p>Recognizer receives the <code>WindowInfo</code> produced by the Table Finder.</p>
+<p>The domain function has the type of <code>Bitmap -&gt; Screen</code>. You can read more about table
+recognition in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Part 1</a> and
+<a href="http://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">Part 2</a>
+of these series.</p>
+<p>Actor function is an implementation of 
+<a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern. 
+The output is a decision message for Decision Maker actor which is a supervised 
+child of the Recognizer. Here is the actor function:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeActor (window : WindowInfo) =
+  <span class="hljs-keyword">let</span> result = recognize window.Bitmap
+  { WindowTitle = window.Title 
+    TableName = window.TableName 
+    Screen = result 
+    Bitmap = window.Bitmap }
+</code></pre>
+<p>And here is the spawn function:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizer = actorOfConvertToChild recognizeActor (spawnChild decider <span class="hljs-string">"decider"</span>)
+</code></pre>
+<p>Notice how this expression was used in Table Finder instantiation above.</p>
+<h2 id="decision-maker">Decision Maker</h2>
+<p>Decision Maker actor function is an implementation of 
+<a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#StatefulConverter">Stateful Converter</a> pattern. It receives
+a decision message from a Recognizer. The output is a click message for a 
+singleton Clicker actor. It also needs to preserve some state between two calls.
+In the minimalistic implementation this state holds the previous screen that
+it received, so that if the same message is received twice, the later message is 
+ignored.</p>
+<p>This way the actor function has the type of 
+<code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code> 
+and looks like this:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decisionActor msg lastScreen =
+  <span class="hljs-keyword">let</span> screen = msg.Screen
+  <span class="hljs-keyword">match</span> lastScreen <span class="hljs-keyword">with</span>
+  | Some s <span class="hljs-keyword">when</span> s = screen -&gt; (None, lastScreen)
+  | _ -&gt;
+    <span class="hljs-keyword">let</span> action = decide screen
+    <span class="hljs-keyword">let</span> outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
+    (Some outMsg, Some screen)
+</code></pre>
+<p>Here is the spawn function:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decider = actorOfStatefulConvert decisionActor None clickerRef
+</code></pre>
+<p>where <code>None</code> represents the initial state.</p>
+<h2 id="button-clicker">Button Clicker</h2>
+<p>Clicker actor has the simplest implementation because it does not send messages to other actors.
+Here is the message that it receives from Decision Maker:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickTarget</span> </span>= (int * int * int * int)
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickerMessage</span> </span>= {
+  WindowTitle: string
+  Clicks: ClickTarget[]
+}
+</code></pre>
+<p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
+clicks as side effect. You can read more about the mouse movements in 
+<a href="http://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">Part 3</a>
+of these series.</p>
+<p><a href="http://mikhail.test/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
+pattern is used for this actor, so actor function isn&#39;t
+really needed. We spawn the singleton instance with the following statement:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickerRef = actorOfSink click |&gt; spawn system <span class="hljs-string">"clicker-actor"</span>
+</code></pre>
+<p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>The top layer of poker player application is composed of small single-purpose
+actors which talk to each other by sending messages. </p>
+<p>Thanks to succinct F# language and functional actor patterns this layer is
+very thin, and thus easy to understand and maintain. </p>
+<p>The business logic is isolated and by itself has no dependency on Akka.NET.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/actor-model/'>Actor Model</a>, <a href='/tags/functional-programming/'>Functional Programming</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Mar 21st, 2016</div>
     
     <h1><a href='/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp'>Functional Actor Patterns with Akka.NET and F#</a></h1>
@@ -735,175 +922,6 @@ during TDD development.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/unit-testing/'>Unit Testing</a>, <a href='/tags/dapper/'>Dapper</a>, <a href='/tags/orm/'>ORM</a>, <a href='/tags/tdd/'>TDD</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Feb 10th, 2016</div>
-    
-    <h1><a href='/2016/02/building-a-poker-bot-string-recognition'>Building a Poker Bot: String and Number Recognition</a></h1>
-    
-    <div class="post-content">
-        <p><em>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
-to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
-easy and very enjoyable. Here is the first part:
-<a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a>
-</em></p>
-<h2 id="why-string-recognition">Why string recognition</h2>
-<p>Reading cards and other fixed images was the first step. The bot should also
-be able to read different text-based information from the screen, e.g.</p>
-<ul>
-<li>Current blind levels</li>
-<li>Current pot size</li>
-<li>The size of bets made by each player</li>
-<li>Player names</li>
-<li>Stack sizes</li>
-<li>Chat messages (for advanced scenarios)</li>
-</ul>
-<p>We need this vital information to make proper decisions, so let&#39;s look at
-how to parse the textual data.</p>
-<h2 id="new-challenges">New challenges</h2>
-<p>String recognition has some specific difficulties when compared to fixed
-images like cards:</p>
-<ul>
-<li>The size of a string is not predefined. Obviously, the longer the string, the
-more space it takes on the screen</li>
-<li>The position of a string is not fixed either. Some strings are aligned to
-the center, others may diverge based on other variable parts like stakes or blinds</li>
-<li>Different strings might be rendered in different font size</li>
-</ul>
-<p>Here is what needs to be done to overcome these complications:</p>
-<ul>
-<li>Pick the layout which makes your life easier </li>
-<li>Adjust fonts and positions if possible </li>
-<li>Make sure that all important strings are always visible and not overlapping to other information</li>
-<li>For each string define a region where it belongs to in 100% cases. The background
-of this region should be more or less evenly filled with a color in contrast to the font color.</li>
-</ul>
-<h2 id="string-recognition-steps">String recognition steps</h2>
-<p>We start with a screenshot of a poker table again:</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition/table.png" alt="Poker table screenshot"></p>
-<p>We know our fixed regions where our labels are located, so we take those
-regions for processing:</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition/regions.png" alt="Regions of string recognition"></p>
-<p>For each region we trim away the blank margins around the text (i.e. left,
-top, right and bottom padding):</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition/nomargin.png" alt="Margins being removed"></p>
-<p>We find dark lines between bright symbols and we consider them as gaps
-between characters:</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition/splitchars.png" alt="Split to characters"></p>
-<p>The final step is to compare each symbol to the known patterns and find the best
-match (in case of my layout the match for symbols is always 100% perfect). Let&#39;s 
-look how these steps are implemented.</p>
-<h2 id="removing-padding-around-the-text">Removing padding around the text</h2>
-<p>Because the padding is removed from all 4 sides of the region, I decided to use
-<code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
-with black or white points defined as a helper type:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BW</span> </span>= B | W
-</code></pre>
-<p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
-like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> removePadding pixels =
-  <span class="hljs-keyword">let</span> allBlack s = Seq.exists ((=) W) s
-  <span class="hljs-keyword">let</span> maxWidth = Array2D.length1 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> maxHeight = Array2D.length2 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> firstX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> lastX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> firstY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
-  <span class="hljs-keyword">let</span> lastY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
-
-  <span class="hljs-keyword">match</span> (firstX, lastX, firstY, lastY) <span class="hljs-keyword">with</span>
-  | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
-  | _ -&gt; Array2D.init <span class="hljs-number">0</span> <span class="hljs-number">0</span> (<span class="hljs-keyword">fun</span> _ _ -&gt; B)
-</code></pre>
-<p>The first part finds the amount of fully-black columns and rows in the array.
-Then, if white points are found, the second part returns a sub array based on
-the indices, otherwise empty array is returned.</p>
-<h2 id="split-the-text-into-characters">Split the text into characters</h2>
-<p>First, we convert our 2D array into the list of lists, where each item in the
-top-level list represents a single column of pixels:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> pixelColumns =
-  [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)
-</code></pre>
-<p>Then we can fold this list of columns into the symbols, where each symbol itself
-is the list of columns:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> splitIntoSymbols (e : BW list) (state: BW list list list) = 
-  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
-  | cur::rest -&gt;
-      <span class="hljs-keyword">if</span> isSeparator e <span class="hljs-keyword">then</span>
-        <span class="hljs-keyword">match</span> cur <span class="hljs-keyword">with</span>
-        | _::_ -&gt; []::state <span class="hljs-comment">// add new list</span>
-        | _ -&gt; state        <span class="hljs-comment">// skip if we already have empty item</span>
-      <span class="hljs-keyword">else</span> (e::cur)::rest   <span class="hljs-comment">// add e to current list</span>
-  | _ -&gt; [[e]]
-
-Seq.foldBack splitIntoSymbols pixelColumns []
-</code></pre>
-<p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
-by introducing some intermediate type with descriptive name, but I decided
-to leave that part for now. Read it as list of symbols, which are lists of
-columns, which are lists of pixels.</p>
-<h2 id="match-the-symbols-vs-the-known-patterns">Match the symbols vs the known patterns</h2>
-<p>This part was already described in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
-Basically we compare the list of black or white points to the patterns of
-the known symbols:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> getChar patterns bws =
-  <span class="hljs-keyword">let</span> samePatterns h p =
-    Seq.zip h p
-    |&gt; Seq.forall (<span class="hljs-keyword">fun</span> (v1, v2) -&gt; v1 = v2)
-  <span class="hljs-keyword">let</span> matchingPattern = 
-    patterns 
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; List.length p.Pattern = List.length bws)
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; samePatterns bws p.Pattern)
-      |&gt; Array.tryHead
-  defaultArg (Option.map (<span class="hljs-keyword">fun</span> p -&gt; p.Char) matchingPattern) '?'
-</code></pre>
-<h2 id="putting-it-all-together">Putting it all together</h2>
-<p>The <code>recognizeString</code> function accepts lower-order functions to match 
-symbols and get pixels together with width and height of the region:</p>
-<pre class="highlight"><code class="hljs fs">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
-</code></pre>
-<p>It builds an array of pixels, removes padding and folds with recognition.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeString matchSymbol getPixel width height =
-
-  <span class="hljs-keyword">let</span> pixels = 
-    Array2D.init width height (<span class="hljs-keyword">fun</span> x y -&gt; isWhite (getPixel x y))
-    |&gt; removePadding
-
-  <span class="hljs-keyword">let</span> pixelColumns =
-    [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-    |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)      
-
-  Seq.foldBack splitIntoSymbols pixelColumns []
-  |&gt; List.map matchSymbol
-  |&gt; Array.ofSeq
-  |&gt; String.Concat
-</code></pre>
-<p>Then we use it with a specific recognition patterns, e.g. known digits in case
-of numbers recognition:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeNumber x =
-  recognizeString (getChar numberPatterns) x
-</code></pre>
-<p>A way to produce these patterns is discussed in <a href="http://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>String recognition takes a bit more steps to execute comparing to the recognition
-of fixed objects. Nevertheless it&#39;s pretty straightforward to implement once
-we split it into small and well-understood conversion steps. The full code 
-for card recognition can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/StringRecognition.fs">my github repo</a>.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/image-recognition/'>Image Recognition</a>, <a href='/tags/ocr/'>OCR</a>
     </div>
     
 </article>
