@@ -44,11 +44,11 @@
             <ul class="nav navbar-nav">
                 <!--<li><a href="/">Blog</a></li>-->
                 
-                    <li><a href="/tags">Topics</a></li>
+                    <li><a href="/tags/">Topics</a></li>
                 
-                    <li><a href="/archives">Archives</a></li>
+                    <li><a href="/archives/">Archives</a></li>
                 
-                    <li><a href="/about">About</a></li>
+                    <li><a href="/about/">About</a></li>
                 
                 <li class="hidden-xs">
                     <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
@@ -119,7 +119,7 @@
   <span class="hljs-keyword">WHERE</span> r.<span class="hljs-keyword">Size</span> &lt;&gt; <span class="hljs-number">1</span> <span class="hljs-keyword">OR</span> s.City &lt;&gt; <span class="hljs-number">55</span>
 </span></code></pre><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
 <p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
-<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server/2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
+<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
 <p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
 <p>Good news: it&#39;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
 <pre class="highlight"><code class="hljs stylus"> SELECT s<span class="hljs-class">.City</span>
@@ -128,7 +128,7 @@
                     ON s<span class="hljs-class">.City</span> = r<span class="hljs-class">.City</span> AND s<span class="hljs-class">.Size</span> = r<span class="hljs-class">.Size</span>
   WHERE s<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">1</span> OR s<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">55</span>
 </code></pre><p>Estimator is able to handle this situation correctly:</p>
-<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server/2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
+<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
 <p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
 <p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
 <pre class="highlight"><code class="hljs stylus"> SELECT s<span class="hljs-class">.City</span>
@@ -138,7 +138,7 @@
   WHERE r<span class="hljs-class">.Size</span> &lt;&gt; <span class="hljs-number">1</span> OR s<span class="hljs-class">.City</span> &lt;&gt; <span class="hljs-number">55</span>
  <span class="hljs-function"><span class="hljs-title">OPTION</span><span class="hljs-params">(QUERYTRACEON <span class="hljs-number">9481</span>)</span></span> 
 </code></pre><p>And then we get this:</p>
-<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server/2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
+<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
 <p>Which is as good as the best attempt of SQL Server 2014 and much-much better than the worst one.</p>
 <p>I posted this repro to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server forum</a>. Here is the comment that I got from Erland Sommarskog, SQL Server MVP:</p>
 <blockquote>
@@ -186,7 +186,7 @@ Happy coding!</p>
       </table>
     </p>
 
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2015/02/how-i-fixed-a-bug-in-sql-server/index.html.md">Edit this post!</a><br />
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2015/02/how-i-fixed-a-bug-in-sql-server//index.html.md">Edit this post!</a><br />
     
 
     
@@ -211,7 +211,7 @@ Happy coding!</p>
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2015/02/how-i-fixed-a-bug-in-sql-server';
+    var disqus_url = 'https://mikhail.io/2015/02/how-i-fixed-a-bug-in-sql-server/';
     var disqus_identifier = disqus_url;
     var disqus_title = 'How I fixed a bug in SQL Server';
 
