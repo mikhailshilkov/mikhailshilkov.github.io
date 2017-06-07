@@ -3,13 +3,74 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2017-06-06T10:21:18.667Z</updated>
+    <updated>2017-06-07T13:53:01.318Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Finding Lost Events in Azure Application Insights</title>
+        <link href="https://mikhail.io/2017/06/finding-lost-events-in-azure-application-insights/"/>
+        <updated>2017-06-07T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-06-07,/2017/06/finding-lost-events-in-azure-application-insights/</id>
+        <content type="html"><![CDATA[<p>One of the ways we use Azure Application Insights is tracking custom
+application-specific events. For instance, every time a data point from an
+IoT device comes in, we log an AppInsights event. Then we are able to
+aggregate the data and plot charts to derive trends and detect possible 
+anomalies.</p>
+<p>And recently we found such anomaly, which looked like this:</p>
+<p><img src="https://mikhail.io/2017/06/finding-lost-events-in-azure-application-insights//dashboard-chart.png" alt="Amount of Events on Dashboard Chart"></p>
+<p>This is a chart from our Azure dashboard, which shows the total amount of
+events of specific type received per day. </p>
+<p>The first two &quot;hills&quot; are two weeks, so we can clearly see that we get more
+events on business days compared to weekends.</p>
+<p>But then something happened on May 20: we started getting much less events,
+and the hill pattern disappeared, days looks much more alike.</p>
+<p>We haven&#39;t noticed any other problems in the system, but the trend looked
+quite bothering. Are we loosing data?</p>
+<p>I headed towards Analytics console of Application Insights to dig deeper.
+Here is the query that reproduces the problem:</p>
+<pre class="highlight"><code class="hljs stylus">customEvents
+| where name == <span class="hljs-string">"EventXReceived"</span>
+| where timestamp &gt;= <span class="hljs-function"><span class="hljs-title">ago</span><span class="hljs-params">(<span class="hljs-number">22</span>d)</span></span>
+| project PointCount = <span class="hljs-function"><span class="hljs-title">todouble</span><span class="hljs-params">(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>])</span></span>, timestamp
+| summarize EventXReceived = <span class="hljs-function"><span class="hljs-title">sum</span><span class="hljs-params">(PointCount)</span></span> by <span class="hljs-function"><span class="hljs-title">bin</span><span class="hljs-params">(timestamp, <span class="hljs-number">1</span>d)</span></span>
+| render timechart
+</code></pre><p>and I got the same chart as before:</p>
+<p><img src="https://mikhail.io/2017/06/finding-lost-events-in-azure-application-insights//analytics1.png" alt="Trend on Application Insights Analytics"></p>
+<p>I checked the history of our source code repository and deployments and I
+figured out that we upgraded the version of Application Insights SDK from 
+version 2.1 to version 2.3.</p>
+<p>My guess at this point was that Application Insights started sampling our
+data instead of sending all events to the server. After reading 
+<a href="https://docs.microsoft.com/en-us/azure/application-insights/app-insights-sampling">Sampling in Application Insights</a>
+article, I came up with the following query to see the sampling rate:</p>
+<pre class="highlight"><code class="hljs stylus">customEvents
+| where name == <span class="hljs-string">"EventXReceived"</span>
+| where timestamp &gt;= <span class="hljs-function"><span class="hljs-title">ago</span><span class="hljs-params">(<span class="hljs-number">22</span>d)</span></span>
+| summarize <span class="hljs-number">100</span>/<span class="hljs-function"><span class="hljs-title">avg</span><span class="hljs-params">(itemCount)</span></span> by <span class="hljs-function"><span class="hljs-title">bin</span><span class="hljs-params">(timestamp, <span class="hljs-number">1</span>d)</span></span> 
+| render areachart
+</code></pre><p>and the result is self-explanatory:</p>
+<p><img src="https://mikhail.io/2017/06/finding-lost-events-in-azure-application-insights//sampling-rate.png" alt="Sampling Rate"></p>
+<p>Clearly, the sampling rate dropped from 100% down to about 30% right when
+the anomaly started. The sampling-adjusted query (note <code>itemCount</code> multiplication)</p>
+<pre class="highlight"><code class="hljs 1c">customEvents
+<span class="hljs-string">| where name == "</span>EventXReceived<span class="hljs-string">"</span>
+<span class="hljs-string">| where timestamp &gt;= ago(22d)</span>
+<span class="hljs-string">| project PointCount = todouble(customMeasurements["</span>EventXReceived_Count<span class="hljs-string">"]) * itemCount, timestamp</span>
+<span class="hljs-string">| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)</span>
+<span class="hljs-string">| render timechart</span>
+</code></pre><p>puts us back to the point when results make sense:</p>
+<p><img src="https://mikhail.io/2017/06/finding-lost-events-in-azure-application-insights//analytics2.png" alt="Adjusted Trend on Application Insights Analytics"></p>
+<p>The third week&#39;s Thursday was bank holiday in several European countries, so 
+we got a drop there.</p>
+<p>Should Azure dashboard items take sampling into account - to avoid
+confusing people and to show more useful charts?</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Mikhail.io Upgraded to HTTPS and HTTP/2</title>
@@ -1124,36 +1185,6 @@ at a user group earlier this month.</p>
 you to join me in solving Advent of Code 2017.</p>
 <p>Kudos to <a href="https://twitter.com/ericwastl">Eric Wastl</a> for creating and 
 maintaining the <a href="http://adventofcode.com">Advent of Code web site</a>.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>My Functional Programming &amp; F# Talks at Webscale Architecture Meetup</title>
-        <link href="https://mikhail.io/2017/01/functional-programming-fsharp-talks/"/>
-        <updated>2017-01-10T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-01-10,/2017/01/functional-programming-fsharp-talks/</id>
-        <content type="html"><![CDATA[<p>On January 10th of 2017 I gave two talks at the
-<a href="https://www.meetup.com/Webscale-Architecture-NL/events/235727572/">Webscale Architecture NL meetup</a> group in Utrecht.</p>
-<p>Here are the slides for the people who were there and want to revisit
-the covered topics.</p>
-<h2 id="introduction-of-functional-programming">Introduction of Functional Programming</h2>
-<p>Link to full-screen HTML slides: 
-<a href="http://mikhail.io/talks/webscale-fp/">Introduction of Functional Programming</a></p>
-<p>Slides on SlideShare:</p>
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/1L3y6bQDoibPrN" width="778" height="590" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
-</iframe> 
-
-<h2 id="the-taste-of-f-">The Taste of F#</h2>
-<p>Link to full-screen HTML slides: 
-<a href="http://mikhail.io/talks/webscale-fsharp/">The Taste of F#</a></p>
-<p>Example problem that I was solving: 
-<a href="http://adventofcode.com">Advent of Code</a> and 
-<a href="http://adventofcode.com/2016/day/8">Day 8: Two-Factor Authentication</a></p>
-<p>Slides on SlideShare:</p>
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/jqd9mSKQdrkyYL" width="778" height="590" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
-</iframe> 
-
-<p>Thanks for attending my talks! Feel free to post any feedback in the comments.</p>
 ]]></content>
     </entry>
     

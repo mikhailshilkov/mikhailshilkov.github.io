@@ -70,6 +70,306 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Mar 16th, 2017</div>
+    
+    <h1><a href='/2017/03/azure-functions-as-facade-for-azure-monitoring/'>Azure Functions as a Facade for Azure Monitoring</a></h1>
+    
+    <div class="post-content">
+        <p>Azure Functions are the Function-as-a-Service offering from Microsoft Azure cloud.
+Basically, an Azure Function is a piece of code which gets executed by Azure
+every time an event of some kind happens. The environment manages deployment,
+event triggers and scaling for you. This approach is often reffered as 
+Serverless.</p>
+<p>In this post I will describe one use case for Azure Functions: we implemented
+a number of functions as a proxy layer between our operations/monitoring 
+tool and Azure metric APIs.</p>
+<h2 id="problem">Problem</h2>
+<p>Automated monitoring and alerting are crucial in order to ensure 24x7 smooth 
+operations of our business-critical applications. We host applications both
+on-premise and in Azure cloud, and we use a single set of tools for monitoring
+across this hybrid environment.</p>
+<p>Particularly, we use <a href="https://www.paessler.com/prtg">PRTG Network Monitor</a>
+to collect all kinds of metrics about the health of our systems and produce
+both real-time alerts and historic trends.</p>
+<p>A unit of monitoring in PRTG is called &quot;sensor&quot;. Each sensor polls a specific
+data source to retrieve the current value of a metric. The data source can
+be a performance counter, a JSON value in HTTP response, a SQL query result
+and so on.</p>
+<p>The problem is that there is no PRTG sensor for Azure metrics out of the box.
+It might be possible to implement a sensor with custom code, e.g. in PowerShell,
+but it would be problematic in two ways (at least):</p>
+<ol>
+<li>The custom code sensors are cumbersome to develop and maintain.</li>
+<li>We would have to put sensitive information like Azure API keys and 
+connection strings to PRTG.</li>
+</ol>
+<h2 id="solution-overview">Solution Overview</h2>
+<p>To overcome these problems we introduced an intermediate layer, as shown
+on the following picture:</p>
+<p><img src="/2017/03/azure-functions-as-facade-for-azure-monitoring//prtg-http-azure.png" alt="PRTG to HTTP to Azure"></p>
+<p>We use PRTG <code>HTTP XML/REST</code> sensor type. This sensor polls a given HTTP endpoint,
+parses the response as JSON and finds a predefined field. This field is then
+used as the sensor value. It takes 30 seconds to setup such sensor in PRTG. </p>
+<p>The HTTP endpoint is hosted inside Azure. It provides a facade for metric
+data access. All the sensitive information needed to access Azure metrics 
+API is stored inside Azure configuration itself. The implementation knows 
+which Azure API to use to get a specific metric, and it hides those 
+complications from the client code.</p>
+<h2 id="azure-functions">Azure Functions</h2>
+<p>We chose Azure Functions as the technology to implement and host such HTTP
+facade.</p>
+<p>The functions are very easy to create or modify. They are deployed independently
+from any other code, so we can update them at any cadence. And no need to
+provision any kind of servers anywhere - Azure will run the code for us.</p>
+<p>Here is how the whole setup works:</p>
+<p><img src="/2017/03/azure-functions-as-facade-for-azure-monitoring//prtg-azure-flow.png" alt="Retrieval of data from Azure to PRTG"></p>
+<ol>
+<li><p>Every X minutes (configured per sensor), PRTG makes an HTTP request 
+to a predefined URL. The request includes an Access Key as a query parameter 
+(the key is stored in sensor URL configuration). Each access key enables 
+access to just one endpoint and is easily revokable.</p>
+</li>
+<li><p>For each Metric type there is an Azure Function listening for 
+HTTP requests from PRTG. Azure authorizes requests that contain valid 
+access keys.</p>
+</li>
+<li><p>Based on query parameters of the request, Azure Function retrieves a proper 
+metric value from Azure management API. Depending on the metric type, this 
+is accomplished with Azure .NET SDK or by sending a raw HTTP request to 
+Azure REST API. </p>
+</li>
+<li><p>Azure Function parses the response from Azure API and converts it to 
+just the value which is requested by PRTG. </p>
+</li>
+<li><p>The function returns a simple JSON object as HTTP response body. PRTG 
+parses JSON, extracts the numeric value, and saves it into the sensor history.</p>
+</li>
+</ol>
+<p>At the time of writing, we have 13 sensors served by 5 Azure Functions:</p>
+<p><img src="/2017/03/azure-functions-as-facade-for-azure-monitoring//prtg-azure-services.png" alt="Map of PRTG sensors to Functions to Azure services"></p>
+<p>I describe several functions below.</p>
+<h2 id="service-bus-queue-size">Service Bus Queue Size</h2>
+<p>The easiest function to implement is the one which gets the amount of 
+messages in the backlog of a given Azure Service Bus queue. The 
+<code>function.json</code> file configures input and output HTTP bindings, including
+two parameters to derive from the URL: <code>account</code> (namespace) and queue <code>name</code>:</p>
+<pre class="highlight"><code class="hljs json">{
+  "<span class="hljs-attribute">bindings</span>": <span class="hljs-value">[
+    {
+      "<span class="hljs-attribute">authLevel</span>": <span class="hljs-value"><span class="hljs-string">"function"</span></span>,
+      "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"req"</span></span>,
+      "<span class="hljs-attribute">type</span>": <span class="hljs-value"><span class="hljs-string">"httpTrigger"</span></span>,
+      "<span class="hljs-attribute">direction</span>": <span class="hljs-value"><span class="hljs-string">"in"</span></span>,
+      "<span class="hljs-attribute">route</span>": <span class="hljs-value"><span class="hljs-string">"Queue/{account}/{name}"</span>
+    </span>},
+    {
+      "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"$return"</span></span>,
+      "<span class="hljs-attribute">type</span>": <span class="hljs-value"><span class="hljs-string">"http"</span></span>,
+      "<span class="hljs-attribute">direction</span>": <span class="hljs-value"><span class="hljs-string">"out"</span>
+    </span>}
+  ]</span>,
+  "<span class="hljs-attribute">disabled</span>": <span class="hljs-value"><span class="hljs-literal">false</span>
+</span>}
+</code></pre>
+<p>The C# implementation uses standard Service Bus API and a connection string
+from App Service configuration to retrieve the required data. And then returns
+a dynamic object, which will be converted to JSON by Function App runtime.</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-preprocessor">#r "Microsoft.ServiceBus"</span>
+
+<span class="hljs-keyword">using</span> System.Net;
+<span class="hljs-keyword">using</span> Microsoft.ServiceBus;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">object</span> <span class="hljs-title">Run</span><span class="hljs-params">(HttpRequestMessage req, <span class="hljs-keyword">string</span> account, <span class="hljs-keyword">string</span> name)</span>
+</span>{
+    <span class="hljs-keyword">var</span> connectionString = Environment.GetEnvironmentVariable(<span class="hljs-string">"sb-"</span> + account);
+    <span class="hljs-keyword">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
+    <span class="hljs-keyword">var</span> queue = nsmgr.GetQueue(name);
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> 
+    {
+        messageCount = queue.MessageCountDetails.ActiveMessageCount,
+        dlq = queue.MessageCountDetails.DeadLetterMessageCount
+    };
+}
+</code></pre>
+<p>And that is all the code required to start monitoring the queues!</p>
+<h2 id="service-bus-queue-statistics">Service Bus Queue Statistics</h2>
+<p>In addition to queue backlog and dead letter queue size, we wanted to see
+some queue statistics like amount of incoming and outgoing messages per
+period of time. The corresponding API exists, but it&#39;s not that straightforward,
+so I described the whole approach in a separate post: 
+<a href="http://mikhail.io/2017/03/azure-service-bus-entity-metrics-dotnet-apis/">Azure Service Bus Entity Metrics .NET APIs</a>.</p>
+<p>In my Azure Function I&#39;m using the NuGet package that I mentioned in the post.
+This is accomplished by adding a <code>project.json</code> file:</p>
+<pre class="highlight"><code class="hljs json">{
+  "<span class="hljs-attribute">frameworks</span>": <span class="hljs-value">{
+    "<span class="hljs-attribute">net46</span>":<span class="hljs-value">{
+      "<span class="hljs-attribute">dependencies</span>": <span class="hljs-value">{
+        "<span class="hljs-attribute">MikhailIo.ServiceBusEntityMetrics</span>": <span class="hljs-value"><span class="hljs-string">"0.1.2"</span>
+      </span>}
+    </span>}
+   </span>}
+</span>}
+</code></pre>
+<p>The <code>function.json</code> file is similar to the previous one, but with one added
+parameter called <code>metric</code>. I won&#39;t repeat the whole file here.</p>
+<p>The Function implementation loads a certificate from the store, calls 
+metric API and returns the last metric value available:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">using</span> System.Linq;
+<span class="hljs-keyword">using</span> System.Security.Cryptography.X509Certificates;
+<span class="hljs-keyword">using</span> MikhailIo.ServiceBusEntityMetrics;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> DataPoint <span class="hljs-title">Run</span><span class="hljs-params">(HttpRequestMessage req, <span class="hljs-keyword">string</span> account, <span class="hljs-keyword">string</span> name, <span class="hljs-keyword">string</span> metric)</span>
+</span>{
+    <span class="hljs-keyword">var</span> subscription = Environment.GetEnvironmentVariable(<span class="hljs-string">"SubscriptionID"</span>);
+    <span class="hljs-keyword">var</span> thumbprint = Environment.GetEnvironmentVariable(<span class="hljs-string">"WEBSITE_LOAD_CERTIFICATES"</span>);
+
+    X509Store certStore = <span class="hljs-keyword">new</span> X509Store(StoreName.My, StoreLocation.CurrentUser);
+    certStore.Open(OpenFlags.ReadOnly);
+
+    X509Certificate2Collection certCollection = certStore.Certificates.Find(
+        X509FindType.FindByThumbprint,
+        thumbprint,
+        <span class="hljs-keyword">false</span>);
+
+    <span class="hljs-keyword">var</span> client = <span class="hljs-keyword">new</span> QueueStatistics(certCollection[<span class="hljs-number">0</span>], subscription, account, name);
+    <span class="hljs-keyword">var</span> metrics = client.GetMetricSince(metric, DateTime.UtcNow.AddMinutes(-<span class="hljs-number">30</span>));
+    <span class="hljs-keyword">return</span> metrics.LastOrDefault();
+}
+</code></pre>
+<p>Don&#39;t forget to set <code>WEBSITE_LOAD_CERTIFICATES</code> setting to your certificate 
+thumbprint, otherwise Function App won&#39;t load it.</p>
+<h2 id="web-app-instance-count">Web App Instance Count</h2>
+<p>We are using Azure Web Jobs to run background data processing, e.g. for all
+queue message handlers. The jobs are hosted in Web Apps, and have auto-scaling
+enabled. When the load on the system grows, Azure spins up additional 
+instances to increase the overall throughput.</p>
+<p>So, the next metric to be monitored is the amount of Web App instances running.</p>
+<p>There is a REST endpoint to retrieve this information, but this time
+authentication and authorization are implemented with Active Directory. I
+created a helper class to wrap the authentication logic:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">RestClient</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;T&gt; Query&lt;T&gt;(<span class="hljs-keyword">string</span> url)
+    {
+        <span class="hljs-keyword">var</span> token = <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-title">GetAuthorizationHeader</span><span class="hljs-params">()</span></span>;
+        <span class="hljs-keyword">var</span> client = <span class="hljs-keyword">new</span> HttpClient();
+        client.DefaultRequestHeaders.Authorization = <span class="hljs-keyword">new</span> AuthenticationHeaderValue(<span class="hljs-string">"Bearer"</span>, token);
+
+        <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> client.GetAsync(url);
+        <span class="hljs-keyword">var</span> content = <span class="hljs-keyword">await</span> response.Content.ReadAsStringAsync();
+        <span class="hljs-keyword">return</span> JsonConvert.DeserializeObject&lt;T&gt;(content);
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;<span class="hljs-keyword">string</span>&gt; <span class="hljs-title">GetAuthorizationHeader</span><span class="hljs-params">()</span>
+    </span>{
+        <span class="hljs-keyword">var</span> activeDirectoryID = Environment.GetEnvironmentVariable(<span class="hljs-string">"ActiveDirectoryID"</span>);
+        <span class="hljs-keyword">var</span> applicationID = Environment.GetEnvironmentVariable(<span class="hljs-string">"ActiveDirectoryApplicationID"</span>);
+        <span class="hljs-keyword">var</span> secret = Environment.GetEnvironmentVariable(<span class="hljs-string">"ActiveDirectorySecret"</span>);
+
+        <span class="hljs-keyword">var</span> context = <span class="hljs-keyword">new</span> AuthenticationContext($<span class="hljs-string">"https://login.windows.net/{activeDirectoryID}"</span>);
+        <span class="hljs-keyword">var</span> credential = <span class="hljs-keyword">new</span> ClientCredential(applicationID, secret);
+        AuthenticationResult result = 
+            <span class="hljs-keyword">await</span> context.AcquireTokenAsync(<span class="hljs-string">"https://management.core.windows.net/"</span>, credential);
+        <span class="hljs-keyword">return</span> result.AccessToken;
+    }
+}
+</code></pre>
+<p>The function then uses this REST client to query Web App management API, 
+converts JSON to strongly typed C# objects and extracts the amount of
+instances into HTTP response:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Instance</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span>
+{
+    <span class="hljs-keyword">public</span> Instance[] <span class="hljs-keyword">value</span> { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span><span class="hljs-params">(HttpRequestMessage req)</span>
+</span>{
+    <span class="hljs-keyword">var</span> subscription = Environment.GetEnvironmentVariable(<span class="hljs-string">"SubscriptionID"</span>);
+    <span class="hljs-keyword">var</span> resourceGroup = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceGroup"</span>);
+    <span class="hljs-keyword">var</span> appService = Environment.GetEnvironmentVariable(<span class="hljs-string">"AppService"</span>);
+
+    <span class="hljs-keyword">var</span> url = $<span class="hljs-string">"https://management.azure.com/subscriptions/{subscription}/resourceGroups/{resourceGroup}"</span> +
+              $<span class="hljs-string">"/providers/Microsoft.Web/sites/{appService}/instances?api-version=2015-08-01"</span>;
+    <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> RestClient.Query&lt;Response&gt;(url);
+
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK, <span class="hljs-keyword">new</span>
+    {
+        instanceCount = response.<span class="hljs-keyword">value</span>.Length
+    });
+}
+</code></pre>
+<h2 id="users-online">Users Online</h2>
+<p>The last example I want to share is related to Application Insights data.
+For instance, we inject a small tracking snippet on our front-end page
+and then Application Insights track all the page views and other user
+activity.</p>
+<p>We use the amount of users currently online as another metric for the
+monitoring solution. The Application Insights API is currently in
+preview, but at least it is nicely described at 
+<a href="https://dev.applicationinsights.io/">dev.applicationinsights.io</a>. Be sure
+to check out <a href="https://dev.applicationinsights.io/apiexplorer/metrics">API Explorer</a> too.</p>
+<p>The following sample function returns the amount of users online:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">UsersCount</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">long</span> unique { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Value</span>
+{
+    [JsonProperty(<span class="hljs-string">"users/count"</span>)]
+    <span class="hljs-keyword">public</span> UsersCount UsersCount { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span>
+{
+    <span class="hljs-keyword">public</span> Value <span class="hljs-keyword">value</span> { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span><span class="hljs-params">(HttpRequestMessage req)</span>
+</span>{
+    <span class="hljs-keyword">var</span> appID = Environment.GetEnvironmentVariable(<span class="hljs-string">"ApplicationInsightsID"</span>);
+    <span class="hljs-keyword">var</span> key = Environment.GetEnvironmentVariable(<span class="hljs-string">"ApplicationInsightsKey"</span>);
+
+    <span class="hljs-keyword">var</span> client = <span class="hljs-keyword">new</span> HttpClient();
+    client.DefaultRequestHeaders.Add(<span class="hljs-string">"x-api-key"</span>, key);
+    <span class="hljs-keyword">var</span> url = $<span class="hljs-string">"https://api.applicationinsights.io/beta/apps/{appID}/metrics/users/count"</span>;
+
+    <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> client.GetAsync(url);
+    <span class="hljs-keyword">var</span> content = <span class="hljs-keyword">await</span> response.Content.ReadAsStringAsync();
+    <span class="hljs-keyword">var</span> r = JsonConvert.DeserializeObject&lt;Response&gt;(content);
+
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK, <span class="hljs-keyword">new</span>
+    {
+        usersCount = r.<span class="hljs-keyword">value</span>.UsersCount.unique
+    });
+}
+</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>It seems that monitoring metrics retrieval is an ideal scenario to start
+using Azure Functions. The Functions are very easy to create and modify,
+they abstract away the details of hosting Web API endpoints, and at the same
+time give you the full power of C# (or F#) and Azure.</p>
+<p>And because we only call those functions about 1 time per minute,
+they are free to run!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/metrics/'>Metrics</a>, <a href='/tags/monitoring/'>Monitoring</a>, <a href='/tags/prtg/'>PRTG</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Mar 2nd, 2017</div>
     
     <h1><a href='/2017/03/azure-service-bus-entity-metrics-dotnet-apis/'>Azure Service Bus Entity Metrics .NET APIs</a></h1>
@@ -559,46 +859,6 @@ maintaining the <a href="http://adventofcode.com">Advent of Code web site</a>.</
     
     <div class="post-tags">
         Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/programming-puzzles/'>Programming Puzzles</a>, <a href='/tags/advent-of-code/'>Advent of Code</a>, <a href='/tags/programming-puzzles/'>Programming Puzzles</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jan 10th, 2017</div>
-    
-    <h1><a href='/2017/01/functional-programming-fsharp-talks/'>My Functional Programming &amp; F# Talks at Webscale Architecture Meetup</a></h1>
-    
-    <div class="post-content">
-        <p>On January 10th of 2017 I gave two talks at the
-<a href="https://www.meetup.com/Webscale-Architecture-NL/events/235727572/">Webscale Architecture NL meetup</a> group in Utrecht.</p>
-<p>Here are the slides for the people who were there and want to revisit
-the covered topics.</p>
-<h2 id="introduction-of-functional-programming">Introduction of Functional Programming</h2>
-<p>Link to full-screen HTML slides: 
-<a href="http://mikhail.io/talks/webscale-fp/">Introduction of Functional Programming</a></p>
-<p>Slides on SlideShare:</p>
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/1L3y6bQDoibPrN" width="778" height="590" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
-</iframe> 
-
-<h2 id="the-taste-of-f-">The Taste of F#</h2>
-<p>Link to full-screen HTML slides: 
-<a href="http://mikhail.io/talks/webscale-fsharp/">The Taste of F#</a></p>
-<p>Example problem that I was solving: 
-<a href="http://adventofcode.com">Advent of Code</a> and 
-<a href="http://adventofcode.com/2016/day/8">Day 8: Two-Factor Authentication</a></p>
-<p>Slides on SlideShare:</p>
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/jqd9mSKQdrkyYL" width="778" height="590" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
-</iframe> 
-
-<p>Thanks for attending my talks! Feel free to post any feedback in the comments.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/talk/'>Talk</a>, <a href='/tags/meetup/'>Meetup</a>, <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/slides/'>Slides</a>
     </div>
     
 </article>
