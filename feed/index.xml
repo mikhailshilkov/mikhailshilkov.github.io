@@ -3,13 +3,249 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2017-06-07T13:53:01.318Z</updated>
+    <updated>2017-07-03T21:56:17.398Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Sending Large Batches to Azure Service Bus</title>
+        <link href="https://mikhail.io/2017/07/sending-large-batches-to-azure-service-bus/"/>
+        <updated>2017-07-04T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-07-04,/2017/07/sending-large-batches-to-azure-service-bus/</id>
+        <content type="html"><![CDATA[<p>Azure Service Bus client supports sending messages in batches (<code>SendBatch</code>
+and <code>SendBatchAsync</code> methods of <code>QueueClient</code> and <code>TopicClient</code>). However,
+the size of a single batch must stay below 256k bytes, otherwise the whole
+batch will get rejected.</p>
+<p>How do we make sure that the batch-to-be-sent is going to fit? The rest 
+of this article will try to answer this seemingly simple question.</p>
+<h2 id="problem-statement">Problem Statement</h2>
+<p>Given a list of messages of arbitrary type <code>T</code>, we want to send them to Service
+Bus in batches. The amount of batches should be close to minimal, but
+obviously each one of them must satisfy the restriction of 256k max size.</p>
+<p>So, we want to implement a method with the following signature:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
+</code></pre>
+<p>which would work for collections of any size.</p>
+<p>To limit the scope, I will restrict the article to the following assumptions:</p>
+<ul>
+<li><p>Each individual message is less than 256k serialized. If that wasn&#39;t true,
+we&#39;d have to put the body into external blob storage first, and then send
+the reference. It&#39;s not directly related to the topic of discussion.</p>
+</li>
+<li><p>I&#39;ll use <code>public BrokeredMessage(object serializableObject)</code> constructor.
+Custom serialization could be used, but again, it&#39;s not related to batching,
+so I&#39;ll ignore it.</p>
+</li>
+<li><p>We won&#39;t care about transactions, i.e. if connectivity dies in the middle
+of sending the big batch, we might end up with partially sent batch.</p>
+</li>
+</ul>
+<h2 id="messages-of-known-size">Messages of Known Size</h2>
+<p>Let&#39;s start with a simple use case: the size of each message is known to us. 
+It&#39;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a 
+helpful extension method that will split an arbitrary collection based on
+a metric function and maximum chunk size:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(<span class="hljs-keyword">this</span> IEnumerable&lt;T&gt; source, Func&lt;T, <span class="hljs-keyword">long</span>&gt; metric, <span class="hljs-keyword">long</span> maxChunkSize)
+{
+    <span class="hljs-keyword">return</span> source
+        .Aggregate(
+            <span class="hljs-keyword">new</span>
+            {
+                Sum = <span class="hljs-number">0</span>L,
+                Current = (List&lt;T&gt;)<span class="hljs-keyword">null</span>,
+                Result = <span class="hljs-keyword">new</span> List&lt;List&lt;T&gt;&gt;()
+            },
+            (agg, item) =&gt;
+            {
+                <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = metric(item);
+                <span class="hljs-keyword">if</span> (agg.Current == <span class="hljs-keyword">null</span> || agg.Sum + <span class="hljs-keyword">value</span> &gt; maxChunkSize)
+                {
+                    <span class="hljs-keyword">var</span> current = <span class="hljs-keyword">new</span> List&lt;T&gt; { item };
+                    agg.Result.Add(current);
+                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = <span class="hljs-keyword">value</span>, Current = current, agg.Result };
+                }
+
+                agg.Current.Add(item);
+                <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = agg.Sum + <span class="hljs-keyword">value</span>, agg.Current, agg.Result };
+            })
+        .Result;
+}
+</code></pre>
+<p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">SendBigBatchAsync</span><span class="hljs-params">(IEnumerable&lt;T&gt; messages, Func&lt;T, <span class="hljs-keyword">long</span>&gt; getSize)</span>
+</span>{
+    <span class="hljs-keyword">var</span> chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
+    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+    {
+        <span class="hljs-keyword">var</span> brokeredMessages = chunk.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
+        <span class="hljs-keyword">await</span> client.SendBatchAsync(brokeredMessages);
+    }
+}
+
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">long</span> MaxServiceBusMessage = <span class="hljs-number">256000</span>;
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient client;
+</code></pre>
+<p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
+Another thing to notice is that we lost all-or-nothing guarantee: we might
+be able to send the first chunk, and then get an exception from subsequent
+parts. Some sort of retry mechanism is probably needed.</p>
+<h2 id="brokeredmessage-size">BrokeredMessage.Size</h2>
+<p>OK, how do we determine the size of each message? How do we implement 
+<code>getSize</code> function? </p>
+<p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
+rewrite our method the following way:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+{
+    <span class="hljs-keyword">var</span> brokeredMessages = messages.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
+    <span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
+    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+    {
+        <span class="hljs-keyword">await</span> client.SendBatchAsync(chunk);
+    }
+}
+</code></pre>
+<p>Unfortunately, this won&#39;t work properly. A quote from documentation:</p>
+<blockquote>
+<p>The value of Size is only accurate after the BrokeredMessage 
+instance is sent or received.</p>
+</blockquote>
+<p>My experiments show that <code>Size</code> of a draft message returns the size of 
+the message body, ignoring headers. If the message bodies are large, and
+each chunk has just a handful of them, the code might work ok-ish. </p>
+<p>But it will significantly underestimate the size of large batches of messages
+with small payload.</p>
+<p>So, for the rest of this article I&#39;ll try to adjust the calculation for headers.</p>
+<h2 id="fixed-header-size">Fixed Header Size</h2>
+<p>It could be that the header size of each message is always the same.
+Quite often people will set the same headers for all their messages,
+or set no custom headers at all. </p>
+<p>In this case, you might just measure this size once, and then put this
+fixed value inside a configuration file.</p>
+<p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> sizeBefore = message.Size;
+client.Send(message);
+<span class="hljs-keyword">var</span> sizeAfter = message.Size;
+<span class="hljs-keyword">var</span> headerSize = sizeAfter - sizeBefore;
+</code></pre>
+<p>Now you just need to adjust one line from the previous version of 
+<code>SendBigBatchAsync</code> method</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
+</code></pre>
+<p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
+per application.</p>
+<h2 id="measuring-of-header-size-per-message">Measuring of Header Size per Message</h2>
+<p>If the size of headers varies per message, you need a way to adjust batching
+algorithm accordingly. </p>
+<p>Unfortunately, I haven&#39;t found a straightforward way to accomplish that. It looks like
+you&#39;d have to serialize the headers yourself, and then measure the size of
+resulting binary. This is not a trivial operation to do correctly,
+and also implies some performance penalty.</p>
+<p>Sean Feldman <a href="https://weblogs.asp.net/sfeldman/asb-batching-brokered-messages">came up</a> 
+with a way to <em>estimate</em> the size of headers. That might be a good way to go,
+though the estimation tends to err on the safe side for messages with small
+payload.</p>
+<h2 id="heuristics-retry">Heuristics &amp; Retry</h2>
+<p>The last possibility that I want to consider is actually allow yourself
+violating the max size of the batch, but then handle the exception, retry
+the send operation and adjust future calculations based on actual measured size
+of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
+operation failed, so we can use this information.</p>
+<p>Here is a sketch of how to do that in code:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Sender is reused across requests</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">BatchSender</span>
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient queueClient;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> batchSizeLimit = <span class="hljs-number">262000</span>;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> headerSizeEstimate = <span class="hljs-number">54</span>; <span class="hljs-comment">// start with the smallest header possible</span>
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">BatchSender</span><span class="hljs-params">(QueueClient queueClient)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.queueClient = queueClient;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+    {
+        <span class="hljs-keyword">var</span> packets = (<span class="hljs-keyword">from</span> m <span class="hljs-keyword">in</span> messages
+                     <span class="hljs-keyword">let</span> bm = <span class="hljs-keyword">new</span> BrokeredMessage(m)
+                     <span class="hljs-keyword">select</span> <span class="hljs-keyword">new</span> { Source = m, Brokered = bm, BodySize = bm.Size }).ToList();
+        <span class="hljs-keyword">var</span> chunks = packets.ChunkBy(p =&gt; <span class="hljs-keyword">this</span>.headerSizeEstimate + p.Brokered.Size, <span class="hljs-keyword">this</span>.batchSizeLimit);
+        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+        {
+            <span class="hljs-keyword">try</span>
+            {
+                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.queueClient.SendBatchAsync(chunk.Select(p =&gt; p.Brokered));
+            }
+            <span class="hljs-keyword">catch</span> (MessageSizeExceededException)
+            {
+                <span class="hljs-keyword">var</span> maxHeader = packets.Max(p =&gt; p.Brokered.Size - p.BodySize);
+                <span class="hljs-keyword">if</span> (maxHeader &gt; <span class="hljs-keyword">this</span>.headerSizeEstimate)
+                {
+                    <span class="hljs-comment">// If failed messages had bigger headers, remember this header size </span>
+                    <span class="hljs-comment">// as max observed and use it in future calculations</span>
+                    <span class="hljs-keyword">this</span>.headerSizeEstimate = maxHeader;
+                }
+                <span class="hljs-keyword">else</span>
+                {
+                    <span class="hljs-comment">// Reduce max batch size to 95% of current value</span>
+                    <span class="hljs-keyword">this</span>.batchSizeLimit = (<span class="hljs-keyword">long</span>)(<span class="hljs-keyword">this</span>.batchSizeLimit * <span class="hljs-number">.95</span>);
+                }
+
+                <span class="hljs-comment">// Re-send the failed chunk</span>
+                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.SendBigBatchAsync(packets.Select(p =&gt; p.Source));
+            }
+
+        }
+    }
+}
+</code></pre>
+<p>The code example is quite involved, here is what actually happens:</p>
+<ol>
+<li><p>Create a brokered message for each message object, but also save the
+corresponding source message. This is critical to be able to re-send items:
+there&#39;s no way to send the same <code>BrokeredMessage</code> instance twice.</p>
+</li>
+<li><p>Also save the body size of the brokered message. We&#39;ll use it for retry
+calculation.</p>
+</li>
+<li><p>Start with some guess of header size estimate. I start with 54 bytes, 
+which seems to be the minimal header size possible.</p>
+</li>
+<li><p>Split the batch into chunks the same way we did before.</p>
+</li>
+<li><p>Try sending chunks one by one.</p>
+</li>
+<li><p>If send operation fails with <code>MessageSizeExceededException</code>, iterate
+through failed items and find out the actual header size of the message.</p>
+</li>
+<li><p>If that actual size is bigger than our known estimate, increase the estimate
+to the newly observed value. Retry sending the chunk (not the whole batch) with
+this new setting.</p>
+</li>
+<li><p>If the header is small, but message size is still too big - reduce the 
+allowed total size of the chunk. Retry again.</p>
+</li>
+</ol>
+<p>The combination of checks of steps 7 and 8 should make the mechanism reliable
+and self-adopting to message header payloads.</p>
+<p>Since we reuse the sender between send operations, the size parameters will
+also converge quite quickly and no more retries will be needed. Thus the 
+performance overhead should be minimal.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>It seems like there is no &quot;one size fits all&quot; solution for this problem at 
+the moment. The best implementation might depend on your messaging 
+requirements.</p>
+<p>But if you have the silver bullet solution, please leave a comment under
+this post and answer <a href="https://stackoverflow.com/questions/44779707/split-batch-of-messages-to-be-sent-to-azure-service-bus">my StackOverflow question</a>!</p>
+<p>Otherwise, let&#39;s hope that the new 
+<a href="https://github.com/azure/azure-service-bus-dotnet">.NET Standard-compatible Service Bus client</a>
+will solve this issue for us. Track <a href="https://github.com/Azure/azure-service-bus-dotnet/issues/109">this github issue</a>
+for status updates.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Finding Lost Events in Azure Application Insights</title>
@@ -1124,67 +1360,6 @@ for those columns in any <code>SELECT</code>, ignoring the values in any <code>I
 </ul>
 <p>But I expect these changes to have moderate impact on performance in contrast
 to the primary key change discussed above.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>My Praise of Advent of Code 2016</title>
-        <link href="https://mikhail.io/2017/01/my-praise-of-advent-of-code-2016/"/>
-        <updated>2017-01-26T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-01-26,/2017/01/my-praise-of-advent-of-code-2016/</id>
-        <content type="html"><![CDATA[<p>During the last days of December I was pleasing my internal need for solving 
-puzzles and tricky tasks by going through 
-<a href="http://adventofcode.com">Advent of Code 2016</a> challenge.</p>
-<p>The idea is simple: every day since December 1st to 25th, the site publishes 
-a new brain teaser. They are all aligned into one story: the Bad Easter Bunny 
-has stolen all the Chrismas gifts from Santa, and now you are the hero who 
-should break into the Bunny&#39;s headquarters and save the gifts for the kids.</p>
-<p>Having said that, each challenge is independent from the others, so you can 
-solve them in arbitrary order if you want. </p>
-<p><img src="https://mikhail.io/2017/01/my-praise-of-advent-of-code-2016//levelmap.png" alt="Advent Of Code Levels">
-<em>Advent Calendar in dark ASCII</em></p>
-<p>A puzzle consists of a description and an input data set associated with it.
-The solution is typically represented as a number or a short string, so it
-can be easily typed into the textbox. However, to get this solution you need to
-implement a program: computing it manually is not feasible.</p>
-<p>I started a bit late and got just the first 11 puzzles solved. Each puzzle 
-is doable in one sitting, usually half-an-hour to a couple hours of work,
-which is very nice.</p>
-<p>Some problems are purely about the correctness of your solution. The most
-engaging tasks were also computationally intensive, such that a straightforward
-solution took too much time to run to completion. You need to find a
-shortcut to make it faster, which is always fun.</p>
-<p><img src="https://mikhail.io/2017/01/my-praise-of-advent-of-code-2016//solved.png" alt="Problem Solved!">
-<em>You collect stars for providing the correct answers</em></p>
-<p>Apart from generic joy and satisfaction that one gets from solving programming
-challenges like these, I also consider it a good opportunity to try a
-new programming language or a paradygm.</p>
-<p>As I said, the tasks are relatively small, so you can feel the sense of
-accomplishment quite often, even being not very familiar with the programming
-language of choice.</p>
-<p>There are many other people solving the same puzzles and also sharing their
-solutions online. You can go and find the other implementations of a task
-that you just solved, and compare it to your approach. That&#39;s the great way
-to learn from other people, broaden your view and expose yourself to new
-tricks, data structures and APIs.</p>
-<p>I picked F# as my programming language for Advent of Code 2016. I chose to restrict
-myself to immutable data structures and pure functions. And it played out really nice,
-I am quite happy with speed of development, readability and performance of 
-the code.</p>
-<p><img src="https://mikhail.io/2017/01/my-praise-of-advent-of-code-2016//day8.png" alt="Day 8 solved">
-<em>Solution to one of the puzzles</em></p>
-<p>You can find my code for the first 11 puzzles in 
-<a href="https://github.com/mikhailshilkov/AdventOfCode2016">my github account</a>. 
-Full sets of F# solutions are available from 
-<a href="https://github.com/markheath/advent-of-code-2016/">Mark Heath</a> and 
-<a href="https://github.com/theburningmonk/AdventOfCodeFs">Yan Cui</a>.</p>
-<p>I included one of the solutions into 
-<a href="http://mikhail.io/2017/01/functional-programming-fsharp-talks/">The Taste of F# talk</a> that I did
-at a user group earlier this month.</p>
-<p>Next year I&#39;ll pick another language and will start on December 1st. I invite
-you to join me in solving Advent of Code 2017.</p>
-<p>Kudos to <a href="https://twitter.com/ericwastl">Eric Wastl</a> for creating and 
-maintaining the <a href="http://adventofcode.com">Advent of Code web site</a>.</p>
 ]]></content>
     </entry>
     
