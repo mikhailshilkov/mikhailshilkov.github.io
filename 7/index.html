@@ -70,6 +70,352 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Feb 8th, 2016</div>
+    
+    <h1><a href='/2016/02/akka-net-style-actors-in-service-fabric/'>Akka.NET-style actors in Service Fabric</a></h1>
+    
+    <div class="post-content">
+        <p>Akka.NET and Service Fabric are the two actor frameworks that emerged in .NET world in the last year.
+The two implementations of actor models are quite different. These differences are multi-faceted but
+today I want to focus on API to define an actor and to communicate to it.</p>
+<h2 id="service-fabric-actors">Service Fabric Actors</h2>
+<p>Every actor in Service Fabric has a public interface which describes its behaviour. For this article
+I&#39;m going to use a toy example based on weather reports. Our actor will be able to get whether reports
+and then return the maximum temperature for a given period. An instance of actor will be created
+for each city (geo partitioning). Here is our interface in Service Fabric:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IWeatherActor</span> : <span class="hljs-title">IActor</span>
+{
+    <span class="hljs-function">Task <span class="hljs-title">AddWeatherReport</span><span class="hljs-params">(WeatherReport report)</span></span>;
+
+    Task&lt;<span class="hljs-keyword">int</span>?&gt; GetMaxTemperature(Period period);
+}
+</code></pre>
+<p>We have two operations: a command and a query. They are both async (return <code>Task</code>). The data classes
+are required to be mutable DTOs based on <code>DataContract</code>:</p>
+<pre class="highlight"><code class="hljs cs">[DataContract]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherReport</span>
+{
+    [DataMember]
+    <span class="hljs-keyword">public</span> DateTime Moment { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Temperature { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Humidity { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+[DataContract]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Period</span>
+{
+    [DataMember]
+    <span class="hljs-keyword">public</span> DateTime From { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    <span class="hljs-keyword">public</span> DateTime Until { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>And here is the implementation of the weather actor:</p>
+<pre class="highlight"><code class="hljs undefined">internal class WeatherActor : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
+{
+    public Task AddWeatherReport(WeatherReport report)
+    {
+        this.State = this.State ?? new List&lt;WeatherReport&gt;();
+        this.State.Add(report);
+        return Task.FromResult(0);
+    }
+
+    public Task&lt;int?&gt; GetMaxTemperature(Period period)
+    {
+        return Task.FromResult(
+            (this.State ?? Enumerable.Empty&lt;WeatherReport&gt;())
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (int?)r.Temperature));
+    }
+}
+</code></pre>
+<p>Service Fabric provides reliable storage out of the box, so we are using it to
+store our reports. There&#39;s no code required to instantiate an actor. Here is the
+code to use it:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>));
+actor.AddWeatherReport(
+    <span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> });
+
+<span class="hljs-comment">// Make a query somewhere else</span>
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>));
+<span class="hljs-keyword">var</span> result = actor.GetMaxTemperature(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+</code></pre>
+<h2 id="akka-net-actors">Akka.NET Actors</h2>
+<p>Actors in Akka.NET are message-based. The messages are immutable POCOs, which 
+is a great design decision. Here are the messages for our scenario:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherReport</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WeatherReport</span><span class="hljs-params">(DateTime moment, <span class="hljs-keyword">int</span> temperature, <span class="hljs-keyword">int</span> humidity)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Moment = moment;
+        <span class="hljs-keyword">this</span>.Temperature = temperature;
+        <span class="hljs-keyword">this</span>.Humidity = humidity;
+    }
+
+    <span class="hljs-keyword">public</span> DateTime Moment { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Temperature { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Humidity { <span class="hljs-keyword">get</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Period</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Period</span><span class="hljs-params">(DateTime <span class="hljs-keyword">from</span>, DateTime until)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.From = <span class="hljs-keyword">from</span>;
+        <span class="hljs-keyword">this</span>.Until = until;
+    }
+
+    <span class="hljs-keyword">public</span> DateTime From { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> DateTime Until { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>There&#39;s no need to define any interfaces. The basic actor implementation derives from
+<code>ReceiveActor</code> and calls <code>Receive</code> generic method to setup a callback which is called
+when a message of specified type is received:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherActor</span> : <span class="hljs-title">ReceiveActor</span>
+{
+    <span class="hljs-keyword">private</span> List&lt;WeatherReport&gt; state = <span class="hljs-keyword">new</span> List&lt;WeatherReport&gt;();
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WeatherActor</span><span class="hljs-params">()</span>
+    </span>{
+        Receive&lt;WeatherReport&gt;(<span class="hljs-keyword">this</span>.AddWeatherReport);
+        Receive&lt;Period&gt;(<span class="hljs-keyword">this</span>.GetMaxTemperature);
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">AddWeatherReport</span><span class="hljs-params">(WeatherReport report)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.state.Add(report);
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">GetMaxTemperature</span><span class="hljs-params">(Period period)</span>
+    </span>{
+        <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">this</span>.state
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (<span class="hljs-keyword">int</span>?)r.Temperature);
+        Sender.Tell(response, Self);
+    }
+}
+</code></pre>
+<p>Note a couple more differences in this implementation comparing to Fabric style:</p>
+<ul>
+<li><p>State is stored in a normal class field and is not persistent or replicated
+by default. This can be solved by Akka.NET Persistence, which would save all
+messages (and potentially snapshots) to the external database. Still, it won&#39;t
+be the same level of convenience as in-built Service Fabric statefullness.</p>
+</li>
+<li><p><code>GetMaxTemperature</code> method does not return anything, because nobody would look
+at the returned value. Instead, it sends yet another message to the sender actor.
+So, <code>Request-Response</code> workflow is supported but is a bit less convenient and
+explicit.</p>
+</li>
+</ul>
+<p>Let&#39;s have a look at the client code. <code>ActorSelection</code> is the closest notion to
+Fabric&#39;s <code>ActorProxy</code>: it does not create an actor, but just gets an endpoint
+based on the name. Note that Akka.NET actor needs to be explicitly created by
+another actor, but lifetime management is a separate discussion, so we&#39;ll skip 
+it for now. Here is the report sender:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
+<span class="hljs-keyword">var</span> msg = <span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> };
+Context.ActorSelection(<span class="hljs-string">"/user/weather/Amsterdam"</span>).Tell(msg);
+</code></pre>
+<p>Asking <code>ActorSelection</code> is not directly possible, we would need to setup an
+inbox and receive callback messages. We&#39;ll pretend that we have an <code>ActorRef</code>
+for the sake of simplicity:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Make a query somewhere else</span>
+ActoRef actor = ... ; <span class="hljs-comment">// we have it</span>
+<span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> actor.Ask(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+</code></pre>
+<h2 id="the-best-of-two-worlds">The Best of Two Worlds</h2>
+<p>Now my goals is to come up with an implementation of Service Fabric actors with
+the properties that combine the good parts of both frameworks (without explicitly
+using Akka.NET), i.e.</p>
+<ul>
+<li>Use the full power of Service Fabric actors, including lifetime management,
+cluster management and reliable state</li>
+<li>Use the simplicity of Request-Response pattern implementation of Service Fabric</li>
+<li>Support immutable POCO messages instead of <code>DataContract</code> DTOs</li>
+<li>Use <code>ReceiveActor</code>-like API for message processing</li>
+</ul>
+<p>Here is the third implementation of our Weather Actor (the definitions of messages
+from Akka.NET example are intact):</p>
+<pre class="highlight"><code class="hljs undefined">[ActorService(Name = "WeatherActor")]
+public class WeatherActor : StetefulReceiveActor&lt;List&lt;WeatherReport&gt;&gt;
+{
+    public WeatherActor()
+    {
+        Receive&lt;WeatherReport&gt;(this.AddWeatherReport);
+        Receive&lt;Period, int&gt;(this.GetMaxTemperature);
+    }
+
+    public Task&lt;List&lt;WeatherReport&gt;&gt; AddWeatherReport(
+        List&lt;WeatherReport&gt; state, WeatherReport report)
+    {
+        state = state ?? new List&lt;WeatherReport&gt;();
+        state.Add(report);
+        return Task.FromResult(state);
+    }
+
+    public Task&lt;int?&gt; GetMaxTemperature(List&lt;WeatherReport&gt; state, Period period)
+    {
+        return Task.FromResult(
+            (state ?? Enumerable.Empty&lt;WeatherReport&gt;())
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (int?)r.Temperature));
+    }
+}
+</code></pre>
+<p>The base <code>ReceiveActor</code> class is not defined yet, we&#39;ll do it in the next section. Here is
+how it&#39;s being used:</p>
+<ul>
+<li>The base class is generic and it accepts the type of the state (similar to normal Fabric actors)</li>
+<li>Constructor registers two <code>Receive</code> handlers: message handler and request handler. Note
+that the later one accepts two type parameters: request type and response type</li>
+<li>Both handlers get the current state as the first argument instead of pulling it from the property of
+the base class</li>
+<li>The both return <code>Task</code>&#39;ed data. Message handler is allowed to change the state, while
+request handler does  not change the state but just returns the response back</li>
+<li><code>ServiceName</code> attribute is required because there are (may be) multiple classes implementing
+the same interface</li>
+</ul>
+<p>The client code uses our own <code>MessageActorProxy</code> class to create non-generic proxies which
+are capable to <code>Tell</code> (send a message one way) and <code>Ask</code> (do request and wait for response):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
+<span class="hljs-keyword">var</span> actor = MessageActorProxy.Create(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>), <span class="hljs-string">"WeatherActor"</span>);
+actor.Tell(<span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> });
+
+<span class="hljs-comment">// Make a query somewhere else</span>
+<span class="hljs-keyword">var</span> actor = MessageActorProxy.Create(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>), <span class="hljs-string">"WeatherActor"</span>);
+<span class="hljs-keyword">var</span> result = actor.Ask(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+</code></pre>
+<h2 id="implementation-of-receiveactor">Implementation of ReceiveActor</h2>
+<p>Let&#39;s start with the interface definition:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IReceiveActor</span> : <span class="hljs-title">IActor</span>
+{
+    <span class="hljs-function">Task <span class="hljs-title">Tell</span><span class="hljs-params">(<span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message)</span></span>;
+
+    [Readonly]
+    Task&lt;<span class="hljs-keyword">byte</span>[]&gt; Ask(<span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message);
+}
+</code></pre>
+<p>The two methods for <code>Tell</code> and <code>Ask</code> accept serializes data together with fully qualified
+type name. This will allow passing any kind of objects which can be handled by a serializer
+of choice (I used Newtonsoft JSON serializer).</p>
+<p>Actor implementation derives from <code>StatefulActor</code> and uses another type/bytes pair to store
+the serialized state:</p>
+<pre class="highlight"><code class="hljs undefined">    public abstract class StatefulReceiveActor : StatefulActor&lt;StateContainer&gt;, 
+                                                 IReceiveActor
+    {
+        // ...
+    }
+
+    [DataContract]
+    public class StateContainer
+    {
+        [DataMember]
+        public string TypeName { get; set; }
+
+        [DataMember]
+        public byte[] Data { get; set; }
+    }
+</code></pre>
+<p>The simplistic implementation of <code>Receive</code> generic methods uses two dictionaries
+to store the handlers:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt; handlers;
+<span class="hljs-keyword">private</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt; askers;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ReceiveActor</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">this</span>.handlers = <span class="hljs-keyword">new</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt;();
+    <span class="hljs-keyword">this</span>.askers = <span class="hljs-keyword">new</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt;();
+}
+
+<span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> Receive&lt;T&gt;(Func&lt;<span class="hljs-keyword">object</span>, T, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt; handler)
+    =&gt; <span class="hljs-keyword">this</span>.handlers.Add(<span class="hljs-keyword">typeof</span>(T), <span class="hljs-keyword">async</span> (s, m) =&gt; <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-title">handler</span><span class="hljs-params">(s, (T)</span>m))</span>;
+
+<span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> Receive&lt;TI, TO&gt;(Func&lt;<span class="hljs-keyword">object</span>, TI, Task&lt;TO&gt;&gt; asker)
+    =&gt; <span class="hljs-keyword">this</span>.askers.Add(<span class="hljs-keyword">typeof</span>(TI), <span class="hljs-keyword">async</span> (s, m) =&gt; <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-title">asker</span><span class="hljs-params">(s, (TI)</span>m))</span>;
+</code></pre>
+<p>The <code>Tell</code> method deserializes the message and state, then picks a handler based on
+the message type, executes it and serializes the produced state back:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">Tell</span><span class="hljs-params">(<span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message)</span>
+</span>{
+    <span class="hljs-keyword">var</span> type = Type.GetType(typeName);
+    <span class="hljs-keyword">var</span> typedMessage = <span class="hljs-keyword">this</span>.serializer.Deserialize(message, type);
+
+    <span class="hljs-keyword">var</span> typedState = <span class="hljs-keyword">this</span>.State != <span class="hljs-keyword">null</span>
+        ? <span class="hljs-keyword">this</span>.serializer.Deserialize(<span class="hljs-keyword">this</span>.State.Data, Type.GetType(<span class="hljs-keyword">this</span>.State.TypeName))
+        : <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">var</span> handler = <span class="hljs-keyword">this</span>.handlers.FirstOrDefault(t =&gt; t.Key.IsAssignableFrom(type)).Value;
+    <span class="hljs-keyword">if</span> (handler != <span class="hljs-keyword">null</span>)
+    {
+        <span class="hljs-keyword">var</span> newState = <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-title">handler</span><span class="hljs-params">(typedState, typedMessage)</span></span>;
+        <span class="hljs-keyword">this</span>.State =
+            newState != <span class="hljs-keyword">null</span>
+            ? <span class="hljs-keyword">new</span> StateContainer 
+              { 
+                  Data = <span class="hljs-keyword">this</span>.serializer.Serialize(newState), 
+                  TypeName = newState.GetType().AssemblyQualifiedName 
+              }
+            : <span class="hljs-keyword">null</span>;
+    }
+}
+</code></pre>
+<p>The implementation of <code>Ask</code> is almost identical, so I&#39;ll skip it. <code>MessageActorProxy</code> 
+encapsulates the serialization around passing data to normal <code>ActorProxy</code> class:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MessageActorProxy</span>
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> IStatefulMessageActor proxy;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISerializer serializer = <span class="hljs-keyword">new</span> JsonByteSerializer();
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">MessageActorProxy</span><span class="hljs-params">(ActorId actorId, <span class="hljs-keyword">string</span> serviceName)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.proxy = ActorProxy.Create&lt;IReceiveActor&gt;(actorId, serviceName: serviceName);
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">Tell</span><span class="hljs-params">(<span class="hljs-keyword">object</span> message)</span>
+    </span>{
+        <span class="hljs-keyword">var</span> serialized = <span class="hljs-keyword">this</span>.serializer.Serialize(message);
+        <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.proxy.Send(message.GetType().AssemblyQualifiedName, serialized);
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task&lt;T&gt; Ask&lt;T&gt;(<span class="hljs-keyword">object</span> message)
+    {
+        <span class="hljs-keyword">var</span> serialized = <span class="hljs-keyword">this</span>.serializer.Serialize(message);
+        <span class="hljs-keyword">var</span> fullName = message.GetType().AssemblyQualifiedName;
+        <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.proxy.Ask(fullName, serialized);
+        <span class="hljs-keyword">return</span> (T)<span class="hljs-keyword">this</span>.serializer.Deserialize(response, <span class="hljs-keyword">typeof</span>(T));
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> MessageActorProxy <span class="hljs-title">Create</span><span class="hljs-params">(ActorId actorId, <span class="hljs-keyword">string</span> serviceType)</span>
+    </span>{
+        <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">MessageActorProxy</span><span class="hljs-params">(actorId, serviceType)</span></span>;
+    }
+}
+</code></pre>
+<p>Let&#39;s briefly wrap it up.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>At this stage Azure Service Fabric lacks support of some actor model best practices
+like message-based API and immutable POCO classes. At the same time, it provides
+super powerful setup regarding cluster resource management, state replication, fault
+tolerance and reliable communication. We can borrow some approaches that are used in Akka.NET
+framework to improve the developer experience who wants to leverage the power
+of Service Fabric.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/service-fabric/'>Service Fabric</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/actor-model/'>Actor Model</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 1st, 2016</div>
     
     <h1><a href='/2016/02/building-a-poker-bot-card-recognition/'>Building a Poker Bot: Card Recognition</a></h1>
@@ -694,211 +1040,6 @@ validation may fail.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/clean-code/'>Clean Code</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Dec 22nd, 2015</div>
-    
-    <h1><a href='/2015/12/weaving-your-domain-classes-with-fody/'>Weaving your domain classes with Fody</a></h1>
-    
-    <div class="post-content">
-        <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive cruft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> trip = <span class="hljs-keyword">new</span> Trip(
-    origin: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Paris"</span>, geoParis), 
-    destination: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Amsterdam"</span>, geoAmsterdam),
-    vehicle: <span class="hljs-keyword">new</span> Vehicle(<span class="hljs-string">"TBL-12-H"</span>, Type.HeavyTruck)
-</code></pre>
-<p>Let&#39;s include these requirements as parts of our trip model:</p>
-<ul>
-<li>It has a constructor which accepts three arguments (see above)</li>
-<li>It has 3 read-only properties which are assigned from constructor parameters</li>
-<li>It should not allow null values to be assigned to these properties via constructor</li>
-<li>It should be a Value object, that is two objects with same properties should be equal</li>
-</ul>
-<h2 id="initial-version">Initial version</h2>
-<p>First, let&#39;s implement these requirement in a usual way:</p>
-<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
-{
-    public Trip(Location origin, Location destination, Vehicle vehicle)
-    {
-        if (origin == null) throw new ArgumentNullException(nameof(origin));
-        if (destination == null) throw new ArgumentNullException(nameof(destination));
-        if (vehicle == null) throw new ArgumentNullException(nameof(vehicle));
-
-        this.Origin = origin;
-        this.Destination = destination;
-        this.Vehicle = vehicle;
-    }
-
-    public Location Origin { get; }
-    public Location Destination { get; }
-    public Vehicle Vehicle { get; }
-
-    public bool Equals(Trip other)
-    {
-        return Equals(this.Origin, other.Origin) 
-            &amp;&amp; Equals(this.Destination, other.Destination) 
-            &amp;&amp; Equals(this.Vehicle, other.Vehicle);
-    }
-
-    public override bool Equals(object obj)
-    {
-        if (ReferenceEquals(null, obj))
-        {
-            return false;
-        }
-        if (ReferenceEquals(this, obj))
-        {
-            return true;
-        }
-        if (obj.GetType() != this.GetType())
-        {
-            return false;
-        }
-        return Equals((Trip)obj);
-    }
-
-    public override int GetHashCode()
-    {
-        unchecked
-        {
-            var hashCode = this.Origin.GetHashCode();
-            hashCode = (hashCode * 397) ^ this.Destination.GetHashCode();
-            hashCode = (hashCode * 397) ^ this.Vehicle.GetHashCode();
-            return hashCode;
-        }
-    }
-
-    public static bool operator ==(Trip tripA, Trip tripB)
-    {
-        return object.Equals(tripA, tripB);
-    }
-
-    public static bool operator !=(Trip tripA, Trip tripB)
-    {
-        return !object.Equals(tripA, tripB);
-    }
-}
-</code></pre>
-<p>That&#39;s a lot of code! It&#39;s very repetitive but it&#39;s also tricky: you can implement it incorrectly in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
-<p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still a heavy luggage to carry on. This class is hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
-<p>Are there other options?</p>
-<h2 id="introducing-fody">Introducing Fody</h2>
-<p><a href="https://github.com/Fody/Fody">Fody</a> is an extensible tool for weaving .NET assemblies. It means that you can use it to improve your code automatically at the time of compilation. Fody itself doesn&#39;t do much to the code, but it has a collection of plugins to actually change it. For this example I will use two of them: </p>
-<ul>
-<li><a href="https://github.com/Fody/NullGuard"><strong>NullGuard</strong></a> - guards all the input parameters, output parameters and return values of all types in a current assembly not to be null. If null value is passed or returned, the weaved code with throw an exception.</li>
-<li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
-</ul>
-<p>To install them just execute </p>
-<pre class="highlight"><code class="hljs ps">PM&gt; Install-Package NullGuard.Fody
-PM&gt; Install-Package Equals.Fody
-</code></pre>
-<p>The root of your project will now contain the following configuration file:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-pi">&lt;?xml version="1.0" encoding="utf-8"?&gt;</span>
-<span class="hljs-tag">&lt;<span class="hljs-title">Weavers</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-title">NullGuard</span> <span class="hljs-attribute">IncludeDebugAssert</span>=<span class="hljs-value">"false"</span> /&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-title">Equals</span> /&gt;</span>
-<span class="hljs-tag">&lt;/<span class="hljs-title">Weavers</span>&gt;</span>
-</code></pre>
-<p>(I&#39;ve added <code>IncludeDebugAssert</code> attribute manually to disable assert statements in debug mode)</p>
-<p>Let&#39;s adjust our class to make use of the plugins:</p>
-<pre class="highlight"><code class="hljs cs">[Equals]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Trip</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
-    </span>{
-        <span class="hljs-keyword">this</span>.Origin = origin;
-        <span class="hljs-keyword">this</span>.Destination = destination;
-        <span class="hljs-keyword">this</span>.Vehicle = vehicle;
-    }
-
-    <span class="hljs-keyword">public</span> Location Origin { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Location Destination { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Vehicle Vehicle { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
-<ul>
-<li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So this plugin is in <em>opt-in</em> mode.</li>
-<li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
-</ul>
-<p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
-</span>{
-    <span class="hljs-keyword">bool</span> flag = origin == <span class="hljs-keyword">null</span>;
-    <span class="hljs-keyword">if</span> (flag)
-    {
-        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"origin"</span>)</span></span>;
-    }
-    <span class="hljs-keyword">bool</span> flag2 = destination == <span class="hljs-keyword">null</span>;
-    <span class="hljs-keyword">if</span> (flag2)
-    {
-        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"destination"</span>)</span></span>;
-    }
-    <span class="hljs-keyword">bool</span> flag3 = vehicle == <span class="hljs-keyword">null</span>;
-    <span class="hljs-keyword">if</span> (flag3)
-    {
-        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"vehicle"</span>)</span></span>;
-    }
-    <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField = origin;
-    <span class="hljs-keyword">this</span>.&lt;Destination&gt;k__BackingField = destination;
-    <span class="hljs-keyword">this</span>.&lt;Vehicle&gt;k__BackingField = vehicle;
-}
-</code></pre>
-<p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Location Origin
-{
-    [CompilerGenerated]
-    <span class="hljs-keyword">get</span>
-    {
-        Location expr_06 = <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField;
-        <span class="hljs-keyword">if</span> (expr_06 == <span class="hljs-keyword">null</span>)
-        {
-            <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">InvalidOperationException</span><span class="hljs-params">(<span class="hljs-string">"[NullGuard] Return value of property 'ETA.Domain.Location ETA.Domain.Trip::Origin()' is null."</span>)</span></span>;
-        }
-        <span class="hljs-keyword">return</span> expr_06;
-    }
-}
-</code></pre>
-<p>It doesn&#39;t make much sense to me, so I configured Fody on assembly level to check only arguments and return values:</p>
-<pre class="highlight"><code class="hljs cs">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]
-</code></pre>
-<p>Here is a set of operations related to equality (I&#39;ll skip the body in sake of brevity):</p>
-<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
-{
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
-    private static bool EqualsInternal(Trip left, Trip right) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
-    public override bool Equals(Trip other) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
-    public override bool Equals(object obj) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
-    public override int GetHashCode() { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
-    public static bool operator ==(Trip left, Trip right) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
-    public static bool operator !=(Trip left, Trip right) { ... }
-}
-</code></pre>
-<p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
-<h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
-<p>Here is how you actually should define similar types:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Trip</span> </span>= 
-  { Origin : Location
-    Destination : Location
-    Vehicle : Vehicle }
-</code></pre>
-<p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/code-generation/'>Code Generation</a>
     </div>
     
 </article>
