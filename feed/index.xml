@@ -3,13 +3,210 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2017-07-17T20:51:17.450Z</updated>
+    <updated>2017-07-24T18:34:10.063Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Custom Autoscaling with Durable Functions</title>
+        <link href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/"/>
+        <updated>2017-07-24T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-07-24,/2017/07/custom-autoscaling-with-durable-functions/</id>
+        <content type="html"><![CDATA[<p>In my previous post 
+<a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">Custom Autoscaling of Azure App Service with a Function App</a>
+I&#39;ve created a Function App which watches a Service Bus Subscription
+backlog and adjusts the scale of App Service based on the observed load.</p>
+<p>It works fine but there are two minor issues that I would like to address
+in this article:</p>
+<ul>
+<li><p><strong>Scaling Logic</strong> function from that workflow needs to preserve state
+between calls. I used Table Storage bindings for that, which proved to
+be a bit verbose and low level: I needed to manage conversion to entity and 
+JSON serialization myself;</p>
+</li>
+<li><p>There is no feedback from <strong>Scaler</strong> function (which executes the change)
+back to <strong>Scaling Logic</strong> function. Thus, if scaling operation is slow or
+fails, there is no easy way to notify the logic about that.</p>
+</li>
+</ul>
+<p>Let&#39;s see how these issues can be solved with Azure Durable Functions.</p>
+<h2 id="meet-durable-functions">Meet Durable Functions</h2>
+<p>Microsoft has recently announced the preview of 
+<a href="https://azure.github.io/azure-functions-durable-extension/">Durable Functions</a>:</p>
+<blockquote>
+<p>Durable Functions is an Azure Functions extension for building long-running, 
+stateful function orchestrations in code using C# in a serverless environment.</p>
+</blockquote>
+<p>The library is built on top of <a href="https://github.com/Azure/durabletask">Durable Task Framework</a>
+and introduces several patterns for Function coordination and stateful
+processing. Please go read the <a href="https://azure.github.io/azure-functions-durable-extension/">documentation</a>,
+it&#39;s great and has some very useful examples.</p>
+<p>I decided to give Durable Functions a try for my autoscaling workflow. Feel
+free to refer to <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">the first part</a>
+to understand my goals and the previous implementation.</p>
+<h2 id="architecture">Architecture</h2>
+<p>The flow of metric collection, scaling logic and scaling action stays the
+same. The state and cross-function communication aspects are now delegated
+to Durable Functions, so the diagram becomes somewhat simpler:</p>
+<p><img src="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions//AutoscalingArchitecture.png" alt="Autoscaling Architecture"></p>
+<p>The blue sign on <strong>Scaling Logic</strong> function denotes its statefulness.</p>
+<p>Let&#39;s walk through the functions implementation to see how the workflow
+plays out.</p>
+<p>This time I&#39;ll start with <strong>Scaler</strong> function and then flow from right to left
+to make the explanation more clear.</p>
+<h2 id="scaler">Scaler</h2>
+<p><strong>Scaler</strong> function applies the scaling decisions to the Azure resource, App
+Service Plan in my case. I&#39;ve extracted App Service related code to a helper, 
+to keep the function minimal and clean. You can see the full code in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+<p><strong>Scaler</strong> function is triggered by Durable Function&#39;s <code>ActivityTrigger</code>. That
+basically means that it&#39;s ready to be called from other functions. Here is
+the code:</p>
+<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(Scaler))]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">Scaler</span><span class="hljs-params">([ActivityTrigger] DurableActivityContext context)</span>
+</span>{
+    <span class="hljs-keyword">var</span> action = context.GetInput&lt;ScaleAction&gt;();
+
+    <span class="hljs-keyword">var</span> newCapacity = ScalingHelper.ChangeAppServiceInstanceCount(
+        action.ResourceName,
+        action.Type == ScaleActionType.Down ? -<span class="hljs-number">1</span> : +<span class="hljs-number">1</span>);
+
+    <span class="hljs-keyword">return</span> newCapacity;
+}
+</code></pre>
+<p>In order to receive an input value, I utilize <code>context.GetInput()</code> method.
+I believe that the team is working on support of custom classes 
+(<code>ScaleAction</code> in my case) directly as function parameters.</p>
+<p>The function then executes the scale change and returns back the new capacity
+of App Service Plan. Note that this is new: we were not able to return
+values in the previous implementation.</p>
+<h2 id="scaling-logic">Scaling Logic</h2>
+<p><strong>Scaling Logic</strong> is using <a href="https://azure.github.io/azure-functions-durable-extension/articles/samples/counter.html">Stateful Actor pattern</a>.
+One instance of such actor is created for each scalable resource (I only use
+1 now). Here is the implementation (again, simplified for readability):</p>
+<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(ScalingLogic))]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;ScalingState&gt; <span class="hljs-title">ScalingLogic</span><span class="hljs-params">(
+    [OrchestrationTrigger] DurableOrchestrationContext context, 
+    TraceWriter log)</span>
+</span>{
+    <span class="hljs-keyword">var</span> state = context.GetInput&lt;ScalingState&gt;();
+
+    <span class="hljs-keyword">var</span> metric = <span class="hljs-keyword">await</span> context.WaitForExternalEvent&lt;Metric&gt;(nameof(Metric));
+
+    UpdateHistory(state.History, metric.Value);
+    ScaleAction action = CalculateScalingAction(state);
+
+    <span class="hljs-keyword">if</span> (action != <span class="hljs-keyword">null</span>)
+    {
+        <span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> context.CallFunctionAsync&lt;<span class="hljs-keyword">int</span>&gt;(nameof(Scaler), action);
+        log.Info($<span class="hljs-string">"Scaling logic: Scaled to {result} instances."</span>);
+        state.LastScalingActionTime = context.CurrentUtcDateTime;
+    }
+
+    context.ContinueAsNew(state);
+    <span class="hljs-keyword">return</span> state;
+}
+</code></pre>
+<p>Here is how it works:</p>
+<ul>
+<li><p>Function is bound to <code>OrchestrationTrigger</code>, yet another trigger type from
+Durable Functions;</p>
+</li>
+<li><p>It loads durable state from the received <code>context</code>;</p>
+</li>
+<li><p>It then waits for an external event called Metric (to be sent by <strong>Collector</strong>
+function, see the next section);</p>
+</li>
+<li><p>When an event is received, the function updates its state and calculates
+if a scaling action is warranted;</p>
+</li>
+<li><p>If yes, it calls <strong>Scaler</strong> function and sends the scale action. It expects
+an integer result, denoting the new amount of instances;</p>
+</li>
+<li><p>It then calls <code>ContinueAsNew</code> method to start a new iteration of the actor
+loop, providing the updated state.</p>
+</li>
+</ul>
+<p>One important note: the orchestrated function 
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/topics/checkpointing-and-replay.html">has to be deterministic</a>. 
+That means, for example, that <code>DateTime.Now</code> is not allowed to be used. 
+I use <code>context.CurrentUtcDateTime</code> instead for time-related calculations.</p>
+<p>The implementation of this function solves both problems that I mentioned 
+in the introduction. We do not manage state storage and serialization manually,
+and we now have the ability to get feedback from <strong>Scaler</strong> function.</p>
+<h2 id="metrics-collector">Metrics Collector</h2>
+<p>I&#39;ve extracted Service Bus related code to a helper to keep the code sample
+minimal and clean. You can see the full code in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+<p>Here is the remaining implementation of <strong>Metric Collector</strong>:</p>
+<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(MetricCollector))]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">MetricCollector</span><span class="hljs-params">(
+    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span>)</span>] TimerInfo myTimer,
+    [OrchestrationClient] DurableOrchestrationClient client,
+    TraceWriter log)
+</span>{
+    <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
+
+    <span class="hljs-keyword">var</span> status = <span class="hljs-keyword">await</span> client.GetStatusAsync(resource);
+    <span class="hljs-keyword">if</span> (status == <span class="hljs-keyword">null</span>)
+    {
+        <span class="hljs-keyword">await</span> client.StartNewAsync(nameof(ScalingLogic), resource, <span class="hljs-keyword">new</span> ScalingState());
+    }
+    <span class="hljs-keyword">else</span>
+    {
+        <span class="hljs-keyword">var</span> metric = ServiceBusHelper.GetSubscriptionMetric(resource);
+        log.Info($<span class="hljs-string">"Collector: Current metric value is {metric.Value.Value} at {DateTime.Now}"</span>);
+        <span class="hljs-keyword">await</span> client.RaiseEventAsync(resource, nameof(Metric), metric);
+    }
+}
+</code></pre>
+<p>It&#39;s still a timer-triggered &quot;normal&quot; (non-durable) function, but now it 
+also has an additional binding to <code>OrchestrationClient</code>. This client is used 
+to communicate metric data to the <strong>Scaling Logic</strong>.</p>
+<p>With the current implementation, <strong>Metric Collector</strong> also has a second
+responsibility: actor instance management. At every iteration, it queries
+for the current status of corresponding actor. If that is <code>null</code>, Collector
+creates a new instance with initial empty state.</p>
+<p>To my liking, this aspect is a bit unfortunate, but it seems to be required
+with the current implementation of Durable Functions framework. See 
+<a href="https://github.com/Azure/azure-functions-durable-extension/issues/21">my related question on github</a>.</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>I adjusted the initial flow of autoscaling functions to use Durable Functions
+library. It made the state management look more straightforward, and also
+allowed direct communication between two functions in strongly-typed
+request-response manner.</p>
+<p>The resulting code is relatively clear and resembles the typical structure
+of async-await code that C# developers are used to.</p>
+<p>There are some downsides that I found about Durable Functions too:</p>
+<ul>
+<li><p>This is a very early preview, so there are some implementation issues.
+A couple times I managed to put my functions into a state where they were stuck
+and no calls could be made anymore. The only way I could get out of there is by
+clearing some blobs in the Storage Account;</p>
+</li>
+<li><p>The actor instance management story feels raw. The function, which needs to
+send events to actors, has to manage their lifecycle and instance IDs. I would
+need to add some more checks to make the code production ready, e.g. to 
+restart actors if they end up in faulty state;</p>
+</li>
+<li><p>There are some concurrency issues in function-to-function communication
+to be resolved;</p>
+</li>
+<li><p>Some discipline is required to keep Durable functions side-effect free
+and deterministic. The multiple executions caused by awaits and replays are
+counter-intuitive (at least for novice devs), and thus error-prone.</p>
+</li>
+</ul>
+<p>Having said that, I believe Durable Functions can be a very useful abstraction
+to simplify some of the more advanced scenarios and workflows. I look
+forward to further iterations of the library, and I will keep trying it out
+for more scenarios.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Custom Autoscaling of Azure App Service with a Function App</title>
@@ -1416,143 +1613,6 @@ and <code>outgoing</code> metric to get the amount of dequeued messages.</p>
 typed .NET classes. You can see it in
 <a href="https://github.com/mikhailshilkov/ServiceBusEntityMetrics">my github repository</a>
 or grab it from <a href="https://www.nuget.org/packages/MikhailIo.ServiceBusEntityMetrics/">NuGet</a>.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Coding Puzzle in F#: Find the Number of Islands</title>
-        <link href="https://mikhail.io/2017/02/coding-puzzle-in-fsharp-find-the-number-of-islands/"/>
-        <updated>2017-02-01T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-02-01,/2017/02/coding-puzzle-in-fsharp-find-the-number-of-islands/</id>
-        <content type="html"><![CDATA[<p>Here&#39;s a programming puzzle. Given 2D matrix of 0&#39;s and 1&#39;s, find the number of islands. 
-A group of connected 1&#39;s forms an island. For example, the below matrix contains 5 islands</p>
-<pre class="highlight"><code class="hljs mathematica"><span class="hljs-keyword">Input</span> : mat = <span class="hljs-list">{{1, 1, 0, 0, 0}</span>,
-               <span class="hljs-list">{0, 1, 0, 0, 1}</span>,
-               <span class="hljs-list">{1, 0, 0, 1, 1}</span>,
-               <span class="hljs-list">{0, 0, 0, 0, 0}</span>,
-               <span class="hljs-list">{1, 0, 1, 0, 1}</span>}
-Output : <span class="hljs-number">5</span>
-</code></pre><p>A typical solution to this problem will be implemented in C++, Java or C# and will involve
-a loop to iterate through the matrix, and another loop or recursion to traverse islands.
-The traversal progress will be tracked in an auxiliary mutable array, denoting the visited
-nodes. An example of such solution (and the definition of the problem above) can be
-found <a href="http://www.geeksforgeeks.org/find-number-of-islands/">here</a>.</p>
-<p>I want to give an example of solution done in F#, with generic immutable data structures
-and pure functions.</p>
-<h2 id="graph-traversal">Graph Traversal</h2>
-<p>First of all, this puzzle is a variation of the standard problem: Counting number of 
-connected components in a graph.</p>
-<p><img src="https://mikhail.io/2017/02/coding-puzzle-in-fsharp-find-the-number-of-islands//islands.png" alt="Connected Graph Components"></p>
-<p>I will start my implementation with a graph traversal implementation, and then we
-will apply it to the 2D matrix at hand.</p>
-<p>The graph is defined by the following type:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Graph</span>&lt;<span class="hljs-title">'a</span>&gt; </span>= {
-  Nodes: seq&lt;<span class="hljs-attribute">'a</span>&gt;
-  Neighbours: <span class="hljs-attribute">'a</span> -&gt; seq&lt;<span class="hljs-attribute">'a</span>&gt;
-}
-</code></pre>
-<p>It is a record type with two fields: a sequence of all nodes, and a function to
-get neighbour nodes for a given node. The type of the node is generic: I&#39;ll use
-numbers for our example, but <code>Graph</code> type doesn&#39;t care much.</p>
-<p>The traversal plan is the following:</p>
-<ol>
-<li><p>Go through the sequence of graph nodes.</p>
-</li>
-<li><p>Keep two accumulator data structures: the list of disjoint sub-graphs 
-(sets of nodes connected to each other) and the set of visited nodes. 
-Both are empty at the beginning.</p>
-</li>
-<li><p>If the current node is not in the visited set, recursively traverse all
-neighbours to find the current connected component.</p>
-</li>
-<li><p>The connected component traversal is the Depth-First Search, each node
-is added to both current set and total visited set.</p>
-</li>
-</ol>
-<p>Let&#39;s start the implementation from inside out. The following recursive function
-adds a node to the accumulated sets and calls itself for non-visited neighbours:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> visitNode accumulator visited node =
-  <span class="hljs-keyword">let</span> newAccumulator = Set.add node accumulator
-  <span class="hljs-keyword">let</span> newVisited = Set.add node visited
-
-  graph.Neighbours node
-  |&gt; Seq.filter (<span class="hljs-keyword">fun</span> n -&gt; Set.contains n newVisited |&gt; not)
-  |&gt; Seq.fold (<span class="hljs-keyword">fun</span> (acc, vis) n -&gt; visitNode acc vis n) (newAccumulator, newVisited)
-</code></pre>
-<p>The type of this function is <code>Set&lt;&#39;a&gt; -&gt; Set&lt;&#39;a&gt; -&gt; &#39;a -&gt; Set&lt;&#39;a&gt; * Set&lt;&#39;a&gt;</code>.</p>
-<p>Step 3 is implemented with <code>visitComponent</code> function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> visitComponent (sets, visited) node =
-  <span class="hljs-keyword">if</span> Set.contains node visited 
-  <span class="hljs-keyword">then</span> sets, visited
-  <span class="hljs-keyword">else</span>
-    <span class="hljs-keyword">let</span> newIsland, newVisited = visitNode Set.empty visited node
-    newIsland :: sets, newVisited
-</code></pre>
-<p>Now, the graph traversal is just a <code>fold</code> of graph nodes with <code>visitComponent</code> function.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Graph =
-  <span class="hljs-keyword">let</span> findConnectedComponents graph = 
-    graph.Nodes
-    |&gt; Seq.fold visitComponent ([], Set.empty)
-    |&gt; fst
-</code></pre>
-<p>This is the only public function of our graph API, available for the client 
-applications. The <code>visitNode</code> and <code>visitComponent</code> are defined as local functions
-underneath (and they close over the graph value).</p>
-<h2 id="2d-matrix">2D Matrix</h2>
-<p>Now, let&#39;s forget about the graphs for a second and model the 2D matrix of integers.
-The type definition is simple, it&#39;s just an alias for the array:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Matrix2D</span> </span>= int[,]
-</code></pre>
-<p>Now, we need to be able to traverse the matrix, i.e. iterate through all elements and
-find the neighbours of each element. </p>
-<p>The implementation below is mostly busy validating the boundaries of the array. The
-neighbours of a cell are up to 8 cells around it, diagonal elements included.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Matrix2D =
-  <span class="hljs-keyword">let</span> allCells (mx: Matrix2D) = seq {
-    <span class="hljs-keyword">for</span> x <span class="hljs-keyword">in</span> [<span class="hljs-number">0</span> .. Array2D.length1 mx - <span class="hljs-number">1</span>] <span class="hljs-keyword">do</span>
-      <span class="hljs-keyword">for</span> y <span class="hljs-keyword">in</span> [<span class="hljs-number">0</span> .. Array2D.length2 mx - <span class="hljs-number">1</span>] -&gt; x, y
-  }
-
-  <span class="hljs-keyword">let</span> neighbours (mx: Matrix2D) (x,y) =
-    Seq.crossproduct [x-<span class="hljs-number">1</span> .. x+<span class="hljs-number">1</span>] [y-<span class="hljs-number">1</span> .. y+<span class="hljs-number">1</span>]
-    |&gt; Seq.filter (<span class="hljs-keyword">fun</span> (i, j) -&gt; i &gt;= <span class="hljs-number">0</span> &amp;&amp; j &gt;= <span class="hljs-number">0</span> 
-                              &amp;&amp; i &lt; Array2D.length1 mx 
-                              &amp;&amp; j &lt; Array2D.length2 mx)
-    |&gt; Seq.filter (<span class="hljs-keyword">fun</span> (i, j) -&gt; i &lt;&gt; x || j &lt;&gt; y)
-</code></pre>
-<h2 id="putting-it-all-together">Putting It All Together</h2>
-<p>Now we are all set to solve the puzzle. Here is our input array:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> mat = array2D
-            [| [|<span class="hljs-number">1</span>; <span class="hljs-number">1</span>; <span class="hljs-number">0</span>; <span class="hljs-number">0</span>; <span class="hljs-number">0</span>|];
-               [|<span class="hljs-number">0</span>; <span class="hljs-number">1</span>; <span class="hljs-number">0</span>; <span class="hljs-number">0</span>; <span class="hljs-number">1</span>|];
-               [|<span class="hljs-number">1</span>; <span class="hljs-number">0</span>; <span class="hljs-number">0</span>; <span class="hljs-number">1</span>; <span class="hljs-number">1</span>|];
-               [|<span class="hljs-number">0</span>; <span class="hljs-number">0</span>; <span class="hljs-number">0</span>; <span class="hljs-number">0</span>; <span class="hljs-number">0</span>|];
-               [|<span class="hljs-number">1</span>; <span class="hljs-number">0</span>; <span class="hljs-number">1</span>; <span class="hljs-number">0</span>; <span class="hljs-number">1</span>|]
-            |]
-</code></pre>
-<p>We need a function to define if a given cell is a piece of an island:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> isNode (x, y) = mat.[x, y] = <span class="hljs-number">1</span>
-</code></pre>
-<p>And here is the essence of the solution - our graph definition. Both <code>Nodes</code>
-and <code>Neightbours</code> are matrix cells filtered to contain 1&#39;s. </p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> graph = {
-  Nodes = Matrix2D.allCells mat |&gt; Seq.filter isNode
-  Neighbours = Matrix2D.neighbours mat &gt;&gt; Seq.filter isNode
-}
-</code></pre>
-<p>The result is calculated with one-liner:</p>
-<pre class="highlight"><code class="hljs fs">graph |&gt; Graph.findConnectedComponents |&gt; List.length
-</code></pre>
-<h2 id="conclusion">Conclusion</h2>
-<p>The implementation above represents my attempt to solve in a functional way
-the puzzle which is normally solved in imperative style. I took a step
-back and tried to model the underlying concepts with separate data structures.
-The types and functions might be reused for similar problems in the same
-domain space.</p>
-<p>While not a rocket science, the Connected Islands puzzle is a good exercise
-and provides a nice example of functional concepts, which I&#39;m planning to
-use while discussing FP and F#.</p>
-<p>The full code can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/ConnectedIslands.fs">my github</a>.</p>
 ]]></content>
     </entry>
     

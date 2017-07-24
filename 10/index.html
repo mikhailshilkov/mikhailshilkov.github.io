@@ -70,6 +70,90 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Feb 5th, 2015</div>
+    
+    <h1><a href='/2015/02/how-we-do-message-processing/'>How we do message processing</a></h1>
+    
+    <div class="post-content">
+        <p>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture:
+<img src="/2015/02/how-we-do-message-processing//architecture.jpg" alt="System architecture"></p>
+<p>The devices use communication channels to send messages to our gateway - the input point of our application. The application&#39;s goal is to understand what came in, do the required actions and save the information into the database for further processing. Let&#39;s consider the database to be the end point of processing. Sounds easy, right? But some difficulties appear with the growth of amount and diversity of incoming messages; so let&#39;s look at some of them.</p>
+<p>A few words on the target load level. Our system processes the messages from tens of thousands of devices, and we get from several hundreds to a thousand messages per second. If you numbers are different by orders of magnitude, it might be the case that your problems are going to look completely different and you&#39;ll need a different set of tools to solve them.</p>
+<p>Apart from the number of messages itself, there is a problem of irregularity and peak times. The application must be ready for relatively short peaks which might be about ten times higher than the average expectation. To address this problem we organize the system as a sequence of queues and corresponding processors.</p>
+<p>The input gateway doesn&#39;t do much of real job: it just receives a message from a client and puts it into the queue. This operation is very cheap, thus the gateway is capable of accepting a vast number of messages per second. Afterwards a separate process retrieves several messages - the amount it wants to get - from the queue and does the hard work. The processing happens asynchronously while the load on the system remains limited. Perhaps the time in the queue grows at peaks, but that&#39;s it.</p>
+<p>Normally the message processing is non-trivial and consists of several actions. Here we get to the next logical step: we break down the job into several stages, each one having a separate queue and a dedicated processor. The queues and processors are independent and may reside on separate physical servers; and we can tune and scale them independently:
+<img src="/2015/02/how-we-do-message-processing//sequence.jpg" alt="Sequence-based architecture"></p>
+<p>The first queue contains the messages from devices as-is, without decoding or transforming them. The first processor decodes them and puts them into the second queue. The second processor could, for instance, call a third-party service and enrich the message with some relevant information, and the third processor could save that information into the database.</p>
+<p>These are the basics, so what do we still need to consider?</p>
+<h3 id="define-your-values">Define your values</h3>
+<ol>
+<li><p>Simplicity of creation, change and support</p>
+<p> Asynchronous distributed message processing brings quite some extra complexity into the software product. You should constantly work on reducing this price. The code gets optimized to be, at first place, readable and straightforward for all the team members, cheap to be changed and supported. If nobody but the author can decrypt the code, no great architecture will make the team happy.</p>
+<p> This statements looks obvious, but it might take quite some time and effort before the team starts to consistently implement this principle and not just declare it. Do the regular refactoring whenever you feel you can make the code a bit better and simpler. All the source code should get reviewed and the most critical parts are better to be developed in pair.</p>
+</li>
+<li><p>Fault tolerance</p>
+<p> It makes sense to define your policies of hardware or subsystem failures handling from the very beginning. They will differ for different products. It might be the case that someone can throw away all the messages that come in during 5 minutes of a server reboot.</p>
+<p> In our system we don&#39;t want to lose messages. If a particular service is not currently available, a database call times out, or there is a random processing error, it must not result in information loss. The affected messages must be saved inside the queue and will be processed right after the problem is fixed.</p>
+<p> Suppose your code on one server calls a web service on another server in synchronous manner. If the second server is not available, the processing will fail, and you can&#39;t do anything but log the error. In case of asynchronous processing the message will wait for the second server to go live again.</p>
+</li>
+<li><p>Performance</p>
+<p> Processing rate per second, latency, load on the servers - all these are important parameters of application performance. That&#39;s why we choose the architecture to be flexible.</p>
+<p> Although, don&#39;t pay TOO much attention to optimization from the very beginning. Usually the majority of performance issues is created by relatively small pieces of code. Unfortunately people tend to be very bad at predicting where exactly those issues are going to appear. People write <a href="http://carlos.bueno.org/optimization/">books on pre-mature optimization</a>. So make sure that your architecture allows you to fine-tune the system and forget about optimization until the first load testing.</p>
+<p> At the same time, and for this reason, start running the load tests early on, and then include them into your standard testing procedure. Start optimizing only when the tests reveal a specific performance problem.</p>
+</li>
+</ol>
+<h3 id="fine-tune-your-mindset">Fine tune your mindset</h3>
+<ol>
+<li><p>Operate queues and asynchronous processors</p>
+<p> I already described this above. Our main tools are queues and processors. While the classic approach is &quot;get request, call remote code, wait for response, return it back to the originator&quot;, now we should always use &quot;get a message from a queue, process it, send a message to another queue&quot;. The right mix of these two approaches should enable both scalability and ease of development.</p>
+</li>
+<li><p>Break the processing down into several stages</p>
+<p> If message processing is complex enough to be split into several stages, do that by creating several queues and processors. Make sure that you don&#39;t make it too complex to understand by unneeded fragmentation: the right balance is important. Quite often you will see a split which feels natural for developers. If not, try thinking of possible failure points. If there are multiple reasons why a processor may fail, consider its breakdown.</p>
+</li>
+<li><p>Don&#39;t mix decoding and processing</p>
+<p> Usually the messages arrive encoded with a protocol which can be binary, XML, JSON, etc. Decode them into your native format as soon as possible. This will help you solve two problems. First, you might need to support multiple protocols; and after decoding you unify the format of all further messages. Second, logging and debugging gets simpler.</p>
+</li>
+<li><p>Make the queues topology configurable</p>
+<p> Structure your code in a way that allows you to change the configuration of queues relatively easy. Splitting a processor into two parts should not result in tons of refactoring. Don&#39;t make your code depend on a specific queue mechanism implementation: tomorrow you might want to change it.</p>
+</li>
+<li><p>Do batch processing</p>
+<p> Normally it makes sense to receive messages from a queue in batches, not one by one. The services that you use might accept arrays for faster processing and in this case one call will always be faster than a handful of small ones. One insertion of 100 rows into database is faster than 100 remote insertions.</p>
+</li>
+</ol>
+<h3 id="create-tooling">Create tooling</h3>
+<ol>
+<li><p>Implement total monitoring</p>
+<p> Invest into monitoring tools. It should be easy to see the charts of throughput, average processing time, queue size and time since last message with breakdown by queue.
+<img src="/2015/02/how-we-do-message-processing//monitoring.jpg" alt="Queue monitoring"></p>
+<p> We use monitoring tools not only on production and staging environments but also on testing servers and even developer&#39;s machines. Carefully baked charts are helpful during debug and load testing procedures.</p>
+</li>
+<li><p>Test everything</p>
+<p> Message processing systems are perfect fields to apply fully automated testing. Input data protocols are well-defined and there is no human interaction. Cover your code with unit tests. Make your queues pluggable so that you could mock your real queues out with test in-memory queues to run quick intercommunication tests. Finally, create full-blown integration tests which should be run on staging environment (and preferably also on production).</p>
+</li>
+<li><p>Store the failed messages</p>
+<p> Usually you don&#39;t want one erroneous message to stop the complete queue processing. Being able to diagnose the problem is equally important. So put all the failed messages into a specialized storage and put a spotlight on it. Make a tool to move messages back to the relevant queue as soon as the failure reason is addressed.</p>
+<p> Same or similar mechanism can be used to store the messages to be processed at some point of time in the future. Keep them in that special storage and check periodically if now is time to proceed.</p>
+</li>
+<li><p>Automate the deployment</p>
+<p> Application setup and update must require just one or two clicks. Strive for frequent updates on production; ideally - automated deployment on every commit to the dedicated branch. Deployment scripts or tools will help developers maintain their personal and testing environments up-to-date.</p>
+</li>
+</ol>
+<h3 id="wrapping-up">Wrapping up</h3>
+<p>Clean and understandable architecture provides developers with a good means of communication, helps figure out the similar vision and concepts. Architecture metaphor expressed in form of a picture or short document will bring you closer to smart design, will help find errors or plan a refactoring.</p>
+<p>Happy message processing!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/architecture/'>Architecture</a>, <a href='/tags/design/'>Design</a>, <a href='/tags/messages/'>Messages</a>, <a href='/tags/message-processing/'>Message Processing</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Oct 16th, 2014</div>
     
     <h1><a href='/2014/10/16/nice-way-to-kill-your-sql-server/'>Nice way to kill your SQL Server</a></h1>
@@ -277,30 +361,6 @@ Have a nice application start-up boost!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/full-tilt-poker/'>Full Tilt Poker</a>, <a href='/tags/poker/'>Poker</a>, <a href='/tags/poker-money/'>Poker Money</a>, <a href='/tags/poker-money-application/'>Poker Money application</a>, <a href='/tags/poker-stars/'>Poker Stars</a>, <a href='/tags/windows-8/'>Windows 8</a>, <a href='/tags/windows-rt/'>Windows RT</a>, <a href='/tags/windows-store/'>Windows Store</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Dec 26th, 2012</div>
-    
-    <h1><a href='/2012/12/26/one-certificate-missing-one-received-unexpectedly/'>One certificate missing, one received unexpectedly</a></h1>
-    
-    <div class="post-content">
-        <p>Today I want to give a note about two more online courses that I completed.</p>
-<p>The last one (10 weeks in September-November) was called <a href="https://www.coursera.org/course/compfinance">Introduction to Computational Finance and Financial Econometrics</a> and was lead by Eric Zivot from University of Washington. First of all, it was the most intense course out of all that I took to date. Every of 10 weeks we had about 3-4 hours of videos + homework. The course material was mostly about maths and statistics, and less about application in economics. However, some concepts were new to me and sounded very interesting.</p>
-<p>I scored about 95% on all tests and exams (they were relatively easy comparing to video material). But unfortunately, I got no certificate or even course record for this! It seems that University of Washington did not allow Coursera to issue such certificates and records... What a shame! I spent lots of time on it, and a record would be satisfactory. Please be careful if you take this course or other courses of UoW in the future.</p>
-<p>However, I got another unexpected certificate. In June, I took a course called <a href="https://www.coursera.org/course/hci">Human-Computer Interaction</a> about user interface design concepts and approaches. I started it with a big delay because of my vacation, so I thought I wouldn&#39;t score enough for a certificate. But I was wrong! I got the certificate 6 months after the course ended:
-<img src="/2012/12/26/one-certificate-missing-one-received-unexpectedly//hci.jpg" alt="HCI certificate"></p>
-<p>The course was short but useful. I wish there would be an extension course, which would cover more details on the topic.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
     </div>
     
 </article>
