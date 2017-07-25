@@ -735,6 +735,89 @@ to check out <a href="https://dev.applicationinsights.io/apiexplorer/metrics">AP
     });
 }
 </code></pre>
+<h2 id="combine-several-metrics-in-one-sensor">Combine Several Metrics in One Sensor</h2>
+<p>Thanks to suggestion from Luciano Lingnau, we have migrated our PRTG
+sensors to <code>HTTP Data Advanced</code>. This sensor type allows bundling several 
+related metrics into one sensor with multiple channels. PRTG is then
+able to display all those channels on the single chart.</p>
+<p>For instance, we use the following channels for Service Bus related
+sensors:</p>
+<ul>
+<li>Active message count</li>
+<li>Age of the oldest message sitting inside the queue</li>
+<li>Dead letter message count</li>
+<li>Incoming messages per 5 minutes</li>
+<li>Outgoing messages per 5 minutes</li>
+<li>Scheduled message count</li>
+</ul>
+<p>For each channel, we define units of measure, warning and error thresholds.</p>
+<p><code>HTTP Data Advanced</code> expects a URL which returns JSON of the predefined format.
+Here is a sample C# code to create a <code>dynamic</code> object which is then converted
+to the proper JSON:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span>
+{
+    prtg = <span class="hljs-keyword">new</span>
+    {
+        result = <span class="hljs-keyword">new</span>[]
+        {
+            <span class="hljs-keyword">new</span>
+            {
+                channel = <span class="hljs-string">"ActiveMessageCount"</span>,
+                <span class="hljs-keyword">value</span> = messageCountDetails.ActiveMessageCount,
+                unit = <span class="hljs-string">"Count"</span>,
+                customunit = (<span class="hljs-keyword">string</span>)<span class="hljs-keyword">null</span>,
+                limitmaxwarning = (<span class="hljs-keyword">int</span>?)<span class="hljs-keyword">null</span>,
+                limitmode = <span class="hljs-number">0</span>
+            },
+            <span class="hljs-keyword">new</span>
+            {
+                channel = <span class="hljs-string">"DeadLetterMessageCount"</span>,
+                <span class="hljs-keyword">value</span> = messageCountDetails.DeadLetterMessageCount,
+                unit = <span class="hljs-string">"Count"</span>,
+                customunit = (<span class="hljs-keyword">string</span>)<span class="hljs-keyword">null</span>,
+                limitmaxwarning = (<span class="hljs-keyword">int</span>?)<span class="hljs-number">0</span>,
+                limitmode = <span class="hljs-number">1</span>
+            },
+            <span class="hljs-keyword">new</span>
+            {
+                channel = <span class="hljs-string">"OutgoingMessageCount"</span>,
+                <span class="hljs-keyword">value</span> = outgoing,
+                unit = <span class="hljs-string">"custom"</span>,
+                customunit = <span class="hljs-string">"#/5min"</span>,
+                limitmaxwarning = (<span class="hljs-keyword">int</span>?)<span class="hljs-keyword">null</span>,
+                limitmode = <span class="hljs-number">0</span>
+            },
+            <span class="hljs-keyword">new</span>
+            {
+                channel = <span class="hljs-string">"IncommingMessageCount"</span>,
+                <span class="hljs-keyword">value</span> = incoming,
+                unit = <span class="hljs-string">"custom"</span>,
+                customunit = <span class="hljs-string">"#/5min"</span>,
+                limitmaxwarning = (<span class="hljs-keyword">int</span>?)<span class="hljs-keyword">null</span>,
+                limitmode = <span class="hljs-number">0</span>
+            },
+            <span class="hljs-keyword">new</span>
+            {
+                channel = <span class="hljs-string">"ScheduledMessageCount"</span>,
+                <span class="hljs-keyword">value</span> = messageCountDetails.ScheduledMessageCount,
+                unit = <span class="hljs-string">"Count"</span>,
+                customunit = (<span class="hljs-keyword">string</span>)<span class="hljs-keyword">null</span>,
+                limitmaxwarning = (<span class="hljs-keyword">int</span>?)<span class="hljs-keyword">null</span>,
+                limitmode = <span class="hljs-number">0</span>
+            },
+            <span class="hljs-keyword">new</span>
+            {
+                channel = <span class="hljs-string">"Age"</span>,
+                <span class="hljs-keyword">value</span> = age,
+                unit = <span class="hljs-string">"TimeSeconds"</span>,
+                customunit = (<span class="hljs-keyword">string</span>)<span class="hljs-keyword">null</span>,
+                limitmaxwarning = (<span class="hljs-keyword">int</span>?)<span class="hljs-keyword">null</span>,
+                limitmode = <span class="hljs-number">0</span>
+            } 
+        }
+    }
+};
+</code></pre>
 <h2 id="conclusion">Conclusion</h2>
 <p>It seems that monitoring metrics retrieval is an ideal scenario to start
 using Azure Functions. The Functions are very easy to create and modify,
