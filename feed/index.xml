@@ -3,13 +3,208 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2017-07-25T14:18:48.550Z</updated>
+    <updated>2017-07-26T20:57:49.970Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Authoring a Custom Binding for Azure Functions</title>
+        <link href="https://mikhail.io/2017/07/authoring-custom-binding-azure-functions/"/>
+        <updated>2017-07-26T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-07-26,/2017/07/authoring-custom-binding-azure-functions/</id>
+        <content type="html"><![CDATA[<p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
+I described how I used Durable Functions extensions
+in Azure Function App. Durable Functions are using several binding types
+that are not part of the standard suite: <code>OrchestrationClient</code>,
+<code>OrchestrationTrigger</code>, <code>ActivityTrigger</code>. These custom bindings 
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">are installed</a>
+by copying the corresponding assemblies to a special Extensions folder.</p>
+<p>Although Bring-Your-Own-Binding (BYOB) feature hasn&#39;t been released yet, I
+decided to follow the path of Durable Functions and create my own 
+custom binding.</p>
+<h2 id="configuration-binding">Configuration Binding</h2>
+<p>I&#39;ve picked a really simple use case for my first experiments with custom
+bindings: reading configuration values.</p>
+<p>Azure Functions store their configuration values in App Settings (local
+runtime uses <code>local.settings.json</code> file for that).</p>
+<p>That means, when you need a configuration value inside your C# code,
+you normally do</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">string</span> setting = ConfigurationManager.AppSettings[<span class="hljs-string">"MySetting"</span>];
+</code></pre>
+<p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
+<p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a> 
+service bus subscription metrics, I wrote this kind of bulky code:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> resourceToScale = ConfigurationManager.AppSettings[<span class="hljs-string">"ResourceToScale"</span>];
+
+<span class="hljs-keyword">var</span> connectionString = ConfigurationManager.AppSettings[<span class="hljs-string">"ServiceBusConnection"</span>];
+<span class="hljs-keyword">var</span> topic = ConfigurationManager.AppSettings[<span class="hljs-string">"Topic"</span>];
+<span class="hljs-keyword">var</span> subscription = ConfigurationManager.AppSettings[<span class="hljs-string">"Subscription"</span>];
+</code></pre>
+<p>The code is no rocket science, but it&#39;s tedious to write, so instead I came
+up with this idea to define Functions:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">MyFunction</span><span class="hljs-params">(
+    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span>)</span>] TimerInfo timer,
+    [<span class="hljs-title">Configuration</span><span class="hljs-params">(Key = <span class="hljs-string">"ResourceToScale"</span>)</span>] <span class="hljs-keyword">string</span> resource,
+    [Configuration] ServiceBusSubscriptionConfig config)
+</span></code></pre>
+<p>Note two usages of <code>Configuration</code> attribute. The first one defines the 
+specific configuration key, and binds its value to a string parameter. The 
+other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
+the config class as</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ServiceBusSubscriptionConfig</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ServiceBusSubscriptionConfig</span><span class="hljs-params">(<span class="hljs-keyword">string</span> serviceBusConnection, <span class="hljs-keyword">string</span> topic, <span class="hljs-keyword">string</span> subscription)</span>
+    </span>{
+        ServiceBusConnection = serviceBusConnection;
+        Topic = topic;
+        Subscription = subscription;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ServiceBusConnection { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Topic { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Subscription { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>The immutable class is a bit verbose, but I still prefer it over get-set
+container in this scenario.</p>
+<p>The binding behavior is convention-based in this case: the binding engine
+should load configuration values based on the names of class properties.</p>
+<h2 id="motivation">Motivation</h2>
+<p>So, why do I need such binding?</p>
+<p>As I said, it&#39;s a simple use case to play with BYOB feature, and overall,
+<strong>understand</strong> the internals of Function Apps a bit better.</p>
+<p>But apart from that, I removed 4 lines of garbage from the function body
+(at the cost of two extra parameters). <strong>Less noise</strong> means more readable code,
+especially when I put this code on a webpage.</p>
+<p>As a bonus, the <strong>testability</strong> of the function immediately increased. It&#39;s so
+much easier for the test just to accept the configuration as input parameter,
+instead of fine-tuning the configuration files inside test projects, or
+hiding <code>ConfigurationManager</code> usage behind a mockable facade.</p>
+<p>Such approach does seem to be the strength of Azure Functions code in
+general. It&#39;s often possible to reduce imperative IO-related code to 
+attribute-decorated function parameters.</p>
+<h2 id="implementing-a-custom-binding">Implementing a Custom Binding</h2>
+<p>The actual implementation process of a custom non-trigger binding is quite
+simple:</p>
+<p><strong>Create a class library</strong> with the word &quot;Extension&quot; in its name. Import
+<code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
+packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
+<p><strong>Define</strong> a class for binding attribute:</p>
+<pre class="highlight"><code class="hljs cs">[AttributeUsage(AttributeTargets.Parameter)]
+[Binding]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ConfigurationAttribute</span> : <span class="hljs-title">Attribute</span>
+{
+    [AutoResolve]
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Key { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
+resolvable from <code>function.json</code>.</p>
+<p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
+how to use your binding correctly.</p>
+<p>The interface has just one method to implement:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ConfigurationExtensionConfigProvider</span> : <span class="hljs-title">IExtensionConfigProvider</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Initialize</span><span class="hljs-params">(ExtensionConfigContext context)</span>
+    </span>{
+        <span class="hljs-comment">// ... see below</span>
+    }
+}
+</code></pre>
+<p>The first step of the implementation is to define a rule for our new
+<code>ConfigurationAttribute</code> and tell this rule how to get a string value out
+of any attribute instance:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
+rule.BindToInput&lt;<span class="hljs-keyword">string</span>&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
+</code></pre>
+<p>That&#39;s really all that needs to happen to bind <code>string</code> parameters.</p>
+<p>To make our binding work with any POCO, we need a more elaborate construct:</p>
+<pre class="highlight"><code class="hljs cs">rule.BindToInput&lt;Env&gt;(_ =&gt; <span class="hljs-keyword">new</span> Env());
+<span class="hljs-keyword">var</span> cm = context.Config.GetService&lt;IConverterManager&gt;();
+cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(<span class="hljs-keyword">typeof</span>(PocoConverter&lt;&gt;));
+</code></pre>
+<p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
+this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
+type argument) with a generic converter called <code>PocoConverter</code>.</p>
+<p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Env</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> <span class="hljs-title">GetValue</span><span class="hljs-params">(<span class="hljs-keyword">string</span> key)</span> </span>=&gt; ConfigurationManager.AppSettings[key];
+}
+</code></pre>
+<p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
+names and reads configuration values out of them. Then it calls a constructor
+which matches the property count:</p>
+<pre class="highlight"><code class="hljs undefined">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
+{
+    public T Convert(Env env)
+    {
+        var values = typeof(T)
+            .GetProperties()
+            .Select(p =&gt; p.Name)
+            .Select(env.GetValue)
+            .Cast&lt;object&gt;()
+            .ToArray();
+
+        var constructor = typeof(T).GetConstructor(values.Select(v =&gt; v.GetType()).ToArray());
+        if (constructor == null)
+        {
+            throw new Exception("We tried to bind to your C# class, but it looks like there's no constructor which accepts all property values");
+        }
+
+        return (T)constructor.Invoke(values);
+    }
+}
+</code></pre>
+<p>This piece of code is not particularly robust, but it is good enough to
+illustrate the concept.</p>
+<p>And that&#39;s it, the binding it ready! You can find the complete example in
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/custom-binding-azure-functions">my github repo</a>.</p>
+<h2 id="deploying-custom-bindings">Deploying Custom Bindings</h2>
+<p>Since BYOB feature is in early preview, there is no tooling for automated
+deployment, and we need to do everything manually. But the process is not
+too sophisticated:</p>
+<ol>
+<li><p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p>
+</li>
+<li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
+to that folder&#39;s path. For local development add a line to <code>local.settings.json</code>:</p>
+<pre class="highlight"><code class="hljs undefined"> "AzureWebJobs_ExtensionsPath": "D:\\BindingExtensions",
+</code></pre>
+</li>
+<li><p>Create a subfolder for your extension, e.g. 
+<code>D:\BindingExtensions\ConfigurationExtension</code>.</p>
+</li>
+<li><p>Copy the contents of <code>bin\Debug\</code> of your extension&#39;s class library
+to that folder.</p>
+</li>
+<li><p>Reference your extension library from your Function App.</p>
+</li>
+</ol>
+<p>You are good to go! Decorate your function parameters with the new attribute.</p>
+<p>Run the function app locally to try it out. In the console output you should
+be able to see something like</p>
+<pre class="highlight"><code class="hljs oxygene">Loaded custom <span class="hljs-keyword">extension</span>: ConfigurationExtensionConfigProvider <span class="hljs-keyword">from</span> 
+<span class="hljs-string">'D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll'</span>
+</code></pre><p>You will be able to debug your extension if needed.</p>
+<h2 id="useful-links">Useful Links</h2>
+<p>Use the following links to find out more about custom bindings, see more
+examples and walkthroughs, and get fresh updates:</p>
+<ul>
+<li><a href="https://github.com/Azure/azure-webjobs-sdk/wiki/Extensibility">Extensibility in Azure WebJobs SDK</a></li>
+<li><a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/SampleExtension">Sample Extension for Azure Functions</a>,
+<a href="https://github.com/Azure/WebJobsExtensionSamples/blob/master/FunctionApp/ReaderFunction.cs">Sample Usage in Precompiled App</a> and
+<a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/ScriptRuntimeSample/Reader">Sample Usage in Script Runtime</a></li>
+<li><a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/src/WebJobs.Extensions.DurableTask">Custom Bindings of Durable Functions</a></li>
+<li><a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">Installation Guide for Durable Functions</a></li>
+</ul>
+<p>Have a good binding!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Custom Autoscaling with Durable Functions</title>
@@ -1546,156 +1741,6 @@ they abstract away the details of hosting Web API endpoints, and at the same
 time give you the full power of C# (or F#) and Azure.</p>
 <p>And because we only call those functions about 1 time per minute,
 they are free to run!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Azure Service Bus Entity Metrics .NET APIs</title>
-        <link href="https://mikhail.io/2017/03/azure-service-bus-entity-metrics-dotnet-apis/"/>
-        <updated>2017-03-02T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-03-02,/2017/03/azure-service-bus-entity-metrics-dotnet-apis/</id>
-        <content type="html"><![CDATA[<p>Azure Service Bus is a key component of many background processing applications
-hosted in Azure,
-so it definitely requires monitoring and alerting. My goal for our 
-monitoring solution was to provide an API to retrieve the following parameters
-for each Service Bus queue/topic in our application:</p>
-<ul>
-<li>Message count (backlog)</li>
-<li>Dead letter queue count</li>
-<li>Amount of Incoming messages per time period</li>
-<li>Amount of Processed messages per time period</li>
-</ul>
-<p>The first two are easily retrieved from <code>QueueDescription</code> object (see 
-<a href="https://msdn.microsoft.com/library/azure/hh780773.aspx">MSDN</a>):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
-<span class="hljs-keyword">var</span> queue = nsmgr.GetQueue(name);
-<span class="hljs-keyword">var</span> backlog = queue.MessageCountDetails.ActiveMessageCount;
-<span class="hljs-keyword">var</span> dlq = q.MessageCountDetails.DeadLetterMessageCount;
-</code></pre>
-<p>The other two metrics are not readily available from the .NET SDK though.
-There are some extra metrics described in
-<a href="https://docs.microsoft.com/en-us/rest/api/servicebus/service-bus-entity-metrics-rest-apis">Service Bus Entity Metrics REST APIs</a>
-but the docs are really brief, wague and lack any examples.</p>
-<p>So the rest of this post will be a walkthrough of how to consume those 
-REST API from your .NET code.</p>
-<h2 id="management-certificate">Management Certificate</h2>
-<p>The API authenticates the caller by its client certificate. This authentication
-approach seems to be deprecated for Azure services, but for this particular
-API it&#39;s still the way to go.</p>
-<p>First, you need to obtain a certificate itself, which means:</p>
-<ul>
-<li>It&#39;s installed in certificate store on the machine where API call is made</li>
-<li>You have a <code>.cer</code> file for it</li>
-</ul>
-<p>If you are calling API from your workstation, you may just 
-<a href="https://docs.microsoft.com/en-us/azure/cloud-services/cloud-services-certs-create">Create a new self-signed certificate</a>.</p>
-<p>I am calling API from Azure Function App, so I reused the certificate that we already
-uploaded to Azure for SSL support.</p>
-<p>Once you have the certificate, you have to 
-<a href="https://docs.microsoft.com/en-us/azure/azure-api-management-certs">Upload it as a management certificate</a>
-to <a href="https://manage.windowsazure.com">&quot;Classic&quot; Azure portal</a>. Yes, 
-management certificates are not supported by the the new portal. If you don&#39;t
-have access to the old portal, ask your system administrator to grant it.</p>
-<p>Finally, here is a code sample to load the certificate in C# code:</p>
-<pre class="highlight"><code class="hljs cs">X509Store store = <span class="hljs-keyword">new</span> X509Store(<span class="hljs-string">"My"</span>, StoreLocation.CurrentUser);
-store.Open(OpenFlags.ReadOnly);
-<span class="hljs-keyword">var</span> cert = store.Certificates.Find(
-    X509FindType.FindBySubjectName, 
-    <span class="hljs-string">"&lt;certificate name of yours&gt;"</span>, 
-    <span class="hljs-keyword">false</span>)[<span class="hljs-number">0</span>];
-</code></pre>
-<h2 id="request-headers">Request Headers</h2>
-<p>Here is a helper class which adds the specified certificate to each request 
-and sets the appropriate headers too:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">internal</span> <span class="hljs-keyword">class</span> <span class="hljs-title">AzureManagementClient</span> : <span class="hljs-title">WebClient</span>
-{
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> X509Certificate2 certificate;
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">AzureManagementClient</span><span class="hljs-params">(X509Certificate2 certificate)</span>
-    </span>{
-        <span class="hljs-keyword">this</span>.certificate = certificate;
-    }
-
-    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">override</span> WebRequest <span class="hljs-title">GetWebRequest</span><span class="hljs-params">(Uri address)</span>
-    </span>{
-        <span class="hljs-keyword">var</span> request = (HttpWebRequest)<span class="hljs-keyword">base</span>.GetWebRequest(address);
-
-        request.ClientCertificates.Add(<span class="hljs-keyword">this</span>.certificate);
-        request.Headers.Add(<span class="hljs-string">"x-ms-version: 2013-10-01"</span>);
-        request.Accept = <span class="hljs-string">"application/json"</span>;
-
-        <span class="hljs-keyword">return</span> request;
-    }
-}
-</code></pre>
-<p>This code is mostly copied from the very useful 
-<a href="https://cincycoder.wordpress.com/2015/11/18/azure-service-bus-entity-metrics-api/">post of Brian Starr</a>,
-so thank you Brian.</p>
-<h2 id="getting-the-list-of-metrics">Getting the List of Metrics</h2>
-<p>To get the list of available metrics you will need 3 string parameters:</p>
-<ul>
-<li>Azure subscription ID</li>
-<li>Service Bus namespace</li>
-<li>Queue name</li>
-</ul>
-<p>The following picture shows all of them on Azure Portal screen:</p>
-<p><img src="https://mikhail.io/2017/03/azure-service-bus-entity-metrics-dotnet-apis//servicebusparameters.png" alt="Service Bus Parameters"></p>
-<p>Now, format the following request URL and query it using our azure client:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> client = <span class="hljs-keyword">new</span> AzureManagementClient(cert);
-<span class="hljs-keyword">var</span> url = $<span class="hljs-string">"https://management.core.windows.net/{subscriptionId}"</span> +
-          $<span class="hljs-string">"/services/servicebus/namespaces/{serviceBusNamespace}"</span> +
-          $<span class="hljs-string">"/queues/{queueName}/Metrics"</span>;
-<span class="hljs-keyword">var</span> result = client.DownloadString(url);
-</code></pre>
-<p>If you did everything correctly, you will get the list of supported metrics
-in JSON. Congratulations, that&#39;s a major accomplishment :)</p>
-<p>And here is a quick way to convert JSON to C# array:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Metric</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Unit { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> PrimaryAggregation { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> DisplayName { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-}
-</code></pre>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> metrics = JsonConvert.DeserializeObject&lt;Metric[]&gt;(result);
-</code></pre>
-<h2 id="getting-the-metric-values">Getting the Metric Values</h2>
-<p>Now, to get the metric values themselves, you will need some extra 
-parameters:</p>
-<ul>
-<li>Metric name (take a value of <code>Name</code> properties from <code>Metric</code> class above)</li>
-<li>Rollup period, or aggregation period: 5 minute, 1 hour, 1 day, or 1 week,
-take the <code>Pxxx</code> code from <a href="https://docs.microsoft.com/en-us/rest/api/servicebus/supported-rollups">here</a></li>
-<li>Start date/time (UTC) of the data period to query</li>
-</ul>
-<p>Here is the sample code:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> time = DateTime.UtcNow.AddHours(-<span class="hljs-number">1</span>).ToString(<span class="hljs-string">"s"</span>);
-
-<span class="hljs-keyword">var</span> client = <span class="hljs-keyword">new</span> AzureManagementClient(cert);
-<span class="hljs-keyword">var</span> url = $<span class="hljs-string">"https://management.core.windows.net/{subscriptionId}"</span> +
-          $<span class="hljs-string">"/services/servicebus/namespaces/{serviceBusNamespace}"</span> +
-          $<span class="hljs-string">"/queues/{queueName}/Metrics/{metric}"</span> +
-          $<span class="hljs-string">"/Rollups/PT5M/Values?$filter=Timestamp%20ge%20datetime'{time}Z'"</span>;
-
-<span class="hljs-keyword">var</span> result = client.DownloadString(url);
-</code></pre>
-<p>I am using <code>incoming</code> metric to get the amount of enqueued messages per period
-and <code>outgoing</code> metric to get the amount of dequeued messages.</p>
-<p>The strongly typed version is simple:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">DataPoint</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Timestamp { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">long</span> Total { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-}
-</code></pre>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> data = JsonConvert.DeserializeObject&lt;DataPoint[]&gt;(result);
-</code></pre>
-<h2 id="working-example">Working Example</h2>
-<p>I&#39;ve authored a small library which wraps the HTTP request into strongly
-typed .NET classes. You can see it in
-<a href="https://github.com/mikhailshilkov/ServiceBusEntityMetrics">my github repository</a>
-or grab it from <a href="https://www.nuget.org/packages/MikhailIo.ServiceBusEntityMetrics/">NuGet</a>.</p>
 ]]></content>
     </entry>
     
