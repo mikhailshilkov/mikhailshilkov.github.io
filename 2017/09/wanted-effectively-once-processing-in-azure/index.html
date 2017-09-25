@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Wanted: Effectively-Once Processing in Azure | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.4" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">F#, C#, JS, SQL, Azure programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                    <li><a href="/tags/">Topics</a></li>
+                
+                    <li><a href="/archives/">Archives</a></li>
+                
+                    <li><a href="/talks/">Talks</a></li>
+                
+                    <li><a href="/about/">About</a></li>
+                
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <article class="post">
+    <div class="post-date">Sep 25th, 2017</div>
+    
+    <h1>Wanted: Effectively-Once Processing in Azure</h1>
+    
+    <div class="post-content">
+        <p><em>This experimental post is a question. The question
+is too broad for StackOverflow, so I&#39;m posting it here. Please engage in the
+comments section, or forward the link to subject experts.</em></p>
+<p>TL;DR: Are there any known patterns / tools / frameworks to provide 
+scalable, stateful, effectively-once, end-to-end processing of messages, 
+to be hosted in Azure, preferably on PaaS-level of service?</p>
+<h2 id="motivational-example">Motivational Example</h2>
+<p>Let&#39;s say we are making a TODO app. There is a constant flow of requests
+to create a TODO in the system. Each request contains just two fields:
+a title and a project ID which TODO should belong to. Here is the definition:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">TodoRequest</span> </span>= {
+  ProjectId: int
+  Title: string
+}
+</code></pre>
+<p>Now, we want to process the request and assign each TODO an identifier,
+which should be an auto-incremented integer. Numeration is unique per project,
+so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Todo</span> </span>= {
+  ProjectId: int
+  Id: int
+  Title: string
+}
+</code></pre>
+<p>Now, instead of relying on some database sequences, I want to describe this
+transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
+(Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
+state (last generated ID) to a tuple of a TODO and post-processing state:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> create (request: TodoRequest, state: int) =
+  <span class="hljs-keyword">let</span> nextId = state + <span class="hljs-number">1</span>
+  <span class="hljs-keyword">let</span> todo = {
+    ProjectId = request.ProjectId
+    Id = nextId
+    Title = request.Title
+  }
+  todo, nextId
+</code></pre>
+<p>This is an extremely simple function, and I can use it to great success to
+process local, non-durable data.</p>
+<p>But if I need to make a reliable distributed application out of it, I need
+to take care of lots of things:</p>
+<ol>
+<li><p>No request should be lost. I need to persist all the requests into 
+a durable storage in case of processor crash. </p>
+</li>
+<li><p>Similarly, I need to persist TODO&#39;s too. Presumably, some downstream 
+logic will use the persisted data later on in TODO&#39;s lifecycle.</p>
+</li>
+<li><p>The state (the counter) must be durable too. In case of crash of processing
+function, I want to be able to restart processing after recovery. </p>
+</li>
+<li><p>Processing of the requests should be sequential per project ID. Otherwise
+I might get a clash of ID&#39;s in case two requests belonging to the same 
+project are processed concurrently.</p>
+</li>
+<li><p>I still want requests to different projects to be processed in parallel,
+to make sure the system scales up with the growth of project count.</p>
+</li>
+<li><p>There must be no holes or duplicates in TODO numbering per project, even
+in face of system failures. In worst case, I agree to tolerate a duplicated
+entry in the output log, but it must be exactly the same entry (i.e. two 
+entries with same project id, id and title).</p>
+</li>
+<li><p>The system should tolerate a permanent failure of any single hardware
+dependency and automatically fail-over within reasonable time.</p>
+</li>
+</ol>
+<p>It&#39;s not feasible to meet all of those requirements without relying on some
+battle-tested distributed services or frameworks.</p>
+<p>Which options do I know of?</p>
+<h2 id="transactions">Transactions</h2>
+<p>Traditionally, this kind of requirements were solved by using transactions
+in something like SQL Server. If I store requests, TODO&#39;s and current ID per
+project in the same relational database, I can make each processing step a
+single atomic transaction. </p>
+<p>This addresses all the concerns, as long as we can stay inside the single 
+database. That&#39;s probably a viable option for the TODO app, but less of so
+if I convert my toy example to some real applications like IoT data 
+processing.</p>
+<p>Can we do the same for distributed systems at scale?</p>
+<h2 id="azure-event-hubs">Azure Event Hubs</h2>
+<p>Since I touched IoT space, the logical choice would be to store our entries
+in Azure Event Hubs. That works for many criteria, but I don&#39;t see any available
+approach to make such processing consistent in the face of failures.</p>
+<p>When processing is done, we need to store 3 pieces: generated TODO event,
+current processing offset and current ID. Event goes to another event hub,
+processing offset is stored in Blob Storage and ID can be saved to something
+like Table Storage. </p>
+<p>But there&#39;s no way to store those 3 pieces atomically. Whichever order we 
+choose, we are bound to get anomalies in some specific failure modes.</p>
+<h2 id="azure-functions">Azure Functions</h2>
+<p>Azure Functions don&#39;t solve those problems. But I want to mention this
+Function-as-a-Service offering because they provide an ideal programming
+model for my use case.</p>
+<p>I need to take just one step from my domain function to Azure Function: 
+to define bindings for e.g. Event Hubs and Table Storage.</p>
+<p>However, reliability guarantees will stay poor. I won&#39;t get neither sequential
+processing per Event Hub partition key, nor atomic state commit.</p>
+<h2 id="azure-service-fabric">Azure Service Fabric</h2>
+<p>Service Fabric sounds like a good candidate service for reliable processing. 
+Unfortunately, I don&#39;t have much experience with it to judge.</p>
+<p>Please leave a comment if you do.</p>
+<h2 id="jvm-world">JVM World</h2>
+<p>There are products in JVM world which claim to solve my problem perfectly.</p>
+<p>Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
+Kafka release provides effectively-once processing semantics as long as
+data stay inside Kafka. Kafka does that with atomic publishing to multiple
+topics, and state storage based on compacted topics.</p>
+<p>Apache Flink has similar guarantees for its stream processing APIs.</p>
+<p>Great, but how do I get such awesomeness in .NET code, and without installing 
+expensive ZooKeeper-managed clusters?</p>
+<h2 id="call-for-feedback">Call for Feedback</h2>
+<p>Do you know a solution, product or service?</p>
+<p>Have you developed effectively-once processing on .NET / Azure stack?</p>
+<p>Are you in touch with somebody who works on such framework?</p>
+<p>Please leave a comment, or ping me on Twitter.</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2017/09/wanted-effectively-once-processing-in-azure//index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/architecture/'>Architecture</a>, <a href='/tags/data-processing/'>Data Processing</a>, <a href='/tags/stream-processing/'>Stream Processing</a>
+    </div>
+    
+</article>
+    <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy F#, C#, Javascript and SQL development, reasoning about distributed systems, data processing pipelines, cloud and web apps. I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'https://mikhail.io/2017/09/wanted-effectively-once-processing-in-azure/';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Wanted: Effectively-Once Processing in Azure';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2017 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>

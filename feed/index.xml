@@ -3,13 +3,137 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2017-09-22T20:20:17.076Z</updated>
+    <updated>2017-09-25T11:08:21.562Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Wanted: Effectively-Once Processing in Azure</title>
+        <link href="https://mikhail.io/2017/09/wanted-effectively-once-processing-in-azure/"/>
+        <updated>2017-09-25T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-09-25,/2017/09/wanted-effectively-once-processing-in-azure/</id>
+        <content type="html"><![CDATA[<p><em>This experimental post is a question. The question
+is too broad for StackOverflow, so I&#39;m posting it here. Please engage in the
+comments section, or forward the link to subject experts.</em></p>
+<p>TL;DR: Are there any known patterns / tools / frameworks to provide 
+scalable, stateful, effectively-once, end-to-end processing of messages, 
+to be hosted in Azure, preferably on PaaS-level of service?</p>
+<h2 id="motivational-example">Motivational Example</h2>
+<p>Let&#39;s say we are making a TODO app. There is a constant flow of requests
+to create a TODO in the system. Each request contains just two fields:
+a title and a project ID which TODO should belong to. Here is the definition:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">TodoRequest</span> </span>= {
+  ProjectId: int
+  Title: string
+}
+</code></pre>
+<p>Now, we want to process the request and assign each TODO an identifier,
+which should be an auto-incremented integer. Numeration is unique per project,
+so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Todo</span> </span>= {
+  ProjectId: int
+  Id: int
+  Title: string
+}
+</code></pre>
+<p>Now, instead of relying on some database sequences, I want to describe this
+transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
+(Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
+state (last generated ID) to a tuple of a TODO and post-processing state:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> create (request: TodoRequest, state: int) =
+  <span class="hljs-keyword">let</span> nextId = state + <span class="hljs-number">1</span>
+  <span class="hljs-keyword">let</span> todo = {
+    ProjectId = request.ProjectId
+    Id = nextId
+    Title = request.Title
+  }
+  todo, nextId
+</code></pre>
+<p>This is an extremely simple function, and I can use it to great success to
+process local, non-durable data.</p>
+<p>But if I need to make a reliable distributed application out of it, I need
+to take care of lots of things:</p>
+<ol>
+<li><p>No request should be lost. I need to persist all the requests into 
+a durable storage in case of processor crash. </p>
+</li>
+<li><p>Similarly, I need to persist TODO&#39;s too. Presumably, some downstream 
+logic will use the persisted data later on in TODO&#39;s lifecycle.</p>
+</li>
+<li><p>The state (the counter) must be durable too. In case of crash of processing
+function, I want to be able to restart processing after recovery. </p>
+</li>
+<li><p>Processing of the requests should be sequential per project ID. Otherwise
+I might get a clash of ID&#39;s in case two requests belonging to the same 
+project are processed concurrently.</p>
+</li>
+<li><p>I still want requests to different projects to be processed in parallel,
+to make sure the system scales up with the growth of project count.</p>
+</li>
+<li><p>There must be no holes or duplicates in TODO numbering per project, even
+in face of system failures. In worst case, I agree to tolerate a duplicated
+entry in the output log, but it must be exactly the same entry (i.e. two 
+entries with same project id, id and title).</p>
+</li>
+<li><p>The system should tolerate a permanent failure of any single hardware
+dependency and automatically fail-over within reasonable time.</p>
+</li>
+</ol>
+<p>It&#39;s not feasible to meet all of those requirements without relying on some
+battle-tested distributed services or frameworks.</p>
+<p>Which options do I know of?</p>
+<h2 id="transactions">Transactions</h2>
+<p>Traditionally, this kind of requirements were solved by using transactions
+in something like SQL Server. If I store requests, TODO&#39;s and current ID per
+project in the same relational database, I can make each processing step a
+single atomic transaction. </p>
+<p>This addresses all the concerns, as long as we can stay inside the single 
+database. That&#39;s probably a viable option for the TODO app, but less of so
+if I convert my toy example to some real applications like IoT data 
+processing.</p>
+<p>Can we do the same for distributed systems at scale?</p>
+<h2 id="azure-event-hubs">Azure Event Hubs</h2>
+<p>Since I touched IoT space, the logical choice would be to store our entries
+in Azure Event Hubs. That works for many criteria, but I don&#39;t see any available
+approach to make such processing consistent in the face of failures.</p>
+<p>When processing is done, we need to store 3 pieces: generated TODO event,
+current processing offset and current ID. Event goes to another event hub,
+processing offset is stored in Blob Storage and ID can be saved to something
+like Table Storage. </p>
+<p>But there&#39;s no way to store those 3 pieces atomically. Whichever order we 
+choose, we are bound to get anomalies in some specific failure modes.</p>
+<h2 id="azure-functions">Azure Functions</h2>
+<p>Azure Functions don&#39;t solve those problems. But I want to mention this
+Function-as-a-Service offering because they provide an ideal programming
+model for my use case.</p>
+<p>I need to take just one step from my domain function to Azure Function: 
+to define bindings for e.g. Event Hubs and Table Storage.</p>
+<p>However, reliability guarantees will stay poor. I won&#39;t get neither sequential
+processing per Event Hub partition key, nor atomic state commit.</p>
+<h2 id="azure-service-fabric">Azure Service Fabric</h2>
+<p>Service Fabric sounds like a good candidate service for reliable processing. 
+Unfortunately, I don&#39;t have much experience with it to judge.</p>
+<p>Please leave a comment if you do.</p>
+<h2 id="jvm-world">JVM World</h2>
+<p>There are products in JVM world which claim to solve my problem perfectly.</p>
+<p>Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
+Kafka release provides effectively-once processing semantics as long as
+data stay inside Kafka. Kafka does that with atomic publishing to multiple
+topics, and state storage based on compacted topics.</p>
+<p>Apache Flink has similar guarantees for its stream processing APIs.</p>
+<p>Great, but how do I get such awesomeness in .NET code, and without installing 
+expensive ZooKeeper-managed clusters?</p>
+<h2 id="call-for-feedback">Call for Feedback</h2>
+<p>Do you know a solution, product or service?</p>
+<p>Have you developed effectively-once processing on .NET / Azure stack?</p>
+<p>Are you in touch with somebody who works on such framework?</p>
+<p>Please leave a comment, or ping me on Twitter.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Azure Functions: Are They Really Infinitely Scalable and Elastic?</title>
@@ -1404,122 +1528,6 @@ the covered topics.</p>
 <p><a href="http://fsharp.org">F# Foundation</a></p>
 <p><a href="https://www.manning.com/books/real-world-functional-programming">Real-World Functional Programming, With examples in F# and C# Book</a></p>
 <p>Thanks for attending my talk! Feel free to post any feedback in the comments.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Visualizing Dependency Tree from DI Container</title>
-        <link href="https://mikhail.io/2017/03/visualizing-dependency-tree-from-di-container/"/>
-        <updated>2017-03-25T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-03-25,/2017/03/visualizing-dependency-tree-from-di-container/</id>
-        <content type="html"><![CDATA[<p>So you are a C# developer. And you need to read the code and understand its
-structure. Maybe you&#39;ve just joined the project, or it&#39;s your own code you
-wrote 1 year ago. In any case, reading code is hard.</p>
-<p>Luckily, some good thought was applied to this particular piece of code.
-It&#39;s all broken down into small classes (they might even be SOLID!), and all 
-the dependencies are injected via constructors. It looks like it&#39;s your
-code indeed.</p>
-<p>So, you figured out that the entry point for your current use case is the
-class called <code>ThingService</code>. It&#39;s probably doing something with <code>Thing</code>&#39;s
-and that&#39;s what you need. The signature of the class constructor looks 
-like this:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ThingService</span><span class="hljs-params">(
-    IGetThings readRepository,
-    ISaveThing saveRepository,
-    IParseAndValidateExcel&lt;Thing, <span class="hljs-keyword">string</span>&gt; fileParser,
-    IThingChangeDetector thingChangeDetector,
-    IMap&lt;Thing, ThingDTO&gt; thingToDtoMapper,
-    IMap&lt;<span class="hljs-keyword">int</span>, ThingDTO, Thing&gt; dtoToThingMapper)</span>
-</span></code></pre>
-<p>OK, so we clearly have 6 dependencies here, and they are all interfaces.
-We don&#39;t know where those interfaces are implemented, but hey - we&#39;ve got
-the best tooling in the industry, so right click on <code>IGetThings</code>, then 
-<code>Go To Implementation</code>.</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">DapperThingRepository</span><span class="hljs-params">(
-    ICRUDAdapter adapter,
-    IDatabaseConnectionFactory connectionFactory,
-    IMap&lt;Thing, ThingRow&gt; thingRowMapper,
-    IMap&lt;ThingRow, Thing&gt; thingMapper)</span>
-</span></code></pre>
-<p>Now we know that we get <code>Thing</code> from Dapper, so probably from a SQL database.
-Let&#39;s go one level deeper and check where those Mappers are implemented.
-Right click, <code>Go To Implementation</code>... But instead of navigating to another code
-file you see</p>
-<pre class="highlight"><code class="hljs mathematica"><span class="hljs-keyword">Find</span> <span class="hljs-keyword">Symbol</span> Result - <span class="hljs-number">28</span> matches found
-</code></pre><p>Oh, right, looks like we use <code>IMap&lt;T, U&gt;</code> in more places. OK, we&#39;ll find the
-right one later, let&#39;s first check the connection factory... 
-Right click, <code>Go To Implementation</code>. Nah:</p>
-<pre class="highlight"><code class="hljs nginx"><span class="hljs-title">The</span> symbol has <span class="hljs-built_in">no</span> implementation
-</code></pre><p>What? But the application works! Ah, <code>IDatabaseConnectionFactory</code> comes
-from an internal library, so most probably the implementation is also 
-inside that library.</p>
-<p>Clearly, navigation doesn&#39;t go that well so far.</p>
-<h2 id="dependency-graph">Dependency Graph</h2>
-<p>When code reading gets tricky, usually an image can boost the understanding.
-The picture below actually shows the graph of class dependencies from our
-example:</p>
-<p><img src="https://mikhail.io/2017/03/visualizing-dependency-tree-from-di-container//class-dependency-graph.png" alt="Class Dependency Graph"></p>
-<p>Each node is a class, each arrow is a dependency - an interface injected
-into the constructor. </p>
-<p>Just by looking at the picture for a minute of two you can start seeing some 
-structure, and get at least the high-level opinion about the application
-complexity and class relationships.</p>
-<p>Picture is also a great way of communication. Once you understand the structure,
-you can explain it to a colleague much easier with boxes and lines
-on the screen in addition to a plain wall of code.</p>
-<p>You can enrich such picture with comments at the time of writing and leave 
-it to your future self or anyone who would read the code in 2 years time.</p>
-<p>But now the question is - what&#39;s the easiest way to draw such dependency graph?</p>
-<h2 id="di-container">DI Container</h2>
-<p>The assumption of this post is that a dependency injection (DI) container
-of some kind is used in the project. If so, chances are that you can get such
-dependency graph from the container registrations.</p>
-<p>My example is based on <a href="https://simpleinjector.org/">Simple Injector</a> DI 
-container which is used by ourselves. So, further on I will explain how to
-draw a dependency graph from Simple Injector container.</p>
-<p>My guess is that any mature DI library will provide you with such possibility,
-mostly because the dependency graphs are built internally by any container 
-during its normal operations.</p>
-<h2 id="implementation">Implementation</h2>
-<p>The implementation idea of dependency graph visualization is quite simple, as
-the biggest chunk of work is done by Simple Injector itself. Here are the steps:</p>
-<ol>
-<li><p>Run all your DI registrations as you do in the actual application. This will
-initialize Container to the desired state.</p>
-</li>
-<li><p>Define which class should be the root of the dependency tree under study. 
-You can refine later, but you need to start somewhere.</p>
-</li>
-<li><p>Call <code>GetRegistration</code> method of DI container for the selected type. An instance
-of <code>InstanceProducer</code> type is returned.</p>
-</li>
-<li><p>Call <code>GetRelationships</code> method of the instance producer to retrieve all 
-interface/class pairs that the given type depends on. Save each relation into
-your output list.</p>
-</li>
-<li><p>Navigate through each dependency recursively to load further layers of the graph.
-Basically, do the depth-first search and save all found relations.</p>
-</li>
-<li><p>Convert the list of found relations into <a href="https://en.wikipedia.org/wiki/Graphviz">GraphViz</a>
-textual graph description.</p>
-</li>
-<li><p>Use a tool like <a href="http://www.webgraphviz.com/">WebGraphviz</a> do the actual
-visualization by converting text to picture.</p>
-</li>
-</ol>
-<p>There are several potential pitfalls on the way, like cyclic graphs, decorator
-registrations etc. To help you avoid those I&#39;ve created a small library to automate 
-steps 3 to 6 from the list above. See my 
-<a href="https://github.com/mikhailshilkov/SimpleInjector.Visualization">SimpleInjector.Visualization github repo</a> 
-and let me know if you find it useful.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>People are good at making sense of visual representations - use that skill to
-improve understanding and communication within your development team.</p>
-<p>Dependency injection practice requires a lot of ceremony to set it up and
-running. Leverage this work for the best: check what kind of insights you
-can get from that setup. Dependency graph visualization is one example of 
-such leverage, but there might be other gems in there. </p>
-<p>Just keep searching!</p>
 ]]></content>
     </entry>
     

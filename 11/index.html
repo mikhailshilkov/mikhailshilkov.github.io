@@ -72,6 +72,48 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jun 3rd, 2014</div>
+    
+    <h1><a href='/2014/06/03/sql-produce-resultset-with-n-rows/'>SQL: produce resultset with N rows</a></h1>
+    
+    <div class="post-content">
+        <p>Let&#39;s talk about T-SQL today.</p>
+<p>Sometimes you need to produce a result set, which would contain N rows with numbers 1...N in each row. For example, I needed to calculate some statistics per week for N weeks starting from today and going back to the past.</p>
+<p>Here is a table funtion which does the enumeration:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">FUNCTION</span> dbo.fnEnumerateNumbers(@<span class="hljs-keyword">max</span> <span class="hljs-built_in">int</span>) 
+<span class="hljs-keyword">RETURNS</span> <span class="hljs-keyword">TABLE</span> 
+<span class="hljs-keyword">RETURN</span> 
+<span class="hljs-keyword">WITH</span>
+ E1(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
+           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
+           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
+           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span>),                 <span class="hljs-comment">--10E1  or 10 rows</span>
+ E2(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E1 a, E1 b), <span class="hljs-comment">--10E2  or 100 rows</span>
+ E4(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E2 a, E2 b), <span class="hljs-comment">--10E4  or 10000 rows</span>
+ E8(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E4 a, E4 b)  <span class="hljs-comment">--10E8  or 100000000 rows</span>
+<span class="hljs-keyword">SELECT</span> TOP (@<span class="hljs-keyword">max</span>) N = ROW_NUMBER() OVER (<span class="hljs-keyword">ORDER</span> <span class="hljs-keyword">BY</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-literal">NULL</span>)) 
+  <span class="hljs-keyword">FROM</span> E8
+</span></code></pre><p>Usage is trivial:</p>
+<pre class="highlight"><code class="hljs stylus">SELECT N
+  FROM dbo.<span class="hljs-function"><span class="hljs-title">fnEnumerateNumbers</span><span class="hljs-params">(<span class="hljs-number">100</span>)</span></span>
+</code></pre><p>And here is how I solved the task of enumerating weeks:</p>
+<pre class="highlight"><code class="hljs stylus">SELECT <span class="hljs-function"><span class="hljs-title">dateadd</span><span class="hljs-params">(week, <span class="hljs-number">1</span> - N, getutcdate()</span></span>) 
+  FROM dbo.<span class="hljs-function"><span class="hljs-title">fnEnumerateNumbers</span><span class="hljs-params">(<span class="hljs-number">100</span>)</span></span>
+</code></pre><p>There are multiple possibilities to implement similar function, but I believe this way is the best one in terms of performance. No temporary tables, no table reads, no dependencies on table existance, and you can define your maximum yourself.</p>
+<p>Happy coding!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/performance/'>Performance</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/t-sql/'>T-SQL</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">May 21st, 2014</div>
     
     <h1><a href='/2014/05/21/sgen-to-precompile-classes-for-xmpserializer/'>Sgen to precompile classes for XmlSerializer</a></h1>
@@ -188,29 +230,6 @@ Have a nice application start-up boost!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/finance/'>finance</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Oct 29th, 2012</div>
-    
-    <h1><a href='/2012/10/29/gamification-class-at-coursera/'>Gamification class at Coursera</a></h1>
-    
-    <div class="post-content">
-        <p>I&#39;ve recently received a statement of accomplishment document for <a href="https://www.coursera.org/" title="Coursera">Coursera</a>&#39;s online <a href="https://www.coursera.org/course/gamification" title="Gamification class">Gamification class</a> that I took in August-October this year.</p>
-<p><img src="/2012/10/29/gamification-class-at-coursera//gamification.jpg" alt="Gamification certificate" title="Gamification certificate"></p>
-<p>The course was lead by prof. Kevin Werbach from The Wharton School, University of Pennsylvania. He told us about applying game techniques to non-game world problems: business, social etc. In essence, it&#39;s on how to add FUN to processes, that are not supposed to be fun at all. Which is really cool. I loved both informative and well-producted lectures, and peer-reviewed assignments that appeared to be... fun :)</p>
-<p>Want to know why Stackoverflow and Foursquare are such a success? Come join this course next time!</p>
-<p>I hope I&#39;ll have a chance to apply the ideas from the course in real life!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/gamification/'>gamification</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
     </div>
     
 </article>

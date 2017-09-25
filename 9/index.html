@@ -72,6 +72,59 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Dec 14th, 2015</div>
+    
+    <h1><a href='/2015/12/deploy-your-spa-to-azure/'>Deploy your SPA to Azure</a></h1>
+    
+    <div class="post-content">
+        <p>In this post I want to share a simple tutorial on how to deploy your single page application into the Azure cloud.</p>
+<h2 id="the-goal">The goal</h2>
+<p>Here is the initial setup:</p>
+<ul>
+<li><p>I have a Single Page Application (SPA) done with HTML/JavaScript in a separate local Git repository</p>
+</li>
+<li><p>I have a ASP.NET 4.6 Web API service which serves the data for SPA in another local Git repository</p>
+</li>
+<li><p>Now I want to deploy both to the Azure cloud, and make it easy to deploy changes in the future</p>
+</li>
+</ul>
+<h2 id="the-solution">The solution</h2>
+<p>We will deploy our application to Azure Cloud Services / Web application.</p>
+<ol>
+<li><p>Go to <a href="https://portal.azure.com">Azure Portal</a> then <code>App Services -&gt; Add</code> and follow the wizard to create your Web app. Here is mine:
+<img src="/2015/12/deploy-your-spa-to-azure//azurewebapp.jpg" alt="Azure web app"></p>
+</li>
+<li><p>Follow <a href="https://azure.microsoft.com/en-us/documentation/articles/web-sites-publish-source-control/">this guide</a> to create a new Git repository and setup continuous deployment from this repository to Azure web application. You are good once you see this working (step 6):
+<img src="/2015/12/deploy-your-spa-to-azure//git-hello-git.png" alt="Hello git running in Azure"></p>
+</li>
+<li><p>Copy your SPA files into the root of the new Git repository, here is my repo after I did that:
+<img src="/2015/12/deploy-your-spa-to-azure//spa-copied-to-repo.jpg" alt="SPA files in the repo">
+and push them to <code>azure</code> remote. Now you should be able to browse to the web app and see your SPA screen, but with all calls to Web API failing.</p>
+</li>
+<li><p>Inside your new Git repository, create a sub-folder to host Web API services. My SPA expects them under <code>/api</code> folder, so that&#39;s the folder name that I created:
+<img src="/2015/12/deploy-your-spa-to-azure//webapi-copied-to-repo.jpg" alt="Web API files in the repo"></p>
+</li>
+<li><p>Copy your binary compiled files of your Web API to <code>/api</code> sub-folder. This includes the bin folder, config files, asax files etc - whatever you would need in your local IIS deployment. DO NOT copy the sln/csproj files, otherwise the Azure will also try to do the compilation himself and will change the root of your web application to the folder with csproj files. So, my <code>/api</code> folder looks like this:
+<img src="/2015/12/deploy-your-spa-to-azure//api-folder.jpg" alt="Web API folder contents"></p>
+</li>
+<li><p>Commit the changes and Git push to <code>azure</code> remote. Once the files are deployed, your SPA app should be up and running. Well done!</p>
+</li>
+<li><p>You don&#39;t want to copy the files manually all the time, so make a PowerShell script or gulp task to do that for you. Remember, your changes will be applied whenever you push a new version to <code>azure</code> remote of your Git repo.</p>
+</li>
+</ol>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/asp-net-web-api/'>ASP.NET Web API</a>, <a href='/tags/spa/'>SPA</a>, <a href='/tags/continuous-deployment/'>Continuous Deployment</a>, <a href='/tags/git/'>Git</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Nov 24th, 2015</div>
     
     <h1><a href='/2015/11/review-of-jspm-course/'>Review of the course &quot;Modern, Modular JavaScript with SystemJS and jspm&quot;</a></h1>
@@ -484,165 +537,6 @@ Happy reviews!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/code-review/'>Code Review</a>, <a href='/tags/best-practices/'>Best Practices</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Apr 8th, 2015</div>
-    
-    <h1><a href='/2015/04/unit-testing-null-parameter-checks/'>Unit testing null parameter checks</a></h1>
-    
-    <div class="post-content">
-        <p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClass</span> : <span class="hljs-title">IVeryUsefulClass</span>
-{
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomething something;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomethingElse somethingElse;
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(ISomething something, ISomethingElse somethingElse)</span>
-    </span>{
-        <span class="hljs-keyword">this</span>.something = something;
-        <span class="hljs-keyword">this</span>.somethingElse = somethingElse;
-    }
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> AwesomeResponse <span class="hljs-title">DoUsefullStaff</span><span class="hljs-params">(ImportantRequest request)</span>
-    </span>{
-        <span class="hljs-keyword">this</span>.something.DoSomething();
-        <span class="hljs-keyword">this</span>.somethingElse.DoSomethingElse();
-        <span class="hljs-keyword">return</span> ...;
-    }
-}
-</code></pre><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
-<pre class="highlight"><code class="hljs cs">[TestFixture]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
-{
-    [Test]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-    </span>{
-        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
-            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object));
-    }
-
-    [Test]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-    </span>{
-        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
-            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, <span class="hljs-keyword">null</span>));
-    }
-
-    [Test]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
-    </span>{
-        <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, 
-            <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object);
-        ...
-    }
-
-    ...
-}
-</code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
-<h2 id="make-it-better">Make it better</h2>
-<p>Now let&#39;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
-<pre class="highlight"><code class="hljs r">public VeryUsefulClass(ISomething something, 
-    ISomethingElse somethingElse, 
-    ISomethingNew somethingNew)
-{
-    <span class="hljs-keyword">...</span>
-}
-</code></pre><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&#39;s refactor the tests. First, let&#39;s declare all mocks as private fields and create them in set-up method:</p>
-<pre class="highlight"><code class="hljs cs">[TestFixture]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
-{
-    <span class="hljs-keyword">private</span> Mock&lt;ISomething&gt; something;
-    <span class="hljs-keyword">private</span> Mock&lt;ISomethingElse&gt; somethingElse;
-
-    [SetUp]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SetUp</span><span class="hljs-params">()</span>
-    </span>{
-        <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;();
-        <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;();
-    }
-...
-</code></pre><p>This way the same clean mocks will be available for each and every test. To make use of them, let&#39;s create GetTarget method which will create an instance of class under test</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> VeryUsefulClass <span class="hljs-title">GetTarget</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(<span class="hljs-keyword">this</span>.something.Object, <span class="hljs-keyword">this</span>.somethingElse.Object)</span></span>;
-}
-</code></pre><p>Now we are ready to rewrite our test methods with less duplication</p>
-<pre class="highlight"><code class="hljs cs">[Test]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">null</span>;
-    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
-}
-
-[Test]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">null</span>;
-    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
-}
-
-[Test]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">this</span>.GetTarget();
-    ...
-}
-</code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
-<p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
-<h2 id="make-it-shine">Make it shine</h2>
-<p>I&#39;m still not quite satisfied with the amount of code we have to write for such a simple thing as the validation of ArgumentNullException being thrown from constructors. Imagine this: we have hundreds or thousands of classes which follow this same pattern, and we end up writing thousands tests which look almost exactly the same... </p>
-<p>I solved it with a simple helper method:</p>
-<pre class="highlight"><code class="hljs undefined">public void ConstructorMustThrowArgumentNullException(Type type)
-{
-    foreach (var constructor in type.GetConstructors())
-    {
-        var parameters = constructor.GetParameters();
-        var mocks = parameters.Select(
-            p =&gt;
-                {
-                    Type mockType = typeof(Mock&lt;&gt;).MakeGenericType(
-                        new[] { p.ParameterType });
-                    return (Mock)Activator.CreateInstance(mockType);
-                }).ToArray();
-
-        for (int i = 0; i &lt; parameters.Length; i++)
-        {
-            var mocksCopy = mocks.Select(m =&gt; m.Object).ToArray();
-            mocksCopy[i] = null;
-            try
-            {
-                constructor.Invoke(mocksCopy);
-                Assert.Fail("ArgumentNullException expected for parameter {0} of 
-                             constructor, but no exception was thrown", 
-                             parameters[i].Name);
-            }
-            catch (TargetInvocationException ex)
-            {
-                Assert.AreEqual(typeof(ArgumentNullException), 
-                    ex.InnerException.GetType(), 
-                    string.Format("ArgumentNullException expected for parameter {0} of 
-                        constructor, but exception of type {1} was thrown", 
-                        parameters[i].Name, ex.InnerException.GetType()));
-            }
-        }
-    }
-}
-</code></pre>
-<p>It accepts a type as its only input parameter (obviously, it&#39;s easy to make it generic or an extension method). Then, using the reflection, it iterates through the input parameters of a constructor, and passes one null value and mocks all other parameters. It expects ArgumentNullException to be thrown on each call.</p>
-<p>You could write one test for all classes in a namespace or in assembly, if the pattern is applied consistently there! And it will let you know when one of your new classes violates the common rule, with zero extra effort.</p>
-<p>Does anyone know the library which would do that without me inventing the bicycle myself?</p>
-<p>Happy coding!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/unit-testing/'>Unit Testing</a>, <a href='/tags/dependency-injection/'>Dependency Injection</a>, <a href='/tags/guard/'>Guard</a>, <a href='/tags/clean-code/'>Clean Code</a>, <a href='/tags/best-practices/'>Best Practices</a>, <a href='/tags/reflection/'>Reflection</a>, <a href='/tags/c#/'>C#</a>, <a href='/tags/tdd/'>TDD</a>
     </div>
     
 </article>
