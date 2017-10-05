@@ -3,13 +3,136 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2017-09-25T11:08:21.562Z</updated>
+    <updated>2017-10-05T13:51:00.985Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Azure Function Triggered by Azure Event Grid</title>
+        <link href="https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid/"/>
+        <updated>2017-10-05T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-10-05,/2017/10/azure-function-triggered-by-azure-event-grid/</id>
+        <content type="html"><![CDATA[<p>As of today, I wasn&#39;t able to find any walkthrough of how to trigger an
+Azure Function from <a href="https://azure.microsoft.com/en-us/services/event-grid/">Azure Event Grid</a> 
+events.</p>
+<p>So, I decided to come up with my own. Here are the steps to follow:</p>
+<h2 id="create-a-function-with-webhook-trigger">Create a Function with Webhook Trigger</h2>
+<p>I&#39;m not aware of a specialized trigger type for Event Grid, so
+I decided to use Generic Webhook trigger (which is essentially an
+HTTP trigger).</p>
+<p>I used the Azure Portal to generate a function, so here is the 
+<code>function.json</code> that I got:</p>
+<pre class="highlight"><code class="hljs json">{
+  "<span class="hljs-attribute">bindings</span>": <span class="hljs-value">[
+    {
+      "<span class="hljs-attribute">type</span>": <span class="hljs-value"><span class="hljs-string">"httpTrigger"</span></span>,
+      "<span class="hljs-attribute">direction</span>": <span class="hljs-value"><span class="hljs-string">"in"</span></span>,
+      "<span class="hljs-attribute">webHookType</span>": <span class="hljs-value"><span class="hljs-string">"genericJson"</span></span>,
+      "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"req"</span>
+    </span>},
+    {
+      "<span class="hljs-attribute">type</span>": <span class="hljs-value"><span class="hljs-string">"http"</span></span>,
+      "<span class="hljs-attribute">direction</span>": <span class="hljs-value"><span class="hljs-string">"out"</span></span>,
+      "<span class="hljs-attribute">name</span>": <span class="hljs-value"><span class="hljs-string">"res"</span>
+    </span>}
+  ]</span>,
+  "<span class="hljs-attribute">disabled</span>": <span class="hljs-value"><span class="hljs-literal">false</span>
+</span>}
+</code></pre>
+<p>For precompiled functions, just decorate it with <code>HttpTriggerAttribute</code> with
+POST method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span><span class="hljs-params">(
+    [HttpTrigger(AuthorizationLevel.Function, <span class="hljs-string">"post"</span>)</span>] HttpRequestMessage req)
+</span></code></pre>
+<h2 id="parse-the-payload">Parse the Payload</h2>
+<p>Events from Event Grid will arrive in a specific predefined JSON format.
+Here is an example of events to expect:</p>
+<pre class="highlight"><code class="hljs json">[{
+  "<span class="hljs-attribute">id</span>": <span class="hljs-value"><span class="hljs-string">"0001"</span></span>,
+  "<span class="hljs-attribute">eventType</span>": <span class="hljs-value"><span class="hljs-string">"MyHelloWorld"</span></span>,
+  "<span class="hljs-attribute">subject</span>": <span class="hljs-value"><span class="hljs-string">"Hello World!"</span></span>,
+  "<span class="hljs-attribute">eventTime</span>": <span class="hljs-value"><span class="hljs-string">"2017-10-05T08:53:07"</span></span>,
+  "<span class="hljs-attribute">data</span>": <span class="hljs-value">{
+    "<span class="hljs-attribute">hello</span>": <span class="hljs-value"><span class="hljs-string">"world"</span>
+  </span>}</span>,
+  "<span class="hljs-attribute">topic</span>": <span class="hljs-value"><span class="hljs-string">"/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1"</span>
+</span>}]
+</code></pre>
+<p>To be able to parse those data more easily, I defined a C# class to deserialize
+JSON to:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">GridEvent</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> EventType { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Subject { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> DateTime EventTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> Dictionary&lt;<span class="hljs-keyword">string</span>, <span class="hljs-keyword">string</span>&gt; Data { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Topic { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>Now, the function can read the events (note, that they are sent in arrays)
+from the body of POST request:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span><span class="hljs-params">(HttpRequestMessage req, TraceWriter log)</span>
+</span>{
+    <span class="hljs-keyword">string</span> jsonContent = <span class="hljs-keyword">await</span> req.Content.ReadAsStringAsync();
+    <span class="hljs-keyword">var</span> events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
+
+    <span class="hljs-comment">// do something with events</span>
+
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK);
+}
+</code></pre>
+<h2 id="validate-the-endpoint">Validate the Endpoint</h2>
+<p>To prevent you from sending events to endpoints that you don&#39;t own, Event
+Grid requires each subsriber to validate itself. For this purpose, Event
+Grid will send events of the special type <code>SubscriptionValidation</code>. </p>
+<p>The validation request will contain a code, which we need to echo back in
+200-OK HTTP response. </p>
+<p>Here is a small piece of code to do just that:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">if</span> (req.Headers.GetValues(<span class="hljs-string">"Aeg-Event-Type"</span>).FirstOrDefault() == <span class="hljs-string">"SubscriptionValidation"</span>)
+{
+    <span class="hljs-keyword">var</span> code = events[<span class="hljs-number">0</span>].Data[<span class="hljs-string">"validationCode"</span>];
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK,
+        <span class="hljs-keyword">new</span> { validationResponse = code });
+}
+</code></pre>
+<p>The function is ready!</p>
+<h2 id="create-a-custom-event-grid-topic">Create a Custom Event Grid Topic</h2>
+<p>To test it out, go to the portal and create a custom Event Grid topic.
+Then click on Add Event Subscription button, give it a name and copy paste
+the function URL (including key) to Subscriber Endpoint field:</p>
+<p><img src="https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid//function-url.png" alt="Azure Function URL"></p>
+<p><img src="https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid//event-subscription.png" alt="Event Grid Subscription"></p>
+<p>Creating a subscription will immediately trigger a validation request to
+your function, so you should see one invocation in the logs.</p>
+<h2 id="send-custom-events">Send Custom Events</h2>
+<p>Now, go to your favorite HTTP client (curl, Postman, etc) and send a sample
+event to check how the whole setup works:</p>
+<pre class="highlight"><code class="hljs http"><span class="hljs-request">POST <span class="hljs-string">/api/events</span> HTTP/1.1</span>
+<span class="hljs-attribute">Host</span>: <span class="hljs-string">&lt;your-eventgrid-topic&gt;.westus2-1.eventgrid.azure.net</span>
+<span class="hljs-attribute">aeg-sas-key</span>: <span class="hljs-string">&lt;key&gt;</span>
+<span class="hljs-attribute">Content-Type</span>: <span class="hljs-string">application/json</span>
+
+<span class="json">[{
+  "<span class="hljs-attribute">id</span>": <span class="hljs-value"><span class="hljs-string">"001"</span></span>,
+  "<span class="hljs-attribute">eventType</span>": <span class="hljs-value"><span class="hljs-string">"MyHelloWorld"</span></span>,
+  "<span class="hljs-attribute">subject</span>": <span class="hljs-value"><span class="hljs-string">"Hello World!"</span></span>,
+  "<span class="hljs-attribute">eventTime</span>": <span class="hljs-value"><span class="hljs-string">"2017-10-05T08:53:07"</span></span>,
+  "<span class="hljs-attribute">data</span>": <span class="hljs-value">{
+    "<span class="hljs-attribute">hello</span>": <span class="hljs-value"><span class="hljs-string">"world"</span>
+  </span>}
+</span>}]
+</span></code></pre>
+<p>Obviously, adjust the endpoint and key based on the data from the portal.</p>
+<p>You should get a 200-OK back and then see your event in Azure Function 
+invocation logs.</p>
+<p>Have fun!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Wanted: Effectively-Once Processing in Azure</title>
@@ -1503,31 +1626,6 @@ and an event host which uses both to provide transactional processing
 of events.</p>
 <p>The transaction scope is limited to SQL Server databases, but it might be
 sufficient for many real world scenarios.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Why F# and Functional Programming Talk at .NET Development Nederland Meetup</title>
-        <link href="https://mikhail.io/2017/05/why-fsharp-and-functional-programming-will-make-you-a-better-developer-talk/"/>
-        <updated>2017-05-08T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-05-08,/2017/05/why-fsharp-and-functional-programming-will-make-you-a-better-developer-talk/</id>
-        <content type="html"><![CDATA[<p>On May 8th 2017 I gave a talk at the
-<a href="https://www.meetup.com/dotNET-Development-Nederland/">.NET Development Nederland</a>
-group in Amsterdam.</p>
-<p>Here are the slides for the people who were there and want to revisit
-the covered topics.</p>
-<h2 id="why-learn-f-and-functional-programming">Why Learn F# and Functional Programming</h2>
-<p>Link to full-screen HTML slides: 
-<a href="http://mikhail.io/talks/why-fsharp/">Why Learn F# and Functional Programming</a></p>
-<p>Slides on SlideShare:</p>
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/iG9omDKb42ogTk" width="595" height="485" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
-</iframe>
-
-<p>Useful links:</p>
-<p><a href="http://fsharpforfunandprofit.com">F# for Fun and Profit</a></p>
-<p><a href="http://fsharp.org">F# Foundation</a></p>
-<p><a href="https://www.manning.com/books/real-world-functional-programming">Real-World Functional Programming, With examples in F# and C# Book</a></p>
-<p>Thanks for attending my talk! Feel free to post any feedback in the comments.</p>
 ]]></content>
     </entry>
     

@@ -72,6 +72,211 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Dec 22nd, 2015</div>
+    
+    <h1><a href='/2015/12/weaving-your-domain-classes-with-fody/'>Weaving your domain classes with Fody</a></h1>
+    
+    <div class="post-content">
+        <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive cruft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> trip = <span class="hljs-keyword">new</span> Trip(
+    origin: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Paris"</span>, geoParis), 
+    destination: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Amsterdam"</span>, geoAmsterdam),
+    vehicle: <span class="hljs-keyword">new</span> Vehicle(<span class="hljs-string">"TBL-12-H"</span>, Type.HeavyTruck)
+</code></pre>
+<p>Let&#39;s include these requirements as parts of our trip model:</p>
+<ul>
+<li>It has a constructor which accepts three arguments (see above)</li>
+<li>It has 3 read-only properties which are assigned from constructor parameters</li>
+<li>It should not allow null values to be assigned to these properties via constructor</li>
+<li>It should be a Value object, that is two objects with same properties should be equal</li>
+</ul>
+<h2 id="initial-version">Initial version</h2>
+<p>First, let&#39;s implement these requirement in a usual way:</p>
+<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+{
+    public Trip(Location origin, Location destination, Vehicle vehicle)
+    {
+        if (origin == null) throw new ArgumentNullException(nameof(origin));
+        if (destination == null) throw new ArgumentNullException(nameof(destination));
+        if (vehicle == null) throw new ArgumentNullException(nameof(vehicle));
+
+        this.Origin = origin;
+        this.Destination = destination;
+        this.Vehicle = vehicle;
+    }
+
+    public Location Origin { get; }
+    public Location Destination { get; }
+    public Vehicle Vehicle { get; }
+
+    public bool Equals(Trip other)
+    {
+        return Equals(this.Origin, other.Origin) 
+            &amp;&amp; Equals(this.Destination, other.Destination) 
+            &amp;&amp; Equals(this.Vehicle, other.Vehicle);
+    }
+
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(null, obj))
+        {
+            return false;
+        }
+        if (ReferenceEquals(this, obj))
+        {
+            return true;
+        }
+        if (obj.GetType() != this.GetType())
+        {
+            return false;
+        }
+        return Equals((Trip)obj);
+    }
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var hashCode = this.Origin.GetHashCode();
+            hashCode = (hashCode * 397) ^ this.Destination.GetHashCode();
+            hashCode = (hashCode * 397) ^ this.Vehicle.GetHashCode();
+            return hashCode;
+        }
+    }
+
+    public static bool operator ==(Trip tripA, Trip tripB)
+    {
+        return object.Equals(tripA, tripB);
+    }
+
+    public static bool operator !=(Trip tripA, Trip tripB)
+    {
+        return !object.Equals(tripA, tripB);
+    }
+}
+</code></pre>
+<p>That&#39;s a lot of code! It&#39;s very repetitive but it&#39;s also tricky: you can implement it incorrectly in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
+<p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still a heavy luggage to carry on. This class is hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
+<p>Are there other options?</p>
+<h2 id="introducing-fody">Introducing Fody</h2>
+<p><a href="https://github.com/Fody/Fody">Fody</a> is an extensible tool for weaving .NET assemblies. It means that you can use it to improve your code automatically at the time of compilation. Fody itself doesn&#39;t do much to the code, but it has a collection of plugins to actually change it. For this example I will use two of them: </p>
+<ul>
+<li><a href="https://github.com/Fody/NullGuard"><strong>NullGuard</strong></a> - guards all the input parameters, output parameters and return values of all types in a current assembly not to be null. If null value is passed or returned, the weaved code with throw an exception.</li>
+<li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
+</ul>
+<p>To install them just execute </p>
+<pre class="highlight"><code class="hljs ps">PM&gt; Install-Package NullGuard.Fody
+PM&gt; Install-Package Equals.Fody
+</code></pre>
+<p>The root of your project will now contain the following configuration file:</p>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-pi">&lt;?xml version="1.0" encoding="utf-8"?&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-title">Weavers</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">NullGuard</span> <span class="hljs-attribute">IncludeDebugAssert</span>=<span class="hljs-value">"false"</span> /&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-title">Equals</span> /&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-title">Weavers</span>&gt;</span>
+</code></pre>
+<p>(I&#39;ve added <code>IncludeDebugAssert</code> attribute manually to disable assert statements in debug mode)</p>
+<p>Let&#39;s adjust our class to make use of the plugins:</p>
+<pre class="highlight"><code class="hljs cs">[Equals]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Trip</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
+    </span>{
+        <span class="hljs-keyword">this</span>.Origin = origin;
+        <span class="hljs-keyword">this</span>.Destination = destination;
+        <span class="hljs-keyword">this</span>.Vehicle = vehicle;
+    }
+
+    <span class="hljs-keyword">public</span> Location Origin { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Location Destination { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> Vehicle Vehicle { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
+<ul>
+<li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So this plugin is in <em>opt-in</em> mode.</li>
+<li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
+</ul>
+<p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span><span class="hljs-params">(Location origin, Location destination, Vehicle vehicle)</span>
+</span>{
+    <span class="hljs-keyword">bool</span> flag = origin == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"origin"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">bool</span> flag2 = destination == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag2)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"destination"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">bool</span> flag3 = vehicle == <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">if</span> (flag3)
+    {
+        <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ArgumentNullException</span><span class="hljs-params">(<span class="hljs-string">"vehicle"</span>)</span></span>;
+    }
+    <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField = origin;
+    <span class="hljs-keyword">this</span>.&lt;Destination&gt;k__BackingField = destination;
+    <span class="hljs-keyword">this</span>.&lt;Vehicle&gt;k__BackingField = vehicle;
+}
+</code></pre>
+<p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Location Origin
+{
+    [CompilerGenerated]
+    <span class="hljs-keyword">get</span>
+    {
+        Location expr_06 = <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField;
+        <span class="hljs-keyword">if</span> (expr_06 == <span class="hljs-keyword">null</span>)
+        {
+            <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">InvalidOperationException</span><span class="hljs-params">(<span class="hljs-string">"[NullGuard] Return value of property 'ETA.Domain.Location ETA.Domain.Trip::Origin()' is null."</span>)</span></span>;
+        }
+        <span class="hljs-keyword">return</span> expr_06;
+    }
+}
+</code></pre>
+<p>It doesn&#39;t make much sense to me, so I configured Fody on assembly level to check only arguments and return values:</p>
+<pre class="highlight"><code class="hljs cs">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]
+</code></pre>
+<p>Here is a set of operations related to equality (I&#39;ll skip the body in sake of brevity):</p>
+<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+{
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    private static bool EqualsInternal(Trip left, Trip right) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override bool Equals(Trip other) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override bool Equals(object obj) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public override int GetHashCode() { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public static bool operator ==(Trip left, Trip right) { ... }
+    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    public static bool operator !=(Trip left, Trip right) { ... }
+}
+</code></pre>
+<p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
+<h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
+<p>Here is how you actually should define similar types:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Trip</span> </span>= 
+  { Origin : Location
+    Destination : Location
+    Vehicle : Vehicle }
+</code></pre>
+<p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/code-generation/'>Code Generation</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Dec 14th, 2015</div>
     
     <h1><a href='/2015/12/deploy-your-spa-to-azure/'>Deploy your SPA to Azure</a></h1>
@@ -478,65 +683,6 @@ and no <code>.js</code> extension is present).</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/animation/'>Animation</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">May 27th, 2015</div>
-    
-    <h1><a href='/2015/05/peer-code-review-whys-hows-and-whats/'>Peer code review Why's, How's and What's</a></h1>
-    
-    <div class="post-content">
-        <p>This post is a short summary on why do code reviews, what the steps are and what should actually be reviewed. The text was created to set some common ground for my team, which was just starting to conduct code reviews in a consistent way. By any means, this text is not a complete guide but rather a checklist and a starting point for discussion.</p>
-<h2 id="why-s">WHY&#39;s</h2>
-<p>So, why spend time on code reviews at all? The most important reasons are listed below:</p>
-<p><strong>To find bugs</strong>, to spot and fix defects early in the process;</p>
-<p><strong>To spread knowledge</strong>, to share understanding of the code base as team members learn from each other and increase team cohesiveness;</p>
-<p><strong>To agree on rules</strong>, to maintain a level of consistency in design and implementation;</p>
-<p><strong>To improve as the team</strong>, to identify common defects across the team thus reduce rework;</p>
-<p><strong>To get second opinion</strong>, to add a different perspective, &quot;another set of eyes&quot; adds objectivity.</p>
-<h2 id="how-s">HOW&#39;s</h2>
-<p>Which steps should I take during code reviews? This depends a lot on the tools being used, of course. We use the following set of tools: task management tool (<em>Atlassian JIRA</em>), IDE (<em>Visual Studio</em>), source control log (Git log viewer of taste) and code review tool (<em>Atlassian Crucible/FishEye</em>). 
-You should do the following during your code review process:</p>
-<p><strong>Understand the scope</strong>, read the task description, user story, commit or pull request message;</p>
-<p><strong>Get the code</strong>, pull the latest code to your hard drive and in your IDE, create a review item in code review tool, make sure that all changes are included;</p>
-<p><strong>Read and understand</strong> all the changes by navigating them in your tools;</p>
-<p><strong>Ask the author</strong> if something is unclear;</p>
-<p><strong>Go through the checklist</strong> (below) and make your peer judgement;</p>
-<p><strong>Put your comments</strong> to code review tool, as written comments are usually preferred over verbal;</p>
-<p><strong>Merge the code</strong> into main repository or integration branch, if you agree with the proposed changes;</p>
-<p><strong>Report the result back</strong> to the team by moving the task to rejected or accepted state, according to your team&#39;s workflow.</p>
-<h2 id="what-s">WHAT&#39;s</h2>
-<p>Here is the approximate checklist of what should be reviewed during the code review. Start at the top and go down to the bottom.</p>
-<p><strong>Readiness</strong>: Is the change under review submitted correctly, are all tests green?</p>
-<p><strong>Functionality</strong>: Does the code work? Does it perform its intended function, is the logic correct etc. You don&#39;t have to test all scenarios, but you should at least think of possible scenarios and whether the code addresses all of them in your opinion.</p>
-<p><strong>Readability</strong>: Is all the code easy to understand? When you read the code, is it easy to understand every detail of it without spending a lot of time and effort?</p>
-<p><strong>Testabity</strong>: Is the code testable? I.e. not too many dependencies, unable to initialize objects with stubs or mocks, test frameworks can use methods etc.</p>
-<p><strong>No duplication</strong>: Is there any redundant or duplicate code? Do you see some possibility to refactor it to reduce duplication? </p>
-<p><strong>Reuse</strong>: Did the author reuse existing classes and libraries for solving common tasks? Is the naming and code structure consistent with similar existing blocks of solution? Can any of the code be replaced with library functions?</p>
-<p><strong>Design</strong>: Do you agree with the design and structure of code blocks? Think of coupling and cohesion, SOLID principles, dependency chains etc.</p>
-<p><strong>Unit tests</strong>: Do tests exist and are they comprehensive? Are all the changes covered by unit tests? Do they conform to unit testing guidelines? Can you think of more tests which are missing?</p>
-<p><strong>Readability of tests</strong>: Are tests short and readable? Do they reveal any design problems?</p>
-<p><strong>Error handling</strong>: Is exception handling and logging consistent? Are they tested?</p>
-<p><strong>Public contracts</strong>: Could the code violate backwards compatibility when we have to keep it?</p>
-<p><strong>No leftovers</strong>: Do you see any code which is commented out or any TODOs? Can any logging or debugging code be removed without loosing functionality?</p>
-<p><strong>Code style</strong>: Does it conform to your agreed programming practices and coding style? Do ReSharper and static code analysis tools give no errors and warnings?</p>
-<p><strong>Documentation</strong>: Was the documentation updated in case the change touches public API?</p>
-<p><strong>Comments</strong>: Are all comments valid? Do you see any dummy comments which are unreadable and were created just to make ReSharper happy?</p>
-<p><strong>Performance</strong>: Do you see any potential performance problems that have to be solved before the first version of this code is accepted? When applicable, measure the CPU load, memory, or traffic consumption caused by new code.</p>
-<p><strong>High level tests</strong>: When applicable, are integration and/or end-to-end tests created?</p>
-<p><strong>Data migration</strong>: When applicable, was database migration script updated?</p>
-<p>Am I missing anything important? Probably yes, so please share your suggestions in the comments. 
-Happy reviews!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/code-review/'>Code Review</a>, <a href='/tags/best-practices/'>Best Practices</a>
     </div>
     
 </article>
