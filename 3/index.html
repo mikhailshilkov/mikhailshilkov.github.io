@@ -470,6 +470,60 @@ instances into HTTP response:</p>
 <p>Please follow <a href="https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-active-directory-application">this walkthrough</a>
 to setup your application in Active Directory, assign required permissions and
 get the proper keys.</p>
+<h2 id="azure-health">Azure Health</h2>
+<p>Azure has a service which reports the health of different services at any
+given moment, as acknowledged by Microsoft.</p>
+<p>The handy part is that you can provide your subscription ID and then only
+services used by that subscription will be reported.</p>
+<p>The exact usage of health service may depend on your use case, but the
+following example shows how to retrieve the basic counts of services per
+reported status.</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ResourceProperties</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> availabilityState { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> summary { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> detailedStatus { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> reasonType { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> occuredTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> reasonChronicity { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> reportedTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Resource</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> ResourceProperties properties { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span>
+{
+    <span class="hljs-keyword">public</span> Resource[] <span class="hljs-keyword">value</span> { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span><span class="hljs-params">(HttpRequestMessage req)</span>
+</span>{
+    <span class="hljs-keyword">var</span> subscription = Environment.GetEnvironmentVariable(<span class="hljs-string">"SubscriptionID"</span>);
+
+    <span class="hljs-keyword">var</span> url = $<span class="hljs-string">"https://management.azure.com/subscriptions/{subscription}/providers/Microsoft.ResourceHealth/availabilityStatuses?api-version=2015-01-01"</span>;
+    <span class="hljs-keyword">var</span> r = <span class="hljs-keyword">await</span> RestClient.Query&lt;Response&gt;(url);
+    <span class="hljs-keyword">var</span> available = r.<span class="hljs-keyword">value</span>
+        .Where(v =&gt; v.properties.availabilityState == <span class="hljs-string">"Available"</span>)
+        .Count();
+
+    <span class="hljs-keyword">var</span> unknown = r.<span class="hljs-keyword">value</span>
+        .Where(v =&gt; v.properties.availabilityState == <span class="hljs-string">"Unknown"</span>)
+        .Count();
+
+    <span class="hljs-keyword">var</span> other = r.<span class="hljs-keyword">value</span>.Length - available - unknown;
+
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK, <span class="hljs-keyword">new</span>
+    {
+        available = available,
+        unknown = unknown,
+        other = other,
+        details = r.<span class="hljs-keyword">value</span>
+    });
+}
+</code></pre>
 <h2 id="users-online">Users Online</h2>
 <p>The last example I want to share is related to Application Insights data.
 For instance, we inject a small tracking snippet on our front-end page
