@@ -22,7 +22,7 @@
     <script src="/scripts/vendor/respond.min.js"></script>
     <![endif]-->
 
-    <meta name="generator" content="DocPad v6.78.4" />
+    <meta name="generator" content="DocPad v6.78.6" />
     
 </head>
 <body>
@@ -71,6 +71,151 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Jan 6th, 2016</div>
+    
+    <h1><a href='/2016/01/validation-with-either-data-type-in-csharp/'>Validation with Either data type in C#</a></h1>
+    
+    <div class="post-content">
+        <p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
+code more expressive and easier to maintain.</p>
+<h2 id="problem">Problem</h2>
+<p>Let&#39;s say we get a request from some client code and we need to check if this
+request is actually valid. If it&#39;s not valid, we want to make a detailed description
+of the problems that we identified. If it is valid, we want to produce a response
+about the successful acceptance of the request. Let&#39;s define the classes:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Request</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ValidationError</span> { ... }
+</code></pre>
+<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
+or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
+<h2 id="throw-an-exception">Throw an exception</h2>
+<p>Validation <em>error</em> sounds like it could be an exception:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r)</span>
+</span>{
+   <span class="hljs-keyword">if</span> (!Valid(r))
+       <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ValidationException</span><span class="hljs-params">(<span class="hljs-keyword">new</span> ValidationError(...)</span>)</span>;
+
+   <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+}
+</code></pre>
+<p>This approach is really bad though. You have to declare a special exception
+class to hold the validation error. But even worse, exception handling is not
+explicit - you don&#39;t see the exception type when you look at method signature.
+Client processing code is going to be messed up because of exception handling.
+Never use exceptions for your business logic flow.</p>
+<h2 id="output-parameter">Output parameter</h2>
+<p>We could make an output parameter of <code>ValidationError</code> type:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r, <span class="hljs-keyword">out</span> ValidationError error)</span>
+</span>{
+    <span class="hljs-keyword">if</span> (Valid(r))
+    { 
+        error = <span class="hljs-keyword">new</span> ValidationError(...);
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+    }
+
+    error = <span class="hljs-keyword">null</span>;
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+}
+</code></pre>
+<p>Now the interface is more explicit: client won&#39;t be able to completely ignore
+the fact that an error is possible. But output parameters are not really
+easy to use in C#, especially in fluent-style client code. Moreover, we are
+using nulls as a way to represent missing object, which is a smell by itself,
+because nulls are not explicit. Never use nulls in your business logic.</p>
+<h2 id="return-the-combined-result">Return the combined result</h2>
+<p>We could declare a container class which would keep both <code>Response</code> and 
+<code>ValidationError</code>, and then return it from the method.</p>
+<pre class="highlight"><code class="hljs undefined">public class Both&lt;TData, TError&gt;
+{
+    public TData Data { get; set; }
+    public TErrro Error { get; set; }
+}
+...
+public Both&lt;Response, ValidationError&gt; Validate(Request r)
+{
+    return Valid(r) 
+        ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
+        : new Both&lt;Response, ValidationError&gt; { Error = new ValidationError(...) };
+}
+</code></pre>
+<p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
+and output parameters, but we still use null for result state representation.
+Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
+<h2 id="introducing-either">Introducing Either</h2>
+<p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
+with just one of them. When constructing an object, you can specify either
+a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
+<pre class="highlight"><code class="hljs undefined">public class Either&lt;TL, TR&gt;
+{
+    private readonly TL left;
+    private readonly TR right;
+    private readonly bool isLeft;
+
+    public Either(TL left)
+    {
+        this.left = left;
+        this.isLeft = true;
+    }
+
+    public Either(TR right)
+    {
+        this.right = right;
+        this.isLeft = false;
+    }
+}
+</code></pre>
+<p>Now, the main difference is in how the client uses it. There are no properties
+to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
+    =&gt; <span class="hljs-keyword">this</span>.isLeft ? leftFunc(<span class="hljs-keyword">this</span>.left) : rightFunc(<span class="hljs-keyword">this</span>.right);
+</code></pre>
+<p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
+is specified, <code>Match</code> will return the result of the left function, otherwise the result
+of the right function.</p>
+<p>Another improvement would be to create explicit operators for easy conversions
+from left and right types:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TL left) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(left);
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TR right) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(right);
+</code></pre>
+<p>Let&#39;s have a look at a complete example.</p>
+<h2 id="why-it-s-great">Why it&#39;s great</h2>
+<p>Here is the service code written with <code>Either</code>:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Either&lt;Response, ValidationError&gt; Validate(Request r)
+{
+    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-title">Valid</span><span class="hljs-params">(r)</span> 
+        ? Data </span>= <span class="hljs-keyword">new</span> Response(r)
+        : <span class="hljs-keyword">new</span> ValidationError(...);
+}
+</code></pre>
+<p>Clean and nice! Now a simplistic client:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> validated = service.Validate(request);
+Console.WriteLine(
+    validated.Match(
+        result =&gt; $<span class="hljs-string">"Success: {result}"</span>,
+        error =&gt; $<span class="hljs-string">"Error: {error}"</span>)
+    );
+</code></pre>
+<p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
+validation may fail.</p>
+<h2 id="show-me-the-code">Show me the code</h2>
+<p>You can find the definition of <code>Either</code> class in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Either%7BTL%2CTR%7D.cs">github repo</a>.</p>
+<p><strong>Update.</strong> Here is a link to an awesome talk on this topic: 
+<a href="https://vimeo.com/113707214">Railway oriented programming: Error handling in functional languages by Scott Wlaschin</a></p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/clean-code/'>Clean Code</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Dec 22nd, 2015</div>
     
@@ -535,154 +680,6 @@ target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span cl
     
     <div class="post-tags">
         Posted In: <a href='/tags/units-of-measurement/'>Units of Measurement</a>, <a href='/tags/domain-design/'>Domain Design</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/clean-code/'>Clean Code</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jul 28th, 2015</div>
-    
-    <h1><a href='/2015/07/aurelia-element-animation-with-custom-attribute/'>Aurelia element animation with custom attribute</a></h1>
-    
-    <div class="post-content">
-        <p>I&#39;ve been exploring <a href="http://aurelia.io">Aurelia</a> javascript UI framework recently to get some experience needed
-for our next big project. One thing that I couldn&#39;t implement out of the box was a kind 
-of animation.</p>
-<p>I have a grid of values bound to View Model. View Model communicates to server, receives
-any updates of data and the grid got immediately updated, all that works great with Aurelia.
-Now I want to highlight the cell which has just received an updated value with a small
-background animation, like this:</p>
-<p><img src="/2015/07/aurelia-element-animation-with-custom-attribute//animation.gif" alt="Updated cell animation"></p>
-<p>Aurelia has a library called <a href="https://github.com/aurelia/animator-css">aurelia-animator-css</a> with a helper
-class to run CSS animation. If you use it directly in your View Model, you will end up with the code like</p>
-<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">this</span>.newMessageReceived =
-    msg =&gt; {
-        <span class="hljs-keyword">this</span>.data.filter(i =&gt; i.id === msg.id).forEach(t =&gt; {
-            <span class="hljs-keyword">let</span> editedItemIdx = <span class="hljs-keyword">this</span>.data.indexOf(i);
-            <span class="hljs-keyword">var</span> elem = <span class="hljs-keyword">this</span>.element.querySelectorAll(<span class="hljs-string">'tbody tr'</span>)[editedItemIdx + <span class="hljs-number">1</span>]
-                                   .querySelectorAll(<span class="hljs-string">'td'</span>)[<span class="hljs-number">3</span>];
-
-            <span class="hljs-keyword">this</span>.animator.addClass(elem, <span class="hljs-string">'background-animation'</span>).then(() =&gt; {
-                <span class="hljs-keyword">this</span>.animator.removeClass(elem, <span class="hljs-string">'background-animation'</span>);
-            });
-        });
-    };
-</code></pre>
-<p>So we get a new message, find the related item in our data, then find the index of that data. Then we use this
-index in query selector to get the exact row that needs animation, find the cell by hard coded index, and 
-finally use animator to highlight the background.</p>
-<p>Ouch... That smells. We spoiled our view model with view details, and all this code is very ugly and fragile.</p>
-<p>Good news: we can improve the solution with the Aurelia&#39;s feature called Custom Attributes. Let&#39;s create a new
-javascript file and call it <code>animateonchange.js</code>:</p>
-<pre class="highlight"><code class="hljs javascript">import {customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
-
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
-export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
-
-}
-</code></pre>
-<p>I declared a class for our new attribute, so far it&#39;s empty. I imported customAttribute decorator from
-Aurelia framework: that the way we can define a name for our custom attribute. This can be avoided: if I
-change the name to <code>AnimateonchangeCustomAttribute</code>, Aurelia will infer the name from class name, but I want
-to stay explicit and keep the class name readable. Note that capital letters are not allowed in attribute name.</p>
-<p>Now, let&#39;s declare the constructor of the new class and inject all the dependencies:</p>
-<pre class="highlight"><code class="hljs javascript">import {inject, customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
-import {CssAnimator} from <span class="hljs-string">'aurelia-animator-css'</span>;
-
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
-@inject(Element, CssAnimator)
-export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
-
-    constructor(element, animator) {
-        <span class="hljs-keyword">this</span>.element = element;
-        <span class="hljs-keyword">this</span>.animator = animator;
-    }
-
-}
-</code></pre>
-<p>I used dependency injection to get attribute&#39;s element and CSS animator and save them into class fields.
-Here&#39;s how to use them:</p>
-<pre class="highlight"><code class="hljs javascript">import {inject, customAttribute} from <span class="hljs-string">'aurelia-framework'</span>;
-import {CssAnimator} from <span class="hljs-string">'aurelia-animator-css'</span>;
-
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
-@inject(Element, CssAnimator)
-export <span class="hljs-keyword">class</span> AnimateOnChangeCustomAttribute {
-    constructor(element, animator) {
-        <span class="hljs-keyword">this</span>.element = element;
-        <span class="hljs-keyword">this</span>.animator = animator;
-        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">false</span>;
-    }
-
-    valueChanged(newValue){
-        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>.initialValueSet) {
-            <span class="hljs-keyword">this</span>.animator.addClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>).then(() =&gt; {
-                <span class="hljs-keyword">this</span>.animator.removeClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>);
-            });
-        }
-        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">true</span>;
-    }
-}
-</code></pre>
-<p>The new method <code>valueChanged</code> will be called every time the bound value changes. I want to ignore the
-first value (it&#39;s not an update yet), so I did that with <code>initialValueSet</code> flag. Then I just run CSS 
-animator. No DOM-related queries!</p>
-<p>Here is how we use the custom attribute from a view:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-title">template</span>&gt;</span>
-
-    <span class="hljs-tag">&lt;<span class="hljs-title">require</span> <span class="hljs-attribute">from</span>=<span class="hljs-value">"./animateonchange"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">require</span>&gt;</span>
-
-    <span class="hljs-tag">&lt;<span class="hljs-title">table</span> <span class="hljs-attribute">class</span>=<span class="hljs-value">"table"</span>&gt;</span>
-        <span class="hljs-tag">&lt;<span class="hljs-title">tr</span> <span class="hljs-attribute">repeat.for</span>=<span class="hljs-value">"item of data"</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value1}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value2}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span> <span class="hljs-attribute">animateonchange.bind</span>=<span class="hljs-value">"item.value3ToUpdate"</span>&gt;</span>${item.value3ToUpdate}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-title">td</span>&gt;</span>${item.value4}<span class="hljs-tag">&lt;/<span class="hljs-title">td</span>&gt;</span>
-        <span class="hljs-tag">&lt;/<span class="hljs-title">tr</span>&gt;</span>
-    <span class="hljs-tag">&lt;/<span class="hljs-title">table</span>&gt;</span>
-
-<span class="hljs-tag">&lt;/<span class="hljs-title">template</span>&gt;</span>
-</code></pre>
-<p>First, we use <code>require</code> element to import custom attribute definition (make sure the path is correct
-and no <code>.js</code> extension is present).</p>
-<p>Second, we use <code>animateonchange.bind</code> to bind the value to the custom attributes. And it works!</p>
-<p>Of course, you need to define the CSS class, e.g.</p>
-<pre class="highlight"><code class="hljs css"><span class="hljs-class">.background-animation-add</span> <span class="hljs-rules">{
-    <span class="hljs-rule"><span class="hljs-attribute">-webkit-animation</span>:<span class="hljs-value"> changeBack <span class="hljs-number">0.5s</span></span></span>;
-    <span class="hljs-rule"><span class="hljs-attribute">animation</span>:<span class="hljs-value"> changeBack <span class="hljs-number">0.5s</span></span></span>;
-<span class="hljs-rule">}</span></span>
-<span class="hljs-class">.background-animation-remove</span> <span class="hljs-rules">{
-    <span class="hljs-rule"><span class="hljs-attribute">-webkit-animation</span>:<span class="hljs-value"> fadeIn <span class="hljs-number">0.5s</span></span></span>;
-    <span class="hljs-rule"><span class="hljs-attribute">animation</span>:<span class="hljs-value"> fadeIn <span class="hljs-number">0.5s</span></span></span>;
-<span class="hljs-rule">}</span></span>
-<span class="hljs-at_rule">@<span class="hljs-keyword">-webkit-keyframes</span> changeBack </span>{
-    0% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-    50% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> lightgreen</span></span>; <span class="hljs-rule">}</span></span>
-    100% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-}
-<span class="hljs-at_rule">@<span class="hljs-keyword">keyframes</span> changeBack </span>{
-    0% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-    50% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> lightgreen</span></span>; <span class="hljs-rule">}</span></span>
-    100% <span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">background-color</span>:<span class="hljs-value"> white</span></span>; <span class="hljs-rule">}</span></span>
-}
-</code></pre>
-<p>Here is a <a href="http://plnkr.co/edit/oa0Kb1hf6D9M2jl22vWD">plunkr link to a complete example</a></p>
-<p>Happy coding!</p>
-<p>Useful links:</p>
-<ul>
-<li><p><a href="http://aurelia.io/docs.html#custom-attributes">Aurelia Custom Attributes documentation</a></p>
-</li>
-<li><p><a href="http://blog.durandal.io/2015/07/17/animating-apps-with-aurelia-part-1/">Animating Apps with Aurelia - Part 1 by Rob Eisenberg</a></p>
-</li>
-</ul>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/animation/'>Animation</a>
     </div>
     
 </article>

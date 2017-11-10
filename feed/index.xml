@@ -3,13 +3,39 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2017-10-26T21:17:48.759Z</updated>
+    <updated>2017-11-10T08:03:22.036Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Azure F#unctions Talk at FSharping Meetup in Prague</title>
+        <link href="https://mikhail.io/2017/11/azure-functions-fsharp-talk/"/>
+        <updated>2017-11-10T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-11-10,/2017/11/azure-functions-fsharp-talk/</id>
+        <content type="html"><![CDATA[<p>On November 8th 2017 I gave a talk about developing Azure Functions
+in F# at
+<a href="https://www.meetup.com/FSharping/events/244137693/">FSharping</a>
+meetup in Prague. </p>
+<p>I really enjoyed giving this talk: the audience was
+great and asked awesome questions. One more prove that F# community is
+so welcoming and energizing!</p>
+<p>All the demos of that session can be found in my
+<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples">github repository</a>.</p>
+<p>The slides were only a small portion of my talk, but you can see them
+below anyways.</p>
+<p>Link to full-screen HTML slides: 
+<a href="https://mikhail.io/talks/fsharping-azure-functions/">Azure F#unctions</a></p>
+<p>Slides on SlideShare:</p>
+<iframe src="//www.slideshare.net/slideshow/embed_code/key/oQIZywbdCRXdQA" width="595" height="485" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
+</iframe> 
+
+<p>Thanks for attending my talk! Feel free to post any feedback in the comments.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Azure Function Triggered by Azure Event Grid</title>
@@ -1417,220 +1443,6 @@ get from it is the usage of HTTP/2 protocol:</p>
 <p>This should be beneficial to any reader which uses a modern browser!</p>
 <p>Thanks to <a href="https://cloudflare.com">CloudFlare</a> for providing me with free
 HTTPS and HTTP/2 support.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Reliable Consumer of Azure Event Hubs</title>
-        <link href="https://mikhail.io/2017/05/reliable-consumer-of-azure-event-hubs/"/>
-        <updated>2017-05-29T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-05-29,/2017/05/reliable-consumer-of-azure-event-hubs/</id>
-        <content type="html"><![CDATA[<p><a href="https://azure.microsoft.com/en-us/services/event-hubs/">Azure Event Hubs</a> is
-a log-based messaging system-as-a-service in Azure cloud. It&#39;s designed to be able to handle huge
-amount of data, and naturally supports multiple consumers.</p>
-<h2 id="event-hubs-and-service-bus">Event Hubs and Service Bus</h2>
-<p>While Event Hubs are formally part of Azure Service Bus family of products,
-in fact its model is quite different.</p>
-<p>&quot;Traditional&quot; Service Bus service is organized around queues (subscriptions
-are just queues with the topic being the source of messages). Each consumer 
-can peek messages from the queue, do the required processing and then
-complete the message to remove it from the queue, or abort the processing.
-Abortion will leave the message at the queue, or will move it to the Dead Letter
-Queue. Completion/abortion are granular per message; and the status of each
-message is managed by the Service Bus broker.</p>
-<p><img src="https://mikhail.io/2017/05/reliable-consumer-of-azure-event-hubs//service-bus-processors.png" alt="Service Bus Processors"></p>
-<p>Event Hubs service is different. Each Hub represnts a log of messages.
-Event producer appends data to the end of the log, and consumers can read this log,
-but they can&#39;t remove or change the status of events there.</p>
-<p>Each event has an offset associated with it. And the only operation that is
-supported for consumers is &quot;give me some messages starting at the offset X&quot;.</p>
-<p><img src="https://mikhail.io/2017/05/reliable-consumer-of-azure-event-hubs//event-hub-processors.png" alt="Event Hub Processors"></p>
-<p>While this approach might seem simplistic, it actually  makes consumers 
-more powerful:</p>
-<ul>
-<li><p>The messages do not disappear from the Hub after being processed for the
-first time. So, if needed, the consumer can go back and re-process older
-events again;</p>
-</li>
-<li><p>Multiple consumers are always supported, out of the box. They just read
-the same log, after all;</p>
-</li>
-<li><p>Each consumer can go at its own pace, drop and resume processing whenever
-needed, with no effect on other consumers.</p>
-</li>
-</ul>
-<p>There are some disadvantages too:</p>
-<ul>
-<li><p>Consumers have to manage their own state of the processing progress, i.e.
-they have to save the offset of the last processed event;</p>
-</li>
-<li><p>There is no way to mark any specific event as failed to be able to reprocess
-it later. There&#39;s no notion of Dead Letter Queue either.</p>
-</li>
-</ul>
-<h2 id="event-processor-host">Event Processor Host</h2>
-<p>To overcome the first complication, Microsoft provides the consumer API called
-<a href="https://github.com/Microsoft/azure-docs/blob/master/articles/event-hubs/event-hubs-programming-guide.md">EventProcessorHost</a>.
-This API has an implementation of consumers based on checkpointing. All you
-need to do is to provide a callback to process a batch of events, and then call
-<code>CheckpointAsync</code> method, which saves the current offset of the last message
-into Azure Blob Storage. If the consumer restarts at any point in time, it will
-read the last checkpoint to find the current offset, and will then continue
-processing from that point on.</p>
-<p>It works great for some scenarios, but the event delivery/processing guarantees
-are relatively low in this case:</p>
-<ul>
-<li><p>Any failures are ignored: there&#39;s no retry or Dead Letter Queue</p>
-</li>
-<li><p>There are no transactions between event hub checkpoints and the data sinks
-that the processor works with (i.e. data stores where processed messages 
-end up at)</p>
-</li>
-</ul>
-<p>In this post I want to focus on a way to process events with higher consistency
-requirements, in particular:</p>
-<ul>
-<li><p>Event Hub processor modifies data in a SQL Database, and such 
-processing is transactional per batch of messages</p>
-</li>
-<li><p>Each event should be (successfully) processed exactly once</p>
-</li>
-<li><p>If event processing failed, it should be marked as failed and kept 
-available to be reprocessed at later point in time</p>
-</li>
-</ul>
-<p>While end-to-end exactly-once processing would require changes of the 
-producers too, we will only focus on consumer side in this post.</p>
-<h2 id="transactional-checkpoints-in-sql">Transactional Checkpoints in SQL</h2>
-<p>If checkpoint information is stored in Azure Blobs, there is no obvious way to
-implement distributed transactions between SQL Database and Azure Storage.</p>
-<p>However, we can override the default checkpointing mechanism and 
-implement our own checkpoints based on a SQL table. This way each 
-checkpoint update can become part of a SQL transaction and be committed
-or rolled back with normal guarantees provided by SQL Server.</p>
-<p>Here is a table that I created to hold my checkpoints:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubCheckpoint (
-  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  Offset <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubCheckpoint <span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
-)
-</span></code></pre>
-<p>For each topic and partition of Event Hubs, we store two values: sequence
-number and offset, which together uniquely identify the consumer position.</p>
-<p>Conveniently, Event Host Processor provides an extensibility point to
-override the default checkpoint manager with a custom one. For that we
-need to implement <code>ICheckpointManager</code> interface to work with our SQL
-table.</p>
-<p>The implementation mainly consists of 3 methods: <code>CreateCheckpointIfNotExistsAsync</code>,
-<code>GetCheckpointAsync</code> and <code>UpdateCheckpointAsync</code>. The names are pretty
-much self-explanatory, and my Dapper-based implementation is quite trivial.
-You can find the code <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLCheckpointManager.cs">here</a>.</p>
-<p>For now, I&#39;m ignoring the related topic of lease management and corresponding
-interface <code>ILeaseManager</code>. It&#39;s quite a subject on its own; for the sake
-of simplicity I&#39;ll assume we have just one consumer process per partition,
-which makes proper lease manager redundand.</p>
-<h2 id="dead-letter-queue">Dead Letter Queue</h2>
-<p>Now, we want to be able to mark some messages as failed and to 
-re-process them later. To make Dead Letters transactional, we need another
-SQL table to hold the failed events:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubDeadLetter (
-  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  Offset <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  FailedAt datetime <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  Error <span class="hljs-keyword">nvarchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubDeadLetter <span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
-)
-</span></code></pre>
-<p>This table looks very similar to <code>EventHubCheckpoint</code> that I
-defined above. That is because they are effectively storing pointers to
-events in a hub. Dead Letters have two additional columns to store error
-timestamp and text.</p>
-<p>There is no need to store the message content, because failed events still
-sit in the event hub anyway. You could still log it for diagnostics purpose - just make an extra
-<code>varbinary</code> column.</p>
-<p>There&#39;s no notion of dead letters in Event Hubs SDK, so I defined my own
-interface <code>IDeadLetterManager</code> with a single <code>AddFailedEvents</code> method:</p>
-<pre class="highlight"><code class="hljs undefined">public interface IDeadLetterManager
-{
-    Task AddFailedEvents(IEnumerable&lt;DeadLetter&lt;EventData&gt;&gt; deadLetters);
-}
-
-public class DeadLetter&lt;T&gt;
-{
-    public T Data { get; set; }
-    public DateTime FailureTime { get; set; }
-    public Exception Exception { get; set; }
-}
-</code></pre>
-<p>Dapper-based implementation is trivial again, you can find the code 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLDeadLetterManager.cs">here</a>.</p>
-<h2 id="putting-it-together-event-host">Putting It Together: Event Host</h2>
-<p>My final solution is still using <code>EventHostProcessor</code>. I pass <code>SQLCheckpointManager</code> 
-into its constructor, and then I implement <code>IEventProcessor</code>&#39;s 
-<code>ProcessEventsAsync</code> method in the following way:</p>
-<ol>
-<li>Instantiate a list of items to store failed events</li>
-<li>Start a SQL transaction</li>
-<li>Loop through all the received events in the batch</li>
-<li>Process each item inside a try-catch block</li>
-<li>If exception happens, add the current event to the list of failed events</li>
-<li>After all items are processed, save failed events to Dead Letter table</li>
-<li>Update the checkpoint pointer</li>
-<li>Commit the transaction</li>
-</ol>
-<p>The code block that illustrates this workflow:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">ProcessEventsAsync</span><span class="hljs-params">(
-    PartitionContext context, 
-    IEnumerable&lt;EventData&gt; eventDatas)</span>
-</span>{
-    <span class="hljs-comment">// 1. Instantiate a list of items to store failed events</span>
-    <span class="hljs-keyword">var</span> failedItems = <span class="hljs-keyword">new</span> List&lt;DeadLetter&lt;EventData&gt;&gt;();
-
-    <span class="hljs-comment">// 2. Start a SQL transaction</span>
-    <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> scope = <span class="hljs-keyword">new</span> TransactionScope())
-    {
-        <span class="hljs-comment">// 3. Loop through all the received events in the batch</span>
-        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> eventData <span class="hljs-keyword">in</span> eventDatas)
-        {
-            <span class="hljs-keyword">try</span>
-            {
-                <span class="hljs-comment">// 4. Process each item inside a try-catch block</span>
-                <span class="hljs-keyword">var</span> item = <span class="hljs-keyword">this</span>.Deserialize(eventData);
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.DoWork(item);
-            }
-            <span class="hljs-keyword">catch</span> (Exception ex)
-            {
-                <span class="hljs-comment">// 5. Add a failed event to the list</span>
-                failedItems.Add(<span class="hljs-keyword">new</span> DeadLetter&lt;EventData&gt;(eventData, DateTime.UtcNow, ex));
-            }
-        }
-
-        <span class="hljs-keyword">if</span> (failedItems.Any())
-        {
-            <span class="hljs-comment">// 6. Save failed items to Dead Letter table</span>
-            <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.dlq.AddFailedEvents(failedItems);
-        }
-
-        <span class="hljs-comment">// 7. Update the checkpoint pointer</span>
-        <span class="hljs-keyword">await</span> context.CheckpointAsync();
-
-        <span class="hljs-comment">// 8. Commit the transaction</span>
-        scope.Complete();
-    }
-}
-</code></pre>
-<h2 id="conclusion">Conclusion</h2>
-<p>My implementation of Event Hubs consumer consists of 3 parts: checkpoint 
-manager that saves processing progress per partition into a SQL table;
-dead letter manager that persists information about processing errors;
-and an event host which uses both to provide transactional processing
-of events.</p>
-<p>The transaction scope is limited to SQL Server databases, but it might be
-sufficient for many real world scenarios.</p>
 ]]></content>
     </entry>
     
