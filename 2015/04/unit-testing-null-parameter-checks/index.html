@@ -77,102 +77,102 @@
     
     <div class="post-content">
         <p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClass</span> : <span class="hljs-title">IVeryUsefulClass</span>
+<pre class="highlight"><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClass</span> : <span class="hljs-type">IVeryUsefulClass</span></span>
 {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomething something;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISomethingElse somethingElse;
+    <span class="hljs-keyword">private</span> readonly ISomething something;
+    <span class="hljs-keyword">private</span> readonly ISomethingElse somethingElse;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(ISomething something, ISomethingElse somethingElse)</span>
-    </span>{
+    <span class="hljs-keyword">public</span> VeryUsefulClass(ISomething something, ISomethingElse somethingElse)
+    {
         <span class="hljs-keyword">this</span>.something = something;
         <span class="hljs-keyword">this</span>.somethingElse = somethingElse;
     }
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> AwesomeResponse <span class="hljs-title">DoUsefullStaff</span><span class="hljs-params">(ImportantRequest request)</span>
-    </span>{
+    <span class="hljs-keyword">public</span> AwesomeResponse DoUsefullStaff(ImportantRequest request)
+    {
         <span class="hljs-keyword">this</span>.something.DoSomething();
         <span class="hljs-keyword">this</span>.somethingElse.DoSomethingElse();
         <span class="hljs-keyword">return</span> ...;
     }
 }
 </code></pre><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
-<pre class="highlight"><code class="hljs cs">[TestFixture]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
+<pre class="highlight"><code class="hljs typescript">[TestFixture]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> VeryUsefulClassTests
 {
     [Test]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-    </span>{
-        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
-            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object));
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">void</span> WhenSomethingIsNullConstructorThrowsNullException()
+    {
+        Assert.ThrowsException&lt;ArgumentNullException&gt;<span class="hljs-function">(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; 
+            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-params"><span class="hljs-literal">null</span>, <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.<span class="hljs-built_in">Object</span></span>)</span>);
     }
 
-    [Test]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-    </span>{
-        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
-            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, <span class="hljs-keyword">null</span>));
+    [<span class="hljs-params">Test</span>]
+    <span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+    {
+        <span class="hljs-params">Assert</span>.<span class="hljs-params">ThrowsException</span>&lt;<span class="hljs-params">ArgumentNullException</span>&gt;(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; 
+            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-params"><span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.<span class="hljs-built_in">Object</span>, <span class="hljs-literal">null</span></span>)</span>);
     }
 
-    [Test]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
-    </span>{
-        <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.Object, 
-            <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.Object);
+    [<span class="hljs-params">Test</span>]
+    <span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+    {
+        <span class="hljs-params">var</span> <span class="hljs-params">target</span> = <span class="hljs-params">new</span> <span class="hljs-params">VeryUsefulClass</span>(<span class="hljs-params"><span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.<span class="hljs-built_in">Object</span>, 
+            <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.<span class="hljs-built_in">Object</span></span>);
         ...
     }
 
     ...
 }
-</code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
+</span></code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
 <h2 id="make-it-better">Make it better</h2>
 <p>Now let&#39;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
-<pre class="highlight"><code class="hljs r">public VeryUsefulClass(ISomething something, 
+<pre class="highlight"><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(ISomething something, 
     ISomethingElse somethingElse, 
-    ISomethingNew somethingNew)
-{
-    <span class="hljs-keyword">...</span>
+    ISomethingNew somethingNew)</span>
+</span>{
+    ...
 }
 </code></pre><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&#39;s refactor the tests. First, let&#39;s declare all mocks as private fields and create them in set-up method:</p>
-<pre class="highlight"><code class="hljs cs">[TestFixture]
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">TestFixture</span>]
 <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
 {
     <span class="hljs-keyword">private</span> Mock&lt;ISomething&gt; something;
     <span class="hljs-keyword">private</span> Mock&lt;ISomethingElse&gt; somethingElse;
 
-    [SetUp]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SetUp</span><span class="hljs-params">()</span>
+    [<span class="hljs-meta">SetUp</span>]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SetUp</span>(<span class="hljs-params"></span>)
     </span>{
         <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;();
         <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;();
     }
 ...
 </code></pre><p>This way the same clean mocks will be available for each and every test. To make use of them, let&#39;s create GetTarget method which will create an instance of class under test</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> VeryUsefulClass <span class="hljs-title">GetTarget</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(<span class="hljs-keyword">this</span>.something.Object, <span class="hljs-keyword">this</span>.somethingElse.Object)</span></span>;
+<pre class="highlight"><code class="hljs kotlin"><span class="hljs-keyword">private</span> VeryUsefulClass GetTarget()
+{
+    <span class="hljs-keyword">return</span> new VeryUsefulClass(<span class="hljs-keyword">this</span>.something.Object, <span class="hljs-keyword">this</span>.somethingElse.Object);
 }
 </code></pre><p>Now we are ready to rewrite our test methods with less duplication</p>
-<pre class="highlight"><code class="hljs cs">[Test]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">null</span>;
-    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
+<pre class="highlight"><code class="hljs typescript">[Test]
+<span class="hljs-keyword">public</span> <span class="hljs-built_in">void</span> WhenSomethingIsNullConstructorThrowsNullException()
+{
+    <span class="hljs-keyword">this</span>.something = <span class="hljs-literal">null</span>;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;<span class="hljs-function">(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; <span class="hljs-keyword">this</span>.GetTarget(<span class="hljs-params"></span>)</span>);
 }
 
-[Test]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">null</span>;
-    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span class="hljs-keyword">this</span>.GetTarget());
+[<span class="hljs-params">Test</span>]
+<span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+{
+    <span class="hljs-params">this</span>.<span class="hljs-params">somethingElse</span> = <span class="hljs-params">null</span>;
+    <span class="hljs-params">Assert</span>.<span class="hljs-params">ThrowsException</span>&lt;<span class="hljs-params">ArgumentNullException</span>&gt;(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; <span class="hljs-keyword">this</span>.GetTarget(<span class="hljs-params"></span>)</span>);
 }
 
-[Test]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-keyword">var</span> target = <span class="hljs-keyword">this</span>.GetTarget();
+[<span class="hljs-params">Test</span>]
+<span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+{
+    <span class="hljs-params">var</span> <span class="hljs-params">target</span> = <span class="hljs-params">this</span>.<span class="hljs-params">GetTarget</span><span class="hljs-params">()</span>;
     ...
 }
-</code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
+</span></code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
 <p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
 <h2 id="make-it-shine">Make it shine</h2>
 <p>I&#39;m still not quite satisfied with the amount of code we have to write for such a simple thing as the validation of ArgumentNullException being thrown from constructors. Imagine this: we have hundreds or thousands of classes which follow this same pattern, and we end up writing thousands tests which look almost exactly the same... </p>

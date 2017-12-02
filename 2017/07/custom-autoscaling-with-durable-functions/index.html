@@ -126,14 +126,14 @@ to keep the function minimal and clean. You can see the full code in
 <p><strong>Scaler</strong> function is triggered by Durable Function&#39;s <code>ActivityTrigger</code>. That
 basically means that it&#39;s ready to be called from other functions. Here is
 the code:</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(Scaler))]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">Scaler</span><span class="hljs-params">([ActivityTrigger] DurableActivityContext context)</span>
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(Scaler))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[ActivityTrigger] DurableActivityContext context</span>)
 </span>{
     <span class="hljs-keyword">var</span> action = context.GetInput&lt;ScaleAction&gt;();
 
     <span class="hljs-keyword">var</span> newCapacity = ScalingHelper.ChangeAppServiceInstanceCount(
         action.ResourceName,
-        action.Type == ScaleActionType.Down ? -<span class="hljs-number">1</span> : +<span class="hljs-number">1</span>);
+        action.Type == ScaleActionType.Down ? <span class="hljs-number">-1</span> : +<span class="hljs-number">1</span>);
 
     <span class="hljs-keyword">return</span> newCapacity;
 }
@@ -148,22 +148,22 @@ values in the previous implementation.</p>
 <p><strong>Scaling Logic</strong> is using <a href="https://azure.github.io/azure-functions-durable-extension/articles/samples/counter.html">Stateful Actor pattern</a>.
 One instance of such actor is created for each scalable resource (I only use
 1 now). Here is the implementation (again, simplified for readability):</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(ScalingLogic))]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;ScalingState&gt; <span class="hljs-title">ScalingLogic</span><span class="hljs-params">(
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(ScalingLogic))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;ScalingState&gt; <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
     [OrchestrationTrigger] DurableOrchestrationContext context, 
-    TraceWriter log)</span>
+    TraceWriter log</span>)
 </span>{
     <span class="hljs-keyword">var</span> state = context.GetInput&lt;ScalingState&gt;();
 
-    <span class="hljs-keyword">var</span> metric = <span class="hljs-keyword">await</span> context.WaitForExternalEvent&lt;Metric&gt;(nameof(Metric));
+    <span class="hljs-keyword">var</span> metric = <span class="hljs-keyword">await</span> context.WaitForExternalEvent&lt;Metric&gt;(<span class="hljs-keyword">nameof</span>(Metric));
 
     UpdateHistory(state.History, metric.Value);
     ScaleAction action = CalculateScalingAction(state);
 
-    <span class="hljs-keyword">if</span> (action != <span class="hljs-keyword">null</span>)
+    <span class="hljs-keyword">if</span> (action != <span class="hljs-literal">null</span>)
     {
-        <span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> context.CallFunctionAsync&lt;<span class="hljs-keyword">int</span>&gt;(nameof(Scaler), action);
-        log.Info($<span class="hljs-string">"Scaling logic: Scaled to {result} instances."</span>);
+        <span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> context.CallFunctionAsync&lt;<span class="hljs-keyword">int</span>&gt;(<span class="hljs-keyword">nameof</span>(Scaler), action);
+        log.Info(<span class="hljs-string">$"Scaling logic: Scaled to <span class="hljs-subst">{result}</span> instances."</span>);
         state.LastScalingActionTime = context.CurrentUtcDateTime;
     }
 
@@ -203,24 +203,24 @@ and we now have the ability to get feedback from <strong>Scaler</strong> functio
 minimal and clean. You can see the full code in 
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
 <p>Here is the remaining implementation of <strong>Metric Collector</strong>:</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(MetricCollector))]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">MetricCollector</span><span class="hljs-params">(
-    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span>)</span>] TimerInfo myTimer,
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(MetricCollector))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">
+    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer,
     [OrchestrationClient] DurableOrchestrationClient client,
     TraceWriter log)
 </span>{
     <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
 
     <span class="hljs-keyword">var</span> status = <span class="hljs-keyword">await</span> client.GetStatusAsync(resource);
-    <span class="hljs-keyword">if</span> (status == <span class="hljs-keyword">null</span>)
+    <span class="hljs-keyword">if</span> (status == <span class="hljs-literal">null</span>)
     {
-        <span class="hljs-keyword">await</span> client.StartNewAsync(nameof(ScalingLogic), resource, <span class="hljs-keyword">new</span> ScalingState());
+        <span class="hljs-keyword">await</span> client.StartNewAsync(<span class="hljs-keyword">nameof</span>(ScalingLogic), resource, <span class="hljs-keyword">new</span> ScalingState());
     }
     <span class="hljs-keyword">else</span>
     {
         <span class="hljs-keyword">var</span> metric = ServiceBusHelper.GetSubscriptionMetric(resource);
-        log.Info($<span class="hljs-string">"Collector: Current metric value is {metric.Value.Value} at {DateTime.Now}"</span>);
-        <span class="hljs-keyword">await</span> client.RaiseEventAsync(resource, nameof(Metric), metric);
+        log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{metric.Value.Value}</span> at <span class="hljs-subst">{DateTime.Now}</span>"</span>);
+        <span class="hljs-keyword">await</span> client.RaiseEventAsync(resource, <span class="hljs-keyword">nameof</span>(Metric), metric);
     }
 }
 </code></pre>

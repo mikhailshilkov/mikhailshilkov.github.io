@@ -136,7 +136,7 @@ is an example of a core function:</p>
 </code></pre>
 <p>So how do we make an actor out of this function? Well, it&#39;s already implemented
 as <code>actorOf</code> helper function in Akka.NET F# extensions:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfSink (f : <span class="hljs-attribute">'a</span> -&gt; unit) = actorOf f
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfSink (f : <span class="hljs-symbol">'a</span> -&gt; unit) = actorOf f
 </code></pre>
 <p>And here is how we spawn an actor instance:</p>
 <pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printActorRef = 
@@ -195,13 +195,13 @@ with the message contents:</p>
 </code></pre>
 <p>For the actor implementation we need a recursive function so we can&#39;t use 
 <code>actorOf2</code> anymore. Actor workflow is a bit more lines but still very simple:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulSink f initialState (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulSink f initialState (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
 
   <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
     actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
+      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
       <span class="hljs-keyword">let</span> newState = f msg lastState
-      <span class="hljs-keyword">return</span>! imp newState
+      <span class="hljs-keyword">return!</span> imp newState
     }
 
   imp initialState
@@ -233,14 +233,14 @@ and sends it forward:</p>
 </code></pre>
 <p>In this particular case the output message and state are equal, but they don&#39;t
 have to be. Here is the actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
 
   <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
     actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
+      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
       <span class="hljs-keyword">let</span> (result, newState) = f msg lastState
       outputRef &lt;! result
-      <span class="hljs-keyword">return</span>! imp newState
+      <span class="hljs-keyword">return!</span> imp newState
     }
 
   imp initialState
@@ -270,7 +270,7 @@ comes in. (We can&#39;t spawn it before the first message because the
 reference that we store in the state, something like this:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//childasstate.png" alt="Supervised Child as State"></p>
 <p>Here is the generic actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvertToChild f spawnChild (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvertToChild f spawnChild (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
 
   <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp state =
     actor {
@@ -279,9 +279,9 @@ reference that we store in the state, something like this:</p>
         | Some s -&gt; s
         | None -&gt; spawnChild mailbox
 
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
+      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
       newstate &lt;! f msg
-      <span class="hljs-keyword">return</span>! imp (Some newstate)
+      <span class="hljs-keyword">return!</span> imp (Some newstate)
     }
 
   imp None
@@ -319,19 +319,19 @@ actor to get the message. Here is a sample implementation:</p>
 <p>Based on the incoming metadata (sensor identifier) the actor forwards its
 temperature to corresponding sensor-specific actor. </p>
 <p>Here is the implementation of the generic actor function:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs coq"><span class="hljs-keyword">let</span> actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;'a&gt;) =
 
   <span class="hljs-keyword">let</span> getActor id = 
-    <span class="hljs-keyword">let</span> actorRef = mailbox.Context.Child(id)
+    <span class="hljs-keyword">let</span> actorRef = mailbox.<span class="hljs-keyword">Context</span>.Child(id)
     <span class="hljs-keyword">if</span> actorRef.IsNobody() <span class="hljs-keyword">then</span>
       spawnChild id mailbox
     <span class="hljs-keyword">else</span> 
       actorRef
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp () =
+  <span class="hljs-keyword">let</span> rec imp () =
     actor {
       <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
-      f msg |&gt; Seq.iter (<span class="hljs-keyword">fun</span> (id, x) -&gt; (getActor id) &lt;! x) 
+      f msg |<span class="hljs-type">&gt; Seq</span>.iter (<span class="hljs-keyword">fun</span> (id, x) -&gt; (getActor id) &lt;! x) 
       <span class="hljs-keyword">return</span>! imp ()
     }
 

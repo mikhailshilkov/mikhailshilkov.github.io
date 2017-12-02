@@ -94,16 +94,16 @@ a message. This gives the best concurrency and scalability characteristics.</p>
 <strong>Ask</strong> model. Let&#39;s have a close look at this model, and then see how we can
 implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
 <p>Actor definition starts with an interface:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IHardWorkingActor</span> : <span class="hljs-title">IActor</span>
+<pre class="highlight"><code class="hljs routeros">public<span class="hljs-built_in"> interface </span>IHardWorkingActor : IActor
 {
-    <span class="hljs-function">Task <span class="hljs-title">DoWork</span><span class="hljs-params">(<span class="hljs-keyword">string</span> payload)</span></span>;
+    Task DoWork(string payload);
 }
 </code></pre><p>As you can see, the method does not return any useful data, which means
 the client code isn&#39;t really interested in waiting for the operation to
 complete. Here&#39;s how we implement this interface in the Actor class:</p>
-<pre class="highlight"><code class="hljs vala"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HardWorkingActor</span> : <span class="hljs-title">Actor</span>, <span class="hljs-title">IHardWorkingActor</span>
-</span>{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task DoWork(<span class="hljs-keyword">string</span> payload)
+<pre class="highlight"><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HardWorkingActor</span> : <span class="hljs-type">Actor</span>, <span class="hljs-type">IHardWorkingActor</span></span>
+{
+    <span class="hljs-keyword">public</span> async Task DoWork(string payload)
     {
         ActorEventSource.Current.ActorMessage(<span class="hljs-keyword">this</span>, <span class="hljs-string">"Doing Work"</span>);
         await Task.Delay(<span class="hljs-number">500</span>);
@@ -115,36 +115,36 @@ from a queue or a web front-end and needs to go as fast as possible. It gets a p
 creates an actor proxy to dispatch the payload to, then it just wants 
 to continue with the next payload. Here is the &quot;Ask&quot; implementation based on 
 the Service Fabric samples:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>;
-<span class="hljs-keyword">var</span> timer = <span class="hljs-keyword">new</span> Stopwatch();
+<pre class="highlight"><code class="hljs routeros">int i = 0;
+var timer = new Stopwatch();
 timer.Start();
-<span class="hljs-keyword">while</span> (<span class="hljs-keyword">true</span>)
+<span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>)
 {
-    <span class="hljs-keyword">var</span> proxy = ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), <span class="hljs-string">"fabric:/Application1"</span>);
-    <span class="hljs-keyword">await</span> proxy.DoWork($<span class="hljs-string">"Work ${i++}"</span>);
-    Console.WriteLine($<span class="hljs-string">@"Sent work to Actor {proxy.GetActorId()}, 
+    var<span class="hljs-built_in"> proxy </span>= ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), <span class="hljs-string">"fabric:/Application1"</span>);
+    await proxy.DoWork($<span class="hljs-string">"Work <span class="hljs-variable">${i++}</span>"</span>);
+    Console.WriteLine(<span class="hljs-variable">$@</span><span class="hljs-string">"Sent work to Actor {proxy.GetActorId()}, 
                          rate is {i / timer.Elapsed.TotalSeconds}/sec"</span>);
 }
 </code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
 block until the actor work is complete. When we run the client, no surprise that
 we get the rate of about 2 messages per second:</p>
-<pre class="highlight"><code class="hljs applescript">Sent work <span class="hljs-keyword">to</span> Actor <span class="hljs-number">1647857287613311317</span>, rate <span class="hljs-keyword">is</span> <span class="hljs-number">1</span>,<span class="hljs-number">98643230380293</span>/sec
+<pre class="highlight"><code class="hljs lsl">Sent work to Actor <span class="hljs-number">1647857287613311317</span>, rate is <span class="hljs-number">1</span>,<span class="hljs-number">98643230380293</span>/sec
 </code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
 work and immediately proceed to the next one. Here&#39;s how the client call should
 look like:</p>
-<pre class="highlight"><code class="hljs bash">proxy.DoWork($<span class="hljs-string">"Work <span class="hljs-variable">${i++}</span>"</span>).FireAndForget();
+<pre class="highlight"><code class="hljs less"><span class="hljs-selector-tag">proxy</span><span class="hljs-selector-class">.DoWork</span>($<span class="hljs-string">"Work ${i++}"</span>)<span class="hljs-selector-class">.FireAndForget</span>();
 </code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
 extension method and proceed immediately. It appears that the implementation 
 of such extension method is trivial:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TaskHelper</span>
 {       
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">FireAndForget</span><span class="hljs-params">(<span class="hljs-keyword">this</span> Task task)</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">FireAndForget</span>(<span class="hljs-params"><span class="hljs-keyword">this</span> Task task</span>)
     </span>{
-        Task.Run(<span class="hljs-keyword">async</span>() =&gt; <span class="hljs-keyword">await</span> task).ConfigureAwait(<span class="hljs-keyword">false</span>);
+        Task.Run(<span class="hljs-keyword">async</span>() =&gt; <span class="hljs-keyword">await</span> task).ConfigureAwait(<span class="hljs-literal">false</span>);
     }
 } 
 </code></pre><p>The result looks quite different from what we had before:</p>
-<pre class="highlight"><code class="hljs applescript">Sent work <span class="hljs-keyword">to</span> Actor -<span class="hljs-number">8450334792912439527</span>, rate <span class="hljs-keyword">is</span> <span class="hljs-number">408</span>,<span class="hljs-number">484162592517</span>/sec
+<pre class="highlight"><code class="hljs lsl">Sent work to Actor <span class="hljs-number">-8450334792912439527</span>, rate is <span class="hljs-number">408</span>,<span class="hljs-number">484162592517</span>/sec
 </code></pre><p>400 messages per second, which is some 200x difference... </p>
 <p>The conclusions are simple:</p>
 <ul>

@@ -160,14 +160,14 @@ implement our own checkpoints based on a SQL table. This way each
 checkpoint update can become part of a SQL transaction and be committed
 or rolled back with normal guarantees provided by SQL Server.</p>
 <p>Here is a table that I created to hold my checkpoints:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubCheckpoint (
+<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubCheckpoint (
   Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
   PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
   SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  Offset <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubCheckpoint <span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
+  <span class="hljs-keyword">Offset</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubCheckpoint PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
 )
-</span></code></pre>
+</code></pre>
 <p>For each topic and partition of Event Hubs, we store two values: sequence
 number and offset, which together uniquely identify the consumer position.</p>
 <p>Conveniently, Event Host Processor provides an extensibility point to
@@ -186,16 +186,16 @@ which makes proper lease manager redundand.</p>
 <p>Now, we want to be able to mark some messages as failed and to 
 re-process them later. To make Dead Letters transactional, we need another
 SQL table to hold the failed events:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-operator"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubDeadLetter (
+<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubDeadLetter (
   Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
   PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
   SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  Offset <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  <span class="hljs-keyword">Offset</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
   FailedAt datetime <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  Error <span class="hljs-keyword">nvarchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubDeadLetter <span class="hljs-keyword">PRIMARY</span> <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
+  <span class="hljs-keyword">Error</span> <span class="hljs-keyword">nvarchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
+  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubDeadLetter PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
 )
-</span></code></pre>
+</code></pre>
 <p>This table looks very similar to <code>EventHubCheckpoint</code> that I
 defined above. That is because they are effectively storing pointers to
 events in a hub. Dead Letters have two additional columns to store error
@@ -234,9 +234,9 @@ into its constructor, and then I implement <code>IEventProcessor</code>&#39;s
 <li>Commit the transaction</li>
 </ol>
 <p>The code block that illustrates this workflow:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">ProcessEventsAsync</span><span class="hljs-params">(
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">ProcessEventsAsync</span>(<span class="hljs-params">
     PartitionContext context, 
-    IEnumerable&lt;EventData&gt; eventDatas)</span>
+    IEnumerable&lt;EventData&gt; eventDatas</span>)
 </span>{
     <span class="hljs-comment">// 1. Instantiate a list of items to store failed events</span>
     <span class="hljs-keyword">var</span> failedItems = <span class="hljs-keyword">new</span> List&lt;DeadLetter&lt;EventData&gt;&gt;();

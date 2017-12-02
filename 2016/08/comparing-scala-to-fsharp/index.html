@@ -91,12 +91,12 @@ in Scala I find interesting, or vice versa - missing compared to F#.</p>
 <p><em>Post updated based on comments by Mark Lewis and Giacomo Citi.</em></p>
 <h2 id="implicit-parameters">Implicit Parameters</h2>
 <p>A parameter of a function can be marked as implicit</p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">work</span>(</span><span class="hljs-keyword">implicit</span> i:<span class="hljs-type">Int</span>) = print(i)
+<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">work</span></span>(<span class="hljs-keyword">implicit</span> i:<span class="hljs-type">Int</span>) = print(i)
 </code></pre>
 <p>and that means you can call the function without specifying the value for this parameter
 and the compiler will try to figure out that value you (according to
 the extensive set of rules), e.g.</p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-keyword">implicit</span> <span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">v</span> =</span> <span class="hljs-number">2</span>;
+<pre class="highlight"><code class="hljs scala"><span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> v = <span class="hljs-number">2</span>;
 <span class="hljs-comment">// ... somewhere below</span>
 work <span class="hljs-comment">// prints '2'</span>
 </code></pre>
@@ -124,10 +124,10 @@ sense, but I would love to have a shorter way of writing lambda in</p>
 <p>Any recursive function in Scala can be marked with <code>@tailrec</code> annotation,
 which would result in compilation error if the function is not tail-recursive.
 This guarantees that you won&#39;t get a nasty stack overflow exception. </p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-annotation">@tailrec</span> 
-<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">boom</span>(</span>x: <span class="hljs-type">Int</span>): <span class="hljs-type">Int</span> = {
+<pre class="highlight"><code class="hljs scala"><span class="hljs-meta">@tailrec</span> 
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">boom</span></span>(x: <span class="hljs-type">Int</span>): <span class="hljs-type">Int</span> = {
   <span class="hljs-keyword">if</span> (x == <span class="hljs-number">0</span>) <span class="hljs-number">0</span>
-  <span class="hljs-keyword">else</span> boom(x-<span class="hljs-number">1</span>) + <span class="hljs-number">1</span>
+  <span class="hljs-keyword">else</span> boom(x<span class="hljs-number">-1</span>) + <span class="hljs-number">1</span>
 }
 </code></pre>
 <p>The code above won&#39;t compile, as the recursion can&#39;t be optimized by the
@@ -140,15 +140,15 @@ the function body. This style of function substitution model is known as
 Call by Value.</p>
 <p>Same is the default in Scala. But there is an alternative: you can defer the
 evaluation of parameters by marking them with an <code>=&gt;</code> symbol:</p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">callByName</span>(</span>x: =&gt; <span class="hljs-type">Int</span>) = {
+<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">callByName</span></span>(x: =&gt; <span class="hljs-type">Int</span>) = {
   println(<span class="hljs-string">"x is "</span> + x)
 }
 </code></pre>
 <p>This style is known as Call by Name, and the evaluation is defered until the
 parameter is actually used. So, if parameter is never used, its value
 will never be evaluated. This code:</p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">a</span>:</span><span class="hljs-type">Option</span>[<span class="hljs-type">Int</span>] = <span class="hljs-type">Some</span>(<span class="hljs-number">1</span>)
-<span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">b</span> =</span> a getOrElse (<span class="hljs-number">2</span>/<span class="hljs-number">0</span>)
+<pre class="highlight"><code class="hljs scala"><span class="hljs-keyword">val</span> a:<span class="hljs-type">Option</span>[<span class="hljs-type">Int</span>] = <span class="hljs-type">Some</span>(<span class="hljs-number">1</span>)
+<span class="hljs-keyword">val</span> b = a getOrElse (<span class="hljs-number">2</span>/<span class="hljs-number">0</span>)
 </code></pre>
 <p>will set <code>b</code> to <code>1</code>, and no error will be thrown, even though we are dividing by zero 
 in function parameter. This is because the parameter of <code>getOrElse</code> is passed
@@ -159,7 +159,7 @@ will blow up:</p>
 <span class="hljs-keyword">let</span> b = defaultArg b (<span class="hljs-number">2</span>/<span class="hljs-number">0</span>) <span class="hljs-comment">// boom</span>
 </code></pre>
 <p>You can get deferred evaluation by passing a function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> defaultArgFunc o (f: unit -&gt; <span class="hljs-attribute">'a</span>) = 
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> defaultArgFunc o (f: unit -&gt; <span class="hljs-symbol">'a</span>) = 
   <span class="hljs-keyword">match</span> o <span class="hljs-keyword">with</span> | Some v -&gt; v | None -&gt; f()
 
 <span class="hljs-keyword">let</span> b2 = defaultArgFunc a (<span class="hljs-keyword">fun</span> () -&gt; <span class="hljs-number">2</span> / <span class="hljs-number">0</span>)
@@ -171,7 +171,7 @@ arguably cleaner.</p>
 In Scala, type inference seems to be quite limited. Yes, you don&#39;t have to
 explicitly define the types of local values or (most of the time) function return
 types, but that&#39;s about it.</p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">max</span> (</span>a: <span class="hljs-type">Int</span>, b:<span class="hljs-type">Int</span>) = <span class="hljs-keyword">if</span> (a &gt; b) a <span class="hljs-keyword">else</span> b
+<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">max</span> </span>(a: <span class="hljs-type">Int</span>, b:<span class="hljs-type">Int</span>) = <span class="hljs-keyword">if</span> (a &gt; b) a <span class="hljs-keyword">else</span> b
 </code></pre>
 <p>You have to specify the types of all input parameters, and that&#39;s quite a bummer
 for people who are used to short type-less code of F# (or Haskell, OCaml and others, 
@@ -225,11 +225,11 @@ functions aren&#39;t. Thus, in F# partial application just works, all the time</
 <span class="hljs-keyword">let</span> sum = add3 <span class="hljs-number">5</span> <span class="hljs-comment">// 8</span>
 </code></pre>
 <p>Scala function </p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">add</span> (</span>a: <span class="hljs-type">Int</span>, b: <span class="hljs-type">Int</span>) = a + b
+<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">add</span> </span>(a: <span class="hljs-type">Int</span>, b: <span class="hljs-type">Int</span>) = a + b
 </code></pre>
 <p>is not curried, but Underscore comes to the rescue</p>
-<pre class="highlight"><code class="hljs scala"><span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">add3</span>:</span> (<span class="hljs-type">Int</span>) =&gt; <span class="hljs-type">Int</span> = add(<span class="hljs-number">3</span>, _)
-<span class="hljs-function"><span class="hljs-keyword">val</span> <span class="hljs-title">sum</span> =</span> add3(<span class="hljs-number">5</span>) <span class="hljs-comment">// 8</span>
+<pre class="highlight"><code class="hljs scala"><span class="hljs-keyword">val</span> add3: (<span class="hljs-type">Int</span>) =&gt; <span class="hljs-type">Int</span> = add(<span class="hljs-number">3</span>, _)
+<span class="hljs-keyword">val</span> sum = add3(<span class="hljs-number">5</span>) <span class="hljs-comment">// 8</span>
 </code></pre>
 <p>Note how I miss the type inference again.</p>
 <p>The parameter order is very important in F#: the short syntax

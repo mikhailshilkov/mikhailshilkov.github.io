@@ -72,6 +72,133 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Apr 15th, 2016</div>
+    
+    <h1><a href='/2016/04/t-sql-merge-statement-is-underrated/'>T-SQL MERGE statement is underrated</a></h1>
+    
+    <div class="post-content">
+        <p>How many times did you write a SQL to <strong>save</strong> a row without knowing whether the same
+primary key already exists or not? You just get an object in your data access layer and
+you want to save all fields into the database. </p>
+<p>But there is no SAVE statement in SQL, so effectively you need to come up with your 
+implementation of &quot;INSERT or UPDATE&quot; command.</p>
+<h2 id="example">Example</h2>
+<p>Let&#39;s take a concrete example. You have a person object with just 3 fields, here is the
+type definition:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Person</span>
+{
+    <span class="hljs-keyword">public</span> Guid Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Email { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>Persons are entities, so we chose a GUID for the primary key column. We always generate
+the unique identifier at client side and just want to save the <code>Person</code>.</p>
+<h2 id="typical-solutions">Typical Solutions</h2>
+<p>The typical T-SQL developer&#39;s toolbox contains <code>SELECT</code>, <code>INSERT</code>,
+<code>UPDATE</code> and <code>DELETE</code> statements. <code>DELETE</code> is of no use here, but the combination of the other
+three can be employed to complete the task. The most straightforward option is</p>
+<pre class="highlight"><code class="hljs sql">IF NOT EXISTS(<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> Person <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>)
+  <span class="hljs-keyword">INSERT</span> Person (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (@<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email)
+<span class="hljs-keyword">ELSE</span>
+  <span class="hljs-keyword">UPDATE</span> Person <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = @<span class="hljs-keyword">Name</span> <span class="hljs-keyword">AND</span> Email = @Email <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>
+</code></pre>
+<p>It&#39;s 4 lines of code instead of one, but it works. Being more fancy, we can reduce the code to
+3 lines of code:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">UPDATE</span> Person <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = @<span class="hljs-keyword">Name</span> <span class="hljs-keyword">AND</span> Email = @Email <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>
+<span class="hljs-keyword">IF</span> @@ROWCOUNT = <span class="hljs-number">0</span> <span class="hljs-keyword">THEN</span>
+  <span class="hljs-keyword">INSERT</span> Person (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (@<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email)
+</code></pre>
+<p>It should also perform faster if you update more often then insert.</p>
+<p>Solved? Not completely...</p>
+<p>The problem is that sometimes it doesn&#39;t
+work. By default, <code>SELECT</code> doesn&#39;t lock the table, so in race condition scenario there
+may be another thread which would insert another row with same Id between the execution of
+two statements (or delete the existing row for that matter). Ouch.</p>
+<p>If you think that&#39;s just a theoretical problem... Well, it might be for our tiny shiny <code>Person</code>
+table, but it will happen for the tables of decent sizes with complex update patterns.</p>
+<h2 id="transactions">Transactions</h2>
+<p>What do we do when the execution of two statements can cause race conditions with
+unpredictable results? We use transactions! So, start a transaction before the statement,
+then lock the table in <code>SELECT</code> and commit after all is done. It works, but quite some downsides
+again:</p>
+<ul>
+<li>Lots of boilerplate code</li>
+<li>Easy to make a mistake (Which lock do we need? <code>updlock</code>? <code>holdlock</code>? <code>tablockx</code>?)</li>
+<li>You might get into a deadlock, so need to handle it gracefully</li>
+</ul>
+<h2 id="merge">MERGE</h2>
+<p>Starting with SQL Server 2008, Microsoft introduced the <a href="https://msdn.microsoft.com/ru-ru/library/bb510625.aspx">MERGE</a>
+statement. Generally, it&#39;s quite powerful and can be used to save all the different rows of a source
+table into a target table. But we can also use it for our simple task of saving a person.</p>
+<p><code>MERGE</code> is just one statement, so it&#39;s atomic and consistent. It performs very well. 
+But the syntax is... oh my god, it&#39;s horrible. Your eyes might bleed:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">MERGE</span> Person <span class="hljs-keyword">AS</span> target
+<span class="hljs-keyword">USING</span> (<span class="hljs-keyword">SELECT</span> @<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email) <span class="hljs-keyword">AS</span> <span class="hljs-keyword">source</span> (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email)
+   <span class="hljs-keyword">ON</span> (target.Id = source.Id)
+ <span class="hljs-keyword">WHEN</span> <span class="hljs-keyword">MATCHED</span> <span class="hljs-keyword">THEN</span> 
+      <span class="hljs-keyword">UPDATE</span> <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = source.Name, Email = source.Email
+ <span class="hljs-keyword">WHEN</span> <span class="hljs-keyword">NOT</span> <span class="hljs-keyword">MATCHED</span> <span class="hljs-keyword">THEN</span>
+      <span class="hljs-keyword">INSERT</span> (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (source.Id, source.Name, source.Email)
+</code></pre>
+<p>Yes, we repeat the name of each column 6 times. And we say <code>source</code> 7 times. And you can imagine
+how the <code>MERGE</code> of a table with 50 columns would look like. And how painful it is to add a new column
+to an existing statement written 2 years ago.</p>
+<p>By the way, the deadlocks are still possible with <code>MERGE</code> statement, so you need to handle them
+properly.</p>
+<p>So the developers, even the ones who know about the <code>MERGE</code>, usually choose to use the good old <code>CRUD</code>
+combination. But when isn&#39;t the syntax a problem?</p>
+<h2 id="generate-it-">Generate It!</h2>
+<p>More and more developers shift from writing the stored procedures to using ORMs. With full-blown
+ORMs you don&#39;t need to care about particular SQL statements, but you get a bunch of other problems
+related to <a href="https://en.wikipedia.org/wiki/Object-relational_impedance_mismatch">Object-relational impedance mismatch</a>.</p>
+<p>One possible approach is to use a mini-ORM, for instance <a href="https://github.com/StackExchange/dapper-dot-net">Dapper</a>. 
+You do your work in your favourite 
+general-purpose language, but stay &quot;close to the metal&quot;, or rather to SQL engine statements.</p>
+<p>Here is how I invoke a <code>MERGE</code> statement for a Person object (given a connection from the pool):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> person = <span class="hljs-keyword">new</span> Person(...);
+DapperAdapter.Merge(connection, person);
+</code></pre>
+<p>Voila! The implementation of generic <code>Merge</code> method takes care of the syntax complications.
+Write once, use everywhere:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> Merge&lt;TEntity&gt;(IDbConnection dbConnection, TEntity entity) <span class="hljs-keyword">where</span> TEntity : <span class="hljs-keyword">class</span>
+{
+    <span class="hljs-keyword">var</span> props = entity.GetType().GetProperties().Select(p =&gt; p.Name).ToList();
+    <span class="hljs-keyword">var</span> names = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props);
+    <span class="hljs-keyword">var</span> values = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props.Select(n =&gt; <span class="hljs-string">"@"</span> + n));
+    <span class="hljs-keyword">var</span> updates = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props.Select(n =&gt; <span class="hljs-string">$"<span class="hljs-subst">{n}</span> = @<span class="hljs-subst">{n}</span>"</span>));
+    dbConnection.Execute(
+        <span class="hljs-string">$@"MERGE <span class="hljs-subst">{entity.GetType().Name}</span> as target
+          USING (VALUES(<span class="hljs-subst">{values}</span>))
+          AS SOURCE (<span class="hljs-subst">{names}</span>)
+          ON target.Id = @Id
+          WHEN matched THEN
+            UPDATE SET <span class="hljs-subst">{updates}</span>
+          WHEN not matched THEN
+            INSERT(<span class="hljs-subst">{names}</span>) VALUES(<span class="hljs-subst">{values}</span>);"</span>,
+        entity);
+}
+</code></pre>
+<p>Of course, it will only work if you use the convention of naming the <code>Person</code> properties
+after the database table. In most cases, there will be a domain class <code>Person</code> and a property
+bag class <code>PersonRow</code>, so you&#39;ll have to do the mapping between them. But that might be
+easier than writing T-SQL code.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Don&#39;t let the bulky syntax scare you away from the <code>MERGE</code> T-SQL statement. Extend your 
+toolbox, and use the tools wisely.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/t-sql/'>T-SQL</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/dapper/'>Dapper</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Apr 9th, 2016</div>
     
     <h1><a href='/2016/04/building-a-poker-bot-with-akka-net-actors/'>Building a Poker Bot with Akka.NET Actors</a></h1>
@@ -172,7 +299,7 @@ message to send to it:</p>
 </code></pre>
 <p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
 <code>spawn</code> function with proper parameter order:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> spawnChild childActor name (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) = 
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> spawnChild childActor name (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) = 
   spawn mailbox.Context name childActor
 </code></pre>
 <p>We can also extend it to debug messages when new actors get created.</p>
@@ -324,7 +451,7 @@ is an example of a core function:</p>
 </code></pre>
 <p>So how do we make an actor out of this function? Well, it&#39;s already implemented
 as <code>actorOf</code> helper function in Akka.NET F# extensions:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfSink (f : <span class="hljs-attribute">'a</span> -&gt; unit) = actorOf f
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfSink (f : <span class="hljs-symbol">'a</span> -&gt; unit) = actorOf f
 </code></pre>
 <p>And here is how we spawn an actor instance:</p>
 <pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printActorRef = 
@@ -383,13 +510,13 @@ with the message contents:</p>
 </code></pre>
 <p>For the actor implementation we need a recursive function so we can&#39;t use 
 <code>actorOf2</code> anymore. Actor workflow is a bit more lines but still very simple:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulSink f initialState (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulSink f initialState (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
 
   <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
     actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
+      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
       <span class="hljs-keyword">let</span> newState = f msg lastState
-      <span class="hljs-keyword">return</span>! imp newState
+      <span class="hljs-keyword">return!</span> imp newState
     }
 
   imp initialState
@@ -421,14 +548,14 @@ and sends it forward:</p>
 </code></pre>
 <p>In this particular case the output message and state are equal, but they don&#39;t
 have to be. Here is the actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
 
   <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
     actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
+      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
       <span class="hljs-keyword">let</span> (result, newState) = f msg lastState
       outputRef &lt;! result
-      <span class="hljs-keyword">return</span>! imp newState
+      <span class="hljs-keyword">return!</span> imp newState
     }
 
   imp initialState
@@ -458,7 +585,7 @@ comes in. (We can&#39;t spawn it before the first message because the
 reference that we store in the state, something like this:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//childasstate.png" alt="Supervised Child as State"></p>
 <p>Here is the generic actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvertToChild f spawnChild (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvertToChild f spawnChild (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
 
   <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp state =
     actor {
@@ -467,9 +594,9 @@ reference that we store in the state, something like this:</p>
         | Some s -&gt; s
         | None -&gt; spawnChild mailbox
 
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
+      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
       newstate &lt;! f msg
-      <span class="hljs-keyword">return</span>! imp (Some newstate)
+      <span class="hljs-keyword">return!</span> imp (Some newstate)
     }
 
   imp None
@@ -507,19 +634,19 @@ actor to get the message. Here is a sample implementation:</p>
 <p>Based on the incoming metadata (sensor identifier) the actor forwards its
 temperature to corresponding sensor-specific actor. </p>
 <p>Here is the implementation of the generic actor function:</p>
-<pre class="highlight"><code class="hljs fsharp"><span class="hljs-keyword">let</span> actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;<span class="hljs-attribute">'a</span>&gt;) =
+<pre class="highlight"><code class="hljs coq"><span class="hljs-keyword">let</span> actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;'a&gt;) =
 
   <span class="hljs-keyword">let</span> getActor id = 
-    <span class="hljs-keyword">let</span> actorRef = mailbox.Context.Child(id)
+    <span class="hljs-keyword">let</span> actorRef = mailbox.<span class="hljs-keyword">Context</span>.Child(id)
     <span class="hljs-keyword">if</span> actorRef.IsNobody() <span class="hljs-keyword">then</span>
       spawnChild id mailbox
     <span class="hljs-keyword">else</span> 
       actorRef
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp () =
+  <span class="hljs-keyword">let</span> rec imp () =
     actor {
       <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
-      f msg |&gt; Seq.iter (<span class="hljs-keyword">fun</span> (id, x) -&gt; (getActor id) &lt;! x) 
+      f msg |<span class="hljs-type">&gt; Seq</span>.iter (<span class="hljs-keyword">fun</span> (id, x) -&gt; (getActor id) &lt;! x) 
       <span class="hljs-keyword">return</span>! imp ()
     }
 
@@ -567,34 +694,34 @@ my map looks like:</p>
 <p>So, I assume you already have an existing Aurelia application, and let&#39;s start.</p>
 <h2 id="install-leaflet">Install Leaflet</h2>
 <p>The following command will install Leaflet module to the application:</p>
-<pre class="highlight"><code class="hljs cmake">jspm <span class="hljs-keyword">install</span> leaflet
+<pre class="highlight"><code class="hljs mipsasm"><span class="hljs-keyword">jspm </span><span class="hljs-keyword">install </span>leaflet
 </code></pre><p>If you are using TypeScript, don&#39;t forget to add type definitions</p>
 <pre class="highlight"><code class="hljs cmake">tsd <span class="hljs-keyword">install</span> leaflet
 </code></pre><h2 id="define-a-map-component">Define a Map Component</h2>
 <p>Create a new <code>map.html</code> file and put the following contents there:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-title">template</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-title">require</span> <span class="hljs-attribute">from</span>=<span class="hljs-value">"leaflet/dist/leaflet.css"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">require</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-title">div</span> <span class="hljs-attribute">id</span>=<span class="hljs-value">"mapid"</span> <span class="hljs-attribute">style</span>=<span class="hljs-value">"height: 100%"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">div</span>&gt;</span>
-<span class="hljs-tag">&lt;/<span class="hljs-title">template</span>&gt;</span>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-name">template</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-name">require</span> <span class="hljs-attr">from</span>=<span class="hljs-string">"leaflet/dist/leaflet.css"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">require</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">id</span>=<span class="hljs-string">"mapid"</span> <span class="hljs-attr">style</span>=<span class="hljs-string">"height: 100%"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">template</span>&gt;</span>
 </code></pre>
 <p>We import the CSS required by leaflet and define the <code>div</code> element to host
 the map in. Then, create a new <code>map.js</code> file (or <code>map.ts</code> for typescript),
 here is the minimum code:</p>
-<pre class="highlight"><code class="hljs javascript">export <span class="hljs-keyword">class</span> Map {
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">export</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Map</span> </span>{
 }
 </code></pre>
 <h2 id="load-the-map-with-tiles">Load the Map with Tiles</h2>
 <p>First, import the leaflet module in your codebehind:</p>
-<pre class="highlight"><code class="hljs javascript">import * as L from <span class="hljs-string">'leaflet'</span>;
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">import</span> * <span class="hljs-keyword">as</span> L <span class="hljs-keyword">from</span> <span class="hljs-string">'leaflet'</span>;
 </code></pre>
 <p>Now, define the <code>attached</code> function, which would be called by Aurelia when
 control&#39;s HTML is loaded, and make a map there:</p>
-<pre class="highlight"><code class="hljs javascript">export <span class="hljs-keyword">class</span> Map {
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">export</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Map</span> </span>{
   attached() {
-    <span class="hljs-keyword">let</span> map = L.map(<span class="hljs-string">'mapid'</span>).setView([<span class="hljs-number">51.505</span>, -<span class="hljs-number">0.09</span>], <span class="hljs-number">13</span>);
+    <span class="hljs-keyword">let</span> map = L.map(<span class="hljs-string">'mapid'</span>).setView([<span class="hljs-number">51.505</span>, <span class="hljs-number">-0.09</span>], <span class="hljs-number">13</span>);
 
     <span class="hljs-keyword">let</span> urlTemplate = <span class="hljs-string">'http://{s}.tile.osm.org/{z}/{x}/{y}.png'</span>;
-    map.addLayer(L.tileLayer(urlTemplate, { minZoom: <span class="hljs-number">4</span> }));
+    map.addLayer(L.tileLayer(urlTemplate, { <span class="hljs-attr">minZoom</span>: <span class="hljs-number">4</span> }));
   }
 }
 </code></pre>
@@ -602,7 +729,7 @@ control&#39;s HTML is loaded, and make a map there:</p>
 tutorial, but I needed to use our privately hosted maps, so I changed it to
 something like:</p>
 <pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">let</span> urlTemplate = <span class="hljs-string">'http://www.mysite.com/tiles?layer=background&amp;level={z}&amp;x={x}&amp;y={y}'</span>;
-map.addLayer(L.tileLayer(urlTemplate, { minZoom: <span class="hljs-number">4</span>, zoomOffset: <span class="hljs-number">8</span> }));
+map.addLayer(L.tileLayer(urlTemplate, { <span class="hljs-attr">minZoom</span>: <span class="hljs-number">4</span>, <span class="hljs-attr">zoomOffset</span>: <span class="hljs-number">8</span> }));
 </code></pre>
 <p>The <code>zoomOffset</code> parameter was required to fix impedance mismatch of zoom levels.</p>
 <h2 id="custom-overlay-layer">Custom Overlay Layer</h2>
@@ -616,9 +743,9 @@ so we need to show the whole layer as a single picture and then refresh it every
 time user pans or zooms the map.</p>
 <p>The overlay layer can be implemented with <code>onAdd</code> and <code>onRemove</code> functions
 and then feeding an image element to the Leaflet as a layer. Here is the code:</p>
-<pre class="highlight"><code class="hljs javascript">import * as L from <span class="hljs-string">'leaflet'</span>;
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">import</span> * <span class="hljs-keyword">as</span> L <span class="hljs-keyword">from</span> <span class="hljs-string">'leaflet'</span>;
 
-export <span class="hljs-keyword">class</span> LabelOverlayLayer {
+<span class="hljs-keyword">export</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">LabelOverlayLayer</span> </span>{
   map;
   image;
 
@@ -641,7 +768,7 @@ export <span class="hljs-keyword">class</span> LabelOverlayLayer {
     <span class="hljs-keyword">let</span> bounds = <span class="hljs-keyword">this</span>.map.getBounds(), mapSize = <span class="hljs-keyword">this</span>.map.getSize();
     <span class="hljs-keyword">let</span> se = bounds.getSouthEast(), nw = bounds.getNorthWest();
 
-    <span class="hljs-keyword">let</span> tileUrl = `http:<span class="hljs-comment">//www.mysite.com/tiles?layer=labels&amp;lonmin=${nw.lng}&amp;latmin=${se.lat}&amp;lonmax=${se.lng}&amp;latmax=${nw.lat}&amp;width=${Math.floor(mapSize.x)}&amp;height=${Math.floor(mapSize.y)}`;</span>
+    <span class="hljs-keyword">let</span> tileUrl = <span class="hljs-string">`http://www.mysite.com/tiles?layer=labels&amp;lonmin=<span class="hljs-subst">${nw.lng}</span>&amp;latmin=<span class="hljs-subst">${se.lat}</span>&amp;lonmax=<span class="hljs-subst">${se.lng}</span>&amp;latmax=<span class="hljs-subst">${nw.lat}</span>&amp;width=<span class="hljs-subst">${<span class="hljs-built_in">Math</span>.floor(mapSize.x)}</span>&amp;height=<span class="hljs-subst">${<span class="hljs-built_in">Math</span>.floor(mapSize.y)}</span>`</span>;
     <span class="hljs-keyword">this</span>.image.src = tileUrl;
 
     <span class="hljs-keyword">let</span> pos = <span class="hljs-keyword">this</span>.map.latLngToLayerPoint(nw);
@@ -654,10 +781,10 @@ export <span class="hljs-keyword">class</span> LabelOverlayLayer {
 </code></pre>
 <h2 id="use-the-map-component">Use the Map Component</h2>
 <p>The map component is ready to be used in the application:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-title">require</span> <span class="hljs-attribute">from</span>=<span class="hljs-value">"./components/map"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">require</span>&gt;</span>
-<span class="hljs-tag">&lt;<span class="hljs-title">div</span>  <span class="hljs-attribute">style</span>=<span class="hljs-value">"height: 700px"</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-title">map</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-title">map</span>&gt;</span>
-<span class="hljs-tag">&lt;/<span class="hljs-title">div</span>&gt;</span>
+<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-name">require</span> <span class="hljs-attr">from</span>=<span class="hljs-string">"./components/map"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">require</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">div</span>  <span class="hljs-attr">style</span>=<span class="hljs-string">"height: 700px"</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-name">map</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">map</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
 </code></pre>
 <p>The container around the map should have a non-zero height, so I made it fixed
 in the example above.</p>
@@ -742,7 +869,7 @@ a loop with async sleep statements inside.</p>
     <span class="hljs-keyword">let</span> x = step fromX toX count i |&gt; float
     <span class="hljs-keyword">let</span> y = step fromY toY count i |&gt; float
     moveTo x y
-    <span class="hljs-keyword">do</span>! Async.Sleep <span class="hljs-number">3</span>
+    <span class="hljs-keyword">do!</span> Async.Sleep <span class="hljs-number">3</span>
   }
 </code></pre>
 <p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
@@ -798,132 +925,6 @@ click event via the simulator:</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/human-like-behavior/'>Human-like Behavior</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Feb 23rd, 2016</div>
-    
-    <h1><a href='/2016/02/unit-testing-dapper-repositories/'>Unit testing Dapper repositories</a></h1>
-    
-    <div class="post-content">
-        <p><a href="https://github.com/StackExchange/dapper-dot-net">Dapper</a> is a micro-ORM library which is 
-very simple and super fast. In our projects we use Dapper for the tasks where something like
-EntityFramework or NHibernate would be an overkill.</p>
-<p>Quite often the data access code is difficult to be unit tested. Objects like
-database connections, commands, transactions and contexts are hard to mock, and
-thus the data access code is not easily isolated. Dapper relies heavily on SQL
-statements inside C# code, which gives an extra complication. Some people would
-argue that unit tests are not warranted for data access layer, and integration
-tests should be used instead. Let&#39;s have a look at another possibility.</p>
-<h2 id="an-example-of-a-repository">An Example of a Repository</h2>
-<p>Let&#39;s say we have a simple class and we want to populate instances of this class
-from the database:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Product</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Description { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-}
-</code></pre>
-<p>To be able to use Dapper for data access, we need an instance of <code>IDbConnection</code>.
-As we want to be able to mock the connection for unit tests, we need to create
-a factory interface to abstract it away:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IDatabaseConnectionFactory</span>
-{
-    <span class="hljs-function">IDbConnection <span class="hljs-title">GetConnection</span><span class="hljs-params">()</span></span>;
-}
-</code></pre>
-<p>Now the repository would get a connection from this factory and execute 
-Dapper queries on it:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ProductRepository</span>
-{
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> IDatabaseConnectionFactory connectionFactory;
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ProductRepository</span><span class="hljs-params">(IDatabaseConnectionFactory connectionFactory)</span>
-    </span>{
-        <span class="hljs-keyword">this</span>.connectionFactory = connectionFactory;
-    }
-
-    <span class="hljs-keyword">public</span> Task&lt;IEnumerable&lt;Product&gt;&gt; GetAll()
-    {
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">this</span>.connectionFactory.GetConnection().QueryAsync&lt;Product&gt;(
-            <span class="hljs-string">"select * from Product"</span>);
-    }
-}
-</code></pre>
-<h2 id="testing-without-a-real-database">Testing Without a real Database</h2>
-<p>Here is my approach to testing the repository:</p>
-<ol>
-<li>Use an in-memory <a href="https://www.sqlite.org/">SQLite3</a> database.</li>
-<li>Create a table there and put some data in.</li>
-<li>Run the repository against this database.</li>
-<li>Compare the result to the expected values.</li>
-</ol>
-<p>Here is a helper class which uses another micro-ORM library <a href="http://ormlite.com/">OrmLite</a> to talk
-to SQLite database:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">InMemoryDatabase</span>
-{
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> OrmLiteConnectionFactory dbFactory = 
-        <span class="hljs-keyword">new</span> OrmLiteConnectionFactory(<span class="hljs-string">":memory:"</span>, SqliteOrmLiteDialectProvider.Instance);
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> IDbConnection <span class="hljs-title">OpenConnection</span><span class="hljs-params">()</span> </span>=&gt; <span class="hljs-keyword">this</span>.dbFactory.OpenDbConnection();
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> Insert&lt;T&gt;(IEnumerable&lt;T&gt; items)
-    {
-        <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> db = <span class="hljs-keyword">this</span>.OpenConnection())
-        {
-            db.CreateTableIfNotExists&lt;T&gt;();
-            <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> item <span class="hljs-keyword">in</span> items)
-            {
-                db.Insert(item);
-            }
-        }
-    }
-}
-</code></pre>
-<p>And here is the test for our <code>ProductRepository</code> class:</p>
-<pre class="highlight"><code class="hljs cs">[Test]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">QueryTest</span><span class="hljs-params">()</span>
-</span>{
-    <span class="hljs-comment">// Arrange</span>
-    <span class="hljs-keyword">var</span> products = <span class="hljs-keyword">new</span> List&lt;Product&gt;
-    {
-        <span class="hljs-keyword">new</span> Product { ... },
-        <span class="hljs-keyword">new</span> Product { ... }
-    };
-    <span class="hljs-keyword">var</span> db = <span class="hljs-keyword">new</span> InMemoryDatabase();
-    db.Insert(products);
-    connectionFactoryMock.Setup(c =&gt; c.GetConnection()).Returns(db.OpenConnection());
-
-    <span class="hljs-comment">// Act</span>
-    <span class="hljs-keyword">var</span> result = <span class="hljs-function"><span class="hljs-keyword">await</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ProductRepository</span><span class="hljs-params">(connectionFactoryMock.Object)</span>.<span class="hljs-title">GetAll</span><span class="hljs-params">()</span></span>;
-
-    <span class="hljs-comment">// Assert</span>
-    result.ShouldBeEquivalentTo(products);
-}
-</code></pre>
-<h2 id="is-it-a-unit-test-">Is It a Unit Test?</h2>
-<p>Well, not completely. This approach does not mock the database, but instead puts
-an in-memory database in place of the normal one. The problem is that we don&#39;t 
-control all the details how it works, so it might not be as flexible as we need.
-For instance, SQLite type system is quite simplistic, so while <code>INT</code> and <code>BIGINT</code>
-are different column types in SQL Server, they are the same <code>INTEGER</code> type in
-SQLite. This can lead to false positive or false negative tests in edge cases.</p>
-<p>Nevertheless, the concept is simple and requires very little amount of code,
-so it&#39;s useful to have it in the toolbox anyway. The resulting tests are fast,
-have no external dependencies and are always consistent between multiple runs.
-That makes them better than real integration tests for the simple scenarios 
-during TDD development.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/unit-testing/'>Unit Testing</a>, <a href='/tags/dapper/'>Dapper</a>, <a href='/tags/orm/'>ORM</a>, <a href='/tags/tdd/'>TDD</a>
     </div>
     
 </article>

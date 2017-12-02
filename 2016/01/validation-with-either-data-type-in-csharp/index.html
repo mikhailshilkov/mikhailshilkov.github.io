@@ -91,12 +91,12 @@ about the successful acceptance of the request. Let&#39;s define the classes:</p
 or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
 <h2 id="throw-an-exception">Throw an exception</h2>
 <p>Validation <em>error</em> sounds like it could be an exception:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r)</span>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span>(<span class="hljs-params">Request r</span>)
 </span>{
    <span class="hljs-keyword">if</span> (!Valid(r))
-       <span class="hljs-function"><span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title">ValidationException</span><span class="hljs-params">(<span class="hljs-keyword">new</span> ValidationError(...)</span>)</span>;
+       <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> ValidationException(<span class="hljs-keyword">new</span> ValidationError(...));
 
-   <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+   <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Response(r);
 }
 </code></pre>
 <p>This approach is really bad though. You have to declare a special exception
@@ -106,16 +106,16 @@ Client processing code is going to be messed up because of exception handling.
 Never use exceptions for your business logic flow.</p>
 <h2 id="output-parameter">Output parameter</h2>
 <p>We could make an output parameter of <code>ValidationError</code> type:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span><span class="hljs-params">(Request r, <span class="hljs-keyword">out</span> ValidationError error)</span>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span>(<span class="hljs-params">Request r, <span class="hljs-keyword">out</span> ValidationError error</span>)
 </span>{
     <span class="hljs-keyword">if</span> (Valid(r))
     { 
         error = <span class="hljs-keyword">new</span> ValidationError(...);
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;
     }
 
-    error = <span class="hljs-keyword">null</span>;
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Response</span><span class="hljs-params">(r)</span></span>;
+    error = <span class="hljs-literal">null</span>;
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Response(r);
 }
 </code></pre>
 <p>Now the interface is more explicit: client won&#39;t be able to completely ignore
@@ -182,10 +182,10 @@ from left and right types:</p>
 <p>Let&#39;s have a look at a complete example.</p>
 <h2 id="why-it-s-great">Why it&#39;s great</h2>
 <p>Here is the service code written with <code>Either</code>:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Either&lt;Response, ValidationError&gt; Validate(Request r)
-{
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-title">Valid</span><span class="hljs-params">(r)</span> 
-        ? Data </span>= <span class="hljs-keyword">new</span> Response(r)
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Either&lt;Response, ValidationError&gt; <span class="hljs-title">Validate</span>(<span class="hljs-params">Request r</span>)
+</span>{
+    <span class="hljs-keyword">return</span> Valid(r) 
+        ? Data = <span class="hljs-keyword">new</span> Response(r)
         : <span class="hljs-keyword">new</span> ValidationError(...);
 }
 </code></pre>
@@ -193,8 +193,8 @@ from left and right types:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> validated = service.Validate(request);
 Console.WriteLine(
     validated.Match(
-        result =&gt; $<span class="hljs-string">"Success: {result}"</span>,
-        error =&gt; $<span class="hljs-string">"Error: {error}"</span>)
+        result =&gt; <span class="hljs-string">$"Success: <span class="hljs-subst">{result}</span>"</span>,
+        error =&gt; <span class="hljs-string">$"Error: <span class="hljs-subst">{error}</span>"</span>)
     );
 </code></pre>
 <p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that

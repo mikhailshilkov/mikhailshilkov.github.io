@@ -72,6 +72,211 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jul 26th, 2017</div>
+    
+    <h1><a href='/2017/07/authoring-custom-binding-azure-functions/'>Authoring a Custom Binding for Azure Functions</a></h1>
+    
+    <div class="post-content">
+        <p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
+I described how I used Durable Functions extensions
+in Azure Function App. Durable Functions are using several binding types
+that are not part of the standard suite: <code>OrchestrationClient</code>,
+<code>OrchestrationTrigger</code>, <code>ActivityTrigger</code>. These custom bindings 
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">are installed</a>
+by copying the corresponding assemblies to a special Extensions folder.</p>
+<p>Although Bring-Your-Own-Binding (BYOB) feature hasn&#39;t been released yet, I
+decided to follow the path of Durable Functions and create my own 
+custom binding.</p>
+<h2 id="configuration-binding">Configuration Binding</h2>
+<p>I&#39;ve picked a really simple use case for my first experiments with custom
+bindings: reading configuration values.</p>
+<p>Azure Functions store their configuration values in App Settings (local
+runtime uses <code>local.settings.json</code> file for that).</p>
+<p>That means, when you need a configuration value inside your C# code,
+you normally do</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">string</span> setting = ConfigurationManager.AppSettings[<span class="hljs-string">"MySetting"</span>];
+</code></pre>
+<p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
+<p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a> 
+service bus subscription metrics, I wrote this kind of bulky code:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> resourceToScale = ConfigurationManager.AppSettings[<span class="hljs-string">"ResourceToScale"</span>];
+
+<span class="hljs-keyword">var</span> connectionString = ConfigurationManager.AppSettings[<span class="hljs-string">"ServiceBusConnection"</span>];
+<span class="hljs-keyword">var</span> topic = ConfigurationManager.AppSettings[<span class="hljs-string">"Topic"</span>];
+<span class="hljs-keyword">var</span> subscription = ConfigurationManager.AppSettings[<span class="hljs-string">"Subscription"</span>];
+</code></pre>
+<p>The code is no rocket science, but it&#39;s tedious to write, so instead I came
+up with this idea to define Functions:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">MyFunction</span>(<span class="hljs-params">
+    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo timer,
+    [<span class="hljs-title">Configuration</span>(<span class="hljs-params">Key = <span class="hljs-string">"ResourceToScale"</span></span>)] <span class="hljs-keyword">string</span> resource,
+    [Configuration] ServiceBusSubscriptionConfig config)
+</span></code></pre>
+<p>Note two usages of <code>Configuration</code> attribute. The first one defines the 
+specific configuration key, and binds its value to a string parameter. The 
+other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
+the config class as</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ServiceBusSubscriptionConfig</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ServiceBusSubscriptionConfig</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> serviceBusConnection, <span class="hljs-keyword">string</span> topic, <span class="hljs-keyword">string</span> subscription</span>)
+    </span>{
+        ServiceBusConnection = serviceBusConnection;
+        Topic = topic;
+        Subscription = subscription;
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ServiceBusConnection { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Topic { <span class="hljs-keyword">get</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Subscription { <span class="hljs-keyword">get</span>; }
+}
+</code></pre>
+<p>The immutable class is a bit verbose, but I still prefer it over get-set
+container in this scenario.</p>
+<p>The binding behavior is convention-based in this case: the binding engine
+should load configuration values based on the names of class properties.</p>
+<h2 id="motivation">Motivation</h2>
+<p>So, why do I need such binding?</p>
+<p>As I said, it&#39;s a simple use case to play with BYOB feature, and overall,
+<strong>understand</strong> the internals of Function Apps a bit better.</p>
+<p>But apart from that, I removed 4 lines of garbage from the function body
+(at the cost of two extra parameters). <strong>Less noise</strong> means more readable code,
+especially when I put this code on a webpage.</p>
+<p>As a bonus, the <strong>testability</strong> of the function immediately increased. It&#39;s so
+much easier for the test just to accept the configuration as input parameter,
+instead of fine-tuning the configuration files inside test projects, or
+hiding <code>ConfigurationManager</code> usage behind a mockable facade.</p>
+<p>Such approach does seem to be the strength of Azure Functions code in
+general. It&#39;s often possible to reduce imperative IO-related code to 
+attribute-decorated function parameters.</p>
+<h2 id="implementing-a-custom-binding">Implementing a Custom Binding</h2>
+<p>The actual implementation process of a custom non-trigger binding is quite
+simple:</p>
+<p><strong>Create a class library</strong> with the word &quot;Extension&quot; in its name. Import
+<code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
+packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
+<p><strong>Define</strong> a class for binding attribute:</p>
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">AttributeUsage(AttributeTargets.Parameter)</span>]
+[<span class="hljs-meta">Binding</span>]
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ConfigurationAttribute</span> : <span class="hljs-title">Attribute</span>
+{
+    [<span class="hljs-meta">AutoResolve</span>]
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Key { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
+resolvable from <code>function.json</code>.</p>
+<p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
+how to use your binding correctly.</p>
+<p>The interface has just one method to implement:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ConfigurationExtensionConfigProvider</span> : <span class="hljs-title">IExtensionConfigProvider</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Initialize</span>(<span class="hljs-params">ExtensionConfigContext context</span>)
+    </span>{
+        <span class="hljs-comment">// ... see below</span>
+    }
+}
+</code></pre>
+<p>The first step of the implementation is to define a rule for our new
+<code>ConfigurationAttribute</code> and tell this rule how to get a string value out
+of any attribute instance:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
+rule.BindToInput&lt;<span class="hljs-keyword">string</span>&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
+</code></pre>
+<p>That&#39;s really all that needs to happen to bind <code>string</code> parameters.</p>
+<p>To make our binding work with any POCO, we need a more elaborate construct:</p>
+<pre class="highlight"><code class="hljs cs">rule.BindToInput&lt;Env&gt;(_ =&gt; <span class="hljs-keyword">new</span> Env());
+<span class="hljs-keyword">var</span> cm = context.Config.GetService&lt;IConverterManager&gt;();
+cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(<span class="hljs-keyword">typeof</span>(PocoConverter&lt;&gt;));
+</code></pre>
+<p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
+this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
+type argument) with a generic converter called <code>PocoConverter</code>.</p>
+<p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Env</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> <span class="hljs-title">GetValue</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> key</span>) </span>=&gt; ConfigurationManager.AppSettings[key];
+}
+</code></pre>
+<p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
+names and reads configuration values out of them. Then it calls a constructor
+which matches the property count:</p>
+<pre class="highlight"><code class="hljs undefined">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
+{
+    public T Convert(Env env)
+    {
+        var values = typeof(T)
+            .GetProperties()
+            .Select(p =&gt; p.Name)
+            .Select(env.GetValue)
+            .Cast&lt;object&gt;()
+            .ToArray();
+
+        var constructor = typeof(T).GetConstructor(values.Select(v =&gt; v.GetType()).ToArray());
+        if (constructor == null)
+        {
+            throw new Exception("We tried to bind to your C# class, but it looks like there's no constructor which accepts all property values");
+        }
+
+        return (T)constructor.Invoke(values);
+    }
+}
+</code></pre>
+<p>This piece of code is not particularly robust, but it is good enough to
+illustrate the concept.</p>
+<p>And that&#39;s it, the binding it ready! You can find the complete example in
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/custom-binding-azure-functions">my github repo</a>.</p>
+<h2 id="deploying-custom-bindings">Deploying Custom Bindings</h2>
+<p>Since BYOB feature is in early preview, there is no tooling for automated
+deployment, and we need to do everything manually. But the process is not
+too sophisticated:</p>
+<ol>
+<li><p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p>
+</li>
+<li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
+to that folder&#39;s path. For local development add a line to <code>local.settings.json</code>:</p>
+<pre class="highlight"><code class="hljs undefined"> "AzureWebJobs_ExtensionsPath": "D:\\BindingExtensions",
+</code></pre>
+</li>
+<li><p>Create a subfolder for your extension, e.g. 
+<code>D:\BindingExtensions\ConfigurationExtension</code>.</p>
+</li>
+<li><p>Copy the contents of <code>bin\Debug\</code> of your extension&#39;s class library
+to that folder.</p>
+</li>
+<li><p>Reference your extension library from your Function App.</p>
+</li>
+</ol>
+<p>You are good to go! Decorate your function parameters with the new attribute.</p>
+<p>Run the function app locally to try it out. In the console output you should
+be able to see something like</p>
+<pre class="highlight"><code class="hljs oxygene">Loaded custom <span class="hljs-keyword">extension</span>: ConfigurationExtensionConfigProvider <span class="hljs-keyword">from</span> 
+<span class="hljs-string">'D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll'</span>
+</code></pre><p>You will be able to debug your extension if needed.</p>
+<h2 id="useful-links">Useful Links</h2>
+<p>Use the following links to find out more about custom bindings, see more
+examples and walkthroughs, and get fresh updates:</p>
+<ul>
+<li><a href="https://github.com/Azure/azure-webjobs-sdk/wiki/Extensibility">Extensibility in Azure WebJobs SDK</a></li>
+<li><a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/SampleExtension">Sample Extension for Azure Functions</a>,
+<a href="https://github.com/Azure/WebJobsExtensionSamples/blob/master/FunctionApp/ReaderFunction.cs">Sample Usage in Precompiled App</a> and
+<a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/ScriptRuntimeSample/Reader">Sample Usage in Script Runtime</a></li>
+<li><a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/src/WebJobs.Extensions.DurableTask">Custom Bindings of Durable Functions</a></li>
+<li><a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">Installation Guide for Durable Functions</a></li>
+</ul>
+<p>Have a good binding!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jul 24th, 2017</div>
     
     <h1><a href='/2017/07/custom-autoscaling-with-durable-functions/'>Custom Autoscaling with Durable Functions</a></h1>
@@ -127,14 +332,14 @@ to keep the function minimal and clean. You can see the full code in
 <p><strong>Scaler</strong> function is triggered by Durable Function&#39;s <code>ActivityTrigger</code>. That
 basically means that it&#39;s ready to be called from other functions. Here is
 the code:</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(Scaler))]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">Scaler</span><span class="hljs-params">([ActivityTrigger] DurableActivityContext context)</span>
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(Scaler))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[ActivityTrigger] DurableActivityContext context</span>)
 </span>{
     <span class="hljs-keyword">var</span> action = context.GetInput&lt;ScaleAction&gt;();
 
     <span class="hljs-keyword">var</span> newCapacity = ScalingHelper.ChangeAppServiceInstanceCount(
         action.ResourceName,
-        action.Type == ScaleActionType.Down ? -<span class="hljs-number">1</span> : +<span class="hljs-number">1</span>);
+        action.Type == ScaleActionType.Down ? <span class="hljs-number">-1</span> : +<span class="hljs-number">1</span>);
 
     <span class="hljs-keyword">return</span> newCapacity;
 }
@@ -149,22 +354,22 @@ values in the previous implementation.</p>
 <p><strong>Scaling Logic</strong> is using <a href="https://azure.github.io/azure-functions-durable-extension/articles/samples/counter.html">Stateful Actor pattern</a>.
 One instance of such actor is created for each scalable resource (I only use
 1 now). Here is the implementation (again, simplified for readability):</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(ScalingLogic))]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;ScalingState&gt; <span class="hljs-title">ScalingLogic</span><span class="hljs-params">(
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(ScalingLogic))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;ScalingState&gt; <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
     [OrchestrationTrigger] DurableOrchestrationContext context, 
-    TraceWriter log)</span>
+    TraceWriter log</span>)
 </span>{
     <span class="hljs-keyword">var</span> state = context.GetInput&lt;ScalingState&gt;();
 
-    <span class="hljs-keyword">var</span> metric = <span class="hljs-keyword">await</span> context.WaitForExternalEvent&lt;Metric&gt;(nameof(Metric));
+    <span class="hljs-keyword">var</span> metric = <span class="hljs-keyword">await</span> context.WaitForExternalEvent&lt;Metric&gt;(<span class="hljs-keyword">nameof</span>(Metric));
 
     UpdateHistory(state.History, metric.Value);
     ScaleAction action = CalculateScalingAction(state);
 
-    <span class="hljs-keyword">if</span> (action != <span class="hljs-keyword">null</span>)
+    <span class="hljs-keyword">if</span> (action != <span class="hljs-literal">null</span>)
     {
-        <span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> context.CallFunctionAsync&lt;<span class="hljs-keyword">int</span>&gt;(nameof(Scaler), action);
-        log.Info($<span class="hljs-string">"Scaling logic: Scaled to {result} instances."</span>);
+        <span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> context.CallFunctionAsync&lt;<span class="hljs-keyword">int</span>&gt;(<span class="hljs-keyword">nameof</span>(Scaler), action);
+        log.Info(<span class="hljs-string">$"Scaling logic: Scaled to <span class="hljs-subst">{result}</span> instances."</span>);
         state.LastScalingActionTime = context.CurrentUtcDateTime;
     }
 
@@ -204,24 +409,24 @@ and we now have the ability to get feedback from <strong>Scaler</strong> functio
 minimal and clean. You can see the full code in 
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
 <p>Here is the remaining implementation of <strong>Metric Collector</strong>:</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(nameof(MetricCollector))]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">MetricCollector</span><span class="hljs-params">(
-    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span>)</span>] TimerInfo myTimer,
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(MetricCollector))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">
+    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer,
     [OrchestrationClient] DurableOrchestrationClient client,
     TraceWriter log)
 </span>{
     <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
 
     <span class="hljs-keyword">var</span> status = <span class="hljs-keyword">await</span> client.GetStatusAsync(resource);
-    <span class="hljs-keyword">if</span> (status == <span class="hljs-keyword">null</span>)
+    <span class="hljs-keyword">if</span> (status == <span class="hljs-literal">null</span>)
     {
-        <span class="hljs-keyword">await</span> client.StartNewAsync(nameof(ScalingLogic), resource, <span class="hljs-keyword">new</span> ScalingState());
+        <span class="hljs-keyword">await</span> client.StartNewAsync(<span class="hljs-keyword">nameof</span>(ScalingLogic), resource, <span class="hljs-keyword">new</span> ScalingState());
     }
     <span class="hljs-keyword">else</span>
     {
         <span class="hljs-keyword">var</span> metric = ServiceBusHelper.GetSubscriptionMetric(resource);
-        log.Info($<span class="hljs-string">"Collector: Current metric value is {metric.Value.Value} at {DateTime.Now}"</span>);
-        <span class="hljs-keyword">await</span> client.RaiseEventAsync(resource, nameof(Metric), metric);
+        log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{metric.Value.Value}</span> at <span class="hljs-subst">{DateTime.Now}</span>"</span>);
+        <span class="hljs-keyword">await</span> client.RaiseEventAsync(resource, <span class="hljs-keyword">nameof</span>(Metric), metric);
     }
 }
 </code></pre>
@@ -365,7 +570,7 @@ Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</
 <p>First, let&#39;s define <code>MetricValue</code> class, which simply holds time and value:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MetricValue</span>
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MetricValue</span><span class="hljs-params">(DateTime time, <span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span>)</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MetricValue</span>(<span class="hljs-params">DateTime time, <span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span></span>)
     </span>{
         <span class="hljs-keyword">this</span>.Time = time;
         <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
@@ -380,7 +585,7 @@ Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</
 Plan name) and measured parameter name:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Metric</span>
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Metric</span><span class="hljs-params">(<span class="hljs-keyword">string</span> resourceName, <span class="hljs-keyword">string</span> name, MetricValue <span class="hljs-keyword">value</span>)</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Metric</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, <span class="hljs-keyword">string</span> name, MetricValue <span class="hljs-keyword">value</span></span>)
     </span>{
         <span class="hljs-keyword">this</span>.ResourceName = resourceName;
         <span class="hljs-keyword">this</span>.Name = name;
@@ -396,9 +601,9 @@ Plan name) and measured parameter name:</p>
 </code></pre>
 <p>The function definition has two associated bindings: timer trigger (runs every
 minute) and return binding to the storage queue:</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(<span class="hljs-string">"MetricCollector"</span>)]
-[<span class="hljs-keyword">return</span>: Queue(<span class="hljs-string">"Metrics"</span>)]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Metric <span class="hljs-title">MetricCollector</span><span class="hljs-params">([TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span>)</span>] TimerInfo myTimer, TraceWriter log)
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"MetricCollector"</span>)</span>]
+[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Metrics"</span>)</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Metric <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">[TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer, TraceWriter log)
 </span>{
     <span class="hljs-keyword">var</span> connectionString = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServiceBusConnection"</span>);
     <span class="hljs-keyword">var</span> topic = Environment.GetEnvironmentVariable(<span class="hljs-string">"Topic"</span>);
@@ -408,11 +613,11 @@ minute) and return binding to the storage queue:</p>
     <span class="hljs-keyword">var</span> subscriptionClient = nsmgr.GetSubscription(topic, subscription);
     <span class="hljs-keyword">var</span> backlog = subscriptionClient.MessageCountDetails.ActiveMessageCount;
 
-    log.Info($<span class="hljs-string">"Collector: Current metric value is {backlog}"</span>);
+    log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{backlog}</span>"</span>);
 
     <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
     <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = <span class="hljs-keyword">new</span> MetricValue(DateTime.Now, (<span class="hljs-keyword">int</span>)backlog);
-    <span class="hljs-function"><span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title">Metric</span><span class="hljs-params">(resource, $<span class="hljs-string">"{topic}-{subscription}-backlog"</span>, <span class="hljs-keyword">value</span>)</span></span>;
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Metric(resource, <span class="hljs-string">$"<span class="hljs-subst">{topic}</span>-<span class="hljs-subst">{subscription}</span>-backlog"</span>, <span class="hljs-keyword">value</span>);
 }
 </code></pre>
 <p>The function executes the following steps:</p>
@@ -435,12 +640,12 @@ keep the state in between function calls.</li>
 <p>The bindings are illustrated on the following picture:</p>
 <p><img src="/2017/07/custom-auto-scaling-in-azure//ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
 <p>And here is the corresponding Function signature:</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(<span class="hljs-string">"ScalingLogic"</span>)]
-[<span class="hljs-keyword">return</span>: Queue(<span class="hljs-string">"Actions"</span>)]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ScaleAction <span class="hljs-title">ScalingLogic</span><span class="hljs-params">(
-    [QueueTrigger(<span class="hljs-string">"Metrics"</span>)</span>] Metric metric, 
-    [<span class="hljs-title">Table</span><span class="hljs-params">(<span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span>)</span>] ScalingStateEntity stateEntity, 
-    [<span class="hljs-title">Table</span><span class="hljs-params">(<span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span>)</span>] <span class="hljs-keyword">out</span> ScalingStateEntity newStateEntity,
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"ScalingLogic"</span>)</span>]
+[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Actions"</span>)</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ScaleAction <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
+    [QueueTrigger(<span class="hljs-string">"Metrics"</span></span>)] Metric metric, 
+    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] ScalingStateEntity stateEntity, 
+    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] <span class="hljs-keyword">out</span> ScalingStateEntity newStateEntity,
     TraceWriter log)
 </span></code></pre>
 <p>Table storage is partitioned per scalable resource, and state is stored per metric;
@@ -455,7 +660,7 @@ thus multiple resources and metrics are supported out of the box.</p>
 
 <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScaleAction</span>
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ScaleAction</span><span class="hljs-params">(<span class="hljs-keyword">string</span> resourceName, ScaleActionType type)</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ScaleAction</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, ScaleActionType type</span>)
     </span>{
         <span class="hljs-keyword">this</span>.ResourceName = resourceName;
         <span class="hljs-keyword">this</span>.Type = type;
@@ -484,11 +689,11 @@ So I had to create a separate Table Storage entity class:</p>
 <p>Now let&#39;s look at the function body. It consists of four blocks. </p>
 <p>The first block retrieves the previous values of the metric and logs it too:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 1. Deserialize state</span>
-<span class="hljs-keyword">var</span> state = stateEntity?.SerializedState != <span class="hljs-keyword">null</span> 
+<span class="hljs-keyword">var</span> state = stateEntity?.SerializedState != <span class="hljs-literal">null</span> 
     ? JsonConvert.DeserializeObject&lt;ScalingState&gt;(stateEntity.SerializedState) 
     : <span class="hljs-keyword">new</span> ScalingState();
 <span class="hljs-keyword">var</span> history = state.History;
-log.Info($<span class="hljs-string">"Scaling logic: Received {metric.Name}, previous state is {string.Join("</span>, <span class="hljs-string">", history)}"</span>);
+log.Info(<span class="hljs-string">$"Scaling logic: Received <span class="hljs-subst">{metric.Name}</span>, previous state is <span class="hljs-subst">{<span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, history)}</span>"</span>);
 </code></pre>
 <p>The second block adds the current metric value and removes all metrics which are
 not in the target period of 10 minutes anymore:</p>
@@ -500,7 +705,7 @@ history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
 or maximum value is above or below respective thresholds. For my implementation I also
 chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 3. Compare the aggregates to thresholds, produce scaling action if needed</span>
-ScaleAction action = <span class="hljs-keyword">null</span>;
+ScaleAction action = <span class="hljs-literal">null</span>;
 <span class="hljs-keyword">if</span> (history.Count &gt;= <span class="hljs-number">5</span>
     &amp;&amp; DateTime.Now - state.LastScalingActionTime &gt; cooldownPeriod)
 {
@@ -508,13 +713,13 @@ ScaleAction action = <span class="hljs-keyword">null</span>;
     <span class="hljs-keyword">var</span> maximum = (<span class="hljs-keyword">int</span>)history.Max(e =&gt; e.Value);
     <span class="hljs-keyword">if</span> (average &gt; thresholdUp)
     {
-        log.Info($<span class="hljs-string">"Scaling logic: Value {average} is too high, scaling {metric.ResourceName} up..."</span>);
+        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{average}</span> is too high, scaling <span class="hljs-subst">{metric.ResourceName}</span> up..."</span>);
         state.LastScalingActionTime = DateTime.Now;
         action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Up);
     }
-    <span class="hljs-function"><span class="hljs-keyword">else</span> <span class="hljs-title">if</span> <span class="hljs-params">(maximum &lt; thresholdDown)</span>
-    </span>{
-        log.Info($<span class="hljs-string">"Scaling logic: Value {maximum} is low, scaling {metric.ResourceName} down..."</span>);
+    <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (maximum &lt; thresholdDown)
+    {
+        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{maximum}</span> is low, scaling <span class="hljs-subst">{metric.ResourceName}</span> down..."</span>);
         state.LastScalingActionTime = DateTime.Now;
         action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Down);
     }
@@ -522,7 +727,7 @@ ScaleAction action = <span class="hljs-keyword">null</span>;
 </code></pre>
 <p>Finally, the state is serialized back to table entity and action is returned: </p>
 <pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 4. Serialize the state back and return the action</span>
-newStateEntity = stateEntity != <span class="hljs-keyword">null</span> 
+newStateEntity = stateEntity != <span class="hljs-literal">null</span> 
     ? stateEntity 
     : <span class="hljs-keyword">new</span> ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
 newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
@@ -533,8 +738,8 @@ gets sent to the output queue.</p>
 <h2 id="scaler">Scaler</h2>
 <p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
 I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
-<pre class="highlight"><code class="hljs cs">[FunctionName(<span class="hljs-string">"Scaler"</span>)]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Scaler</span><span class="hljs-params">([QueueTrigger(<span class="hljs-string">"Actions"</span>)</span>] ScaleAction action, TraceWriter log)
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Scaler"</span>)</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[QueueTrigger(<span class="hljs-string">"Actions"</span></span>)] ScaleAction action, TraceWriter log)
 </span>{
     <span class="hljs-keyword">var</span> secrets = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServicePrincipal"</span>).Split(<span class="hljs-string">','</span>);
     <span class="hljs-keyword">var</span> credentials = SdkContext.AzureCredentialsFactory
@@ -549,7 +754,7 @@ I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</
         .First(p =&gt; p.Name.Contains(action.ResourceName));
 
     <span class="hljs-keyword">var</span> newCapacity = action.Type == ScaleActionType.Down ? plan.Capacity - <span class="hljs-number">1</span> : plan.Capacity + <span class="hljs-number">1</span>;
-    log.Info($<span class="hljs-string">"Scaler: Switching {action.ResourceName} from {plan.Capacity} {action.Type} to {newCapacity}"</span>);
+    log.Info(<span class="hljs-string">$"Scaler: Switching <span class="hljs-subst">{action.ResourceName}</span> from <span class="hljs-subst">{plan.Capacity}</span> <span class="hljs-subst">{action.Type}</span> to <span class="hljs-subst">{newCapacity}</span>"</span>);
 
     plan.Update()
         .WithCapacity(newCapacity)
@@ -633,13 +838,13 @@ a metric function and maximum chunk size:</p>
             <span class="hljs-keyword">new</span>
             {
                 Sum = <span class="hljs-number">0</span>L,
-                Current = (List&lt;T&gt;)<span class="hljs-keyword">null</span>,
+                Current = (List&lt;T&gt;)<span class="hljs-literal">null</span>,
                 Result = <span class="hljs-keyword">new</span> List&lt;List&lt;T&gt;&gt;()
             },
             (agg, item) =&gt;
             {
                 <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = metric(item);
-                <span class="hljs-keyword">if</span> (agg.Current == <span class="hljs-keyword">null</span> || agg.Sum + <span class="hljs-keyword">value</span> &gt; maxChunkSize)
+                <span class="hljs-keyword">if</span> (agg.Current == <span class="hljs-literal">null</span> || agg.Sum + <span class="hljs-keyword">value</span> &gt; maxChunkSize)
                 {
                     <span class="hljs-keyword">var</span> current = <span class="hljs-keyword">new</span> List&lt;T&gt; { item };
                     agg.Result.Add(current);
@@ -653,7 +858,7 @@ a metric function and maximum chunk size:</p>
 }
 </code></pre>
 <p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">SendBigBatchAsync</span><span class="hljs-params">(IEnumerable&lt;T&gt; messages, Func&lt;T, <span class="hljs-keyword">long</span>&gt; getSize)</span>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">SendBigBatchAsync</span>(<span class="hljs-params">IEnumerable&lt;T&gt; messages, Func&lt;T, <span class="hljs-keyword">long</span>&gt; getSize</span>)
 </span>{
     <span class="hljs-keyword">var</span> chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
     <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
@@ -739,7 +944,7 @@ operation failed, so we can use this information.</p>
     <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> batchSizeLimit = <span class="hljs-number">262000</span>;
     <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> headerSizeEstimate = <span class="hljs-number">54</span>; <span class="hljs-comment">// start with the smallest header possible</span>
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">BatchSender</span><span class="hljs-params">(QueueClient queueClient)</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">BatchSender</span>(<span class="hljs-params">QueueClient queueClient</span>)
     </span>{
         <span class="hljs-keyword">this</span>.queueClient = queueClient;
     }
@@ -856,12 +1061,12 @@ and the hill pattern disappeared, days looks much more alike.</p>
 quite bothering. Are we loosing data?</p>
 <p>I headed towards Analytics console of Application Insights to dig deeper.
 Here is the query that reproduces the problem:</p>
-<pre class="highlight"><code class="hljs stylus">customEvents
-| where name == <span class="hljs-string">"EventXReceived"</span>
-| where timestamp &gt;= <span class="hljs-function"><span class="hljs-title">ago</span><span class="hljs-params">(<span class="hljs-number">22</span>d)</span></span>
-| project PointCount = <span class="hljs-function"><span class="hljs-title">todouble</span><span class="hljs-params">(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>])</span></span>, timestamp
-| summarize EventXReceived = <span class="hljs-function"><span class="hljs-title">sum</span><span class="hljs-params">(PointCount)</span></span> by <span class="hljs-function"><span class="hljs-title">bin</span><span class="hljs-params">(timestamp, <span class="hljs-number">1</span>d)</span></span>
-| render timechart
+<pre class="highlight"><code class="hljs coq">customEvents
+| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
+| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
+| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]), timestamp
+| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
+| <span class="hljs-type">render</span> timechart
 </code></pre><p>and I got the same chart as before:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics1.png" alt="Trend on Application Insights Analytics"></p>
 <p>I checked the history of our source code repository and deployments and I
@@ -871,21 +1076,21 @@ version 2.1 to version 2.3.</p>
 data instead of sending all events to the server. After reading 
 <a href="https://docs.microsoft.com/en-us/azure/application-insights/app-insights-sampling">Sampling in Application Insights</a>
 article, I came up with the following query to see the sampling rate:</p>
-<pre class="highlight"><code class="hljs stylus">customEvents
-| where name == <span class="hljs-string">"EventXReceived"</span>
-| where timestamp &gt;= <span class="hljs-function"><span class="hljs-title">ago</span><span class="hljs-params">(<span class="hljs-number">22</span>d)</span></span>
-| summarize <span class="hljs-number">100</span>/<span class="hljs-function"><span class="hljs-title">avg</span><span class="hljs-params">(itemCount)</span></span> by <span class="hljs-function"><span class="hljs-title">bin</span><span class="hljs-params">(timestamp, <span class="hljs-number">1</span>d)</span></span> 
+<pre class="highlight"><code class="hljs applescript">customEvents
+| <span class="hljs-keyword">where</span> <span class="hljs-built_in">name</span> == <span class="hljs-string">"EventXReceived"</span>
+| <span class="hljs-keyword">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
+| <span class="hljs-built_in">summarize</span> <span class="hljs-number">100</span>/avg(itemCount) <span class="hljs-keyword">by</span> bin(timestamp, <span class="hljs-number">1</span>d) 
 | render areachart
 </code></pre><p>and the result is self-explanatory:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//sampling-rate.png" alt="Sampling Rate"></p>
 <p>Clearly, the sampling rate dropped from 100% down to about 30% right when
 the anomaly started. The sampling-adjusted query (note <code>itemCount</code> multiplication)</p>
-<pre class="highlight"><code class="hljs 1c">customEvents
-<span class="hljs-string">| where name == "</span>EventXReceived<span class="hljs-string">"</span>
-<span class="hljs-string">| where timestamp &gt;= ago(22d)</span>
-<span class="hljs-string">| project PointCount = todouble(customMeasurements["</span>EventXReceived_Count<span class="hljs-string">"]) * itemCount, timestamp</span>
-<span class="hljs-string">| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)</span>
-<span class="hljs-string">| render timechart</span>
+<pre class="highlight"><code class="hljs coq">customEvents
+| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
+| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
+| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]) * itemCount, timestamp
+| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
+| <span class="hljs-type">render</span> timechart
 </code></pre><p>puts us back to the point when results make sense:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics2.png" alt="Adjusted Trend on Application Insights Analytics"></p>
 <p>The third week&#39;s Thursday was bank holiday in several European countries, so 
@@ -900,33 +1105,6 @@ confusing people and to show more useful charts?</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/application-insights/'>Application Insights</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jun 6th, 2017</div>
-    
-    <h1><a href='/2017/06/mikhail-io-upgraded-to-https-and-http2/'>Mikhail.io Upgraded to HTTPS and HTTP/2</a></h1>
-    
-    <div class="post-content">
-        <p>Starting today, this blog has switched to HTTPS secure protocol:</p>
-<p><img src="/2017/06/mikhail-io-upgraded-to-https-and-http2//mikhailio-https.png" alt="HTTPS"></p>
-<p>While there&#39;s not that much to secure on my blog, HTTPS is still considered
-to be a good practice for any site in 2017. One of the benefits that we can
-get from it is the usage of HTTP/2 protocol:</p>
-<p><img src="/2017/06/mikhail-io-upgraded-to-https-and-http2//mikhailio-http2.png" alt="HTTP/2"></p>
-<p>This should be beneficial to any reader which uses a modern browser!</p>
-<p>Thanks to <a href="https://cloudflare.com">CloudFlare</a> for providing me with free
-HTTPS and HTTP/2 support.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/https/'>HTTPS</a>, <a href='/tags/http/2/'>HTTP/2</a>, <a href='/tags/cloudflare/'>CloudFlare</a>
     </div>
     
 </article>

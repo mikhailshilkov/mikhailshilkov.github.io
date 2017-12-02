@@ -300,12 +300,12 @@ stream processing are done in parallel, with separate tools and separate code ba
 The approach is called <em>Lambda Architecture</em>. Beam is declaring this approach outdated,
 offering a way to reuse streaming code and capacity also for bounded data workloads.</p>
 <p>To follow this modern path, we will declare our <code>Source</code> as following:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BoundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= unit -&gt; <span class="hljs-attribute">'T</span> seq
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">UnboundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= (<span class="hljs-attribute">'T</span> -&gt; unit) -&gt; unit
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BoundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= unit -&gt; <span class="hljs-symbol">'T</span> seq
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">UnboundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= (<span class="hljs-symbol">'T</span> -&gt; unit) -&gt; unit
 
 <span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Source</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= 
-  | Bounded <span class="hljs-keyword">of</span> BoundedSource&lt;<span class="hljs-attribute">'T</span>&gt;
-  | Unbounded <span class="hljs-keyword">of</span> UnboundedSource&lt;<span class="hljs-attribute">'T</span>&gt;
+  | Bounded <span class="hljs-keyword">of</span> BoundedSource&lt;<span class="hljs-symbol">'T</span>&gt;
+  | Unbounded <span class="hljs-keyword">of</span> UnboundedSource&lt;<span class="hljs-symbol">'T</span>&gt;
 </code></pre>
 <p><code>Source</code> is a generic discriminated union with two cases. <code>Bounded</code> case represents
 a side effect-ful function, which returns a sequence of elements when called.
@@ -316,7 +316,7 @@ executed as the argument and returns nothing meaningful (<code>unit</code> again
 see a usage example later.</p>
 <p>The <code>Sink</code> represents an action to happen at the end of pipeline. I&#39;ve made it
 a discriminated union too, but with just one case:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Sink</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= | Action <span class="hljs-keyword">of</span> (<span class="hljs-attribute">'T</span> -&gt; unit)
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Sink</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= | Action <span class="hljs-keyword">of</span> (<span class="hljs-symbol">'T</span> -&gt; unit)
 </code></pre>
 <p>Now, we should be able to simulate an empty processing pipeline: directly connect 
 a source to a sink. Let&#39;s start with bounded data:</p>
@@ -335,7 +335,7 @@ copyPipeline giftBoundedSource consoleSink
 <p>This code will print out all the gift names from the sequence. Now, let&#39;s extend it to
 stream unbounded data. Before we can do that, let&#39;s introduce a helper class:</p>
 <pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Triggered</span>&lt;<span class="hljs-title">'T</span>&gt;</span>() = 
-  <span class="hljs-keyword">let</span> subscribers = <span class="hljs-keyword">new</span> List&lt;<span class="hljs-attribute">'T</span> -&gt; unit&gt;()
+  <span class="hljs-keyword">let</span> subscribers = <span class="hljs-keyword">new</span> List&lt;<span class="hljs-symbol">'T</span> -&gt; unit&gt;()
   <span class="hljs-keyword">member</span> this.DoNext x =
     subscribers.ForEach(<span class="hljs-keyword">fun</span> s -&gt; s x)
   <span class="hljs-keyword">member</span> this.Subscribe = subscribers.Add
@@ -376,18 +376,18 @@ is a generic interface which defines all the operations that we need:</p>
 <pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Runnable</span> </span>= unit -&gt; unit
 
 <span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">IFlow</span>&lt;<span class="hljs-title">'a</span>&gt; </span>=
-  abstract <span class="hljs-keyword">member</span> Map&lt;<span class="hljs-attribute">'b</span>&gt; : (<span class="hljs-attribute">'a</span> -&gt; <span class="hljs-attribute">'b</span>) -&gt; IFlow&lt;<span class="hljs-attribute">'b</span>&gt;
-  abstract <span class="hljs-keyword">member</span> Collect&lt;<span class="hljs-attribute">'b</span>&gt; : (<span class="hljs-attribute">'a</span> -&gt; <span class="hljs-attribute">'b</span> list) -&gt; IFlow&lt;<span class="hljs-attribute">'b</span>&gt;
-  abstract <span class="hljs-keyword">member</span> CountBy&lt;<span class="hljs-attribute">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-attribute">'b</span>: equality&gt; : (<span class="hljs-attribute">'a</span> -&gt; <span class="hljs-attribute">'b</span>) -&gt; IFlow&lt;<span class="hljs-attribute">'b</span> * int&gt;
-  abstract <span class="hljs-keyword">member</span> To: Sink&lt;<span class="hljs-attribute">'a</span>&gt; -&gt; Runnable
+  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> Map&lt;<span class="hljs-symbol">'b</span>&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
+  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> Collect&lt;<span class="hljs-symbol">'b</span>&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span> list) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
+  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> CountBy&lt;<span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span> * int&gt;
+  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> To: Sink&lt;<span class="hljs-symbol">'a</span>&gt; -&gt; Runnable
 </code></pre>
 <p>Then we define a module which is just a wrapper around the interface to
 enable F#-style API:</p>
 <pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Flow =
   <span class="hljs-keyword">let</span> map&lt;'TI, 'TO&gt; (f: 'TI -&gt; 'TO) (flow: IFlow&lt;'TI&gt;) = flow.Map f
   <span class="hljs-keyword">let</span> collect&lt;'TI, 'TO&gt; (f: 'TI -&gt; 'TO list) (flow: IFlow&lt;'TI&gt;) = flow.Collect f
-  <span class="hljs-keyword">let</span> countBy&lt;<span class="hljs-attribute">'T</span>, 'TK <span class="hljs-keyword">when</span> 'TK: equality&gt; (f: <span class="hljs-attribute">'T</span> -&gt; 'TK) (flow: IFlow&lt;<span class="hljs-attribute">'T</span>&gt;) = flow.CountBy f
-  <span class="hljs-keyword">let</span> connectTo&lt;<span class="hljs-attribute">'T</span>&gt; sink (flow: IFlow&lt;<span class="hljs-attribute">'T</span>&gt;) = flow.To sink
+  <span class="hljs-keyword">let</span> countBy&lt;<span class="hljs-symbol">'T</span>, 'TK <span class="hljs-keyword">when</span> 'TK: equality&gt; (f: <span class="hljs-symbol">'T</span> -&gt; 'TK) (flow: IFlow&lt;<span class="hljs-symbol">'T</span>&gt;) = flow.CountBy f
+  <span class="hljs-keyword">let</span> connectTo&lt;<span class="hljs-symbol">'T</span>&gt; sink (flow: IFlow&lt;<span class="hljs-symbol">'T</span>&gt;) = flow.To sink
   <span class="hljs-keyword">let</span> run (r: Runnable) = r()
 </code></pre>
 <p>Then, we just need an implementation of <code>IFlow</code> and a factory method to create
@@ -414,8 +414,8 @@ for now here is a naive version:</p>
       <span class="hljs-keyword">fun</span> subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
       |&gt; Unbounded
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> countByTransform&lt;<span class="hljs-attribute">'a</span>, <span class="hljs-attribute">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-attribute">'b</span>: equality&gt; (getKey: <span class="hljs-attribute">'a</span> -&gt; <span class="hljs-attribute">'b</span>) source =
-    <span class="hljs-keyword">let</span> state = <span class="hljs-keyword">new</span> Dictionary&lt;<span class="hljs-attribute">'b</span>, int&gt;()
+  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> countByTransform&lt;<span class="hljs-symbol">'a</span>, <span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt; (getKey: <span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) source =
+    <span class="hljs-keyword">let</span> state = <span class="hljs-keyword">new</span> Dictionary&lt;<span class="hljs-symbol">'b</span>, int&gt;()
     <span class="hljs-keyword">let</span> addItem i = 
       <span class="hljs-keyword">let</span> key = getKey i
       <span class="hljs-keyword">let</span> value = <span class="hljs-keyword">if</span> state.ContainsKey key <span class="hljs-keyword">then</span> state.[key] <span class="hljs-keyword">else</span> <span class="hljs-number">0</span>
@@ -432,21 +432,21 @@ for now here is a naive version:</p>
     | Bounded bs, Action a -&gt; bs() |&gt; Seq.iter a
     | Unbounded us, Action a -&gt; us a
 
-  <span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">private</span> <span class="hljs-title">Flow</span>&lt;<span class="hljs-title">'a</span>&gt;</span>(source: Source&lt;<span class="hljs-attribute">'a</span>&gt;, connect: Sink&lt;<span class="hljs-attribute">'a</span>&gt; -&gt; Runnable) =
-    <span class="hljs-keyword">member</span> this.Apply&lt;<span class="hljs-attribute">'b</span>&gt; t = <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-attribute">'b</span>&gt;(t source, stage source t) :&gt; IFlow&lt;<span class="hljs-attribute">'b</span>&gt;
+  <span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">private</span> <span class="hljs-title">Flow</span>&lt;<span class="hljs-title">'a</span>&gt;</span>(source: Source&lt;<span class="hljs-symbol">'a</span>&gt;, connect: Sink&lt;<span class="hljs-symbol">'a</span>&gt; -&gt; Runnable) =
+    <span class="hljs-keyword">member</span> this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; t = <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-symbol">'b</span>&gt;(t source, stage source t) :&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
 
-    <span class="hljs-keyword">interface</span> IFlow&lt;<span class="hljs-attribute">'a</span>&gt; <span class="hljs-keyword">with</span>
-      <span class="hljs-keyword">member</span> this.Map&lt;<span class="hljs-attribute">'b</span>&gt; map = this.Apply&lt;<span class="hljs-attribute">'b</span>&gt; (mapTransform map)
+    <span class="hljs-keyword">interface</span> IFlow&lt;<span class="hljs-symbol">'a</span>&gt; <span class="hljs-keyword">with</span>
+      <span class="hljs-keyword">member</span> this.Map&lt;<span class="hljs-symbol">'b</span>&gt; map = this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; (mapTransform map)
 
-      <span class="hljs-keyword">member</span> this.Collect&lt;<span class="hljs-attribute">'b</span>&gt; map = this.Apply&lt;<span class="hljs-attribute">'b</span>&gt; (collectTransform map)
+      <span class="hljs-keyword">member</span> this.Collect&lt;<span class="hljs-symbol">'b</span>&gt; map = this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; (collectTransform map)
 
-      <span class="hljs-keyword">member</span> this.CountBy&lt;<span class="hljs-attribute">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-attribute">'b</span>: equality&gt;(getKey) = 
-        this.Apply&lt;<span class="hljs-attribute">'b</span> * int&gt; (countByTransform&lt;<span class="hljs-attribute">'a</span>, <span class="hljs-attribute">'b</span>&gt; getKey)
+      <span class="hljs-keyword">member</span> this.CountBy&lt;<span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt;(getKey) = 
+        this.Apply&lt;<span class="hljs-symbol">'b</span> * int&gt; (countByTransform&lt;<span class="hljs-symbol">'a</span>, <span class="hljs-symbol">'b</span>&gt; getKey)
 
       <span class="hljs-keyword">member</span> this.To(sink) = connect(sink)
 
-  <span class="hljs-keyword">let</span> from&lt;<span class="hljs-attribute">'a</span>&gt; source =
-    <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-attribute">'a</span>&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;<span class="hljs-attribute">'a</span>&gt;
+  <span class="hljs-keyword">let</span> from&lt;<span class="hljs-symbol">'a</span>&gt; source =
+    <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-symbol">'a</span>&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;<span class="hljs-symbol">'a</span>&gt;
 </code></pre>
 <p>The implementation details are not that important at the moment (even though it&#39;s
 just 37 lines of code), so I&#39;ll just proceed to the pipeline definition:</p>
@@ -506,7 +506,7 @@ follow-ups:</p>
 
     
     <div class="post-tags">
-        Posted In: <a href='/tags/stream-processing/'>Stream Processing</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-advent/'>F# Advent</a>, <a href='/tags/data-processing/'>Data Processing</a>
+        Posted In: <a href='/tags/stream-processing/'>Stream Processing</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-advent-calendar/'>F# Advent Calendar</a>, <a href='/tags/data-processing/'>Data Processing</a>
     </div>
     
 </article>
