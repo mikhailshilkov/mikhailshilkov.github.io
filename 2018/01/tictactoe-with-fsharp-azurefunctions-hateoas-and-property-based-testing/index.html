@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Tic-Tac-Toe with F#, Azure Functions, HATEOAS and Property-Based Testing | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.6" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">F#, C#, JS, SQL, Azure programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                    <li><a href="/tags/">Topics</a></li>
+                
+                    <li><a href="/archives/">Archives</a></li>
+                
+                    <li><a href="/talks/">Talks</a></li>
+                
+                    <li><a href="/about/">About</a></li>
+                
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <article class="post">
+    <div class="post-date">Jan 23rd, 2018</div>
+    
+    <h1>Tic-Tac-Toe with F#, Azure Functions, HATEOAS and Property-Based Testing</h1>
+    
+    <div class="post-content">
+        <p>This post describes a toy application that I&#39;ve built with F# and Azure Functions
+in about 1 day of work. It shows a simple end-to-end implementation with some 
+useful techniques applied, and can be used as a reference point for anyone interested in
+one of the topics mentioned in the title.</p>
+<p>The requirements for my application are quite simple:</p>
+<ul>
+<li>Implement the game of Tic-Tac-Toe for a human player to play against the computer</li>
+<li>The field is 3x3, the player to have three-in-a-row wins</li>
+<li>After the game, the score is calculated based on the number of moves combined 
+with the duration of the game</li>
+<li>The history of players&#39; scores is persisted and presented as the leaderboard</li>
+</ul>
+<p>Below I go through the code step by step. Feel free to jump to the part which interests
+you the most: 
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#DomainModelling">Domain Modelling</a>, 
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#AzureFunctions">Azure Functions</a>, 
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">HATEOAS</a>,
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#PropertyBasedTesting">Property-Based Testing</a>.</p>
+<p>The game is online, so you can play it <a href="https://tictactoefs.azurewebsites.net/home">here</a>.</p>
+<p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
+<p><a name="DomainModelling" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="modeling-the-game-with-types">Modeling the Game with Types</h2>
+<p>I start with a domain model. The model is composed of immutable F# types (records and discriminated
+unions) and pure functions.</p>
+<p>We have two players, so we need a type for them:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Player</span> </span>= X | O
+</code></pre>
+<p>In addition, there is a useful function to return the other player based on the given one.
+Simple pattern-matching will do:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Player =
+  <span class="hljs-keyword">let</span> other = <span class="hljs-keyword">function</span> | X -&gt; O | O -&gt; X
+</code></pre>
+<p>The domain code is the most important part of the application, so I want it to be covered
+by unit tests. Of course, the above function doesn&#39;t really warrant testing, but it&#39;s a nice
+and simple way to try out <a href="https://fsharpforfunandprofit.com/posts/property-based-testing/">Property-Based Testing</a>. 
+That is, instead of defining specific tests, we define properties which hold for any valid input.</p>
+<p>For <code>other</code> function, I came up with two properties:</p>
+<ul>
+<li>Other player is not equal to original player</li>
+<li>Other player of other player is the player itself</li>
+</ul>
+<p>Here is the code with <a href="https://github.com/haf/expecto">Expecto</a> and <a href="https://github.com/fscheck/FsCheck">FsCheck</a>:</p>
+<pre class="highlight"><code class="hljs fs">testProperty <span class="hljs-string">"Other player is not equal to player"</span> &lt;| <span class="hljs-keyword">fun</span> x -&gt;
+  Expect.notEqual x (Player.other x) <span class="hljs-string">"Other should be different from original"</span>
+
+testProperty <span class="hljs-string">"Other player of other player is the player itself"</span> &lt;| <span class="hljs-keyword">fun</span> x -&gt;
+  Expect.equal x (Player.other (Player.other x)) <span class="hljs-string">"Other other should be equal to original"</span>
+</code></pre>
+<p>Let&#39;s move on to modelling the game. I decided to define a union type to be used for
+horizontal and vertical positions of the cells:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Position</span> </span>= One | Two | Three
+</code></pre>
+<p>I could use the normal integers instead, but I don&#39;t want to be worried about validating
+the ranges all the time.</p>
+<p>My first record type models the move, or action done by a player: it has <code>X</code> and <code>Y</code>
+positions of the chosen cell, plus the player information:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Move</span> </span>= {
+  X: Position
+  Y: Position
+  By: Player
+}
+</code></pre>
+<p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
+design of the whole application:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">RunningGame</span> </span>= {
+  MovesDone: Move list
+  PossibleMoves: Move list
+}
+</code></pre>
+<p>This type models any state of the game which is not finished yet. </p>
+<p><code>MovesDone</code> represents the ordered log of all moves, so we have the complete history 
+of actions at any time. Event Sourcing in small.</p>
+<p>Equally importantly, there is a list of all possible moves at this point of the game.
+I could get away without this property: in the end, it can always be derived from
+the history of done moves and 3x3 size of the field.</p>
+<p>However, having the list of possible moves simplifies the design of all the decision
+maker (client) code:</p>
+<ul>
+<li>Clients don&#39;t have to search for remaining cells based on move log</li>
+<li>Validation of a move received from clients gets trivial: just check that it&#39;s in
+the list of possible moves</li>
+<li>Bot implementation gets easy: it just needs to pick one of the valid moves. The
+most trivial bot is a one-liner: it picks a random move from the collection</li>
+<li>Tests take advantage of this in a similar way, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#PropertyBasedTesting">Game Tests</a> below</li>
+<li>We build a nice bridge into HATEOAS-style API, where links provided in the response
+correspond to possible moves, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">REST API</a> below</li>
+</ul>
+<p>Now, we can model a game which is already finished:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameOutcome</span> </span>= Won <span class="hljs-keyword">of</span> Player | Tie
+
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">FinishedGame</span> </span>= {
+  MovesDone: Move list
+  Outcome: GameOutcome
+}
+</code></pre>
+<p>Each finished game has a list of moves and the outcome: either one player won, or there
+was a tie.</p>
+<p>Each state of a game can be described by the union of the previous two states:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameState</span> </span>= 
+  | Finished <span class="hljs-keyword">of</span> FinishedGame
+  | InProgress <span class="hljs-keyword">of</span> RunningGame
+</code></pre>
+<h2 id="modeling-game-flow">Modeling Game Flow</h2>
+<p>Now, when all the types are in place, we can model the game flow. The flow is a sequence
+of transitions between game states, implemented with pure functions.</p>
+<p>First, each game starts at the same state, which is an empty field, and X turn. Here
+is the value which represents this initial state:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Game =
+  <span class="hljs-keyword">let</span> initialState = 
+    <span class="hljs-keyword">let</span> positions = [One; Two; Three]
+    <span class="hljs-keyword">let</span> cells = seq { 
+      <span class="hljs-keyword">for</span> x <span class="hljs-keyword">in</span> positions <span class="hljs-keyword">do</span>
+         <span class="hljs-keyword">for</span> y <span class="hljs-keyword">in</span> positions <span class="hljs-keyword">do</span>
+            <span class="hljs-keyword">yield</span> { X = x; Y = y; By = X }
+      }
+    { MovesDone = []; PossibleMoves = List.ofSeq cells }
+</code></pre>
+<p>After each move is made, we need a function to evaluate move outcome: whether current
+game is finished or is still in progress. I defined a function <code>evaluate</code> for that:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> evaluate (history: Move list): GameOutcome option = ...
+</code></pre>
+<p>I don&#39;t show the full body here, since it&#39;s quite boring in evaluating rows, columns
+and diagonals for three-in-a-row. See the <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe/Game.fs#L42-L56">full code</a> 
+if you want to.</p>
+<p>The following function is even more important: that&#39;s the main domain function called 
+<code>makeMove</code>. Its type is <code>RunningGame -&gt; Move -&gt; GameState</code> which perfectly communicates
+its intent: given a running game and a move, it returns the game state after the move.
+Note that</p>
+<ul>
+<li>You can&#39;t pass a finished game as an argument, because making a move on finished game
+doesn&#39;t make sense</li>
+<li>The result <em>can</em> be a finished game</li>
+</ul>
+<p>Here is the function implementation:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> makeMove (game: RunningGame) (move: Move): GameState =
+  <span class="hljs-keyword">let</span> movesDone = move :: game.MovesDone
+  <span class="hljs-keyword">match</span> evaluate movesDone <span class="hljs-keyword">with</span>
+  | Some result -&gt; Finished { MovesDone = movesDone; Outcome = result }
+  | None -&gt;
+    <span class="hljs-keyword">let</span> possibleMoves = 
+      List.except [move] game.PossibleMoves
+      |&gt; List.map (<span class="hljs-keyword">fun</span> m -&gt; { m <span class="hljs-keyword">with</span> By = Player.other m.By })
+    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }
+</code></pre>
+<p>It works like this:</p>
+<ul>
+<li>Prepend the new move to moves done</li>
+<li>Evaluate the game result of these combined moves</li>
+<li>If the result is known, return a <code>Finished</code> game with calculated outcome</li>
+<li>If the result is not clear yet, return <code>InProgress</code> game with possible
+moves same as before, but excluding the move and assigned to the other player</li>
+</ul>
+<p>Tic-Tic-Toe is two-player game, so I defined another function which runs
+a turn of 2 moves by 2 players, given the decision making functions of both
+players (so it&#39;s a higher-order function):</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> makeRound player1 player2 gameState =
+  <span class="hljs-keyword">let</span> newGameState = player1 gameState |&gt; makeMove gameState
+  <span class="hljs-keyword">match</span> newGameState <span class="hljs-keyword">with</span>
+  | Finished _ -&gt; newGameState
+  | InProgress p -&gt; player2 p |&gt; makeMove p
+</code></pre>
+<p>Looks almost like monadic <code>bind</code> operation...</p>
+<p><a name="PropertyBasedTesting" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="property-based-testing">Property-Based Testing</h2>
+<p>I&#39;ve already shown two simplistic properties for <code>other</code> function.</p>
+<p>It&#39;s a bit more challenging to come up with invariant properties when it
+comes to testing the game itself. After some brainstorming, I&#39;ve made the
+following list:</p>
+<ul>
+<li>The game is never finished after 4 moves</li>
+<li>The game is always finished after 9 moves</li>
+<li>X and 0 have to make moves in turns</li>
+<li>Player wins by filling one column</li>
+<li>Player wins by filling one row</li>
+<li>Player wins by filling diagonal</li>
+<li>Evaluate a known tie</li>
+</ul>
+<p>Each property-based test should accept some input from the testing framework.
+It should then evaluate the test against this input and assert the invariants.
+If the property holds for any possible valid input, the test is green.</p>
+<p>I decided to structure my property tests in the following way:</p>
+<ul>
+<li>Each test accepts a list of non-negative integers</li>
+<li>Each integer is interpreted as an index of a possible move to select at turn <code>i</code>.
+That means that the test receives a sequence which uniquely identifies the moves
+to be made</li>
+<li>We can restrict this sequence to a scenario under test, e.g. make it less
+than 4 moves, or exactly 9 moves, or pick moves from a limited subset of all
+possible moves</li>
+<li>We apply the moves to calculate the end result</li>
+<li>We assert that the result confirms the property under test</li>
+</ul>
+<p>Now, it&#39;s the responsibility of property based testing framework to generate
+all kinds of input lists to try to break our property. If it succeeds, it will
+print the exact input which causes the test to fail.</p>
+<p>Here is how one such test is implemented.</p>
+<p>A helper function plays a sequence of indexes as moves:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> playSequence moves = 
+  <span class="hljs-keyword">let</span> playOne s i =
+    <span class="hljs-keyword">match</span> s <span class="hljs-keyword">with</span>
+    | InProgress p -&gt; Game.makeMove p (p.PossibleMoves.[i % p.PossibleMoves.Length])
+    | _ -&gt; s
+  List.fold playOne (InProgress Game.initialState) moves
+</code></pre>
+<p>Then the property &quot;The game is always finished after 9 moves&quot; is simply:</p>
+<pre class="highlight"><code class="hljs fs">testProp <span class="hljs-string">"The game is always finished after 9 moves"</span> &lt;| <span class="hljs-keyword">fun</span> (Gen.ListOf9 xs) -&gt;
+  <span class="hljs-keyword">let</span> result = playSequence xs
+  Expect.isTrue (Game.isFinished result) <span class="hljs-string">"Game should be finished"</span>
+</code></pre>
+<p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&#39;s a
+generator that I <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/Gen.fs#L31-L32">defined</a>, 
+so that the list always contains exactly 9 elements.</p>
+<p>Other property tests follow a similar pattern, you can see them 
+<a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/GameTests.fs">here</a>.</p>
+<p><a name="HATEOAS" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="rest-api">REST API</h2>
+<p>Now, when I&#39;m done with Game domain model, I want to define API that our HTTP
+service will expose to the clients. I define my API in REST model.</p>
+<p>The main resource is <code>/game</code> resource. To start a new game, a client has to send
+<code>POST</code> command:</p>
+<pre class="highlight"><code class="hljs stata"><span class="hljs-keyword">POST</span> /game
+Content-<span class="hljs-keyword">Type</span>: application/json
+
+{ <span class="hljs-string">"name"</span>: <span class="hljs-string">"Mikhail"</span> }
+</code></pre><p>And the response body is JSON which denotes a new game created:</p>
+<pre class="highlight"><code class="hljs json">{
+    <span class="hljs-attr">"id"</span>: <span class="hljs-string">"5d7b2261"</span>,
+    <span class="hljs-attr">"busyCells"</span>: [],
+    <span class="hljs-attr">"links"</span>: [
+        {
+            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y1"</span>,
+            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/0"</span>
+        },
+        {
+            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y2"</span>,
+            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/1"</span>
+        },
+        // ... <span class="hljs-number">7</span> more links follow
+    ]
+}
+</code></pre>
+<p>The response contains a game ID and the list of occupied cells, empty for now,
+because no moves have been made.</p>
+<p>More importantly, it contains a list of links, each one of which has a <code>rel</code>
+field representing a cell, and a link. The client should <code>POST</code> to this link
+if it wants to make a move on the corresponding cell:</p>
+<pre class="highlight"><code class="hljs awk">POST <span class="hljs-regexp">/game/</span><span class="hljs-number">5</span>d7b2261<span class="hljs-regexp">/move/</span><span class="hljs-number">1</span>
+</code></pre><p>And the response is:</p>
+<pre class="highlight"><code class="hljs json">{
+    <span class="hljs-attr">"id"</span>: <span class="hljs-string">"5d7b2261"</span>,
+    <span class="hljs-attr">"result"</span>: <span class="hljs-literal">null</span>,
+    <span class="hljs-attr">"busyCells"</span>: [
+        {
+            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x2y3"</span>,
+            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"O"</span>
+        },
+        {
+            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x1y2"</span>,
+            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"X"</span>
+        }
+    ],
+    <span class="hljs-attr">"links"</span>: [
+        {
+            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y1"</span>,
+            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/0"</span>
+        },
+        {
+            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y3"</span>,
+            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/1"</span>
+        },
+        // ... <span class="hljs-number">5</span> more links follow
+    ]
+}
+</code></pre>
+<p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
+list of links now has only 7 links, based on the count of free cells.</p>
+<p>The client keeps navigating the links until it gets non-empty <code>result</code> field:</p>
+<pre class="highlight"><code class="hljs json">{
+    <span class="hljs-attr">"id"</span>: <span class="hljs-string">"5d7b2261"</span>,
+    <span class="hljs-attr">"result"</span>: <span class="hljs-string">"You Win!"</span>,
+    <span class="hljs-attr">"busyCells"</span>: [
+        {
+            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x3y1"</span>,
+            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"X"</span>
+        },
+        {
+            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x3y2"</span>,
+            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"O"</span>
+        },
+        // ... more cells here
+    ],
+    <span class="hljs-attr">"links"</span>: [],
+    <span class="hljs-attr">"score"</span>: <span class="hljs-number">401</span>
+}
+</code></pre><p>This denotes the end of the game. There&#39;s no more links to navigate, so the client knows it
+has to stop playing.</p>
+<p>This API is designed in HATEOAS-style (Hypermedia as the Engine of Application State). The
+clients only need to know the initial URL, while all the other URLs are received from the
+previous responses. It resembles the way a human navigates websites.</p>
+<p><a name="AzureFunctions" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="azure-functions">Azure Functions</h2>
+<p>I implemented the above API with Azure Functions. I used .NET Standard based v2 runtime
+with precompiled F# functions.</p>
+<p>The initial <code>POST /game</code> request is handled by <code>Start</code> function:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameRequest</span> </span>= { Name: string }
+
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Cell</span> </span>= { Name: string; Value: string }
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Link</span> </span>= { Rel:  string; Href:  string }
+
+<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameDTO</span> </span>= {
+  Id: string
+  Result: string
+  BusyCells: Cell list
+  Links: Link list
+  Score: int
+}
+
+<span class="hljs-meta">[&lt;FunctionName("Start")&gt;]</span>
+<span class="hljs-keyword">let</span> start(<span class="hljs-meta">[&lt;HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "game")&gt;]</span> req: GameRequest,
+          <span class="hljs-meta">[&lt;Table("TicTacToe")&gt;]</span> store: ICollector&lt;GameEntity&gt;) =
+  <span class="hljs-keyword">let</span> gameid = Guid.NewGuid().ToString()
+  <span class="hljs-keyword">let</span> state = InProgress Game.initialState
+  <span class="hljs-keyword">let</span> serializedState = JsonConvert.SerializeObject state
+  store.Add(GameEntity(PartitionKey = <span class="hljs-string">"default"</span>, RowKey = gameid, Name = req.Name, State = serializedState))
+  ObjectResult(Api.serialize gameid state <span class="hljs-number">0</span>)
+</code></pre>
+<p>The outline of this function:</p>
+<ul>
+<li>It&#39;s triggered by HTTP POST request, as configured for <code>req</code> parameter</li>
+<li>The request body is parsed to <code>GameRequest</code> type containing player name</li>
+<li>It generates a new game ID</li>
+<li>It creates initial game state of empty field</li>
+<li>It serializes the state and saves it to Table Storage with <code>store</code> output binding</li>
+<li>It returns HTTP body with 
+<a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Functions/Api.fs#L30-L51">serialized</a> game response of type <code>GameDTO</code></li>
+</ul>
+<p>The second Function <code>Play</code> handles the moves:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("Play")&gt;]</span>
+<span class="hljs-keyword">let</span> play(<span class="hljs-meta">[&lt;HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "game/{gameid}/move/{index}")&gt;]</span> 
+         req: HttpRequest, gameid: string, index: int,
+         <span class="hljs-meta">[&lt;Table("TicTacToe", "default", "{gameid}")&gt;]</span> entity: GameEntity) =
+  <span class="hljs-keyword">let</span> state = JsonConvert.DeserializeObject&lt;GameState&gt; entity.State
+  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
+  | Finished _ -&gt; BadRequestResult() :&gt; IActionResult
+  | InProgress p <span class="hljs-keyword">when</span> index &lt; <span class="hljs-number">0</span> || index &gt;= p.PossibleMoves.Length -&gt; BadRequestResult() :&gt; IActionResult
+  | InProgress p -&gt; 
+    <span class="hljs-keyword">let</span> result = Game.makeRound (<span class="hljs-keyword">fun</span> _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
+    entity.State &lt;- JsonConvert.SerializeObject result
+    entity.Score &lt;- Scoring.calculateScore (DateTime.UtcNow - entity.StartedAt).TotalMilliseconds result
+    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult
+</code></pre>
+<p>The outline is very similar:</p>
+<ul>
+<li>It&#39;s triggered by a <code>POST</code> request with a URL template containing game ID and move index</li>
+<li>It has an in/out Table Storage binding which reads the serialized state saved after previous
+game and move requests</li>
+<li>It validates the state: if the game is already finished, or if the move index is not in the valid range,
+<code>Bad Request</code> HTTP status is returned</li>
+<li>If the move is valid, it runs the round, including bot play</li>
+<li>It also calculates the score, which is going to be non-zero only for finished games</li>
+<li>The game state and the score are saved to Table Storage entity (that&#39;s the only mutation in the whole
+application)</li>
+</ul>
+<h2 id="bot">Bot</h2>
+<p>Azure Function above used a <code>Bot.pickMove</code> function which I haven&#39;t described yet.</p>
+<p>This function has the type <code>RunningGame -&gt; Move</code>, exactly what is expected by <code>makeRound</code> game
+function. Its goal is to pick the <code>O</code> move for any given game-in-progress.</p>
+<p>Obviously, 3x3 Tic-Tac-Toe is a very simple game and it&#39;s quite easy to make a perfectly
+playing bot. This wasn&#39;t the goal though: it&#39;s more fun for a human to win.</p>
+<p>So, actually, the only property test that I ended up implementing is the following:</p>
+<pre class="highlight"><code class="hljs fs">testProp <span class="hljs-string">"Bot is able to play O at any possible position"</span> &lt;| <span class="hljs-keyword">fun</span> (Gen.ListOfNonNegative xs) -&gt;
+  <span class="hljs-keyword">let</span> human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
+  <span class="hljs-keyword">let</span> round s i =
+    <span class="hljs-keyword">match</span> s <span class="hljs-keyword">with</span>
+    | InProgress p -&gt; Game.makeRound (human i p) Bot.pickMove p
+    | _ -&gt; s
+  List.fold round (InProgress Game.initialState) xs |&gt; ignore
+</code></pre>
+<p>It makes sure that for any possible sequence of human moves, bot is actually able to make
+<em>any</em> move of its own. Bot just shouldn&#39;t crash :)</p>
+<p>My very first implementation of the bot was just picking a random move. Such bot is fine,
+but it&#39;s too boring to play against.</p>
+<p>So, my current bot implementation has 3 rules:</p>
+<ul>
+<li>If there is a move that immediately wins the game, do that move</li>
+<li>If possible, don&#39;t pick a move which leads to immediate loss after the next human move</li>
+<li>Otherwise, pick a random move</li>
+</ul>
+<p>I implemented the bot using the approach described in my 
+<a href="https://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Functional Fold as Decision Tree Pattern</a>
+post:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> pickMove (game: RunningGame) = 
+  [winNow O; notLoseNow; pickRandom]
+  |&gt; Seq.ofList
+  |&gt; Seq.choose (<span class="hljs-keyword">fun</span> x -&gt; x game)
+  |&gt; Seq.head
+</code></pre>
+<p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
+decision will be promoted to final decision.</p>
+<p>And here are those functions:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> winNow player (game: RunningGame) =
+  <span class="hljs-keyword">let</span> isWin = <span class="hljs-keyword">function</span> | Finished { Outcome = Won x } <span class="hljs-keyword">when</span> x = player -&gt; <span class="hljs-keyword">true</span> | _ -&gt; <span class="hljs-keyword">false</span>
+  game.PossibleMoves
+  |&gt; List.tryFind (<span class="hljs-keyword">fun</span> move -&gt; Game.makeMove game move |&gt; isWin)
+
+<span class="hljs-keyword">let</span> notLoseNow (game: RunningGame) =
+  <span class="hljs-keyword">let</span> canLose = <span class="hljs-keyword">function</span> 
+    | InProgress p -&gt; <span class="hljs-keyword">match</span> winNow X p <span class="hljs-keyword">with</span> | Some _ -&gt; <span class="hljs-keyword">true</span> | None -&gt; <span class="hljs-keyword">false</span>
+    | _ -&gt; <span class="hljs-keyword">false</span>
+  <span class="hljs-keyword">let</span> notLosingMoves =
+    game.PossibleMoves
+    |&gt; List.filter (<span class="hljs-keyword">fun</span> move -&gt; Game.makeMove game move |&gt; canLose |&gt; not)
+  <span class="hljs-keyword">if</span> List.isEmpty notLosingMoves &amp;&amp; notLosingMoves.Length &lt; game.PossibleMoves.Length <span class="hljs-keyword">then</span> None
+  <span class="hljs-keyword">else</span> Some (notLosingMoves.[random.Next notLosingMoves.Length])
+
+<span class="hljs-keyword">let</span> pickRandom (game: RunningGame) = 
+  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])
+</code></pre>
+<p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
+<h2 id="score-calculation">Score Calculation</h2>
+<p>Last twist to the application is the scoring system. If a human player wins or gets a tie,
+they are assigned a numeric score, which can be then compared to the historic leaderboard
+of all players.</p>
+<p>The score is calculated based on two principles: the less moves you make, and the faster
+you play, the higher the score is. Move count is more important than timing.</p>
+<p>These principles are nicely expressed as property tests:</p>
+<pre class="highlight"><code class="hljs fs">testProp <span class="hljs-string">"The score of faster game is not lower than slower game"</span> 
+  &lt;| <span class="hljs-keyword">fun</span> (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
+  <span class="hljs-keyword">let</span> (slower, faster) = maxmin id duration1 duration2
+  <span class="hljs-keyword">let</span> scoreFaster = Scoring.calculateScore faster game
+  <span class="hljs-keyword">let</span> scoreSlower = Scoring.calculateScore slower game
+  Expect.isGreaterThanOrEqual scoreFaster scoreSlower <span class="hljs-string">"Bigger duration has lower score (or same)"</span>
+
+testProp <span class="hljs-string">"The score of won game in less moves is greater than game with more moves"</span> 
+  &lt;| <span class="hljs-keyword">fun</span> (Gen.Positive duration1) (Gen.Positive duration2) game1 game2 -&gt;
+  <span class="hljs-keyword">let</span> (slower, faster) = maxmin id duration1 duration2
+  <span class="hljs-keyword">let</span> (moreMoves, lessMoves) = maxmin List.length game1 game2
+  <span class="hljs-keyword">let</span> score1 = Scoring.calculateScore slower (Finished { Outcome = Won X; MovesDone = lessMoves })
+  <span class="hljs-keyword">let</span> score2 = Scoring.calculateScore faster (Finished { Outcome = Won X; MovesDone = moreMoves })
+  <span class="hljs-keyword">if</span> moreMoves.Length = lessMoves.Length <span class="hljs-keyword">then</span>
+    Expect.isGreaterThanOrEqual score1 score2 <span class="hljs-string">"Bigger duration has lower score (or same)"</span>
+  <span class="hljs-keyword">else</span>
+    Expect.isGreaterThan score1 score2 <span class="hljs-string">"More moves have lower score"</span>
+</code></pre>
+<p>Note that tests are parameterized for durations and game states. We don&#39;t have to come up with specific
+scenarios: the framework should take care of those.</p>
+<p>One of the possible implementations for scoring is:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> calculateScore duration (state: GameState) =
+  <span class="hljs-keyword">let</span> durationScore = (<span class="hljs-number">100.0</span> * (<span class="hljs-number">1.0</span> - duration / (duration + <span class="hljs-number">10000.0</span>))) |&gt; int
+  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
+  | Finished { Outcome = Won X; MovesDone = ms } -&gt; (<span class="hljs-number">11</span> - ms.Length) * <span class="hljs-number">100</span> + durationScore
+  | Finished { Outcome = Tie } -&gt; durationScore
+  | _ -&gt; <span class="hljs-number">0</span>
+</code></pre>
+<p>Now, the leaderboard piece. You&#39;ve already seen the bits of this functionality in Azure Functions: 
+they store the game state into Azure Table Storage.</p>
+<p>There is another Azure Function which handles <code>GET</code> requests to <code>/leaderboard</code> resource. It
+loads all the past games from Table Storage, and then passes them to leaderboard calculation
+function below:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> calculateLeaderboard top ns =
+  ns
+  |&gt; Seq.filter (<span class="hljs-keyword">fun</span> entity -&gt; snd entity &gt; <span class="hljs-number">0</span> &amp;&amp; not (String.IsNullOrEmpty (fst entity)))
+  |&gt; Seq.sortByDescending snd
+  |&gt; Seq.truncate top
+  |&gt; Seq.mapi (<span class="hljs-keyword">fun</span> index entity -&gt; { Index = index + <span class="hljs-number">1</span>; Name = fst entity; Score = snd entity })
+</code></pre>
+<h2 id="wrapping-up">Wrapping Up</h2>
+<p>Ok, the application is simple, but the blog post ended up being quite long. Thank you if you
+made it so far.</p>
+<p>I touched base on several important concepts and tools, which can be useful apart or in
+combination.</p>
+<p>Please leave a comment if such kind of articles is useful, and which part you found most
+inspirational or boring.</p>
+<p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
+<p>Happy coding!</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing//index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/hateoas/'>HATEOAS</a>, <a href='/tags/property-based-testing/'>Property-Based Testing</a>
+    </div>
+    
+</article>
+    <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy F#, C#, Javascript and SQL development, reasoning about distributed systems, data processing pipelines, cloud and web apps. I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'https://mikhail.io/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Tic-Tac-Toe with F#, Azure Functions, HATEOAS and Property-Based Testing';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2017 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
