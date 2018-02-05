@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Load Testing Azure SQL Database by Copying Traffic from Production SQL Server | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script src="/scripts/vendor/html5shiv.js"></script>
+    <script src="/scripts/vendor/respond.min.js"></script>
+    <![endif]-->
+
+    <meta name="generator" content="DocPad v6.78.6" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">F#, C#, JS, SQL, Azure programmer</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                    <li><a href="/tags/">Topics</a></li>
+                
+                    <li><a href="/archives/">Archives</a></li>
+                
+                    <li><a href="/talks/">Talks</a></li>
+                
+                    <li><a href="/about/">About</a></li>
+                
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <article class="post">
+    <div class="post-date">Feb 6th, 2018</div>
+    
+    <h1>Load Testing Azure SQL Database by Copying Traffic from Production SQL Server</h1>
+    
+    <div class="post-content">
+        <p>Azure SQL Database is a managed service that provides low-maintenance SQL Server instances in the cloud.
+You don&#39;t have to run and update VMs, or even take backups and setup failover clusters.
+Microsoft will do administration for you, you just pay an hourly fee.</p>
+<p>So, let&#39;s say you decide this value proposition is a good reason to migrate
+away from your existing self-hosted SQL Server database running in production and replace
+it with Azure SQL Database.</p>
+<p>You do the functional testing and eventually everything works like charm. The next set of questions 
+is going to be related to Database performance level:</p>
+<ul>
+<li>Which tier / how many DTU&#39;s should I provision?</li>
+<li>How much will it cost?</li>
+<li>Will it be able to handle my current production load?</li>
+</ul>
+<h2 id="dtus">DTUs</h2>
+<p>Even if you collect all the specs of the hardware behind your existing SQL Server, you can&#39;t
+directly use that knowledge to choose the right Azure SQL Database size.</p>
+<p>The sizes are measured in Database Transaction Units (DTUs). These are abstract units
+of measure which don&#39;t necessarily mean much on their own. Within a given tier
+(Standard / Premium), doubling the DTU amount will double the max throughput.</p>
+<p>That doesn&#39;t really help to plan for workload migrations.</p>
+<p>There are some ways to estimate the DTU requirements by measuring metrics like CPU
+and IOPS on your existing server. Have a look at <a href="http://dtucalculator.azurewebsites.net/">DTU Calculator</a>:
+it consists of a data collector and an online converter from metric values to DTUs.</p>
+<p>While useful as a first approximation, I&#39;m reluctant to provision Azure SQL Database 
+size solely based on such estimates.</p>
+<p>My answer to the problem is: Measure It!</p>
+<h2 id="synthetic-tests">Synthetic Tests</h2>
+<p>Go get a backup of your existing production database and Export / Import it into
+Azure SQL Database. Pick the size based on your gut feel, run a load test, evaluate
+the results, adjust the size, repeat.</p>
+<p>If you know your workload really well, you can create a synthetic test:</p>
+<ul>
+<li>Create a script or scenario which resembles the real production load</li>
+<li>Run it for a given period of time</li>
+<li>Measure the DTU&#39;s consumed</li>
+</ul>
+<p>Unfortunately, I&#39;m yet to see a non-trivial database where I could manually create
+such script and be reasonably sure that it reflects the reality. Most of the time
+the load is consumer-driven, changes over time and heavily depends on exact query
+parameter values.</p>
+<p>Which brings me to the need of replaying <em>the actual production workload</em> on Azure
+SQL Database.</p>
+<h2 id="trace-and-replay">Trace and Replay</h2>
+<p>SQL Server comes with a marvelous suite of tools refined over years of its existence.
+It includes the tools to capture and replay the queries, so I started with those.</p>
+<p>SQL Server Profiler has a trace template called <code>TSQL_Replay</code>:</p>
+<blockquote>
+<p>This template records information required to replay the trace. Use this template
+to perform iterative turning, such as benchmark testing.</p>
+</blockquote>
+<p>This sounded like what I needed, so I ran the profiler with this template to save
+a short trace.</p>
+<p>Afterwards, it is possible to use the same SQL Server Profiler to replay the trace against
+another target database. So the process looks like this:</p>
+<p><img src="/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-trace-replay.png" alt="Replaying Traffic with SQL Server Profiler"></p>
+<p>Unfortunately, this didn&#39;t go very well:</p>
+<ul>
+<li><p>Azure SQL Database is not supported by the tooling. The replay kind of runs, but
+it throws lots of errors like reading from non-existent system tables, trying to
+switch between databases and so on </p>
+</li>
+<li><p>Related or not to the previous item, but replay went terribly slow. It
+seemed to slow down exponentially over time</p>
+</li>
+<li><p>The trace file itself was of huge size. Because the template tries to record pretty
+much everything, tracing 5 minutes on production produced 10 GB of XML</p>
+</li>
+<li><p>Replay was not real-time: you first record, then you replay. This might not be a big
+issue for many databases, but some of our queries have time parameter, and results would
+change if I replay the trace 1 hour later</p>
+</li>
+</ul>
+<p>Just to give you a rough idea, our production database-under-study is handling about
+1000 RPC calls per second (mostly stored procedures).</p>
+<h2 id="custom-trace-replay">Custom Trace &amp; Replay</h2>
+<p>Since off-the-shelf solution didn&#39;t work for me, I decided to come up with my own
+custom tool chain. Here is the idea:</p>
+<p><img src="/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-trace-replay-event-hubs-functions.png" alt="Replaying Traffic with SQL Server Profiler"></p>
+<p>There are two custom steps that I implemented:</p>
+<ol>
+<li><p>Run a console app which would host a custom trace server. The trace server
+receives SQL commands and sends them to Azure Event Hubs in batches</p>
+</li>
+<li><p>Create an Azure Function application triggered by the Event Hub. Each function
+call gets one SQL command to execute and runs it against Azure SQL database that
+we are trying to load-test</p>
+</li>
+</ol>
+<p>This setup worked remarkably well for me: I got the real-time replay of SQL commands
+from production SQL Server to Azure SQL Database.</p>
+<p>The rest of the article describes my setup so that you could reproduce it for your
+workload.</p>
+<h2 id="azure-sql-database">Azure SQL Database</h2>
+<p>Ideally, you want your copy of the database to be as fresh as possible, so that the 
+query plans and results match.</p>
+<p>Some ideas to accomplish this are given in 
+<a href="https://docs.microsoft.com/en-us/azure/sql-database/sql-database-cloud-migrate">SQL Server database migration to SQL Database in the cloud</a>.</p>
+<p>Premium RS tier is great for testing, because it is much cheaper than Premium
+tier, while it provides the same level of performance.</p>
+<h2 id="event-hubs">Event Hubs</h2>
+<p>I used Azure Event Hubs as messaging middleware between Trace Server and Replay 
+Function App.</p>
+<p>I started with Azure Storage Queues, but the server wasn&#39;t able to send messages
+fast enough, mostly due to lack of batching.</p>
+<p>Event Hubs match naturally my choice of Azure Functions: Functions have a built-in
+trigger with dynamic scaling out of the box.</p>
+<p>So, I just created a new Event Hub via the portal, with 32 partitions allocated.</p>
+<h2 id="trace-definition-file">Trace Definition File</h2>
+<p>In order to run a custom Trace Server, you still need a trace definition file.
+The built-in template <code>TSQL_Replay</code> mentioned above could work, but
+it&#39;s subscribed to way too many events and columns.</p>
+<p>Instead, I produced my own trace template with minimal selection.
+To do that, open SQL Server Profiler, then navigate to <code>File -&gt; Templates -&gt; New Template</code>,
+give it a name and then on <code>Events Selection</code> tab exclude everything except
+exactly the commands that you want to replay.</p>
+<p>We use stored procedures for pretty much everything, so my selection looked
+just like this:</p>
+<p><img src="/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-profiler-template.png" alt="SQL Profiler Template"></p>
+<p>For the first few runs, I advise you to restrict the trace even further. Click
+<code>Column Filters</code> button, select <code>TextData</code> there and set <strong>Like</strong> filter
+to a single stored procedure, e.g. matching the pattern <code>%spProductList%</code>.</p>
+<p>This way you can debug your whole replay chain without immediately overloading
+any part of it with huge stream of commands.</p>
+<p>Once done, save the <code>tdf</code> file to disk. An example of such trace definition file
+can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
+<h2 id="trace-server">Trace Server</h2>
+<p>My trace server is a simple C# console application.</p>
+<p>Create a new console app and reference a NuGet package <code>Microsoft.SqlServer.SqlManagementObjects</code>.
+Mine is of version <code>140.17218.0</code> (latest as of today).</p>
+<p>Unfortunately, this NuGet package is not fully self-contained. In order to run
+a profiling session, you have to install SQL Server Profiler tool on the machine
+where you want to run the trace server.</p>
+<p>Chances are that you already have it there, but be sure to update to the matching
+version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work with older 
+versions.</p>
+<p>Now we can implement our trace server as a console application. The main
+method looks like this:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Main</span>(<span class="hljs-params"><span class="hljs-keyword">string</span>[] args</span>) <span class="hljs-comment">// args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;</span>
+</span>{
+    <span class="hljs-comment">// 1. Run trace server</span>
+    <span class="hljs-keyword">var</span> connectionInfo = <span class="hljs-keyword">new</span> SqlConnectionInfo(args[<span class="hljs-number">0</span>])
+    {
+        DatabaseName = args[<span class="hljs-number">1</span>],
+        UseIntegratedSecurity = <span class="hljs-literal">true</span>
+    };
+    <span class="hljs-keyword">var</span> trace = <span class="hljs-keyword">new</span> TraceServer();
+    trace.InitializeAsReader(connectionInfo, args[<span class="hljs-number">2</span>]);
+
+    <span class="hljs-comment">// 2. Continuously read traces and send them to event hubs</span>
+    <span class="hljs-keyword">var</span> tokenSource = <span class="hljs-keyword">new</span> CancellationTokenSource();
+    <span class="hljs-keyword">var</span> readerTask = Task.Factory.StartNew(() =&gt; ReadTrace(trace, tokenSource.Token), tokenSource.Token);
+    <span class="hljs-keyword">var</span> senderTask = Task.Factory.StartNew(() =&gt; SendToEventHubs(tokenSource.Token), tokenSource.Token);
+
+    <span class="hljs-comment">// 3. Stop the trace</span>
+    Console.WriteLine(<span class="hljs-string">"Press any key to stop..."</span>);
+    Console.ReadKey();
+    tokenSource.Cancel();
+    Task.WaitAll(readerTask, senderTask);
+}
+</code></pre>
+<p>The first block initializes SQL connection using command line arguments and integrated
+security, and then starts the Trace Server.</p>
+<p>Because of the large volume, I made trace reader and event sender to work on separate
+threads. They talk to each other via a concurrent queue:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> ConcurrentQueue&lt;<span class="hljs-keyword">string</span>&gt; eventQueue = <span class="hljs-keyword">new</span> ConcurrentQueue&lt;<span class="hljs-keyword">string</span>&gt;();
+</code></pre>
+<p>Finally, when operator presses any key, the cancellation is requested and the reader and
+sender get shut down.</p>
+<p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
+(with some exclusions) to the concurrent in-memory queue:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ReadTrace</span>(<span class="hljs-params">TraceServer trace, CancellationToken token</span>)
+</span>{ 
+    <span class="hljs-keyword">while</span> (trace.Read() &amp;&amp; !token.IsCancellationRequested)
+    {
+        <span class="hljs-keyword">var</span> eventClass = trace[<span class="hljs-string">"EventClass"</span>].ToString();
+        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">string</span>.Compare(eventClass, <span class="hljs-string">"RPC:Completed"</span>) == <span class="hljs-number">0</span>)
+        {
+            <span class="hljs-keyword">var</span> textData = trace[<span class="hljs-string">"TextData"</span>].ToString();
+            <span class="hljs-keyword">if</span> (!textData.Contains(<span class="hljs-string">"sp_reset_connection"</span>)
+                &amp;&amp; !textData.Contains(<span class="hljs-string">"sp_trace"</span>)
+                &amp;&amp; !textData.Contains(<span class="hljs-string">"sqlagent"</span>))
+            {
+                eventQueue.Enqueue(textData);
+            }
+        }
+    }
+
+    trace.Stop();
+    trace.Close();
+}
+</code></pre>
+<p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
+events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SendToEventHubs</span>(<span class="hljs-params">CancellationToken token</span>)
+</span>{
+    <span class="hljs-keyword">var</span> client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
+    <span class="hljs-keyword">var</span> batch = client.CreateBatch();
+    <span class="hljs-keyword">while</span> (!token.IsCancellationRequested)
+    {
+        <span class="hljs-keyword">if</span> (!eventQueue.TryDequeue(<span class="hljs-keyword">out</span> <span class="hljs-keyword">string</span> sql))
+        {
+            Thread.Sleep(<span class="hljs-number">10</span>);
+            <span class="hljs-keyword">continue</span>;
+        }
+
+        <span class="hljs-keyword">var</span> eventData = <span class="hljs-keyword">new</span> EventData(Encoding.UTF8.GetBytes(sql));
+        <span class="hljs-keyword">if</span> (!batch.TryAdd(eventData) &amp;&amp; batch.Count &gt; <span class="hljs-number">0</span>)
+        {
+            client.SendAsync(batch.ToEnumerable())
+                .ContinueWith(OnAsyncMethodFailed, token, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            batch = client.CreateBatch();
+            batch.TryAdd(eventData);
+        }
+    }
+}
+</code></pre>
+<p>If your trace doesn&#39;t produce so many messages, you will probably want to periodically send out the batches
+even before they get full, just to keep that process closer to real time.</p>
+<p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
+callback to print it to console:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">OnMyAsyncMethodFailed</span>(<span class="hljs-params">Task task</span>)
+</span>{
+    Console.WriteLine(task.Exception?.ToString() ?? <span class="hljs-string">"null error"</span>);
+}
+</code></pre>
+<p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
+up by Trace Replay.</p>
+<h2 id="trace-replay-function-app">Trace Replay Function App</h2>
+<p>To replay those traces against the target Azure SQL Database, I could make another console
+application which would contain <code>EventProcessorHost</code> to receive and process SQL commands.</p>
+<p>However, under high load a single machine might not be able to keep up with executing all
+those commands in real time.</p>
+<p>Instead, I decided to distribute such Replay App over multiple machines. To deploy a 
+DDoS network, if you will :)</p>
+<p>And I don&#39;t have to build, find, configure and synchronize all those servers myself, since we
+are living in the world of serverless.</p>
+<p><a href="https://azure.microsoft.com/en-us/services/functions/">Azure Functions</a> are the perfect tool for this job. Once you start the trace server,
+Function App will start scaling up based on the amount of events in Event Hub, and will
+expand until it catches up with the workload.</p>
+<p>But as long as you don&#39;t run the trace server, it won&#39;t consume any servers and won&#39;t cost you
+a dime. </p>
+<p>Here is the implementation of Trace Replay Azure Function:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Replay</span>
+{
+    [<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Replay"</span>)</span>]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Run</span>(<span class="hljs-params">
+        [EventHubTrigger(<span class="hljs-string">"sqltrace"</span>, Connection = <span class="hljs-string">"EventHubsConn"</span></span>)] <span class="hljs-keyword">string</span> sql,
+        TraceWriter log)
+    </span>{
+        <span class="hljs-keyword">var</span> commandName = sql
+            .Split(<span class="hljs-literal">null</span>)
+            .SkipWhile(r =&gt; r != <span class="hljs-string">"exec"</span> &amp;&amp; r != <span class="hljs-string">"sp_executesql"</span>)
+            .FirstOrDefault(r =&gt; !r.Contains(<span class="hljs-string">"exec"</span>)) ?? <span class="hljs-string">"&lt;empty&gt;"</span>;
+
+        <span class="hljs-keyword">var</span> stopwatch = <span class="hljs-keyword">new</span> Stopwatch();
+        stopwatch.Start();
+
+        <span class="hljs-keyword">try</span>
+        {
+            <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> sqlConnection = <span class="hljs-keyword">new</span> SqlConnection(AzureSqlConnectionString))
+            <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> cmd = <span class="hljs-keyword">new</span> SqlCommand())
+            {
+                sqlConnection.Open();
+
+                cmd.CommandText = sql;
+                cmd.CommandType = CommandType.Text;
+
+                cmd.Connection = sqlConnection;
+
+                <span class="hljs-keyword">int</span> count = <span class="hljs-number">0</span>;
+                <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> reader = cmd.ExecuteReader())
+                {
+                    <span class="hljs-keyword">while</span> (reader.Read())
+                    {
+                        count++;
+                    }
+                }
+
+                log.Info(<span class="hljs-string">$"Processed <span class="hljs-subst">{commandName}</span> in <span class="hljs-subst">{stopwatch.ElapsedMilliseconds}</span> ms with <span class="hljs-subst">{count}</span> rows"</span>);
+            }
+        }
+        <span class="hljs-keyword">catch</span> (Exception ex)
+        {
+            log.Error(<span class="hljs-string">$"Error in <span class="hljs-subst">{commandName}</span> in <span class="hljs-subst">{stopwatch.ElapsedMilliseconds}</span> <span class="hljs-subst">{ex.Message}</span>"</span>);
+            <span class="hljs-keyword">throw</span>;
+        }
+    }
+}
+</code></pre>
+<p>It&#39;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
+logs the result with timing and returned row count. And that&#39;s everything required to start
+bombarding my Azure SQL Database.</p>
+<h2 id="evaluating-results">Evaluating Results</h2>
+<p>The purpose of this whole exercise was to evaluate whether a provisioned DTU level
+is enough to stand the load comparable to existing production.</p>
+<p>So, after I ran the test, I could browse through the DTU usage chart in Azure portal to
+get overall usage statistics.</p>
+<p>I&#39;ve also spent quite some time analyzing the usage breakdown as reported by <code>sp_BlitzCache</code>
+from <a href="https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit">Responder Kit</a>. 
+Please note that it&#39;s not officially supported for Azure SQL Database, but it seems to work 
+reasonably well.</p>
+<p>Be sure to re-run your experiments multiple times, at different days and time intervals.</p>
+<p>The full code sample can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
+<p>I hope Azure SQL Database will perform to your expectations and within your budget. But
+hope is not a good strategy, so go ahead and try it out!</p>
+<p>Happy DDoS-ing!</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-sql-database/'>Azure SQL Database</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/scalability/'>Scalability</a>, <a href='/tags/azure-event-hubs/'>Azure Event Hubs</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
+    </div>
+    
+</article>
+    <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy F#, C#, Javascript and SQL development, reasoning about distributed systems, data processing pipelines, cloud and web apps. I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+
+    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'https://mikhail.io/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server/';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Load Testing Azure SQL Database by Copying Traffic from Production SQL Server';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2017 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/highlight.pack.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>

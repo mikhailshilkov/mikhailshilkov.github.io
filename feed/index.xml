@@ -3,13 +3,327 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-01-22T21:37:50.234Z</updated>
+    <updated>2018-02-05T22:54:54.611Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Load Testing Azure SQL Database by Copying Traffic from Production SQL Server</title>
+        <link href="https://mikhail.io/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server/"/>
+        <updated>2018-02-06T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2018-02-06,/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server/</id>
+        <content type="html"><![CDATA[<p>Azure SQL Database is a managed service that provides low-maintenance SQL Server instances in the cloud.
+You don&#39;t have to run and update VMs, or even take backups and setup failover clusters.
+Microsoft will do administration for you, you just pay an hourly fee.</p>
+<p>So, let&#39;s say you decide this value proposition is a good reason to migrate
+away from your existing self-hosted SQL Server database running in production and replace
+it with Azure SQL Database.</p>
+<p>You do the functional testing and eventually everything works like charm. The next set of questions 
+is going to be related to Database performance level:</p>
+<ul>
+<li>Which tier / how many DTU&#39;s should I provision?</li>
+<li>How much will it cost?</li>
+<li>Will it be able to handle my current production load?</li>
+</ul>
+<h2 id="dtus">DTUs</h2>
+<p>Even if you collect all the specs of the hardware behind your existing SQL Server, you can&#39;t
+directly use that knowledge to choose the right Azure SQL Database size.</p>
+<p>The sizes are measured in Database Transaction Units (DTUs). These are abstract units
+of measure which don&#39;t necessarily mean much on their own. Within a given tier
+(Standard / Premium), doubling the DTU amount will double the max throughput.</p>
+<p>That doesn&#39;t really help to plan for workload migrations.</p>
+<p>There are some ways to estimate the DTU requirements by measuring metrics like CPU
+and IOPS on your existing server. Have a look at <a href="http://dtucalculator.azurewebsites.net/">DTU Calculator</a>:
+it consists of a data collector and an online converter from metric values to DTUs.</p>
+<p>While useful as a first approximation, I&#39;m reluctant to provision Azure SQL Database 
+size solely based on such estimates.</p>
+<p>My answer to the problem is: Measure It!</p>
+<h2 id="synthetic-tests">Synthetic Tests</h2>
+<p>Go get a backup of your existing production database and Export / Import it into
+Azure SQL Database. Pick the size based on your gut feel, run a load test, evaluate
+the results, adjust the size, repeat.</p>
+<p>If you know your workload really well, you can create a synthetic test:</p>
+<ul>
+<li>Create a script or scenario which resembles the real production load</li>
+<li>Run it for a given period of time</li>
+<li>Measure the DTU&#39;s consumed</li>
+</ul>
+<p>Unfortunately, I&#39;m yet to see a non-trivial database where I could manually create
+such script and be reasonably sure that it reflects the reality. Most of the time
+the load is consumer-driven, changes over time and heavily depends on exact query
+parameter values.</p>
+<p>Which brings me to the need of replaying <em>the actual production workload</em> on Azure
+SQL Database.</p>
+<h2 id="trace-and-replay">Trace and Replay</h2>
+<p>SQL Server comes with a marvelous suite of tools refined over years of its existence.
+It includes the tools to capture and replay the queries, so I started with those.</p>
+<p>SQL Server Profiler has a trace template called <code>TSQL_Replay</code>:</p>
+<blockquote>
+<p>This template records information required to replay the trace. Use this template
+to perform iterative turning, such as benchmark testing.</p>
+</blockquote>
+<p>This sounded like what I needed, so I ran the profiler with this template to save
+a short trace.</p>
+<p>Afterwards, it is possible to use the same SQL Server Profiler to replay the trace against
+another target database. So the process looks like this:</p>
+<p><img src="https://mikhail.io/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-trace-replay.png" alt="Replaying Traffic with SQL Server Profiler"></p>
+<p>Unfortunately, this didn&#39;t go very well:</p>
+<ul>
+<li><p>Azure SQL Database is not supported by the tooling. The replay kind of runs, but
+it throws lots of errors like reading from non-existent system tables, trying to
+switch between databases and so on </p>
+</li>
+<li><p>Related or not to the previous item, but replay went terribly slow. It
+seemed to slow down exponentially over time</p>
+</li>
+<li><p>The trace file itself was of huge size. Because the template tries to record pretty
+much everything, tracing 5 minutes on production produced 10 GB of XML</p>
+</li>
+<li><p>Replay was not real-time: you first record, then you replay. This might not be a big
+issue for many databases, but some of our queries have time parameter, and results would
+change if I replay the trace 1 hour later</p>
+</li>
+</ul>
+<p>Just to give you a rough idea, our production database-under-study is handling about
+1000 RPC calls per second (mostly stored procedures).</p>
+<h2 id="custom-trace-replay">Custom Trace &amp; Replay</h2>
+<p>Since off-the-shelf solution didn&#39;t work for me, I decided to come up with my own
+custom tool chain. Here is the idea:</p>
+<p><img src="https://mikhail.io/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-trace-replay-event-hubs-functions.png" alt="Replaying Traffic with SQL Server Profiler"></p>
+<p>There are two custom steps that I implemented:</p>
+<ol>
+<li><p>Run a console app which would host a custom trace server. The trace server
+receives SQL commands and sends them to Azure Event Hubs in batches</p>
+</li>
+<li><p>Create an Azure Function application triggered by the Event Hub. Each function
+call gets one SQL command to execute and runs it against Azure SQL database that
+we are trying to load-test</p>
+</li>
+</ol>
+<p>This setup worked remarkably well for me: I got the real-time replay of SQL commands
+from production SQL Server to Azure SQL Database.</p>
+<p>The rest of the article describes my setup so that you could reproduce it for your
+workload.</p>
+<h2 id="azure-sql-database">Azure SQL Database</h2>
+<p>Ideally, you want your copy of the database to be as fresh as possible, so that the 
+query plans and results match.</p>
+<p>Some ideas to accomplish this are given in 
+<a href="https://docs.microsoft.com/en-us/azure/sql-database/sql-database-cloud-migrate">SQL Server database migration to SQL Database in the cloud</a>.</p>
+<p>Premium RS tier is great for testing, because it is much cheaper than Premium
+tier, while it provides the same level of performance.</p>
+<h2 id="event-hubs">Event Hubs</h2>
+<p>I used Azure Event Hubs as messaging middleware between Trace Server and Replay 
+Function App.</p>
+<p>I started with Azure Storage Queues, but the server wasn&#39;t able to send messages
+fast enough, mostly due to lack of batching.</p>
+<p>Event Hubs match naturally my choice of Azure Functions: Functions have a built-in
+trigger with dynamic scaling out of the box.</p>
+<p>So, I just created a new Event Hub via the portal, with 32 partitions allocated.</p>
+<h2 id="trace-definition-file">Trace Definition File</h2>
+<p>In order to run a custom Trace Server, you still need a trace definition file.
+The built-in template <code>TSQL_Replay</code> mentioned above could work, but
+it&#39;s subscribed to way too many events and columns.</p>
+<p>Instead, I produced my own trace template with minimal selection.
+To do that, open SQL Server Profiler, then navigate to <code>File -&gt; Templates -&gt; New Template</code>,
+give it a name and then on <code>Events Selection</code> tab exclude everything except
+exactly the commands that you want to replay.</p>
+<p>We use stored procedures for pretty much everything, so my selection looked
+just like this:</p>
+<p><img src="https://mikhail.io/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-profiler-template.png" alt="SQL Profiler Template"></p>
+<p>For the first few runs, I advise you to restrict the trace even further. Click
+<code>Column Filters</code> button, select <code>TextData</code> there and set <strong>Like</strong> filter
+to a single stored procedure, e.g. matching the pattern <code>%spProductList%</code>.</p>
+<p>This way you can debug your whole replay chain without immediately overloading
+any part of it with huge stream of commands.</p>
+<p>Once done, save the <code>tdf</code> file to disk. An example of such trace definition file
+can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
+<h2 id="trace-server">Trace Server</h2>
+<p>My trace server is a simple C# console application.</p>
+<p>Create a new console app and reference a NuGet package <code>Microsoft.SqlServer.SqlManagementObjects</code>.
+Mine is of version <code>140.17218.0</code> (latest as of today).</p>
+<p>Unfortunately, this NuGet package is not fully self-contained. In order to run
+a profiling session, you have to install SQL Server Profiler tool on the machine
+where you want to run the trace server.</p>
+<p>Chances are that you already have it there, but be sure to update to the matching
+version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work with older 
+versions.</p>
+<p>Now we can implement our trace server as a console application. The main
+method looks like this:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Main</span>(<span class="hljs-params"><span class="hljs-keyword">string</span>[] args</span>) <span class="hljs-comment">// args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;</span>
+</span>{
+    <span class="hljs-comment">// 1. Run trace server</span>
+    <span class="hljs-keyword">var</span> connectionInfo = <span class="hljs-keyword">new</span> SqlConnectionInfo(args[<span class="hljs-number">0</span>])
+    {
+        DatabaseName = args[<span class="hljs-number">1</span>],
+        UseIntegratedSecurity = <span class="hljs-literal">true</span>
+    };
+    <span class="hljs-keyword">var</span> trace = <span class="hljs-keyword">new</span> TraceServer();
+    trace.InitializeAsReader(connectionInfo, args[<span class="hljs-number">2</span>]);
+
+    <span class="hljs-comment">// 2. Continuously read traces and send them to event hubs</span>
+    <span class="hljs-keyword">var</span> tokenSource = <span class="hljs-keyword">new</span> CancellationTokenSource();
+    <span class="hljs-keyword">var</span> readerTask = Task.Factory.StartNew(() =&gt; ReadTrace(trace, tokenSource.Token), tokenSource.Token);
+    <span class="hljs-keyword">var</span> senderTask = Task.Factory.StartNew(() =&gt; SendToEventHubs(tokenSource.Token), tokenSource.Token);
+
+    <span class="hljs-comment">// 3. Stop the trace</span>
+    Console.WriteLine(<span class="hljs-string">"Press any key to stop..."</span>);
+    Console.ReadKey();
+    tokenSource.Cancel();
+    Task.WaitAll(readerTask, senderTask);
+}
+</code></pre>
+<p>The first block initializes SQL connection using command line arguments and integrated
+security, and then starts the Trace Server.</p>
+<p>Because of the large volume, I made trace reader and event sender to work on separate
+threads. They talk to each other via a concurrent queue:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> ConcurrentQueue&lt;<span class="hljs-keyword">string</span>&gt; eventQueue = <span class="hljs-keyword">new</span> ConcurrentQueue&lt;<span class="hljs-keyword">string</span>&gt;();
+</code></pre>
+<p>Finally, when operator presses any key, the cancellation is requested and the reader and
+sender get shut down.</p>
+<p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
+(with some exclusions) to the concurrent in-memory queue:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ReadTrace</span>(<span class="hljs-params">TraceServer trace, CancellationToken token</span>)
+</span>{ 
+    <span class="hljs-keyword">while</span> (trace.Read() &amp;&amp; !token.IsCancellationRequested)
+    {
+        <span class="hljs-keyword">var</span> eventClass = trace[<span class="hljs-string">"EventClass"</span>].ToString();
+        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">string</span>.Compare(eventClass, <span class="hljs-string">"RPC:Completed"</span>) == <span class="hljs-number">0</span>)
+        {
+            <span class="hljs-keyword">var</span> textData = trace[<span class="hljs-string">"TextData"</span>].ToString();
+            <span class="hljs-keyword">if</span> (!textData.Contains(<span class="hljs-string">"sp_reset_connection"</span>)
+                &amp;&amp; !textData.Contains(<span class="hljs-string">"sp_trace"</span>)
+                &amp;&amp; !textData.Contains(<span class="hljs-string">"sqlagent"</span>))
+            {
+                eventQueue.Enqueue(textData);
+            }
+        }
+    }
+
+    trace.Stop();
+    trace.Close();
+}
+</code></pre>
+<p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
+events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SendToEventHubs</span>(<span class="hljs-params">CancellationToken token</span>)
+</span>{
+    <span class="hljs-keyword">var</span> client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
+    <span class="hljs-keyword">var</span> batch = client.CreateBatch();
+    <span class="hljs-keyword">while</span> (!token.IsCancellationRequested)
+    {
+        <span class="hljs-keyword">if</span> (!eventQueue.TryDequeue(<span class="hljs-keyword">out</span> <span class="hljs-keyword">string</span> sql))
+        {
+            Thread.Sleep(<span class="hljs-number">10</span>);
+            <span class="hljs-keyword">continue</span>;
+        }
+
+        <span class="hljs-keyword">var</span> eventData = <span class="hljs-keyword">new</span> EventData(Encoding.UTF8.GetBytes(sql));
+        <span class="hljs-keyword">if</span> (!batch.TryAdd(eventData) &amp;&amp; batch.Count &gt; <span class="hljs-number">0</span>)
+        {
+            client.SendAsync(batch.ToEnumerable())
+                .ContinueWith(OnAsyncMethodFailed, token, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            batch = client.CreateBatch();
+            batch.TryAdd(eventData);
+        }
+    }
+}
+</code></pre>
+<p>If your trace doesn&#39;t produce so many messages, you will probably want to periodically send out the batches
+even before they get full, just to keep that process closer to real time.</p>
+<p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
+callback to print it to console:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">OnMyAsyncMethodFailed</span>(<span class="hljs-params">Task task</span>)
+</span>{
+    Console.WriteLine(task.Exception?.ToString() ?? <span class="hljs-string">"null error"</span>);
+}
+</code></pre>
+<p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
+up by Trace Replay.</p>
+<h2 id="trace-replay-function-app">Trace Replay Function App</h2>
+<p>To replay those traces against the target Azure SQL Database, I could make another console
+application which would contain <code>EventProcessorHost</code> to receive and process SQL commands.</p>
+<p>However, under high load a single machine might not be able to keep up with executing all
+those commands in real time.</p>
+<p>Instead, I decided to distribute such Replay App over multiple machines. To deploy a 
+DDoS network, if you will :)</p>
+<p>And I don&#39;t have to build, find, configure and synchronize all those servers myself, since we
+are living in the world of serverless.</p>
+<p><a href="https://azure.microsoft.com/en-us/services/functions/">Azure Functions</a> are the perfect tool for this job. Once you start the trace server,
+Function App will start scaling up based on the amount of events in Event Hub, and will
+expand until it catches up with the workload.</p>
+<p>But as long as you don&#39;t run the trace server, it won&#39;t consume any servers and won&#39;t cost you
+a dime. </p>
+<p>Here is the implementation of Trace Replay Azure Function:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Replay</span>
+{
+    [<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Replay"</span>)</span>]
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Run</span>(<span class="hljs-params">
+        [EventHubTrigger(<span class="hljs-string">"sqltrace"</span>, Connection = <span class="hljs-string">"EventHubsConn"</span></span>)] <span class="hljs-keyword">string</span> sql,
+        TraceWriter log)
+    </span>{
+        <span class="hljs-keyword">var</span> commandName = sql
+            .Split(<span class="hljs-literal">null</span>)
+            .SkipWhile(r =&gt; r != <span class="hljs-string">"exec"</span> &amp;&amp; r != <span class="hljs-string">"sp_executesql"</span>)
+            .FirstOrDefault(r =&gt; !r.Contains(<span class="hljs-string">"exec"</span>)) ?? <span class="hljs-string">"&lt;empty&gt;"</span>;
+
+        <span class="hljs-keyword">var</span> stopwatch = <span class="hljs-keyword">new</span> Stopwatch();
+        stopwatch.Start();
+
+        <span class="hljs-keyword">try</span>
+        {
+            <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> sqlConnection = <span class="hljs-keyword">new</span> SqlConnection(AzureSqlConnectionString))
+            <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> cmd = <span class="hljs-keyword">new</span> SqlCommand())
+            {
+                sqlConnection.Open();
+
+                cmd.CommandText = sql;
+                cmd.CommandType = CommandType.Text;
+
+                cmd.Connection = sqlConnection;
+
+                <span class="hljs-keyword">int</span> count = <span class="hljs-number">0</span>;
+                <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> reader = cmd.ExecuteReader())
+                {
+                    <span class="hljs-keyword">while</span> (reader.Read())
+                    {
+                        count++;
+                    }
+                }
+
+                log.Info(<span class="hljs-string">$"Processed <span class="hljs-subst">{commandName}</span> in <span class="hljs-subst">{stopwatch.ElapsedMilliseconds}</span> ms with <span class="hljs-subst">{count}</span> rows"</span>);
+            }
+        }
+        <span class="hljs-keyword">catch</span> (Exception ex)
+        {
+            log.Error(<span class="hljs-string">$"Error in <span class="hljs-subst">{commandName}</span> in <span class="hljs-subst">{stopwatch.ElapsedMilliseconds}</span> <span class="hljs-subst">{ex.Message}</span>"</span>);
+            <span class="hljs-keyword">throw</span>;
+        }
+    }
+}
+</code></pre>
+<p>It&#39;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
+logs the result with timing and returned row count. And that&#39;s everything required to start
+bombarding my Azure SQL Database.</p>
+<h2 id="evaluating-results">Evaluating Results</h2>
+<p>The purpose of this whole exercise was to evaluate whether a provisioned DTU level
+is enough to stand the load comparable to existing production.</p>
+<p>So, after I ran the test, I could browse through the DTU usage chart in Azure portal to
+get overall usage statistics.</p>
+<p>I&#39;ve also spent quite some time analyzing the usage breakdown as reported by <code>sp_BlitzCache</code>
+from <a href="https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit">Responder Kit</a>. 
+Please note that it&#39;s not officially supported for Azure SQL Database, but it seems to work 
+reasonably well.</p>
+<p>Be sure to re-run your experiments multiple times, at different days and time intervals.</p>
+<p>The full code sample can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
+<p>I hope Azure SQL Database will perform to your expectations and within your budget. But
+hope is not a good strategy, so go ahead and try it out!</p>
+<p>Happy DDoS-ing!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Tic-Tac-Toe with F#, Azure Functions, HATEOAS and Property-Based Testing</title>
@@ -1745,305 +2059,6 @@ counter-intuitive (at least for novice devs), and thus error-prone.</p>
 to simplify some of the more advanced scenarios and workflows. I look
 forward to further iterations of the library, and I will keep trying it out
 for more scenarios.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Custom Autoscaling of Azure App Service with a Function App</title>
-        <link href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/"/>
-        <updated>2017-07-17T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-07-17,/2017/07/custom-auto-scaling-in-azure/</id>
-        <content type="html"><![CDATA[<p>The power of cloud computing comes from its elasticity and ability to adapt to changing
-load. Most Azure services can be scaled up or down manually: by human interaction in the
-portal, or by running a command or a script.</p>
-<p>Some services in Azure also support Autoscaling, i.e. they may change the resource 
-allocation dynamically, based on predefined rules and current operational metrics.</p>
-<p>Azure App Service is one example of such service: it supports 
-<a href="https://docs.microsoft.com/en-us/azure/monitoring-and-diagnostics/insights-how-to-scale#scaling-based-on-a-pre-set-metric">Scaling based on a pre-set metric</a>.
-This is a powerful option that enables website or webjobs to react on varying load,
-e.g. based on CPU utilization.</p>
-<p>At the same time, the flexibility of the built-in autoscaling is somewhat
-limited:</p>
-<ul>
-<li><p>Only a handful of metrics is supported: for instance, Service Bus Queues 
-are supported as metric source, while Service Bus Subscriptions are not;</p>
-</li>
-<li><p>It&#39;s not possible to combine several metrics in one rule: e.g. scale down only if
-several queues are empty at the same time, not just one of them;</p>
-</li>
-<li><p>Thresholds are the same for any number of instances: I can&#39;t define
-a scale down rule threshold to be 60% for 8 instances but 30% for 2 instances;</p>
-</li>
-<li><p>The minimum time of reaction is limited to 5 minutes.</p>
-</li>
-</ul>
-<p>Other services, like SQL Database and Cosmos DB, don&#39;t have the built-in autoscaling
-functionality at all.</p>
-<p>This post starts the series of articles about custom implementation 
-of autoscaling. The implementation will be based on Azure Functions as building 
-blocks of scaling workflows.</p>
-<h2 id="goal">Goal</h2>
-<p>To keep the task very specific for now, I want the following from my first 
-custom autoscaling implementation:</p>
-<ul>
-<li><p>Be able to scale the amount of instances up and down in a given App Service 
-Plan;</p>
-</li>
-<li><p>Do so based on the given Service Bus Subscription backlog (amount of messages 
-pending to be processed);</p>
-</li>
-<li><p>Scale up, if the average backlog during any 10 minutes is above a threshold;</p>
-</li>
-<li><p>Scale down, if the maximum backlog during any 10 minutes is below another 
-(lower) threshold;</p>
-</li>
-<li><p>After scaling up or down, take a cooldown period of 10 minutes;</p>
-</li>
-<li><p>Have a log of scaling decisions and numbers behind;</p>
-</li>
-<li><p>Scaling rules should be extensible to allow more complex calculation later 
-on.</p>
-</li>
-</ul>
-<h2 id="architecture">Architecture</h2>
-<p>I decided that the scaling rules should be written in a general-purpose programming language
-(C# for this post), instead of just picking from a limited list of configurations.</p>
-<p>I chose Azure Functions as the mechanism to host and run this logic in Azure cloud. </p>
-<p>Here is a diagram of Functions that I ended up creating:</p>
-<p><img src="https://mikhail.io/2017/07/custom-auto-scaling-in-azure//AutoscalingArchitecture.png" alt="Autoscaling Architecture"></p>
-<p>The components of my autoscaling app are:</p>
-<ul>
-<li><p><strong>Metric Collector</strong> function is based on Timer trigger: it fires every minute and collects
-the subscription backlog metric from a given Service Bus Subscription;</p>
-</li>
-<li><p>Collector then sends this metric to the <strong>Metrics</strong> storage queue;</p>
-</li>
-<li><p><strong>Scaling Logic</strong> function pulls the metric from the queue. It maintains the 
-metric values for 10 minutes, calculates average/maximum value, and if they hit 
-thresholds - issues a command to scale App Service Plan up or down;</p>
-</li>
-<li><p>The command is sent to <strong>Actions</strong> storage queue;</p>
-</li>
-<li><p><strong>Scaler</strong> function receives the commands from the queue and executes 
-the re-scaling action on App Service Plan using Azure Management SDK.</p>
-</li>
-</ul>
-<p>The implementation of this workflow is discussed below. I am using Visual Studio 2017 Version 15.3 
-Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</p>
-<h2 id="metric-collector">Metric Collector</h2>
-<p>First, let&#39;s define <code>MetricValue</code> class, which simply holds time and value:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MetricValue</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MetricValue</span>(<span class="hljs-params">DateTime time, <span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Time = time;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
-    }
-
-    <span class="hljs-keyword">public</span> DateTime Time { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Value { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
-Plan name) and measured parameter name:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Metric</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Metric</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, <span class="hljs-keyword">string</span> name, MetricValue <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Name = name;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> MetricValue Value { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>The function definition has two associated bindings: timer trigger (runs every
-minute) and return binding to the storage queue:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"MetricCollector"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Metrics"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Metric <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">[TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> connectionString = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServiceBusConnection"</span>);
-    <span class="hljs-keyword">var</span> topic = Environment.GetEnvironmentVariable(<span class="hljs-string">"Topic"</span>);
-    <span class="hljs-keyword">var</span> subscription = Environment.GetEnvironmentVariable(<span class="hljs-string">"Subscription"</span>);
-
-    <span class="hljs-keyword">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
-    <span class="hljs-keyword">var</span> subscriptionClient = nsmgr.GetSubscription(topic, subscription);
-    <span class="hljs-keyword">var</span> backlog = subscriptionClient.MessageCountDetails.ActiveMessageCount;
-
-    log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{backlog}</span>"</span>);
-
-    <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
-    <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = <span class="hljs-keyword">new</span> MetricValue(DateTime.Now, (<span class="hljs-keyword">int</span>)backlog);
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Metric(resource, <span class="hljs-string">$"<span class="hljs-subst">{topic}</span>-<span class="hljs-subst">{subscription}</span>-backlog"</span>, <span class="hljs-keyword">value</span>);
-}
-</code></pre>
-<p>The function executes the following steps:</p>
-<ul>
-<li>Reads configuration value for Service Bus parameters;</li>
-<li>Connects to Service Bus and retrieves <code>ActiveMessageCount</code> for the given 
-subscription;</li>
-<li>Logs the value for tracing and debugging;</li>
-<li>Returns the metric value mentioning which resource it&#39;s intended for.</li>
-</ul>
-<h2 id="scaling-logic">Scaling Logic</h2>
-<p>The core of autoscaling implementation resides in <code>ScalingLogic</code> function. </p>
-<p>The function defines 4 (oh my!) bindings:</p>
-<ul>
-<li>Queue trigger to react on messages from the collector;</li>
-<li>Output queue binding to send commands with action to execute;</li>
-<li>Combination of input and output bindings to the same row in Table Storage to 
-keep the state in between function calls.</li>
-</ul>
-<p>The bindings are illustrated on the following picture:</p>
-<p><img src="https://mikhail.io/2017/07/custom-auto-scaling-in-azure//ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
-<p>And here is the corresponding Function signature:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"ScalingLogic"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Actions"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ScaleAction <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
-    [QueueTrigger(<span class="hljs-string">"Metrics"</span></span>)] Metric metric, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] ScalingStateEntity stateEntity, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] <span class="hljs-keyword">out</span> ScalingStateEntity newStateEntity,
-    TraceWriter log)
-</span></code></pre>
-<p>Table storage is partitioned per scalable resource, and state is stored per metric;
-thus multiple resources and metrics are supported out of the box.</p>
-<p>The function implementation is relatively complex, so I&#39;ll describe it in parts.</p>
-<p><code>ScaleAction</code> is a simple message class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">enum</span> ScaleActionType
-{
-    Up,
-    Down
-}
-
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScaleAction</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ScaleAction</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, ScaleActionType type</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Type = type;
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> ScaleActionType Type { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>Table Storage only allows primitive types for its columns, like strings. 
-So I had to create a separate Table Storage entity class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingStateEntity</span> : <span class="hljs-title">TableEntity</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> SerializedState { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-}
-</code></pre>
-<p>which stores serialized state, from the state class itself:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingState</span>
-{
-    <span class="hljs-keyword">public</span> List&lt;MetricValue&gt; History { <span class="hljs-keyword">get</span>; } = <span class="hljs-keyword">new</span> List&lt;MetricValue&gt;();
-
-    <span class="hljs-keyword">public</span> DateTime LastScalingActionTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; } = DateTime.MinValue;
-}
-</code></pre>
-<p>Now let&#39;s look at the function body. It consists of four blocks. </p>
-<p>The first block retrieves the previous values of the metric and logs it too:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 1. Deserialize state</span>
-<span class="hljs-keyword">var</span> state = stateEntity?.SerializedState != <span class="hljs-literal">null</span> 
-    ? JsonConvert.DeserializeObject&lt;ScalingState&gt;(stateEntity.SerializedState) 
-    : <span class="hljs-keyword">new</span> ScalingState();
-<span class="hljs-keyword">var</span> history = state.History;
-log.Info(<span class="hljs-string">$"Scaling logic: Received <span class="hljs-subst">{metric.Name}</span>, previous state is <span class="hljs-subst">{<span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, history)}</span>"</span>);
-</code></pre>
-<p>The second block adds the current metric value and removes all metrics which are
-not in the target period of 10 minutes anymore:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 2. Add current metric value, remove old values</span>
-history.Add(metric.Value);
-history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
-</code></pre>
-<p>Now, the actual logic finally kicks in and produces the scaling action if average
-or maximum value is above or below respective thresholds. For my implementation I also
-chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 3. Compare the aggregates to thresholds, produce scaling action if needed</span>
-ScaleAction action = <span class="hljs-literal">null</span>;
-<span class="hljs-keyword">if</span> (history.Count &gt;= <span class="hljs-number">5</span>
-    &amp;&amp; DateTime.Now - state.LastScalingActionTime &gt; cooldownPeriod)
-{
-    <span class="hljs-keyword">var</span> average = (<span class="hljs-keyword">int</span>)history.Average(e =&gt; e.Value);
-    <span class="hljs-keyword">var</span> maximum = (<span class="hljs-keyword">int</span>)history.Max(e =&gt; e.Value);
-    <span class="hljs-keyword">if</span> (average &gt; thresholdUp)
-    {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{average}</span> is too high, scaling <span class="hljs-subst">{metric.ResourceName}</span> up..."</span>);
-        state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Up);
-    }
-    <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (maximum &lt; thresholdDown)
-    {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{maximum}</span> is low, scaling <span class="hljs-subst">{metric.ResourceName}</span> down..."</span>);
-        state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Down);
-    }
-}
-</code></pre>
-<p>Finally, the state is serialized back to table entity and action is returned: </p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 4. Serialize the state back and return the action</span>
-newStateEntity = stateEntity != <span class="hljs-literal">null</span> 
-    ? stateEntity 
-    : <span class="hljs-keyword">new</span> ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
-newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
-<span class="hljs-keyword">return</span> action;
-</code></pre>
-<p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message 
-gets sent to the output queue.</p>
-<h2 id="scaler">Scaler</h2>
-<p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
-I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Scaler"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[QueueTrigger(<span class="hljs-string">"Actions"</span></span>)] ScaleAction action, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> secrets = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServicePrincipal"</span>).Split(<span class="hljs-string">','</span>);
-    <span class="hljs-keyword">var</span> credentials = SdkContext.AzureCredentialsFactory
-        .FromServicePrincipal(secrets[<span class="hljs-number">0</span>], secrets[<span class="hljs-number">1</span>], secrets[<span class="hljs-number">2</span>], AzureEnvironment.AzureGlobalCloud);
-    <span class="hljs-keyword">var</span> azure = Azure.Configure()
-        .Authenticate(credentials)
-        .WithDefaultSubscription();
-
-    <span class="hljs-keyword">var</span> plan = azure.AppServices
-        .AppServicePlans
-        .List()
-        .First(p =&gt; p.Name.Contains(action.ResourceName));
-
-    <span class="hljs-keyword">var</span> newCapacity = action.Type == ScaleActionType.Down ? plan.Capacity - <span class="hljs-number">1</span> : plan.Capacity + <span class="hljs-number">1</span>;
-    log.Info(<span class="hljs-string">$"Scaler: Switching <span class="hljs-subst">{action.ResourceName}</span> from <span class="hljs-subst">{plan.Capacity}</span> <span class="hljs-subst">{action.Type}</span> to <span class="hljs-subst">{newCapacity}</span>"</span>);
-
-    plan.Update()
-        .WithCapacity(newCapacity)
-        .Apply();
-}
-</code></pre>
-<p>The functionality is pretty straightforward. Here are some links where you can read more about 
-<a href="https://docs.microsoft.com/en-us/dotnet/azure/dotnet-sdk-azure-authenticate?view=azure-dotnet#a-namemgmt-authaazure-management-libraries-for-net-authentication">Authentication in Azure Management libraries</a> 
-and <a href="https://github.com/Azure-Samples/app-service-dotnet-scale-web-apps">Managing Web App with Fluent SDK</a>.</p>
-<h2 id="conclusion-and-further-steps">Conclusion and Further Steps</h2>
-<p>This was quite a lot of code for a single blog post, but most of it was
-fairly straightforward. You can find the full implemenation in 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/servicebussubscription-to-appserviceplan/MetricCollector.cs">my github</a>.</p>
-<p>Overall, I&#39;ve established an application based on Azure Functions, which
-watches the predefined metrics and scales the specified resource up and down
-based on target metric values.</p>
-<p>The current example works only for the combination of Service Bus Subscription
-and App Service Plan, but it is clear how to extend it to more scenarios.</p>
-<p>The flexibility of such autoscaling solution exceeds the built-in functionality
-that is available in Azure Portal.</p>
-<p>The most complex part of my Autoscaling application is the Scaling Logic
-function. In the next article of the series, I will refactor it to use
-<a href="https://azure.github.io/azure-functions-durable-extension/index.html">Durable Functions</a> - 
-the upcoming Orchestration framework for Function Apps.</p>
-<p>Stay tuned, and happy scaling!</p>
 ]]></content>
     </entry>
     

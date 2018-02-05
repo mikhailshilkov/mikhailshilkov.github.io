@@ -72,6 +72,102 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Oct 16th, 2014</div>
+    
+    <h1><a href='/2014/10/16/nice-way-to-kill-your-sql-server/'>Nice way to kill your SQL Server</a></h1>
+    
+    <div class="post-content">
+        <p>Are you getting enormous amount of </p>
+<pre class="highlight"><code class="hljs tcl">The activated <span class="hljs-keyword">proc</span> '...'<span class="hljs-title"> running</span> on<span class="hljs-title"> queue</span> '...'<span class="hljs-title"> output</span> the<span class="hljs-title"> following:</span>
+'The<span class="hljs-title"> service</span> queue "..."<span class="hljs-title"> is</span> currently<span class="hljs-title"> disabled.</span>
+</code></pre><p>errors from SQL Server? Keep on reading!</p>
+<p>Yesterday, when I came back from my lunch, I got a heads-up from Windows:
+<img src="/2014/10/16/nice-way-to-kill-your-sql-server//low-disk-space.gif" alt="Low disk space"></p>
+<p>And it was literally out of space: 0 (zero) bytes available on C: drive. Wow...</p>
+<p>I cleaned up the binary files from my developments, which gave me 3 GB of free space and some time to do the investigation. A short time, because disk space was counting down at about 300 MB per minute.</p>
+<p>It appeared that the SQL Server error log files grew up to 53 GB and were still growing. Here is the default folder where you can find them:</p>
+<p><img src="/2014/10/16/nice-way-to-kill-your-sql-server//errorlog.png" alt="SQL Server error log"></p>
+<p>To gain more time, I executed the command</p>
+<pre class="highlight"><code class="hljs bash"><span class="hljs-built_in">exec</span> sp_cycle_error
+</code></pre><p>is Management Studio. It renames current ERRORLOG file to ERRORLOG.1 and starts the new current. So now it was safe to delete all .1/.2/etc files and get those 53 GB back. Huh...</p>
+<p>Now it&#39;s time to figure out the actual issue. Go to Management Studio -&gt; your server -&gt; Management -&gt; SQL Server Logs -&gt; Current -&gt; (right click) -&gt; View SQL Server Log</p>
+<p>I saw millions of the following messages there (let&#39;s say my queue is named XQueue for simplicity):</p>
+<pre class="highlight"><code class="hljs tcl">The activated <span class="hljs-keyword">proc</span> '[dbo].[XQueueProcessor]'<span class="hljs-title"> running</span> <span class="hljs-title">
+on</span> queue 'dbo.XQueue'<span class="hljs-title"> output</span> the<span class="hljs-title"> following:</span>
+'The<span class="hljs-title"> service</span> queue "XQueue"<span class="hljs-title"> is</span> currently<span class="hljs-title"> disabled.</span>
+</code></pre><p>So, it looks like there is a problem with SQL Server Service Broker, which is constantly trying to read something from disabled queue. Isn&#39;t it supposed to stop after 5 attempts (a.k.a. poison messages)? Ok, keep on troubleshooting.</p>
+<p>First, let check if the queue is actually disabled</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">SELECT</span> <span class="hljs-keyword">Name</span>, is_receive_enabled, is_enqueue_enabled
+  <span class="hljs-keyword">FROM</span> sys.service_queues 
+ <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Name</span> = <span class="hljs-string">'XQueue'</span>  
+</code></pre><p>Yep, it&#39;s disabled:
+<img src="/2014/10/16/nice-way-to-kill-your-sql-server//qdisabled.png" alt="XQueue disabled"></p>
+<p>Do we have anything queued?</p>
+<pre class="highlight"><code class="hljs n1ql"><span class="hljs-keyword">SELECT</span> TOP <span class="hljs-number">1000</span> *
+  <span class="hljs-keyword">FROM</span> [XQueue] <span class="hljs-keyword">WITH</span>(NOLOCK) 
+</code></pre><p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
+<p>So, let&#39;s have a look at the processor. We had something like that:</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">PROCEDURE</span> [dbo].[XQueueProcessor]
+<span class="hljs-keyword">AS</span>
+<span class="hljs-keyword">BEGIN</span>
+    <span class="hljs-keyword">DECLARE</span> 
+        @queuing_order <span class="hljs-built_in">BIGINT</span>
+        ,@conversation_handle UNIQUEIDENTIFIER
+        ,@message_enqueue_time DATETIME
+        ,@message_type_name <span class="hljs-built_in">VARCHAR</span>(<span class="hljs-number">156</span>)
+        ,@message_body VARBINARY(<span class="hljs-keyword">MAX</span>);
+
+    WHILE(1=1) <span class="hljs-comment">-- MAIN WHILE LOOP RECEIVING THE MESSAGE BATCHES</span>
+    <span class="hljs-keyword">BEGIN</span>
+        <span class="hljs-keyword">BEGIN</span> <span class="hljs-keyword">TRANSACTION</span>
+        <span class="hljs-keyword">BEGIN</span> TRY
+            WAITFOR(RECEIVE TOP(<span class="hljs-number">1</span>)
+                        @queuing_order = [queuing_order],
+                        @conversation_handle = [conversation_handle],
+                        @message_enqueue_time = message_enqueue_time,
+                        @message_type_name = message_type_name,
+                        @message_body = message_body
+                    <span class="hljs-keyword">FROM</span> [dbo].[XQueue]), <span class="hljs-keyword">TIMEOUT</span> <span class="hljs-number">10</span>
+
+            <span class="hljs-keyword">IF</span> (@@ROWCOUNT = <span class="hljs-number">0</span>)
+            <span class="hljs-keyword">BEGIN</span>
+                <span class="hljs-keyword">ROLLBACK</span> <span class="hljs-keyword">TRANSACTION</span>
+                BREAK
+            <span class="hljs-keyword">END</span>    
+
+            <span class="hljs-comment">-- SOME CRUD OPERATIONS HAPPEN HERE        </span>
+
+            <span class="hljs-keyword">COMMIT</span> <span class="hljs-keyword">TRANSACTION</span>
+        <span class="hljs-keyword">END</span> TRY
+        <span class="hljs-keyword">BEGIN</span> CATCH            
+            <span class="hljs-keyword">DECLARE</span> @<span class="hljs-keyword">Error</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">4000</span>) = ERROR_MESSAGE()
+            PRINT @<span class="hljs-keyword">Error</span>
+            <span class="hljs-keyword">ROLLBACK</span> <span class="hljs-keyword">TRANSACTION</span>
+        <span class="hljs-keyword">END</span> CATCH        
+    <span class="hljs-keyword">END</span>
+<span class="hljs-keyword">END</span>
+</code></pre><p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back... But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &quot;The service queue is currently disabled&quot; and voila, CPU is busy and error logs are floating the disk.</p>
+<p>The fix is pretty trivial, just change the CATCH block to</p>
+<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">BEGIN</span> CATCH            
+    <span class="hljs-keyword">DECLARE</span> @<span class="hljs-keyword">Error</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">4000</span>) = ERROR_MESSAGE()
+    PRINT @<span class="hljs-keyword">Error</span>
+    <span class="hljs-keyword">ROLLBACK</span> <span class="hljs-keyword">TRANSACTION</span>
+    <span class="hljs-keyword">RETURN</span>
+<span class="hljs-keyword">END</span> CATCH        
+</code></pre><p>Be careful!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/bugs/'>Bugs</a>, <a href='/tags/error-log/'>Error log</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/sql-server-service broker/'>SQL Server Service Broker</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jun 3rd, 2014</div>
     
     <h1><a href='/2014/06/03/sql-produce-resultset-with-n-rows/'>SQL: produce resultset with N rows</a></h1>
@@ -207,29 +303,6 @@ Have a nice application start-up boost!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Nov 1st, 2012</div>
-    
-    <h1><a href='/2012/11/01/finance-class-at-coursera/'>Introduction to Finance class at Coursera</a></h1>
-    
-    <div class="post-content">
-        <p>I&#39;ve recently received a statement of accomplishment document for <a href="https://www.coursera.org/" title="Coursera">Coursera</a>&#39;s online <a href="https://www.coursera.org/course/introfinance" title="Introduction to Finance class">Introduction to Finance class</a> that I took in July-September this year.</p>
-<p><img src="/2012/11/01/finance-class-at-coursera//finance.jpg" alt="Finance"></p>
-<p>The course was lead by prof. Gautam Kaul from University of Michigan. The level of lectures was really introductory, the pace was very slow (too slow for me, even watching x1.5 speed). You could learn about basic finance principles like time value of money, calculating cash flows and discounted values, about stocks and bonds, and risk/return relations.</p>
-<p>I liked a lot the assignment tests, which were much stronger and solid then the examples in lectures. They were challenging most of the time, so I&#39;m glad I managed to get 100% score in the end :)</p>
-<p>Recommended for anyone who has no idea about what finance is about, but not for experienced students.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/finance/'>finance</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
     </div>
     
 </article>
