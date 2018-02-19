@@ -72,6 +72,117 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jul 26th, 2012</div>
+    
+    <h1><a href='/2012/07/26/enable-jinja2-and-i18n-translations-on-google-appengine/'>Enable jinja2 and i18n translations on Google AppEngine</a></h1>
+    
+    <div class="post-content">
+        <p>My initial goal was to make our new application (based on python/AppEngine) translatable. This means the following requirements:</p>
+<ol>
+<li>All strings in the application must be translatable</li>
+<li>Translations should preferably stored in separate files</li>
+<li>It should be easy to use the translations both in .py files and html templates</li>
+</ol>
+<p>The solution that I came to after a couple of hours includes the following components: Babel (string file generation), i18n.gettext (getting strings in code) and jinja2 &lt;% trans %&gt; tag (getting strings in templates). The setup of all this is not obvious, so I&#39;ll put the steps in this blog post. Let&#39;s start!</p>
+<ol>
+<li><p>Intall Babel: <a href="http://babel.edgewall.org/">http://babel.edgewall.org/</a></p>
+<p> You need to install it, not just ref from the application, as you&#39;ll need its comman &#39;pybabel&#39; to generate locale-specific files. I use Windows, so I just downloaded the installation package.</p>
+<p> Make sure that Python folders are in your PATH variable. I use Python 2.7, so to make Babel work I&#39;ll need the following values in PATH: &quot;C:\Python27;C:\Python27\Scripts&quot;. Scripts folder contains the pybabel executable.</p>
+</li>
+<li><p>Install jinja2: <a href="http://jinja.pocoo.org/">http://jinja.pocoo.org</a>
+Once again, you need to install it, as Babel will need it to parse strings in templates. Just run</p>
+<pre class="highlight"><code class="hljs mipsasm"> easy_install <span class="hljs-keyword">Jinja2
+</span></code></pre></li>
+<li><p>Put Babel and <a href="http://pypi.python.org/pypi/gaepytz">gaepytz</a> libraries inside your GAE application. They are required for i18n module.</p>
+</li>
+<li><p>Configure jinja2 to be used in your application. You&#39;ll need the following entry in app.yaml:</p>
+<pre class="highlight"><code class="hljs less"> <span class="hljs-attribute">libraries</span>:
+ - <span class="hljs-attribute">name</span>: jinja2
+   <span class="hljs-attribute">version</span>: <span class="hljs-string">"2.6"</span>
+</code></pre><p> and your webhandler.py will look something similar to this:</p>
+<pre class="highlight"><code class="hljs python"> <span class="hljs-keyword">import</span> webapp2
+ <span class="hljs-keyword">from</span> webapp2_extras <span class="hljs-keyword">import</span> jinja2
+ <span class="hljs-keyword">from</span> webapp2_extras <span class="hljs-keyword">import</span> i18n
+ <span class="hljs-keyword">from</span> google.appengine.ext.webapp.util <span class="hljs-keyword">import</span> run_wsgi_app
+
+ <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MainHandler</span><span class="hljs-params">(webapp2.RequestHandler)</span>:</span>
+<span class="hljs-meta">     @webapp2.cached_property</span>
+     <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">jinja2</span><span class="hljs-params">(self)</span>:</span>
+         <span class="hljs-keyword">return</span> jinja2.get_jinja2(app=self.app)
+
+     <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">get</span><span class="hljs-params">(self)</span>:</span>
+         i18n.get_i18n().set_locale(<span class="hljs-string">'ru_RU'</span>) <span class="hljs-comment"># sample locale assigned</span>
+         ... <span class="hljs-comment"># your web site functionality goes here</span>
+
+ <span class="hljs-comment"># jinja2 config with i18n enabled</span>
+ config = {<span class="hljs-string">'webapp2_extras.jinja2'</span>: {
+              <span class="hljs-string">'template_path'</span>: <span class="hljs-string">'templates'</span>,
+              <span class="hljs-string">'environment_args'</span>: { <span class="hljs-string">'extensions'</span>: [<span class="hljs-string">'jinja2.ext.i18n'</span>] }
+            }
+           }
+ application = webapp2.WSGIApplication([(<span class="hljs-string">'.*'</span>, MainHandler)], config=config)
+
+ <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">main</span><span class="hljs-params">()</span>:</span>
+     run_wsgi_app(application)
+
+ <span class="hljs-keyword">if</span> __name__ == <span class="hljs-string">"__main__"</span>:
+     main()
+</code></pre><p> This code will work if you put your jinja2 templates into &quot;templates&quot; folder.</p>
+</li>
+<li><p>Create the translations markup. This means, you define the translatable strings in python code with a commonly used &#39;_&#39; alias:</p>
+<pre class="highlight"><code class="hljs python"> <span class="hljs-keyword">from</span> webapp2_extras.i18n <span class="hljs-keyword">import</span> gettext <span class="hljs-keyword">as</span> _
+
+ <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">do_some_text</span><span class="hljs-params">()</span>:</span>
+     <span class="hljs-keyword">return</span> _(<span class="hljs-string">'some text'</span>)
+</code></pre><p> or in jijna2 template with {% trans %} block:</p>
+<pre class="highlight"><code class="hljs django"><span class="xml"> </span><span class="hljs-template-tag">{% <span class="hljs-name"><span class="hljs-name">block</span></span> buttons %}</span><span class="xml">
+ <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span>    
+     <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">onclick</span>=<span class="hljs-string">"window.print()"</span>&gt;</span></span><span class="hljs-template-tag">{% <span class="hljs-name"><span class="hljs-name">trans</span></span> %}</span><span class="xml">Print</span><span class="hljs-template-tag">{% <span class="hljs-name">endtrans</span> %}</span><span class="xml"><span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+ <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+ </span><span class="hljs-template-tag">{% <span class="hljs-name"><span class="hljs-name">endblock</span></span> %}</span><span class="xml">
+</span></code></pre></li>
+<li><p>Create a Babel configuration file babel.cfg (put it into the application folder for now):</p>
+<pre class="highlight"><code class="hljs vim"> [jinja2: **/templates/**.html]
+ encoding = utf-<span class="hljs-number">8</span>
+ [<span class="hljs-keyword">python</span>: <span class="hljs-keyword">source</span>/*.<span class="hljs-keyword">py</span>]
+ [extractors] 
+ jinja2 = jinja2.<span class="hljs-keyword">ex</span><span class="hljs-variable">t:babel_extract</span>
+</code></pre><p> This file instructs Babel to extract translatable strings from html jinja2 templates in &quot;templates&quot; folder and python files in &quot;source&quot; folder. </p>
+</li>
+<li><p>Now it&#39;s time to create translations. First, add a &quot;locale&quot; folder in application root. Still being in root folder, run the following pybabel command to extract the translatable strings from the code</p>
+<pre class="highlight"><code class="hljs stylus"> pybabel extract -F ./babel<span class="hljs-selector-class">.cfg</span> -o ./locale/messages<span class="hljs-selector-class">.pot</span> ./
+</code></pre><p> then initialize the locales with </p>
+<pre class="highlight"><code class="hljs stylus"> pybabel init -l en_US -d ./locale -<span class="hljs-selector-tag">i</span> ./locale/messages<span class="hljs-selector-class">.pot</span>
+ pybabel init -l ru_RU -d ./locale -<span class="hljs-selector-tag">i</span> ./locale/messages<span class="hljs-selector-class">.pot</span>
+</code></pre><p> Now open locale\ru_RU\LC_MESSAGES\messages.po file in your favorite text editor, and produce the translations (you have to change &#39;msgstr&#39; only):</p>
+<pre class="highlight"><code class="hljs stylus"> #: templates/sample<span class="hljs-selector-class">.html</span>:<span class="hljs-number">10</span>
+ msgid <span class="hljs-string">"Print"</span>
+ msgstr <span class="hljs-string">"Печать"</span>
+ #: source/test<span class="hljs-selector-class">.py</span>:<span class="hljs-number">13</span>
+ msgid <span class="hljs-string">"some text"</span>
+ msgstr <span class="hljs-string">"немного текста"</span>
+</code></pre><p> And finally compile the texts with</p>
+<pre class="highlight"><code class="hljs gauss"> pybabel <span class="hljs-keyword">compile</span> -f -d ./locale
+</code></pre></li>
+<li><p>Every time you need to add more strings, you should do the same steps as in 6, but use &quot;update&quot; instead of &quot;init&quot;:</p>
+<pre class="highlight"><code class="hljs stylus"> pybabel update -l en_US -d ./locale -<span class="hljs-selector-tag">i</span> ./locale/messages<span class="hljs-selector-class">.pot</span>
+ pybabel update -l ru_RU -d ./locale -<span class="hljs-selector-tag">i</span> ./locale/messages<span class="hljs-selector-class">.pot</span>
+</code></pre></li>
+</ol>
+<p>Done! You should be able to run the application and see the strings translated.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/appengine/'>AppEngine</a>, <a href='/tags/i18n/'>i18n</a>, <a href='/tags/jinja2/'>jinja2</a>, <a href='/tags/python/'>Python</a>, <a href='/tags/translations/'>Translations</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jun 21st, 2012</div>
     
     <h1><a href='/2012/06/21/model-thinking-class-at-coursera/'>Model Thinking class at Coursera</a></h1>
@@ -213,40 +324,6 @@ We started with <a href="http://www.booking.com/index.html?aid=352212" title="Bo
     
     <div class="post-tags">
         Posted In: <a href='/tags/api/'>API</a>, <a href='/tags/google-maps/'>Google Maps</a>, <a href='/tags/google-transit/'>Google Transit</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Mar 13th, 2012</div>
-    
-    <h1><a href='/2012/03/13/multi-level-teleriks-tileview/'>Multi-level telerik's TileView</a></h1>
-    
-    <div class="post-content">
-        <p>We were investigating the options for visual representation of hierarchical dashboard in our Silverlight application. This means, we want to display the number of gauges with tree-like structure. Here is a sample:</p>
-<pre class="highlight"><code class="hljs haml">Dashboard
--<span class="ruby">-- Fuel economy index
-</span>-<span class="ruby">----- Preventative driving
-</span>-<span class="ruby">-------- Accelaration style
-</span>-<span class="ruby">-------- Braking frequency
-</span>-<span class="ruby">-------- Stop approach
-</span>-<span class="ruby">----- Gear shifting index
-</span>-<span class="ruby">-------- ...
-</span>-<span class="ruby">-- Degree of difficulty
-</span>-<span class="ruby">----- ...
-</span>-<span class="ruby">-- Events
-</span>-<span class="ruby">----- ......
-</span></code></pre><p>One of the options was to use <a href="http://www.telerik.com/products/silverlight/controls/tileview.aspx" title="Telerik">Telerik&#39;s TileView control</a>. It doesn&#39;t support hierachies out of the box, but we&#39;ve made a prototype control, which proves that the task is doable. Here is how nested TileView&#39;s look like:
-<img src="/2012/03/13/multi-level-teleriks-tileview//tileview.png" alt="Tile view" title="Tile view"></p>
-<p>Everything works with templates and data binding, no dirty tricks needed. You can download the sample project with multi-level TileView&#39;s from <a href="https://skydrive.live.com/redir.aspx?cid=c010011792a4b538&amp;resid=C010011792A4B538!128&amp;parid=root" title="Multi-level TileView sample project">here</a>.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/c#/'>C#</a>, <a href='/tags/silverlight/'>Silverlight</a>, <a href='/tags/telerik/'>Telerik</a>, <a href='/tags/tileview/'>TileView</a>, <a href='/tags/user-control/'>User Control</a>
     </div>
     
 </article>
