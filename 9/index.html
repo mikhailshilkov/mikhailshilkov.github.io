@@ -72,175 +72,6 @@
 <div class="container">
     
     <article class="post">
-    <div class="post-date">Feb 10th, 2016</div>
-    
-    <h1><a href='/2016/02/building-a-poker-bot-string-recognition/'>Building a Poker Bot: String and Number Recognition</a></h1>
-    
-    <div class="post-content">
-        <p><em>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
-to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
-easy and very enjoyable. Here is the first part:
-<a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a>
-</em></p>
-<h2 id="why-string-recognition">Why string recognition</h2>
-<p>Reading cards and other fixed images was the first step. The bot should also
-be able to read different text-based information from the screen, e.g.</p>
-<ul>
-<li>Current blind levels</li>
-<li>Current pot size</li>
-<li>The size of bets made by each player</li>
-<li>Player names</li>
-<li>Stack sizes</li>
-<li>Chat messages (for advanced scenarios)</li>
-</ul>
-<p>We need this vital information to make proper decisions, so let&#39;s look at
-how to parse the textual data.</p>
-<h2 id="new-challenges">New challenges</h2>
-<p>String recognition has some specific difficulties when compared to fixed
-images like cards:</p>
-<ul>
-<li>The size of a string is not predefined. Obviously, the longer the string, the
-more space it takes on the screen</li>
-<li>The position of a string is not fixed either. Some strings are aligned to
-the center, others may diverge based on other variable parts like stakes or blinds</li>
-<li>Different strings might be rendered in different font size</li>
-</ul>
-<p>Here is what needs to be done to overcome these complications:</p>
-<ul>
-<li>Pick the layout which makes your life easier </li>
-<li>Adjust fonts and positions if possible </li>
-<li>Make sure that all important strings are always visible and not overlapping to other information</li>
-<li>For each string define a region where it belongs to in 100% cases. The background
-of this region should be more or less evenly filled with a color in contrast to the font color.</li>
-</ul>
-<h2 id="string-recognition-steps">String recognition steps</h2>
-<p>We start with a screenshot of a poker table again:</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition//table.png" alt="Poker table screenshot"></p>
-<p>We know our fixed regions where our labels are located, so we take those
-regions for processing:</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition//regions.png" alt="Regions of string recognition"></p>
-<p>For each region we trim away the blank margins around the text (i.e. left,
-top, right and bottom padding):</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition//nomargin.png" alt="Margins being removed"></p>
-<p>We find dark lines between bright symbols and we consider them as gaps
-between characters:</p>
-<p><img src="/2016/02/building-a-poker-bot-string-recognition//splitchars.png" alt="Split to characters"></p>
-<p>The final step is to compare each symbol to the known patterns and find the best
-match (in case of my layout the match for symbols is always 100% perfect). Let&#39;s 
-look how these steps are implemented.</p>
-<h2 id="removing-padding-around-the-text">Removing padding around the text</h2>
-<p>Because the padding is removed from all 4 sides of the region, I decided to use
-<code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
-with black or white points defined as a helper type:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BW</span> </span>= B | W
-</code></pre>
-<p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
-like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> removePadding pixels =
-  <span class="hljs-keyword">let</span> allBlack s = Seq.exists ((=) W) s
-  <span class="hljs-keyword">let</span> maxWidth = Array2D.length1 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> maxHeight = Array2D.length2 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> firstX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> lastX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> firstY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
-  <span class="hljs-keyword">let</span> lastY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
-
-  <span class="hljs-keyword">match</span> (firstX, lastX, firstY, lastY) <span class="hljs-keyword">with</span>
-  | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
-  | _ -&gt; Array2D.init <span class="hljs-number">0</span> <span class="hljs-number">0</span> (<span class="hljs-keyword">fun</span> _ _ -&gt; B)
-</code></pre>
-<p>The first part finds the amount of fully-black columns and rows in the array.
-Then, if white points are found, the second part returns a sub array based on
-the indices, otherwise empty array is returned.</p>
-<h2 id="split-the-text-into-characters">Split the text into characters</h2>
-<p>First, we convert our 2D array into the list of lists, where each item in the
-top-level list represents a single column of pixels:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> pixelColumns =
-  [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)
-</code></pre>
-<p>Then we can fold this list of columns into the symbols, where each symbol itself
-is the list of columns:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> splitIntoSymbols (e : BW list) (state: BW list list list) = 
-  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
-  | cur::rest -&gt;
-      <span class="hljs-keyword">if</span> isSeparator e <span class="hljs-keyword">then</span>
-        <span class="hljs-keyword">match</span> cur <span class="hljs-keyword">with</span>
-        | _::_ -&gt; []::state <span class="hljs-comment">// add new list</span>
-        | _ -&gt; state        <span class="hljs-comment">// skip if we already have empty item</span>
-      <span class="hljs-keyword">else</span> (e::cur)::rest   <span class="hljs-comment">// add e to current list</span>
-  | _ -&gt; [[e]]
-
-Seq.foldBack splitIntoSymbols pixelColumns []
-</code></pre>
-<p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
-by introducing some intermediate type with descriptive name, but I decided
-to leave that part for now. Read it as list of symbols, which are lists of
-columns, which are lists of pixels.</p>
-<h2 id="match-the-symbols-vs-the-known-patterns">Match the symbols vs the known patterns</h2>
-<p>This part was already described in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
-Basically we compare the list of black or white points to the patterns of
-the known symbols:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> getChar patterns bws =
-  <span class="hljs-keyword">let</span> samePatterns h p =
-    Seq.zip h p
-    |&gt; Seq.forall (<span class="hljs-keyword">fun</span> (v1, v2) -&gt; v1 = v2)
-  <span class="hljs-keyword">let</span> matchingPattern = 
-    patterns 
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; List.length p.Pattern = List.length bws)
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; samePatterns bws p.Pattern)
-      |&gt; Array.tryHead
-  defaultArg (Option.map (<span class="hljs-keyword">fun</span> p -&gt; p.Char) matchingPattern) '?'
-</code></pre>
-<h2 id="putting-it-all-together">Putting it all together</h2>
-<p>The <code>recognizeString</code> function accepts lower-order functions to match 
-symbols and get pixels together with width and height of the region:</p>
-<pre class="highlight"><code class="hljs fs">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
-</code></pre>
-<p>It builds an array of pixels, removes padding and folds with recognition.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeString matchSymbol getPixel width height =
-
-  <span class="hljs-keyword">let</span> pixels = 
-    Array2D.init width height (<span class="hljs-keyword">fun</span> x y -&gt; isWhite (getPixel x y))
-    |&gt; removePadding
-
-  <span class="hljs-keyword">let</span> pixelColumns =
-    [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-    |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)      
-
-  Seq.foldBack splitIntoSymbols pixelColumns []
-  |&gt; List.map matchSymbol
-  |&gt; Array.ofSeq
-  |&gt; String.Concat
-</code></pre>
-<p>Then we use it with a specific recognition patterns, e.g. known digits in case
-of numbers recognition:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeNumber x =
-  recognizeString (getChar numberPatterns) x
-</code></pre>
-<p>A way to produce these patterns is discussed in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>String recognition takes a bit more steps to execute comparing to the recognition
-of fixed objects. Nevertheless it&#39;s pretty straightforward to implement once
-we split it into small and well-understood conversion steps. The full code 
-for card recognition can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/StringRecognition.fs">my github repo</a>.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/image-recognition/'>Image Recognition</a>, <a href='/tags/ocr/'>OCR</a>
-    </div>
-    
-</article>
-
-    <article class="post">
     <div class="post-date">Feb 8th, 2016</div>
     
     <h1><a href='/2016/02/akka-net-style-actors-in-service-fabric/'>Akka.NET-style actors in Service Fabric</a></h1>
@@ -1066,6 +897,151 @@ take the defaults for granted</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/actor-model/'>Actor Model</a>, <a href='/tags/azure/'>Azure</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/service-fabric/'>Service Fabric</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Jan 6th, 2016</div>
+    
+    <h1><a href='/2016/01/validation-with-either-data-type-in-csharp/'>Validation with Either data type in C#</a></h1>
+    
+    <div class="post-content">
+        <p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
+code more expressive and easier to maintain.</p>
+<h2 id="problem">Problem</h2>
+<p>Let&#39;s say we get a request from some client code and we need to check if this
+request is actually valid. If it&#39;s not valid, we want to make a detailed description
+of the problems that we identified. If it is valid, we want to produce a response
+about the successful acceptance of the request. Let&#39;s define the classes:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Request</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Response</span> { ... }
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ValidationError</span> { ... }
+</code></pre>
+<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
+or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
+<h2 id="throw-an-exception">Throw an exception</h2>
+<p>Validation <em>error</em> sounds like it could be an exception:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span>(<span class="hljs-params">Request r</span>)
+</span>{
+   <span class="hljs-keyword">if</span> (!Valid(r))
+       <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> ValidationException(<span class="hljs-keyword">new</span> ValidationError(...));
+
+   <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Response(r);
+}
+</code></pre>
+<p>This approach is really bad though. You have to declare a special exception
+class to hold the validation error. But even worse, exception handling is not
+explicit - you don&#39;t see the exception type when you look at method signature.
+Client processing code is going to be messed up because of exception handling.
+Never use exceptions for your business logic flow.</p>
+<h2 id="output-parameter">Output parameter</h2>
+<p>We could make an output parameter of <code>ValidationError</code> type:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">Validate</span>(<span class="hljs-params">Request r, <span class="hljs-keyword">out</span> ValidationError error</span>)
+</span>{
+    <span class="hljs-keyword">if</span> (Valid(r))
+    { 
+        error = <span class="hljs-keyword">new</span> ValidationError(...);
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;
+    }
+
+    error = <span class="hljs-literal">null</span>;
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Response(r);
+}
+</code></pre>
+<p>Now the interface is more explicit: client won&#39;t be able to completely ignore
+the fact that an error is possible. But output parameters are not really
+easy to use in C#, especially in fluent-style client code. Moreover, we are
+using nulls as a way to represent missing object, which is a smell by itself,
+because nulls are not explicit. Never use nulls in your business logic.</p>
+<h2 id="return-the-combined-result">Return the combined result</h2>
+<p>We could declare a container class which would keep both <code>Response</code> and 
+<code>ValidationError</code>, and then return it from the method.</p>
+<pre class="highlight"><code class="hljs undefined">public class Both&lt;TData, TError&gt;
+{
+    public TData Data { get; set; }
+    public TErrro Error { get; set; }
+}
+...
+public Both&lt;Response, ValidationError&gt; Validate(Request r)
+{
+    return Valid(r) 
+        ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
+        : new Both&lt;Response, ValidationError&gt; { Error = new ValidationError(...) };
+}
+</code></pre>
+<p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
+and output parameters, but we still use null for result state representation.
+Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
+<h2 id="introducing-either">Introducing Either</h2>
+<p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
+with just one of them. When constructing an object, you can specify either
+a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
+<pre class="highlight"><code class="hljs undefined">public class Either&lt;TL, TR&gt;
+{
+    private readonly TL left;
+    private readonly TR right;
+    private readonly bool isLeft;
+
+    public Either(TL left)
+    {
+        this.left = left;
+        this.isLeft = true;
+    }
+
+    public Either(TR right)
+    {
+        this.right = right;
+        this.isLeft = false;
+    }
+}
+</code></pre>
+<p>Now, the main difference is in how the client uses it. There are no properties
+to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
+    =&gt; <span class="hljs-keyword">this</span>.isLeft ? leftFunc(<span class="hljs-keyword">this</span>.left) : rightFunc(<span class="hljs-keyword">this</span>.right);
+</code></pre>
+<p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
+is specified, <code>Match</code> will return the result of the left function, otherwise the result
+of the right function.</p>
+<p>Another improvement would be to create explicit operators for easy conversions
+from left and right types:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TL left) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(left);
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">operator</span> Either&lt;TL, TR&gt;(TR right) =&gt; <span class="hljs-keyword">new</span> Either&lt;TL, TR&gt;(right);
+</code></pre>
+<p>Let&#39;s have a look at a complete example.</p>
+<h2 id="why-it-s-great">Why it&#39;s great</h2>
+<p>Here is the service code written with <code>Either</code>:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> Either&lt;Response, ValidationError&gt; <span class="hljs-title">Validate</span>(<span class="hljs-params">Request r</span>)
+</span>{
+    <span class="hljs-keyword">return</span> Valid(r) 
+        ? Data = <span class="hljs-keyword">new</span> Response(r)
+        : <span class="hljs-keyword">new</span> ValidationError(...);
+}
+</code></pre>
+<p>Clean and nice! Now a simplistic client:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> validated = service.Validate(request);
+Console.WriteLine(
+    validated.Match(
+        result =&gt; <span class="hljs-string">$"Success: <span class="hljs-subst">{result}</span>"</span>,
+        error =&gt; <span class="hljs-string">$"Error: <span class="hljs-subst">{error}</span>"</span>)
+    );
+</code></pre>
+<p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
+validation may fail.</p>
+<h2 id="show-me-the-code">Show me the code</h2>
+<p>You can find the definition of <code>Either</code> class in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Either%7BTL%2CTR%7D.cs">github repo</a>.</p>
+<p><strong>Update.</strong> Here is a link to an awesome talk on this topic: 
+<a href="https://vimeo.com/113707214">Railway oriented programming: Error handling in functional languages by Scott Wlaschin</a></p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/clean-code/'>Clean Code</a>
     </div>
     
 </article>

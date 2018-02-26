@@ -3,134 +3,13 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-02-19T20:05:28.565Z</updated>
+    <updated>2018-02-26T18:35:05.328Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
-    
-    <entry>
-        <title>Azure Durable Functions in F#</title>
-        <link href="https://mikhail.io/2018/02/azure-durable-functions-in-fsharp/"/>
-        <updated>2018-02-19T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2018-02-19,/2018/02/azure-durable-functions-in-fsharp/</id>
-        <content type="html"><![CDATA[<p>Azure Functions are designed for stateless, fast-to-execute,
-simple actions. Typically, they are triggered by an HTTP call or a queue message,
-then they read something from the storage or database and return the result
-to the caller or send it to another queue. All within several seconds at most.</p>
-<p>However, there exists a preview of <a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">Durable Functions</a>,
-an extension that lets you write stateful functions for long-running workflows.
-Here is a picture of one possible workflow from the docs:</p>
-<p><img src="https://mikhail.io/2018/02/azure-durable-functions-in-fsharp//fan-out-fan-in.png" alt="Fan-out Fan-in Workflow"></p>
-<p>Such workflows might take arbitrary time to complete. Instead of blocking and
-waiting for all that period, Durable Functions use the combination of
-Storage Queues and Tables to do all the work asynchronously.</p>
-<p>The code still <em>feels</em> like one continuous thing because it&#39;s programmed
-as a single orchestrator function. So, it&#39;s easier for a human to reason 
-about the functionality without the complexities of low-level communication.</p>
-<p>I won&#39;t describe Durable Functions any further, just go read
-<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">documentation</a>,
-it&#39;s nice and clean.</p>
-<h2 id="language-support">Language Support</h2>
-<p>As of February 2018, Durable Functions are still in preview. That also means
-that language support is limited:</p>
-<blockquote>
-<p>Currently C# is the only supported language for Durable Functions. This 
-includes orchestrator functions and activity functions. In the future, 
-we will add support for all languages that Azure Functions supports.</p>
-</blockquote>
-<p>I was a bit disappointed that F# is not an option. But actually, since
-Durable Functions support precompiled .NET assembly model, pretty much
-anything doable in C# can be done in F# too.</p>
-<p>The goal of this post is to show that you can write Durable Functions in F#.
-I used precompiled .NET Standard 2.0 F# Function App running on 2.0 preview
-runtime.</p>
-<h2 id="orchestration-functions">Orchestration Functions</h2>
-<p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
-Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
-Here is a simple example of orchestrator in C#:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;List&lt;<span class="hljs-keyword">string</span>&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
-{
-    <span class="hljs-keyword">var</span> outputs = <span class="hljs-keyword">new</span> List&lt;<span class="hljs-keyword">string</span>&gt;();
-
-    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>));
-    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>));
-    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>));
-
-    <span class="hljs-comment">// returns ["Hello Tokyo!", "Hello Seattle!", "Hello London!"]</span>
-    <span class="hljs-keyword">return</span> outputs;
-}
-</code></pre>
-<p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
-computation expression. The direct refactoring could look something like</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> Run(<span class="hljs-meta">[&lt;OrchestrationTrigger&gt;]</span> context: DurableOrchestrationContext) = async {
-  <span class="hljs-keyword">let!</span> hello1 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>)   |&gt; Async.AwaitTask
-  <span class="hljs-keyword">let!</span> hello2 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>) |&gt; Async.AwaitTask
-  <span class="hljs-keyword">let!</span> hello3 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>)  |&gt; Async.AwaitTask
-  <span class="hljs-keyword">return</span> [hello1; hello2; hello3]
-} |&gt; Async.StartAsTask
-</code></pre>
-<p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
-trigger because multi-threading operations are not allowed:</p>
-<blockquote>
-<p>Orchestrator code must never initiate any async operation except by 
-using the DurableOrchestrationContext API. The Durable Task Framework 
-executes orchestrator code on a single thread and cannot interact with 
-any other threads that could be scheduled by other async APIs.</p>
-</blockquote>
-<p>To solve this issue, we need to keep working with <code>Task</code> directly. This is
-not very handy with standard F# libraries. So, I pulled an extra NuGet
-package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
-<p>The above function now looks very simple:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> Run(<span class="hljs-meta">[&lt;OrchestrationTrigger&gt;]</span> context: DurableOrchestrationContext) = task {
-  <span class="hljs-keyword">let!</span> hello1 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>)
-  <span class="hljs-keyword">let!</span> hello2 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>)
-  <span class="hljs-keyword">let!</span> hello3 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>)
-  <span class="hljs-keyword">return</span> [hello1; hello2; hello3]
-}
-</code></pre>
-<p>And the best part is that it works just fine.</p>
-<p><code>SayHello</code> function is Activity trigger based, and no special effort is required
-to implement it in F#:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("E1_SayHello")&gt;]</span>
-<span class="hljs-keyword">let</span> SayHello(<span class="hljs-meta">[&lt;ActivityTrigger&gt;]</span> name) =
-  sprintf <span class="hljs-string">"Hello %s!"</span> name
-</code></pre>
-<h2 id="more-examples">More Examples</h2>
-<p>Durable Functions repository comes with 
-<a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/precompiled">a set of 4 samples</a>
-implemented in C#. I took all of those samples and ported them over to F#.</p>
-<p>You&#39;ve already seen the first <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/HelloSequence.fs"><code>Hello Sequence</code> sample</a>
-above: the orchestrator calls the activity function 3 times and combines the
-results. As simple as it looks, the function will actually run 3 times for each
-execution, saving state before each subsequent call.</p>
-<p>The second <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/BackupSiteContent.fs"><code>Backup Site Content</code> sample</a>
-is using this persistence mechanism to run
-a potentially slow workflow of copying all files from a given directory to
-a backup location. It shows how multiple activities can be executed in
-parallel:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tasks = Array.map (<span class="hljs-keyword">fun</span> f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(<span class="hljs-string">"E2_CopyFileToBlob"</span>, f)) files
-<span class="hljs-keyword">let!</span> results = Task.WhenAll tasks
-</code></pre>
-<p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
-demos a potentially infinite actor-like workflow, where state can exist and
-evolve for indefinite period of time. The key API calls are based on
-<code>OrchestrationContext</code>:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> counterState = counterContext.GetInput&lt;int&gt;()
-<span class="hljs-keyword">let!</span> command = counterContext.WaitForExternalEvent&lt;string&gt;(<span class="hljs-string">"operation"</span>)
-</code></pre>
-<p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
-has several twists, like output binding for activity (<code>ICollector</code> is required
-instead of C#&#39;s <code>out</code> parameter), third-party integration (Twilio to send SMSs),
-recursive sub-function to loop through several attempts and context-based
-timers for reliable timeout implementation.</p>
-<p>So, if you happen to be an F# fan, you can still give Durable Functions a try.
-Be sure to leave your feedback, so that the library could get even better 
-before going GA.</p>
-]]></content>
-    </entry>
     
     <entry>
         <title>Load Testing Azure SQL Database by Copying Traffic from Production SQL Server</title>
@@ -1983,6 +1862,203 @@ examples and walkthroughs, and get fresh updates:</p>
 <li><a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">Installation Guide for Durable Functions</a></li>
 </ul>
 <p>Have a good binding!</p>
+]]></content>
+    </entry>
+    
+    <entry>
+        <title>Custom Autoscaling with Durable Functions</title>
+        <link href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/"/>
+        <updated>2017-07-24T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2017-07-24,/2017/07/custom-autoscaling-with-durable-functions/</id>
+        <content type="html"><![CDATA[<p>In my previous post 
+<a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">Custom Autoscaling of Azure App Service with a Function App</a>
+I&#39;ve created a Function App which watches a Service Bus Subscription
+backlog and adjusts the scale of App Service based on the observed load.</p>
+<p>It works fine but there are two minor issues that I would like to address
+in this article:</p>
+<ul>
+<li><p><strong>Scaling Logic</strong> function from that workflow needs to preserve state
+between calls. I used Table Storage bindings for that, which proved to
+be a bit verbose and low level: I needed to manage conversion to entity and 
+JSON serialization myself;</p>
+</li>
+<li><p>There is no feedback from <strong>Scaler</strong> function (which executes the change)
+back to <strong>Scaling Logic</strong> function. Thus, if scaling operation is slow or
+fails, there is no easy way to notify the logic about that.</p>
+</li>
+</ul>
+<p>Let&#39;s see how these issues can be solved with Azure Durable Functions.</p>
+<h2 id="meet-durable-functions">Meet Durable Functions</h2>
+<p>Microsoft has recently announced the preview of 
+<a href="https://azure.github.io/azure-functions-durable-extension/">Durable Functions</a>:</p>
+<blockquote>
+<p>Durable Functions is an Azure Functions extension for building long-running, 
+stateful function orchestrations in code using C# in a serverless environment.</p>
+</blockquote>
+<p>The library is built on top of <a href="https://github.com/Azure/durabletask">Durable Task Framework</a>
+and introduces several patterns for Function coordination and stateful
+processing. Please go read the <a href="https://azure.github.io/azure-functions-durable-extension/">documentation</a>,
+it&#39;s great and has some very useful examples.</p>
+<p>I decided to give Durable Functions a try for my autoscaling workflow. Feel
+free to refer to <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">the first part</a>
+to understand my goals and the previous implementation.</p>
+<h2 id="architecture">Architecture</h2>
+<p>The flow of metric collection, scaling logic and scaling action stays the
+same. The state and cross-function communication aspects are now delegated
+to Durable Functions, so the diagram becomes somewhat simpler:</p>
+<p><img src="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions//AutoscalingArchitecture.png" alt="Autoscaling Architecture"></p>
+<p>The blue sign on <strong>Scaling Logic</strong> function denotes its statefulness.</p>
+<p>Let&#39;s walk through the functions implementation to see how the workflow
+plays out.</p>
+<p>This time I&#39;ll start with <strong>Scaler</strong> function and then flow from right to left
+to make the explanation more clear.</p>
+<h2 id="scaler">Scaler</h2>
+<p><strong>Scaler</strong> function applies the scaling decisions to the Azure resource, App
+Service Plan in my case. I&#39;ve extracted App Service related code to a helper, 
+to keep the function minimal and clean. You can see the full code in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+<p><strong>Scaler</strong> function is triggered by Durable Function&#39;s <code>ActivityTrigger</code>. That
+basically means that it&#39;s ready to be called from other functions. Here is
+the code:</p>
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(Scaler))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[ActivityTrigger] DurableActivityContext context</span>)
+</span>{
+    <span class="hljs-keyword">var</span> action = context.GetInput&lt;ScaleAction&gt;();
+
+    <span class="hljs-keyword">var</span> newCapacity = ScalingHelper.ChangeAppServiceInstanceCount(
+        action.ResourceName,
+        action.Type == ScaleActionType.Down ? <span class="hljs-number">-1</span> : +<span class="hljs-number">1</span>);
+
+    <span class="hljs-keyword">return</span> newCapacity;
+}
+</code></pre>
+<p>In order to receive an input value, I utilize <code>context.GetInput()</code> method.
+I believe that the team is working on support of custom classes 
+(<code>ScaleAction</code> in my case) directly as function parameters.</p>
+<p>The function then executes the scale change and returns back the new capacity
+of App Service Plan. Note that this is new: we were not able to return
+values in the previous implementation.</p>
+<h2 id="scaling-logic">Scaling Logic</h2>
+<p><strong>Scaling Logic</strong> is using <a href="https://azure.github.io/azure-functions-durable-extension/articles/samples/counter.html">Stateful Actor pattern</a>.
+One instance of such actor is created for each scalable resource (I only use
+1 now). Here is the implementation (again, simplified for readability):</p>
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(ScalingLogic))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;ScalingState&gt; <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
+    [OrchestrationTrigger] DurableOrchestrationContext context, 
+    TraceWriter log</span>)
+</span>{
+    <span class="hljs-keyword">var</span> state = context.GetInput&lt;ScalingState&gt;();
+
+    <span class="hljs-keyword">var</span> metric = <span class="hljs-keyword">await</span> context.WaitForExternalEvent&lt;Metric&gt;(<span class="hljs-keyword">nameof</span>(Metric));
+
+    UpdateHistory(state.History, metric.Value);
+    ScaleAction action = CalculateScalingAction(state);
+
+    <span class="hljs-keyword">if</span> (action != <span class="hljs-literal">null</span>)
+    {
+        <span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> context.CallFunctionAsync&lt;<span class="hljs-keyword">int</span>&gt;(<span class="hljs-keyword">nameof</span>(Scaler), action);
+        log.Info(<span class="hljs-string">$"Scaling logic: Scaled to <span class="hljs-subst">{result}</span> instances."</span>);
+        state.LastScalingActionTime = context.CurrentUtcDateTime;
+    }
+
+    context.ContinueAsNew(state);
+    <span class="hljs-keyword">return</span> state;
+}
+</code></pre>
+<p>Here is how it works:</p>
+<ul>
+<li><p>Function is bound to <code>OrchestrationTrigger</code>, yet another trigger type from
+Durable Functions;</p>
+</li>
+<li><p>It loads durable state from the received <code>context</code>;</p>
+</li>
+<li><p>It then waits for an external event called Metric (to be sent by <strong>Collector</strong>
+function, see the next section);</p>
+</li>
+<li><p>When an event is received, the function updates its state and calculates
+if a scaling action is warranted;</p>
+</li>
+<li><p>If yes, it calls <strong>Scaler</strong> function and sends the scale action. It expects
+an integer result, denoting the new amount of instances;</p>
+</li>
+<li><p>It then calls <code>ContinueAsNew</code> method to start a new iteration of the actor
+loop, providing the updated state.</p>
+</li>
+</ul>
+<p>One important note: the orchestrated function 
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/topics/checkpointing-and-replay.html">has to be deterministic</a>. 
+That means, for example, that <code>DateTime.Now</code> is not allowed to be used. 
+I use <code>context.CurrentUtcDateTime</code> instead for time-related calculations.</p>
+<p>The implementation of this function solves both problems that I mentioned 
+in the introduction. We do not manage state storage and serialization manually,
+and we now have the ability to get feedback from <strong>Scaler</strong> function.</p>
+<h2 id="metrics-collector">Metrics Collector</h2>
+<p>I&#39;ve extracted Service Bus related code to a helper to keep the code sample
+minimal and clean. You can see the full code in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+<p>Here is the remaining implementation of <strong>Metric Collector</strong>:</p>
+<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(nameof(MetricCollector))</span>]
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">
+    [TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer,
+    [OrchestrationClient] DurableOrchestrationClient client,
+    TraceWriter log)
+</span>{
+    <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
+
+    <span class="hljs-keyword">var</span> status = <span class="hljs-keyword">await</span> client.GetStatusAsync(resource);
+    <span class="hljs-keyword">if</span> (status == <span class="hljs-literal">null</span>)
+    {
+        <span class="hljs-keyword">await</span> client.StartNewAsync(<span class="hljs-keyword">nameof</span>(ScalingLogic), resource, <span class="hljs-keyword">new</span> ScalingState());
+    }
+    <span class="hljs-keyword">else</span>
+    {
+        <span class="hljs-keyword">var</span> metric = ServiceBusHelper.GetSubscriptionMetric(resource);
+        log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{metric.Value.Value}</span> at <span class="hljs-subst">{DateTime.Now}</span>"</span>);
+        <span class="hljs-keyword">await</span> client.RaiseEventAsync(resource, <span class="hljs-keyword">nameof</span>(Metric), metric);
+    }
+}
+</code></pre>
+<p>It&#39;s still a timer-triggered &quot;normal&quot; (non-durable) function, but now it 
+also has an additional binding to <code>OrchestrationClient</code>. This client is used 
+to communicate metric data to the <strong>Scaling Logic</strong>.</p>
+<p>With the current implementation, <strong>Metric Collector</strong> also has a second
+responsibility: actor instance management. At every iteration, it queries
+for the current status of corresponding actor. If that is <code>null</code>, Collector
+creates a new instance with initial empty state.</p>
+<p>To my liking, this aspect is a bit unfortunate, but it seems to be required
+with the current implementation of Durable Functions framework. See 
+<a href="https://github.com/Azure/azure-functions-durable-extension/issues/21">my related question on github</a>.</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>I adjusted the initial flow of autoscaling functions to use Durable Functions
+library. It made the state management look more straightforward, and also
+allowed direct communication between two functions in strongly-typed
+request-response manner.</p>
+<p>The resulting code is relatively clear and resembles the typical structure
+of async-await code that C# developers are used to.</p>
+<p>There are some downsides that I found about Durable Functions too:</p>
+<ul>
+<li><p>This is a very early preview, so there are some implementation issues.
+A couple times I managed to put my functions into a state where they were stuck
+and no calls could be made anymore. The only way I could get out of there is by
+clearing some blobs in the Storage Account;</p>
+</li>
+<li><p>The actor instance management story feels raw. The function, which needs to
+send events to actors, has to manage their lifecycle and instance IDs. I would
+need to add some more checks to make the code production ready, e.g. to 
+restart actors if they end up in faulty state;</p>
+</li>
+<li><p>There are some concurrency issues in function-to-function communication
+to be resolved;</p>
+</li>
+<li><p>Some discipline is required to keep Durable functions side-effect free
+and deterministic. The multiple executions caused by awaits and replays are
+counter-intuitive (at least for novice devs), and thus error-prone.</p>
+</li>
+</ul>
+<p>Having said that, I believe Durable Functions can be a very useful abstraction
+to simplify some of the more advanced scenarios and workflows. I look
+forward to further iterations of the library, and I will keep trying it out
+for more scenarios.</p>
 ]]></content>
     </entry>
     
