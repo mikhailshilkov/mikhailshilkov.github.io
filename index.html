@@ -72,6 +72,200 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Apr 7th, 2018</div>
+    
+    <h1><a href='/2018/04/fsharp-exchange-2018/'>Awesome F# Exchange 2018</a></h1>
+    
+    <div class="post-content">
+        <p>I&#39;m writing this post in the train to London Stensted, on my way back from F# Exchange 2018
+conference.</p>
+<p>F# Exchange is a yearly conference taking place in London, and 2018 edition was the first one
+for me personally. I also had an honour to speak there about creating Azure Functions with
+F#.</p>
+<h2 id="impression">Impression</h2>
+<p>F# is still relatively niche language, so the conference is not overcrowded, but that gives
+it a special feeling of family gathering. There were 162 participants this year, and I have an
+impression that every one of them is extremely friendly, enthusiastic and just plain awesome.</p>
+<p>The conference itself had 2 tracks of 45-minute talks and 60-minute keynotes. Most talks were
+of high quality, and the topics ranging from compiler internals to fun applications like 
+music generation, car racing and map drawing.</p>
+<p>Both Don Syme, the creator of F#, and Philip Carter, F# program manager, were there and gave
+keynotes, but they were careful enough not to draw too much attention on Microsoft and let
+the community speak loud.</p>
+<h2 id="corridor-track">Corridor Track</h2>
+<p>But the talks were just a part of the story. For me, the conference started in the evening
+before the first day at the speakers drinks party, and only finished at 1 a.m. after the 
+second day (the pubs in London are lovely).</p>
+<p>I spoke to so many great people, I learnt a lot, and had fun too. I&#39;ve never seen so many
+F# folks at the same place, and I guess there must be something about F# which attracts
+the right kind of people to it.</p>
+<p>And of course it&#39;s so much fun to meet face-to-face all those twitter, slack, github and 
+Channel 9 persona&#39;s and to see that they are actually real people :)</p>
+<h2 id="my-talk">My Talk</h2>
+<p>The talk I gave was called &quot;Azure F#unctions&quot;. It was not a hard-core F# talk, but people
+seemed to be genuinely interested in the topic.</p>
+<p>A decent amount of attendees are already familiar with Azure Functions, and many either run 
+them in production or plan to do so.</p>
+<p>The reference version conflict problem is very well known and raises a lots of questions
+or concerns. This even leads to workarounds like transpiling F# Functions to Javascript
+with Fable. Yikes.</p>
+<p>Durable Functions seem to be sparkling a lot of initial interest. I&#39;ll be definitely
+spending more time to play with them, and maybe to make F# story more smooth.</p>
+<p>Functions were mentioned in Philip&#39;s keynote as one of the important areas for F# 
+application, which is cool. We should spend some extra effort to make the documentation
+and onboarding story as smooth as possible.</p>
+<h2 id="call-to-action">Call to Action</h2>
+<p>Skills Matter is the company behind the conference. Carla, Nicole and others did a great
+job preparing the event; everything went smooth, informal and fun.</p>
+<p>The videos are already online at <a href="https://skillsmatter.com/conferences/9419-f-sharp-exchange-2018#skillscasts">Skillscasts</a> 
+(requires free signup).</p>
+<p>F# Exchange 2019 super early bird tickets are for sale now and until Monday April 9, go 
+get one and join F# Exchange in London next year! </p>
+<p>I&#39;m already missing you all.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-exchange/'>F# Exchange</a>, <a href='/tags/talk/'>Talk</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
+    </div>
+    
+</article>
+
+    <article class="post">
+    <div class="post-date">Feb 19th, 2018</div>
+    
+    <h1><a href='/2018/02/azure-durable-functions-in-fsharp/'>Azure Durable Functions in F#</a></h1>
+    
+    <div class="post-content">
+        <p>Azure Functions are designed for stateless, fast-to-execute,
+simple actions. Typically, they are triggered by an HTTP call or a queue message,
+then they read something from the storage or database and return the result
+to the caller or send it to another queue. All within several seconds at most.</p>
+<p>However, there exists a preview of <a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">Durable Functions</a>,
+an extension that lets you write stateful functions for long-running workflows.
+Here is a picture of one possible workflow from the docs:</p>
+<p><img src="/2018/02/azure-durable-functions-in-fsharp//fan-out-fan-in.png" alt="Fan-out Fan-in Workflow"></p>
+<p>Such workflows might take arbitrary time to complete. Instead of blocking and
+waiting for all that period, Durable Functions use the combination of
+Storage Queues and Tables to do all the work asynchronously.</p>
+<p>The code still <em>feels</em> like one continuous thing because it&#39;s programmed
+as a single orchestrator function. So, it&#39;s easier for a human to reason 
+about the functionality without the complexities of low-level communication.</p>
+<p>I won&#39;t describe Durable Functions any further, just go read
+<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">documentation</a>,
+it&#39;s nice and clean.</p>
+<h2 id="language-support">Language Support</h2>
+<p>As of February 2018, Durable Functions are still in preview. That also means
+that language support is limited:</p>
+<blockquote>
+<p>Currently C# is the only supported language for Durable Functions. This 
+includes orchestrator functions and activity functions. In the future, 
+we will add support for all languages that Azure Functions supports.</p>
+</blockquote>
+<p>I was a bit disappointed that F# is not an option. But actually, since
+Durable Functions support precompiled .NET assembly model, pretty much
+anything doable in C# can be done in F# too.</p>
+<p>The goal of this post is to show that you can write Durable Functions in F#.
+I used precompiled .NET Standard 2.0 F# Function App running on 2.0 preview
+runtime.</p>
+<h2 id="orchestration-functions">Orchestration Functions</h2>
+<p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
+Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
+Here is a simple example of orchestrator in C#:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;List&lt;<span class="hljs-keyword">string</span>&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
+{
+    <span class="hljs-keyword">var</span> outputs = <span class="hljs-keyword">new</span> List&lt;<span class="hljs-keyword">string</span>&gt;();
+
+    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>));
+    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>));
+    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>));
+
+    <span class="hljs-comment">// returns ["Hello Tokyo!", "Hello Seattle!", "Hello London!"]</span>
+    <span class="hljs-keyword">return</span> outputs;
+}
+</code></pre>
+<p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
+computation expression. The direct refactoring could look something like</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> Run(<span class="hljs-meta">[&lt;OrchestrationTrigger&gt;]</span> context: DurableOrchestrationContext) = async {
+  <span class="hljs-keyword">let!</span> hello1 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>)   |&gt; Async.AwaitTask
+  <span class="hljs-keyword">let!</span> hello2 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>) |&gt; Async.AwaitTask
+  <span class="hljs-keyword">let!</span> hello3 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>)  |&gt; Async.AwaitTask
+  <span class="hljs-keyword">return</span> [hello1; hello2; hello3]
+} |&gt; Async.StartAsTask
+</code></pre>
+<p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
+trigger because multi-threading operations are not allowed:</p>
+<blockquote>
+<p>Orchestrator code must never initiate any async operation except by 
+using the DurableOrchestrationContext API. The Durable Task Framework 
+executes orchestrator code on a single thread and cannot interact with 
+any other threads that could be scheduled by other async APIs.</p>
+</blockquote>
+<p>To solve this issue, we need to keep working with <code>Task</code> directly. This is
+not very handy with standard F# libraries. So, I pulled an extra NuGet
+package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
+<p>The above function now looks very simple:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> Run(<span class="hljs-meta">[&lt;OrchestrationTrigger&gt;]</span> context: DurableOrchestrationContext) = task {
+  <span class="hljs-keyword">let!</span> hello1 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>)
+  <span class="hljs-keyword">let!</span> hello2 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>)
+  <span class="hljs-keyword">let!</span> hello3 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>)
+  <span class="hljs-keyword">return</span> [hello1; hello2; hello3]
+}
+</code></pre>
+<p>And the best part is that it works just fine.</p>
+<p><code>SayHello</code> function is Activity trigger based, and no special effort is required
+to implement it in F#:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("E1_SayHello")&gt;]</span>
+<span class="hljs-keyword">let</span> SayHello(<span class="hljs-meta">[&lt;ActivityTrigger&gt;]</span> name) =
+  sprintf <span class="hljs-string">"Hello %s!"</span> name
+</code></pre>
+<h2 id="more-examples">More Examples</h2>
+<p>Durable Functions repository comes with 
+<a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/precompiled">a set of 4 samples</a>
+implemented in C#. I took all of those samples and ported them over to F#.</p>
+<p>You&#39;ve already seen the first <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/HelloSequence.fs"><code>Hello Sequence</code> sample</a>
+above: the orchestrator calls the activity function 3 times and combines the
+results. As simple as it looks, the function will actually run 3 times for each
+execution, saving state before each subsequent call.</p>
+<p>The second <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/BackupSiteContent.fs"><code>Backup Site Content</code> sample</a>
+is using this persistence mechanism to run
+a potentially slow workflow of copying all files from a given directory to
+a backup location. It shows how multiple activities can be executed in
+parallel:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tasks = Array.map (<span class="hljs-keyword">fun</span> f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(<span class="hljs-string">"E2_CopyFileToBlob"</span>, f)) files
+<span class="hljs-keyword">let!</span> results = Task.WhenAll tasks
+</code></pre>
+<p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
+demos a potentially infinite actor-like workflow, where state can exist and
+evolve for indefinite period of time. The key API calls are based on
+<code>OrchestrationContext</code>:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> counterState = counterContext.GetInput&lt;int&gt;()
+<span class="hljs-keyword">let!</span> command = counterContext.WaitForExternalEvent&lt;string&gt;(<span class="hljs-string">"operation"</span>)
+</code></pre>
+<p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
+has several twists, like output binding for activity (<code>ICollector</code> is required
+instead of C#&#39;s <code>out</code> parameter), third-party integration (Twilio to send SMSs),
+recursive sub-function to loop through several attempts and context-based
+timers for reliable timeout implementation.</p>
+<p>So, if you happen to be an F# fan, you can still give Durable Functions a try.
+Be sure to leave your feedback, so that the library could get even better 
+before going GA.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/durable-functions/'>Durable Functions</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 6th, 2018</div>
     
     <h1><a href='/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server/'>Load Testing Azure SQL Database by Copying Traffic from Production SQL Server</a></h1>
@@ -995,381 +1189,6 @@ nearest future, so... more benchmarks are coming.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Dec 3rd, 2017</div>
-    
-    <h1><a href='/2017/12/precompiled-azure-functions-in-fsharp/'>Precompiled Azure Functions in F#</a></h1>
-    
-    <div class="post-content">
-        <p><em>This post is giving a start to 
-<a href="https://sergeytihon.com/2017/10/22/f-advent-calendar-in-english-2017/">F# Advent Calendar in English 2017</a>. 
-Please follow the calendar for all the great posts to come.</em></p>
-<p>Azure Functions is a &quot;serverless&quot; cloud offering from Microsoft. It
-allows you to run your custom code as response to events in the cloud. 
-Functions are very easy to
-start with; and you only pay per execution - with free allowance sufficient
-for any proof-of-concept, hobby project or even low-usage production loads.
-And when you need more, Azure will scale your project up automatically.</p>
-<p>F# is one of the officially supported languages for Azure Functions.
-Originally, F# support started with F# Script files (authored directly
-in Azure portal or copied from local editor), so you can find many articles
-online to get started, e.g.
-<a href="http://brandewinder.com/2017/02/11/fsharp-azure-function-from-the-ground-up-part-1/">Creating an Azure Function in F# from the ground up</a> and
-<a href="http://brandewinder.com/2017/03/06/fsharp-azure-function-from-the-ground-up-part-2/">Part 2</a>
-by Mathias Brandewinder.</p>
-<p>However, I find script-based model a bit limited. In today&#39;s article I
-will focus on creating Azure Functions as precompiled .NET libraries.
-Along the way, I&#39;ll use cross-platform tools like .NET Core and VS Code,
-and I&#39;ll show how to integrate Functions with some popular tools
-like Suave and Paket.</p>
-<h2 id="create-a-project">Create a Project</h2>
-<p>You can follow this walkthrough on Windows or Mac, just make sure that
-you have <code>.NET Core 2</code> and <code>Node.js 8.x</code> with <code>npm</code> installed. My editor of
-choice is Visual Studio Code with Ionide plugin.</p>
-<p>I&#39;ll show you how to create a new F# Function App from scratch. If you want to
-jump to runnable project, you can get it from 
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/6-precompiled-timer">my github</a>.</p>
-<p>We start with creating a new F# library project for .NET Standard 2. Run
-in your command line:</p>
-<pre class="highlight"><code class="hljs sh">dotnet new classlib --language F<span class="hljs-comment"># --name HelloFunctions</span>
-</code></pre>
-<p>This command creates a folder with two files: <code>HelloFunctions.fsproj</code> project
-file and <code>Library.fs</code> source code file.</p>
-<p>Now, add a reference to Azure Functions NuGet package:</p>
-<pre class="highlight"><code class="hljs sh">dotnet add package Microsoft.NET.Sdk.Functions
-</code></pre>
-<h2 id="define-a-function">Define a Function</h2>
-<p>Open <code>Library.fs</code> code file and change it to the following code:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">namespace</span> HelloFunctions
-
-<span class="hljs-keyword">open</span> System
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs.Host
-
-<span class="hljs-keyword">module</span> Say =
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> daysUntil (d: DateTime) =
-    (d - DateTime.Now).TotalDays |&gt; int
-
-  <span class="hljs-keyword">let</span> hello (timer: TimerInfo, log: TraceWriter) =
-    <span class="hljs-keyword">let</span> christmas = <span class="hljs-keyword">new</span> DateTime(<span class="hljs-number">2017</span>, <span class="hljs-number">12</span>, <span class="hljs-number">25</span>)
-
-    daysUntil christmas
-    |&gt; sprintf <span class="hljs-string">"%d days until Christmas"</span>
-    |&gt; log.Info
-</code></pre>
-<p>We defined a function <code>hello</code> which should be triggered by Functions runtime
-based on time intervals. Every time the function is called, we log how many
-days we still need to wait before Christmas 2017.</p>
-<p>To convert this simple F# function to an Azure Function, create a folder called
-<code>Hello</code> (or choose any other name) next to the project file and add 
-<code>function.json</code> file in there:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"bindings"</span>: [
-    {
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"timer"</span>,
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"timerTrigger"</span>,
-      <span class="hljs-attr">"schedule"</span>: <span class="hljs-string">"0 * * * * *"</span>
-    }
-  ],
-  <span class="hljs-attr">"scriptFile"</span>: <span class="hljs-string">"../bin/HelloFunctions.dll"</span>,
-  <span class="hljs-attr">"entryPoint"</span>: <span class="hljs-string">"HelloFunctions.Say.hello"</span>
-}
-</code></pre>
-<p>We defined that:</p>
-<ul>
-<li>Our function is triggered by timer</li>
-<li>It runs every minute at 0 seconds</li>
-<li>The entry point is our <code>hello</code> function in the compiled assembly</li>
-</ul>
-<h2 id="prepare-local-runtime">Prepare Local Runtime</h2>
-<p>There are a couple more configuration files needed to be able to
-run the Function App locally. <code>host.json</code> defines hosting parameters; empty
-file will do for now:</p>
-<pre class="highlight"><code class="hljs json">{
-}
-</code></pre>
-<p>Most triggers need to connect to a Storage Account. For examples, timer
-trigger uses it to hold leases to define which running instance will 
-actually execute the action every minute. Copy a connection string to your 
-Storage Account (local Storage emulator is fine too) and put it into 
-<code>local.settings.json</code> file:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"IsEncrypted"</span>: <span class="hljs-literal">false</span>,
-  <span class="hljs-attr">"Values"</span>: {
-    <span class="hljs-attr">"AzureWebJobsStorage"</span>: <span class="hljs-string">"...your connection string..."</span>
-  }
-}
-</code></pre>
-<p>Note that this file is only used for local development and is not published
-to Azure by default.</p>
-<p>Finally, we need to modify <code>fsproj</code> file to make the build tool copy those
-files into <code>bin</code> folder. Add the following section in there:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-name">ItemGroup</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"Hello\function.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"host.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"local.settings.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-<span class="hljs-tag">&lt;/<span class="hljs-name">ItemGroup</span>&gt;</span>
-</code></pre>
-<h2 id="run-app-locally">Run App Locally</h2>
-<p>The first step is to build and publish our Function App with <code>dotnet</code>
-commands:</p>
-<pre class="highlight"><code class="hljs sh">dotnet build
-dotnet publish
-</code></pre>
-<p>The first line produces the dll file and the second line copies it
-and all of its dependencies to <code>publish</code> folder.</p>
-<p>The nice thing about Azure Functions is that you can easily run them
-locally on a development machine. Execute the following command to 
-install the runtime and all the required libraries:</p>
-<pre class="highlight"><code class="hljs sh">npm install -g azure-functions-core-tools@core
-</code></pre>
-<p>This will add a <code>func</code> CLI to your system which is the tool to
-use for all Function related operations.</p>
-<p>Navigate to <code>bin\Debug\netstandard2.0\publish</code> folder and run <code>func start</code> 
-from there. You should see that your app is now running, and your timer
-function is scheduled for execution:</p>
-<p><img src="/2017/12/precompiled-azure-functions-in-fsharp/./funcstart.png" alt="Function App Start"></p>
-<p>Once the next minute comes, the timer will trigger and you will see
-messages in the log:</p>
-<p><img src="/2017/12/precompiled-azure-functions-in-fsharp/./funcran.png" alt="Timer Trigger Working"></p>
-<h2 id="integrate-into-vs-code-">Integrate into VS Code </h2>
-<p>You are free to use full Visual Studio or any editor to develop Function
-Apps in F#. I&#39;ve been mostly using VS Code for this purpose, and I believe
-it&#39;s quite popular among F# community.</p>
-<p>If you use VS Code, be sure to setup the tasks that you can use from within
-the editor. I usually have at least 3 tasks: &quot;build&quot; (<code>dotnet build</code>),
-&quot;publish&quot; (<code>dotnet publish</code>) and &quot;run&quot; (<code>func start --script-root bin\\debug\\netstandard2.0\\publish</code>),
-with shortcuts configured to all of them.</p>
-<p>You can find an example of <code>tasks.json</code> file
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/6-precompiled-timer/.vscode/tasks.json">here</a>.</p>
-<p>Also, check out <a href="https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions">Azure Functions Extension</a>.</p>
-<h2 id="deploy-to-azure">Deploy to Azure</h2>
-<p>You can deploy the exact same application binaries to Azure. Start by 
-creating an empty Function App in the portal, or via Azure CLI (<code>func</code> CLI
-does not support that).</p>
-<p>Then run the following command to deploy your precompiled function to
-this app:</p>
-<pre class="highlight"><code class="hljs sh">func azure functionapp publish &lt;FunctionAppName&gt;
-</code></pre>
-<p>At the first run, it will verify your Azure credentials.</p>
-<p>In real-life production scenarios your workflow is probably going to be
-similar to this:</p>
-<ul>
-<li>Change Function App code</li>
-<li>Run it locally to test the change</li>
-<li>Push the code changes to the source control repository</li>
-<li>Have your CI/CD pipeline build it, run the tests and then push
-the binaries to Azure Functions environment</li>
-</ul>
-<h2 id="http-trigger">HTTP Trigger</h2>
-<p>Timer-triggered functions are useful, but that&#39;s just one limited use case.
-Several other event types can trigger Azure Functions, and for all of them
-you can create precompiled functions and run them locally.</p>
-<p>The most ubiquotous trigger for any serverless app is probably HTTP. So,
-for the rest of the article I will focus on several approaches to 
-implement HTTP functions. Nonetheless, the same techique can be applied to
-other triggers too.</p>
-<p>F# code for the simplest HTTP Function can look like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">namespace</span> PrecompiledApp
-
-<span class="hljs-keyword">open</span> Microsoft.AspNetCore.Mvc
-<span class="hljs-keyword">open</span> Microsoft.AspNetCore.Http
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs.Host
-
-<span class="hljs-keyword">module</span> PrecompiledHttp =
-
-  <span class="hljs-keyword">let</span> run(req: HttpRequest, log: TraceWriter) =
-    log.Info(<span class="hljs-string">"F# HTTP trigger function processed a request."</span>)
-    ContentResult(Content = <span class="hljs-string">"HO HO HO Merry Christmas"</span>, ContentType = <span class="hljs-string">"text/html"</span>)
-</code></pre>
-<p>You can find a full example of HTTP Function App 
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/5-precompiled">here</a>.</p>
-<p>This code is using ASP.NET Core classes for request and response. It&#39;s still
-just an F# function, so we need to bind it to a trigger in <code>function.json</code>:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"bindings"</span>: [
-    {
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"httpTrigger"</span>,
-      <span class="hljs-attr">"methods"</span>: [<span class="hljs-string">"get"</span>],
-      <span class="hljs-attr">"authLevel"</span>: <span class="hljs-string">"anonymous"</span>,
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"req"</span>,
-      <span class="hljs-attr">"route"</span>: <span class="hljs-string">"hellosanta"</span>
-    }
-  ],
-  <span class="hljs-attr">"scriptFile"</span>: <span class="hljs-string">"../bin/PrecompiledApp.dll"</span>,
-  <span class="hljs-attr">"entryPoint"</span>: <span class="hljs-string">"PrecompiledApp.PrecompiledHttp.run"</span>
-}
-</code></pre>
-<p>If you run the app, the function will be hosted at localhost</p>
-<p><img src="/2017/12/precompiled-azure-functions-in-fsharp/./httpstart.png" alt="HTTP Trigger Working"></p>
-<p>And a request to <code>http://localhost:7071/api/hellosanta</code> will get responded
-with our &quot;HO HO HO&quot; message.</p>
-<p>This function is of &quot;Hello World&quot; level, but the fact that it&#39;s inside a
-normal F# library gives you lots of power.</p>
-<p>Let&#39;s see at some examples of how to use it.</p>
-<h2 id="suave-function">Suave Function</h2>
-<p>What can we do to enhance developer experience? We can use our 
-favourite F# libraries.</p>
-<p><a href="http://suave.io/">Suave</a> is one of the most popular libraries to 
-implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
-<p>Let&#39;s first make a small twist to HTTP trigger definition in <code>function.json</code>:</p>
-<pre class="highlight"><code class="hljs undefined">"bindings": [
-  {
-    "type": "httpTrigger",
-    "methods": ["get"],
-    "authLevel": "anonymous",
-    "name": "req",
-    "route": "{*anything}"
-  }
-],
-</code></pre>
-<p>Binding now defines a wildcard route to redirect all requests 
-to this function. That&#39;s because we want Suave to take care of routing
-for us.</p>
-<p>The definition of such routing will look familiar to all Suave users:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> App =
-  <span class="hljs-keyword">open</span> Suave
-  <span class="hljs-keyword">open</span> Suave.Successful
-  <span class="hljs-keyword">open</span> Suave.Operators
-  <span class="hljs-keyword">open</span> Suave.Filters
-
-  <span class="hljs-keyword">let</span> app = 
-    GET &gt;=&gt; choose
-      [ path <span class="hljs-string">"/api/what"</span> &gt;=&gt; OK <span class="hljs-string">"Every time we love, every time we give, it's Christmas."</span>
-        path <span class="hljs-string">"/api/when"</span> &gt;=&gt; OK <span class="hljs-string">"Christmas isn't a season. It's a feeling."</span>
-        path <span class="hljs-string">"/api/how"</span> &gt;=&gt; OK <span class="hljs-string">"For it is in giving that we receive."</span> ]
-</code></pre>
-<p>Azure Function is just a one-liner wiring Suave app into the pipeline:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Http =
-  <span class="hljs-keyword">open</span> Suave.Azure.Functions.Context
-
-  <span class="hljs-keyword">let</span> run req =
-    req |&gt; runWebPart App.app  |&gt; Async.StartAsTask
-</code></pre>
-<p>The heavy lifting is done by <code>runWebPart</code> function, which is a utility
-function defined in the same application. You can see the full code
-of this wiring in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/7-suave">my repo</a>.</p>
-<p>Run the application and request the URL <code>http://localhost:7071/api/what</code> 
-to see the function in action.</p>
-<p>This example is very simple, but you can do lots of powerful stuff with Suave!
-Most probably, you shouldn&#39;t go over the root and try to fit whole
-mulpti-resource REST API into a single Azure Function. But it might still
-make sense to keep related HTTP calls together, and Suave can help to keep
-it cleaner.</p>
-<h2 id="managing-dependencies-with-paket">Managing Dependencies with Paket</h2>
-<p>Once your Function App becomes bigger and you start using multiple F#
-projects, it makes sense to switch to <a href="https://fsprojects.github.io/Paket/">Paket</a>
-package manager.</p>
-<p>It is totally possible to use Paket with Azure Functions. There isn&#39;t much
-specific to Azure Functions, really. Here is an example of <code>paket.dependecies</code>
-file</p>
-<pre class="highlight"><code class="hljs stylus">source https:<span class="hljs-comment">//www.nuget.org/api/v2</span>
-
-framework: &gt;= netstandard2.<span class="hljs-number">0</span>
-nuget FSharp<span class="hljs-selector-class">.Core</span>
-nuget Microsoft<span class="hljs-selector-class">.NET</span><span class="hljs-selector-class">.Sdk</span><span class="hljs-selector-class">.Functions</span>
-nuget Microsoft<span class="hljs-selector-class">.AspNetCore</span><span class="hljs-selector-class">.Mvc</span><span class="hljs-selector-class">.Core</span>
-</code></pre><p>that I used in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/8-paket">example</a> 
-which demonstrates Paket + Functions combination.</p>
-<h2 id="attribute-based-functions">Attribute-Based Functions</h2>
-<p>Up until now, we were writing <code>function.json</code> files manually for each 
-function. This is not very tedious, but it is error prone. Microsoft offers an alternative 
-programming model where these files are auto-generated by Functions SDK.</p>
-<p>This programming model is based on attributes, which are similar to WebJobs 
-SDK attributes. With this approach, there&#39;s no <code>function.json</code> file in 
-the project. Instead, the function declaration is decorated with attributes:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("AttributeBased")&gt;]</span>
-<span class="hljs-keyword">let</span> run(<span class="hljs-meta">[&lt;HttpTrigger&gt;]</span> req: HttpRequest, log: TraceWriter)
-</code></pre>
-<p>The same development flow still works. Once you run <code>dotnet build</code>, a new 
-<code>function.json</code> file will be generated and placed into <code>bin</code> folder. Functions 
-runtime will be able to use it to run the function as usual.</p>
-<p>Note that the generated file looks a bit different from the manual 
-equivalent:</p>
-<ol>
-<li><p>It manifests itself with</p>
-<pre class="highlight"><code class="hljs undefined"> "generatedBy": "Microsoft.NET.Sdk.Functions.Generator-1.0.6",
- "configurationSource": "attributes",
-</code></pre>
-</li>
-<li><p>In case you use input and output bindings, you won&#39;t be able to see them
-in the generated file. Only trigger will be visible in <code>json</code>. Don&#39;t worry,
-input and output bindings will still work.</p>
-</li>
-</ol>
-<p>You can find an example of HTTP function with attributes 
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/9-attributes">here</a>.</p>
-<p>There are pro&#39;s and con&#39;s in this model. Obviously, not having to write
-JSON files manually is beneficial. Some people find the binding attributes
-really ugly though, especially when you have 3 or 4 bindings and each has 
-multiple parameters. </p>
-<p>My preference is to use attributes, but don&#39;t mix attribute decoration
-with real code. I.e. keep the Function&#39;s body to a simple 1-liner, and
-delegate the call to a properly defined F# function with the actual
-domain logic.</p>
-<h2 id="wrapping-up">Wrapping Up</h2>
-<p>Lots of F# users value the language for how quickly one can be productive
-with it: based on concise syntax, powerful libraries and tools like FSI.</p>
-<p>In my opinion, Azure Functions fit nicely into the picture. It takes just
-several minutes before you can run your first Function App on developer
-machine, and then seamlessly transfer it into the cloud.</p>
-<p>I&#39;ve prepared a github repository where you can find more
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples">Examples of Azure Functions implemented in F#</a>.</p>
-<p>Merry Serverless Functional Christmas!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-advent-calendar/'>F# Advent Calendar</a>, <a href='/tags/azure/'>Azure</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Nov 10th, 2017</div>
-    
-    <h1><a href='/2017/11/azure-functions-fsharp-talk/'>Azure F#unctions Talk at FSharping Meetup in Prague</a></h1>
-    
-    <div class="post-content">
-        <p>On November 8th 2017 I gave a talk about developing Azure Functions
-in F# at
-<a href="https://www.meetup.com/FSharping/events/244137693/">FSharping</a>
-meetup in Prague. </p>
-<p>I really enjoyed giving this talk: the audience was
-great and asked awesome questions. One more prove that F# community is
-so welcoming and energizing!</p>
-<p>All the demos of that session can be found in my
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples">github repository</a>.</p>
-<p>The slides were only a small portion of my talk, but you can see them
-below anyways.</p>
-<p>Link to full-screen HTML slides: 
-<a href="https://mikhail.io/talks/fsharping-azure-functions/">Azure F#unctions</a></p>
-<p>Slides on SlideShare:</p>
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/oQIZywbdCRXdQA" width="595" height="485" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
-</iframe> 
-
-<p>Thanks for attending my talk! Feel free to post any feedback in the comments.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/talk/'>Talk</a>, <a href='/tags/meetup/'>Meetup</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/slides/'>Slides</a>
     </div>
     
 </article>
