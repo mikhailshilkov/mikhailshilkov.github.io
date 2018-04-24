@@ -72,6 +72,170 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Aug 31st, 2017</div>
+    
+    <h1><a href='/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/'>Azure Functions: Are They Really Infinitely Scalable and Elastic?</a></h1>
+    
+    <div class="post-content">
+        <p><em>Updated results are available at 
+<a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">Azure Functions Get More Scalable and Elastic</a>.</em></p>
+<p>Automatic elastic scaling is a built-in feature of Serverless computing
+paradigm. One doesn&#39;t have to provision servers anymore, they just need to
+write code that will be provisioned on as many servers as needed based on the
+actual load. That&#39;s the theory.</p>
+<p>In particular, Azure Functions can be hosted on the Consumption plan:</p>
+<blockquote>
+<p>The Consumption plan automatically allocates compute power when your 
+code is running, scales out as necessary to handle load, and then scales 
+down when code is not running.</p>
+</blockquote>
+<p>In this post I will run a simple stress test to get a feel of how such
+automatic allocation works in practice and what kind of characteristics 
+we can rely on.</p>
+<h2 id="setup">Setup</h2>
+<p>Here are the parameters that I chose for my test of today:</p>
+<ul>
+<li>Azure Function written in C# and hosted on Consumption plan</li>
+<li>Triggered by Azure Storage Queue binding</li>
+<li>Workload is strictly CPU-bound, no I/O is executed</li>
+</ul>
+<p>Specifically, each queue item represents one password that I need to hash.
+Each function call performs 12-round <a href="https://en.wikipedia.org/wiki/Bcrypt">Bcrypt</a>
+hashing. Bcrypt is a slow algorithm recommended for
+password hashing, because it makes potential hash collision attacks really 
+hard and costly.</p>
+<p>My function is based on <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.Net</a>
+implementation, and it&#39;s extremely simple:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Run</span>(<span class="hljs-params">[QueueTrigger(<span class="hljs-string">"bcrypt-password"</span></span>)] <span class="hljs-keyword">string</span> password)
+</span>{
+    BCrypt.Net.BCrypt.HashPassword(password, <span class="hljs-number">12</span>);
+}
+</code></pre>
+<p>It turns out that a single execution of this function takes approximately
+1 second on an instance of Consumption plan, and consumes 100% CPU during
+that second.</p>
+<p>Now, the challenge is simple. I send 100,000 passwords
+to the queue and see how long it will take to hash them, and also how the
+autoscaling will behave. I will run it two times, with different pace of
+sending messages to the queue.</p>
+<p>That sounds like a perfect job for a Function App on Consumption plan:</p>
+<ul>
+<li>Needs to scale based on load</li>
+<li>CPU intensive - easy to see how busy each server is</li>
+<li>Queue-based - easy to see the incoming vs outgoing rate</li>
+</ul>
+<p>Let&#39;s see how it went.</p>
+<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
+<p>In my first run, I was sending messages at constant rate. 100,000 messages
+were sent within 2 hours, without spikes or drops in the pace.</p>
+<p>Sounds like an easy job for autoscaling facilities. But here is the actual 
+chart of data processing:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppScaling.png" alt="Function App Scaling"></p>
+<p>The horizontal axis is time in minutes since the first message came in.</p>
+<p>The orange line shows the queue backlog - the amount of messages sitting in
+the queue at a given moment.</p>
+<p>The blue area represents the amount of instances (virtual servers) allocated
+to the function by Azure runtime (see the numbers at the right side).</p>
+<p>We can divide the whole process into 3 logical segments, approximately 
+40 minutes each:</p>
+<p><strong>Laging behind</strong>. Runtime starts with 0 instances, and immediately switches
+to 1 when the first message comes in. However it&#39;s reluctant to add any more
+servers for the next 20 (!) minutes. The scaling heuristic is probably based
+on the past history for this queue/function, and it wasn&#39;t busy at all during
+the hours before.</p>
+<p>After 20 minutes, the runtime starts adding more instances: it goes up to 2, 
+then jumps to 4, then reaches 5 at minute 40. The CPU is constantly at 
+100% and the queue backlog grows linearly.</p>
+<p><strong>Rapid scale up</strong>. After minute 40, it looks like the runtime realizes 
+that it needs more power. Much more power! The growth speeds up real quick
+and by minute 54 the backlog stops growing, even though the messages are still
+coming in. But there are now 21 instances working, which is enough to
+finally match and beat the rate of incoming messages.</p>
+<p>The runtime doesn&#39;t stop growing though. CPU&#39;s are still at 100%, and the backlog
+is still very high, so the scaling goes up and up. The amount of instances
+reaches astonishing 55, at which point all the backlog is processed and
+there are no messages in the queue.</p>
+<p><strong>Searching for balance</strong>. When queue is almost empty and CPU drops below
+100% for the first time, the runtime decides to scale down. It does that quickly
+and aggressively, switching from 55 to 21 instances in just 2 minutes.</p>
+<p>From there it keeps slowly reducing the number of instances until the backlog 
+starts growing again. The runtime allows the backlog to grow a bit, but
+then figures out a balanced number of servers (17) to keep the backlog flat 
+at around 2,000 messages. </p>
+<p>It stays at 17 until the producer stops sending new messages. The backlog 
+goes to 0, and the amount of instances gradually drops to 0 within 10 minutes.</p>
+<p>The second chart from the same experiment looks very similar, but it shows
+different metrics:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppDelay.png" alt="Function App Delay"></p>
+<p>The gray line is the delay in minutes since the currently processed message
+got enqueued (message &quot;age&quot;, in-queue latency). The blue line is the 
+total processing rate, measured in messages per minute.</p>
+<p>Due to perfect scalability and stability of my function, both charts are almost
+exactly the same. I&#39;ve put it here so that you could see that the slowest
+message spent more than 40 minutes sitting inside the queue.</p>
+<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
+<p>With the second run, I tried to emulate a spiky load profile. I was sending
+my 100,000 messages throughout 6 hours at lower pace than during the first
+run. But sometimes the producer switched to fast mode and sent a bigger bunch
+of messages in just several minutes. Here is the actual chart of incoming
+message rate:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoad.png" alt="Spiky Load"></p>
+<p>It&#39;s easy to imagine some service which has a usage pattern like that, when
+spikes of the events happen from time to time, or in rush hours.</p>
+<p>This is how the Function App managed to process the messages:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoadProcessing.png" alt="Spiky Load Processing Result"></p>
+<p>The green line still shows the amount of incoming messages per minute. The 
+blue line denotes how many messages were actually processed at that minute.
+And the orange bars are queue backlogs - the amount of messages pending.</p>
+<p>Here are several observations:</p>
+<ul>
+<li><p>Obviously, processing latency is way too far from real time. There is
+constantly quite a significant backlog in the queue, and processing delay
+reaches 20 minutes at peak.</p>
+</li>
+<li><p>It took the runtime 2 hours to clean the backlog for the first time. Even
+without any spikes during the first hour, the autoscaling algorithm needs
+time to get up to speed.</p>
+</li>
+<li><p>Function App runtime is able to scale up quite fast (look at the reaction
+on the fourth spike), but it&#39;s not really willing to do that most of the time.</p>
+</li>
+<li><p>The growth of the backlog after minute 280 is purely caused by wrong
+decision of runtime. While the load is completely steady, the runtime
+decided to shut down most workers after 20 minutes of empty backlog, and could
+not recover for the next hour.</p>
+</li>
+</ul>
+<h2 id="conclusions">Conclusions</h2>
+<p>I tried to get a feeling about the ability of Azure Functions to scale
+on demand, adapting to the workload. The function under test was purely CPU-bound,
+and for that I can give two main conclusions:</p>
+<ul>
+<li><p>Function Apps are able to scale to high amount of instances running at the
+same time, and to eventually process large parallel jobs (at least up to 55
+instances).</p>
+</li>
+<li><p>Significant processing delays are to be expected for heavy loads. Function
+App runtime has quite some inertia, and the resulting processing latency can
+easily go up to tens of minutes.</p>
+</li>
+</ul>
+<p>If you know how these results can be improved, or why they are less than 
+optimal, please leave a comment or contact me directly.</p>
+<p>I look forward to conducting more tests in the future!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jul 26th, 2017</div>
     
     <h1><a href='/2017/07/authoring-custom-binding-azure-functions/'>Authoring a Custom Binding for Azure Functions</a></h1>
@@ -1034,77 +1198,6 @@ for status updates.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jun 7th, 2017</div>
-    
-    <h1><a href='/2017/06/finding-lost-events-in-azure-application-insights/'>Finding Lost Events in Azure Application Insights</a></h1>
-    
-    <div class="post-content">
-        <p>One of the ways we use Azure Application Insights is tracking custom
-application-specific events. For instance, every time a data point from an
-IoT device comes in, we log an AppInsights event. Then we are able to
-aggregate the data and plot charts to derive trends and detect possible 
-anomalies.</p>
-<p>And recently we found such anomaly, which looked like this:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//dashboard-chart.png" alt="Amount of Events on Dashboard Chart"></p>
-<p>This is a chart from our Azure dashboard, which shows the total amount of
-events of specific type received per day. </p>
-<p>The first two &quot;hills&quot; are two weeks, so we can clearly see that we get more
-events on business days compared to weekends.</p>
-<p>But then something happened on May 20: we started getting much less events,
-and the hill pattern disappeared, days looks much more alike.</p>
-<p>We haven&#39;t noticed any other problems in the system, but the trend looked
-quite bothering. Are we loosing data?</p>
-<p>I headed towards Analytics console of Application Insights to dig deeper.
-Here is the query that reproduces the problem:</p>
-<pre class="highlight"><code class="hljs coq">customEvents
-| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]), timestamp
-| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
-| <span class="hljs-type">render</span> timechart
-</code></pre><p>and I got the same chart as before:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics1.png" alt="Trend on Application Insights Analytics"></p>
-<p>I checked the history of our source code repository and deployments and I
-figured out that we upgraded the version of Application Insights SDK from 
-version 2.1 to version 2.3.</p>
-<p>My guess at this point was that Application Insights started sampling our
-data instead of sending all events to the server. After reading 
-<a href="https://docs.microsoft.com/en-us/azure/application-insights/app-insights-sampling">Sampling in Application Insights</a>
-article, I came up with the following query to see the sampling rate:</p>
-<pre class="highlight"><code class="hljs applescript">customEvents
-| <span class="hljs-keyword">where</span> <span class="hljs-built_in">name</span> == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-keyword">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-built_in">summarize</span> <span class="hljs-number">100</span>/avg(itemCount) <span class="hljs-keyword">by</span> bin(timestamp, <span class="hljs-number">1</span>d) 
-| render areachart
-</code></pre><p>and the result is self-explanatory:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//sampling-rate.png" alt="Sampling Rate"></p>
-<p>Clearly, the sampling rate dropped from 100% down to about 30% right when
-the anomaly started. The sampling-adjusted query (note <code>itemCount</code> multiplication)</p>
-<pre class="highlight"><code class="hljs coq">customEvents
-| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]) * itemCount, timestamp
-| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
-| <span class="hljs-type">render</span> timechart
-</code></pre><p>puts us back to the point when results make sense:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics2.png" alt="Adjusted Trend on Application Insights Analytics"></p>
-<p>The third week&#39;s Thursday was bank holiday in several European countries, so 
-we got a drop there.</p>
-<p>Should Azure dashboard items take sampling into account - to avoid
-confusing people and to show more useful charts?</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/application-insights/'>Application Insights</a>
     </div>
     
 </article>

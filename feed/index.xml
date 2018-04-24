@@ -3,13 +3,103 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-04-16T13:10:33.398Z</updated>
+    <updated>2018-04-24T21:45:35.948Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Azure Functions: Cold Starts in Numbers</title>
+        <link href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/"/>
+        <updated>2018-04-24T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2018-04-24,/2018/04/azure-functions-cold-starts-in-numbers/</id>
+        <content type="html"><![CDATA[<p>Auto-provisioning and auto-scalability are the killer features of Function-as-a-Service
+cloud offerings, and Azure Functions in particular.</p>
+<p>One drawback of such dynamic provisioning is a phenomenon called &quot;Cold Start&quot;. Basically,
+applications that haven&#39;t been used for a while take longer to startup and to handle the
+first request.</p>
+<p>The problem is nicely described in 
+<a href="https://blogs.msdn.microsoft.com/appserviceteam/2018/02/07/understanding-serverless-cold-start/">Understanding Serverless Cold Start</a>,
+so I won&#39;t repeat it here. I&#39;ll just copy a picture from that article:</p>
+<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstart.jpg" alt="Cold Start"></p>
+<p>Based on the 4 actions which happen during a cold start, we may guess that the following factors
+might affect the cold start duration:</p>
+<ul>
+<li>Language / execution runtime</li>
+<li>Azure Functions runtime version</li>
+<li>Application size including dependencies</li>
+</ul>
+<p>I ran several sample functions and tried to analyze the impact of these factors on cold start time.</p>
+<h2 id="methodology">Methodology</h2>
+<p>All tests were run against HTTP Functions, because that&#39;s where cold start matters the most.</p>
+<p>All the functions were just returning &quot;Hello, World&quot; taking the &quot;World&quot; value from the query string.
+Some functions were also loading extra dependencies, see below.</p>
+<p>I did not rely on execution time reported by Azure. Instead, I measured end-to-end duration from
+client perspective. All calls were made from within the same Azure region, so network latency should 
+have minimal impact:</p>
+<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//test-setup.png" alt="Test Setup"></p>
+<h2 id="when-does-cold-start-happen-">When Does Cold Start Happen?</h2>
+<p>Obviously, cold start happens when the very first request comes in. After that request is processed,
+the instance is kept alive in case subsequent requests arrive. But for how long?</p>
+<p>The following chart gives the answer. It shows values of normalized request durations across
+different languages and runtime versions (Y axis) depending on the time since the previous
+request in minutes (X axis):</p>
+<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstart-threshold.png" alt="Cold Start Threshold"></p>
+<p>Clearly, an idle instance lives for 20 minutes and then gets recycled. All requests after 20 minutes
+threshold hit another cold start.</p>
+<h2 id="how-do-languages-compare-">How Do Languages Compare?</h2>
+<p>I&#39;ll start with version 1 of Functions runtime, which is the production-ready GA version as of today.</p>
+<p>I&#39;ve written Hello World HTTP function in all GA languages: C#, F# and Javascript, and I added Python
+for comparison. C#/F# were executed both in the form of script, and as a precompiled .NET assembly.</p>
+<p>The following chart shows some intuition about the cold start duration per language. The languages
+are ordered based on mean response time, from lowest to highest. 65% of request
+durations are inside the vertical bar (1-sigma interval) and 95% are inside the vertical line (2-sigma):</p>
+<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v1.png" alt="Cold Start V1 per Language"></p>
+<p>Somewhat surprisingly, precompiled .NET is exactly on par with Javascript. Javascript &quot;Hello World&quot; 
+is really lightweight, so I expected it to win, but I was wrong.</p>
+<p>C# Script is slower but somewhat comparable. F# Script presented a really negative surprise though: it&#39;s much
+slower. It&#39;s even slower than experimental Python support where no performance optimization would
+be expected at all!</p>
+<h2 id="functions-runtime-v1-vs-v2">Functions Runtime: V1 vs V2</h2>
+<p>Version 2 of Functions runtime is currently in preview and not suitable for production load. That
+probably means they haven&#39;t done too much performance optimization, especially from cold start
+standpoint.</p>
+<p>Can we see this on the chart? We sure can:</p>
+<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v2.png" alt="Cold Start V1 vs V2"></p>
+<p>V2 is massively slower. The fastest cold starts are around 6 seconds, but the slowest can come
+up to 40-50 seconds.</p>
+<p>Javascript is again on-par with precompiled .NET. </p>
+<p>Java is noticeably slower, even though the
+deployment package is just 33kB, so I assume I didn&#39;t overblow it.</p>
+<h2 id="does-size-matter-">Does Size Matter?</h2>
+<p>OK, enough of Hello World. A real-life function might be more heavy, mainly because it would
+depend on other third-party libraries.</p>
+<p>To simulate such scenario, I&#39;ve measured cold starts for a .NET function with references to 
+Entity Framework, Automapper, Polly and Serilog.</p>
+<p>For Javascript I did the same, but referenced Bluebird, lodash and AWS SDK.</p>
+<p>Here are the results:</p>
+<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-dependencies.png" alt="Cold Start Dependencies"></p>
+<p>As expected, the dependencies slow the loading down. You should keep your Functions lean,
+otherwise you will pay in seconds for every cold start.</p>
+<p>An important note for Javascript developers: the above numbers are for Functions deployed
+after <a href="https://github.com/Azure/azure-functions-pack"><code>Funcpack</code></a> preprocessor. The package
+contained the single <code>js</code> file with Webpack-ed dependency tree. Without that, the mean
+cold start time of the same function is 20 seconds!</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>Here are some lessons learned from all the experiments above:</p>
+<ul>
+<li>Be prepared for 1-3 seconds cold starts even for the smallest Functions</li>
+<li>Stay on V1 of runtime until V2 goes GA unless you don&#39;t care about perf</li>
+<li>.NET precompiled and Javascript Functions have roughly same cold start time</li>
+<li>Minimize the amount of dependencies, only bring what&#39;s needed</li>
+</ul>
+<p>Do you see anything weird or unexpected in my results? Do you need me to dig deeper on other aspects?
+Please leave a comment below or ping me on twitter, and let&#39;s sort it all out.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Awesome F# Exchange 2018</title>
@@ -1688,160 +1778,6 @@ expensive ZooKeeper-managed clusters?</p>
 <p>Have you developed effectively-once processing on .NET / Azure stack?</p>
 <p>Are you in touch with somebody who works on such framework?</p>
 <p>Please leave a comment, or ping me on Twitter.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Azure Functions: Are They Really Infinitely Scalable and Elastic?</title>
-        <link href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/"/>
-        <updated>2017-08-31T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-08-31,/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/</id>
-        <content type="html"><![CDATA[<p><em>Updated results are available at 
-<a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">Azure Functions Get More Scalable and Elastic</a>.</em></p>
-<p>Automatic elastic scaling is a built-in feature of Serverless computing
-paradigm. One doesn&#39;t have to provision servers anymore, they just need to
-write code that will be provisioned on as many servers as needed based on the
-actual load. That&#39;s the theory.</p>
-<p>In particular, Azure Functions can be hosted on the Consumption plan:</p>
-<blockquote>
-<p>The Consumption plan automatically allocates compute power when your 
-code is running, scales out as necessary to handle load, and then scales 
-down when code is not running.</p>
-</blockquote>
-<p>In this post I will run a simple stress test to get a feel of how such
-automatic allocation works in practice and what kind of characteristics 
-we can rely on.</p>
-<h2 id="setup">Setup</h2>
-<p>Here are the parameters that I chose for my test of today:</p>
-<ul>
-<li>Azure Function written in C# and hosted on Consumption plan</li>
-<li>Triggered by Azure Storage Queue binding</li>
-<li>Workload is strictly CPU-bound, no I/O is executed</li>
-</ul>
-<p>Specifically, each queue item represents one password that I need to hash.
-Each function call performs 12-round <a href="https://en.wikipedia.org/wiki/Bcrypt">Bcrypt</a>
-hashing. Bcrypt is a slow algorithm recommended for
-password hashing, because it makes potential hash collision attacks really 
-hard and costly.</p>
-<p>My function is based on <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.Net</a>
-implementation, and it&#39;s extremely simple:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Run</span>(<span class="hljs-params">[QueueTrigger(<span class="hljs-string">"bcrypt-password"</span></span>)] <span class="hljs-keyword">string</span> password)
-</span>{
-    BCrypt.Net.BCrypt.HashPassword(password, <span class="hljs-number">12</span>);
-}
-</code></pre>
-<p>It turns out that a single execution of this function takes approximately
-1 second on an instance of Consumption plan, and consumes 100% CPU during
-that second.</p>
-<p>Now, the challenge is simple. I send 100,000 passwords
-to the queue and see how long it will take to hash them, and also how the
-autoscaling will behave. I will run it two times, with different pace of
-sending messages to the queue.</p>
-<p>That sounds like a perfect job for a Function App on Consumption plan:</p>
-<ul>
-<li>Needs to scale based on load</li>
-<li>CPU intensive - easy to see how busy each server is</li>
-<li>Queue-based - easy to see the incoming vs outgoing rate</li>
-</ul>
-<p>Let&#39;s see how it went.</p>
-<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
-<p>In my first run, I was sending messages at constant rate. 100,000 messages
-were sent within 2 hours, without spikes or drops in the pace.</p>
-<p>Sounds like an easy job for autoscaling facilities. But here is the actual 
-chart of data processing:</p>
-<p><img src="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppScaling.png" alt="Function App Scaling"></p>
-<p>The horizontal axis is time in minutes since the first message came in.</p>
-<p>The orange line shows the queue backlog - the amount of messages sitting in
-the queue at a given moment.</p>
-<p>The blue area represents the amount of instances (virtual servers) allocated
-to the function by Azure runtime (see the numbers at the right side).</p>
-<p>We can divide the whole process into 3 logical segments, approximately 
-40 minutes each:</p>
-<p><strong>Laging behind</strong>. Runtime starts with 0 instances, and immediately switches
-to 1 when the first message comes in. However it&#39;s reluctant to add any more
-servers for the next 20 (!) minutes. The scaling heuristic is probably based
-on the past history for this queue/function, and it wasn&#39;t busy at all during
-the hours before.</p>
-<p>After 20 minutes, the runtime starts adding more instances: it goes up to 2, 
-then jumps to 4, then reaches 5 at minute 40. The CPU is constantly at 
-100% and the queue backlog grows linearly.</p>
-<p><strong>Rapid scale up</strong>. After minute 40, it looks like the runtime realizes 
-that it needs more power. Much more power! The growth speeds up real quick
-and by minute 54 the backlog stops growing, even though the messages are still
-coming in. But there are now 21 instances working, which is enough to
-finally match and beat the rate of incoming messages.</p>
-<p>The runtime doesn&#39;t stop growing though. CPU&#39;s are still at 100%, and the backlog
-is still very high, so the scaling goes up and up. The amount of instances
-reaches astonishing 55, at which point all the backlog is processed and
-there are no messages in the queue.</p>
-<p><strong>Searching for balance</strong>. When queue is almost empty and CPU drops below
-100% for the first time, the runtime decides to scale down. It does that quickly
-and aggressively, switching from 55 to 21 instances in just 2 minutes.</p>
-<p>From there it keeps slowly reducing the number of instances until the backlog 
-starts growing again. The runtime allows the backlog to grow a bit, but
-then figures out a balanced number of servers (17) to keep the backlog flat 
-at around 2,000 messages. </p>
-<p>It stays at 17 until the producer stops sending new messages. The backlog 
-goes to 0, and the amount of instances gradually drops to 0 within 10 minutes.</p>
-<p>The second chart from the same experiment looks very similar, but it shows
-different metrics:</p>
-<p><img src="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppDelay.png" alt="Function App Delay"></p>
-<p>The gray line is the delay in minutes since the currently processed message
-got enqueued (message &quot;age&quot;, in-queue latency). The blue line is the 
-total processing rate, measured in messages per minute.</p>
-<p>Due to perfect scalability and stability of my function, both charts are almost
-exactly the same. I&#39;ve put it here so that you could see that the slowest
-message spent more than 40 minutes sitting inside the queue.</p>
-<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
-<p>With the second run, I tried to emulate a spiky load profile. I was sending
-my 100,000 messages throughout 6 hours at lower pace than during the first
-run. But sometimes the producer switched to fast mode and sent a bigger bunch
-of messages in just several minutes. Here is the actual chart of incoming
-message rate:</p>
-<p><img src="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoad.png" alt="Spiky Load"></p>
-<p>It&#39;s easy to imagine some service which has a usage pattern like that, when
-spikes of the events happen from time to time, or in rush hours.</p>
-<p>This is how the Function App managed to process the messages:</p>
-<p><img src="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoadProcessing.png" alt="Spiky Load Processing Result"></p>
-<p>The green line still shows the amount of incoming messages per minute. The 
-blue line denotes how many messages were actually processed at that minute.
-And the orange bars are queue backlogs - the amount of messages pending.</p>
-<p>Here are several observations:</p>
-<ul>
-<li><p>Obviously, processing latency is way too far from real time. There is
-constantly quite a significant backlog in the queue, and processing delay
-reaches 20 minutes at peak.</p>
-</li>
-<li><p>It took the runtime 2 hours to clean the backlog for the first time. Even
-without any spikes during the first hour, the autoscaling algorithm needs
-time to get up to speed.</p>
-</li>
-<li><p>Function App runtime is able to scale up quite fast (look at the reaction
-on the fourth spike), but it&#39;s not really willing to do that most of the time.</p>
-</li>
-<li><p>The growth of the backlog after minute 280 is purely caused by wrong
-decision of runtime. While the load is completely steady, the runtime
-decided to shut down most workers after 20 minutes of empty backlog, and could
-not recover for the next hour.</p>
-</li>
-</ul>
-<h2 id="conclusions">Conclusions</h2>
-<p>I tried to get a feeling about the ability of Azure Functions to scale
-on demand, adapting to the workload. The function under test was purely CPU-bound,
-and for that I can give two main conclusions:</p>
-<ul>
-<li><p>Function Apps are able to scale to high amount of instances running at the
-same time, and to eventually process large parallel jobs (at least up to 55
-instances).</p>
-</li>
-<li><p>Significant processing delays are to be expected for heavy loads. Function
-App runtime has quite some inertia, and the resulting processing latency can
-easily go up to tens of minutes.</p>
-</li>
-</ul>
-<p>If you know how these results can be improved, or why they are less than 
-optimal, please leave a comment or contact me directly.</p>
-<p>I look forward to conducting more tests in the future!</p>
 ]]></content>
     </entry>
     

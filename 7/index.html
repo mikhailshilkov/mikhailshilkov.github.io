@@ -72,6 +72,131 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Aug 21st, 2016</div>
+    
+    <h1><a href='/2016/08/getting-started-with-azure-application-insights-in-aurelia/'>Getting started with Azure Application Insights in Aurelia</a></h1>
+    
+    <div class="post-content">
+        <p><a href="https://azure.microsoft.com/en-us/documentation/articles/app-insights-overview/">Azure Application Insights</a>
+is an analytics service to monitor live web applications,
+diagnose performance issues, and understand what users actually do with the app. 
+<a href="http://aurelia.io">Aurelia</a> is a modern and slick single-page application framework.
+Unfortunately, there&#39;s not much guidance on the web about how to use AppInsights and
+Aurelia together in a proper manner. The task gets even more challenging in case you are
+using TypeScript and want to stay in type-safe land. This post will set you up and
+running in no time.</p>
+<h2 id="get-your-appinsights-instrumentation-key">Get Your AppInsights Instrumentation Key</h2>
+<p>If not done yet, go register in Azure Application Insights portal. To start sending
+telemetry data from your application you would need a unique identifier of 
+your web application, which is called an Instrumentation Key (it&#39;s just a guid). 
+See <a href="https://azure.microsoft.com/en-us/documentation/articles/app-insights-javascript/">Application Insights for web pages</a>
+walk-through.</p>
+<h2 id="install-a-jspm-package">Install a JSPM Package</h2>
+<p>I&#39;m using JSPM as a front-end package manager for Aurelia applications. If you use it
+as well, run the following command to install AppInsights package:</p>
+<pre class="highlight"><code class="hljs cmake">jspm <span class="hljs-keyword">install</span> github:Microsoft/ApplicationInsights-js
+</code></pre><p>it will add a line to <code>config.js</code> file:</p>
+<pre class="highlight"><code class="hljs lasso"><span class="hljs-built_in">map</span>: {
+  <span class="hljs-string">"Microsoft/ApplicationInsights-js"</span>: <span class="hljs-string">"github:Microsoft/ApplicationInsights-js@1.0.0"</span>,
+<span class="hljs-params">...</span>
+</code></pre><p>To keep the names simple, change the line to </p>
+<pre class="highlight"><code class="hljs perl">  <span class="hljs-string">"ApplicationInsights"</span>: <span class="hljs-string">"github:Microsoft/ApplicationInsights-js@1.0.0"</span>,
+</code></pre><p>Do exactly the same change in <code>project.json</code> file, <code>jspm</code> -&gt; <code>dependencies</code> section.</p>
+<h2 id="create-an-aurelia-plugin">Create an Aurelia Plugin</h2>
+<p>In order to track Aurelia page views, we are going to plug into the routing pipeline
+with a custom plugin. Here is how my plugin looks like in JavaScript (see TypeScript
+version below):</p>
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-comment">// app-insights.js</span>
+<span class="hljs-keyword">export</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AppInsights</span> </span>{
+  client;
+
+  <span class="hljs-keyword">constructor</span>() {
+    <span class="hljs-keyword">let</span> snippet = {
+      <span class="hljs-attr">config</span>: {
+        <span class="hljs-attr">instrumentationKey</span>: <span class="hljs-string">'YOUR INSTRUMENTATION KEY GUID'</span>
+      }
+    };
+    <span class="hljs-keyword">let</span> init = <span class="hljs-keyword">new</span> Microsoft.ApplicationInsights.Initialization(snippet);
+    <span class="hljs-keyword">this</span>.client = init.loadAppInsights();
+  }
+
+  run(routingContext, next) {
+    <span class="hljs-keyword">this</span>.client.trackPageView(routingContext.fragment, <span class="hljs-built_in">window</span>.location.href);
+    <span class="hljs-keyword">return</span> next();
+  }
+}
+</code></pre>
+<p>The constructor instantiates an AppInsights client. It is used inside a <code>run</code> method,
+which would be called by Aurelia pipeline during page navigation.</p>
+<h2 id="add-the-plugin-to-aurelia-pipeline">Add the Plugin to Aurelia Pipeline</h2>
+<p>Go the the <code>App</code> class of your Aurelia application. Import the new plugin</p>
+<pre class="highlight"><code class="hljs javascript"><span class="hljs-comment">// app.js</span>
+<span class="hljs-keyword">import</span> {AppInsights} <span class="hljs-keyword">from</span> <span class="hljs-string">'./app-insights'</span>;
+</code></pre>
+<p>and change the <code>configureRouter</code> method to register a new pipeline step:</p>
+<pre class="highlight"><code class="hljs javascript">configureRouter(config, router): <span class="hljs-keyword">void</span> {
+  config.addPipelineStep(<span class="hljs-string">'modelbind'</span>, AppInsights);
+  config.map(<span class="hljs-comment">/*routes are initialized here*/</span>);
+}
+</code></pre>
+<p>After re-building the application, you should be all set to go. Navigate several pages
+and wait for events to appear in Application Insights portal.</p>
+<h2 id="typescript-obtain-the-definition-file">TypeScript: Obtain the Definition File</h2>
+<p>If you are using TypeScript, you are not done yet. In order to compile the <code>AppInsights</code>
+plugin you need the type definitions for <code>ApplicationInsights</code> package. Unfortunately,
+at the time of writing there is no canonical definition in <code>typings</code> registry, so
+you will have to provide a custom <code>.d.ts</code> file. You can download mine from
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/aurelia-app-insights/applicationinsights.d.ts">my github</a>. 
+I created it based on a file from 
+<a href="https://www.nuget.org/packages/Microsoft.ApplicationInsights.TypeScript">this NuGet repository</a>.</p>
+<p>I&#39;ve put it into the <code>custom_typings</code> folder and then made the following adjustment
+to <code>build/paths.js</code> file of Aurelia setup:</p>
+<pre class="highlight"><code class="hljs rust">  dtsSrc: [
+    <span class="hljs-symbol">'typings</span><span class="hljs-comment">/**/</span>*.d.ts',
+    <span class="hljs-symbol">'custom_typings</span><span class="hljs-comment">/**/</span>*.d.ts'
+  ],
+</code></pre><p>For the reference, here is my TypeScript version of the <code>AppInsights</code> plugin:</p>
+<pre class="highlight"><code class="hljs ts"><span class="hljs-keyword">import</span> {NavigationInstruction, Next} <span class="hljs-keyword">from</span> <span class="hljs-string">'aurelia-router'</span>;
+<span class="hljs-keyword">import</span> {Microsoft} <span class="hljs-keyword">from</span> <span class="hljs-string">'ApplicationInsights'</span>;
+
+<span class="hljs-keyword">export</span> <span class="hljs-keyword">class</span> AppInsights {
+  <span class="hljs-keyword">private</span> client: Microsoft.ApplicationInsights.AppInsights;
+
+  <span class="hljs-keyword">constructor</span>(<span class="hljs-params"></span>) {
+    <span class="hljs-keyword">let</span> snippet = {
+      config: {
+        instrumentationKey: <span class="hljs-string">'YOUR INSTRUMENTATION KEY GUID'</span>
+      },
+      queue: []
+    };
+    <span class="hljs-keyword">let</span> init = <span class="hljs-keyword">new</span> Microsoft.ApplicationInsights.Initialization(snippet);
+    <span class="hljs-keyword">this</span>.client = init.loadAppInsights();
+  }
+
+  run(routingContext: NavigationInstruction, next: Next): <span class="hljs-built_in">Promise</span>&lt;<span class="hljs-built_in">any</span>&gt; {
+    <span class="hljs-keyword">this</span>.client.trackPageView(routingContext.fragment, <span class="hljs-built_in">window</span>.location.href);
+    <span class="hljs-keyword">return</span> next();
+  }
+}
+</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>This walk-through should get you started with Azure Application Insights in your
+Aurelia application. Once you have page view metrics coming into the dashboard,
+spend more time to discover all the exciting ways to improve your application
+with Application Insights.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/application-insights/'>Application Insights</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/typescript/'>Typescript</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Aug 5th, 2016</div>
     
     <h1><a href='/2016/08/comparing-scala-to-fsharp/'>Comparing Scala to F#</a></h1>
@@ -341,8 +466,8 @@ starter kit, specifically
 If so, you should be familiar with <code>gulp serve</code> command, which serves your 
 application at <code>http://localhost:9000</code>. We will extend this command to host
 your API mock too.</p>
-<p>Navigate to <code>/build/tasks</code> folder and edit the <code>serve.js</code> file. Change the 
-definition of <code>serve</code> task to the following code:</p>
+<p>Navigate to <code>/build/tasks</code> folder and edit the <code>serve.js</code> file. Change the </p>
+<p>definition of <code>serve</code> task to the following code:</p>
 <pre class="highlight"><code class="hljs javascript">gulp.task(<span class="hljs-string">'serve'</span>, [<span class="hljs-string">'build'</span>], <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">done</span>) </span>{
   browserSync({
     <span class="hljs-attr">online</span>: <span class="hljs-literal">false</span>,
@@ -741,185 +866,6 @@ lower-level modules.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/solid/'>SOLID</a>, <a href='/tags/dependency-inversion/'>Dependency Inversion</a>, <a href='/tags/dependency-injection/'>Dependency Injection</a>, <a href='/tags/clean-code/'>Clean Code</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">May 13th, 2016</div>
-    
-    <h1><a href='/2016/05/tweaking-immutable-objects-with-csharp-and-fody/'>Tweaking immutable objects with C# and Fody</a></h1>
-    
-    <div class="post-content">
-        <p>Immutable data structures provide a lot of benefits
-to programmers, especially when representing domain 
-<a href="https://lostechies.com/joeocampo/2007/04/23/a-discussion-on-domain-driven-design-value-objects/">value objects</a>. 
-Immutability is an essential part of functional programming paradigm.
-The concept is useful in object-oriented languages too, but you have
-to pay some price to get this advantage.</p>
-<p>In C# immutable classes are usually implemented with read-only
-properties which are populated from constructor parameters. One of the 
-disadvantages of this approach is the verbosity of creating a copy of an object
-with one property value modified.</p>
-<h2 id="example">Example</h2>
-<p>Let&#39;s have a look at an illustration of this problem. Let&#39;s say we have a value
-type representing poker player statistics:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">PlayerStats</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">PlayerStats</span>(<span class="hljs-params">
-        <span class="hljs-keyword">int</span> hands, 
-        <span class="hljs-keyword">int</span> daysOnline,
-        Money won, 
-        Money expectedValue</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Hands = hands;
-        <span class="hljs-keyword">this</span>.DaysOnline = daysOnline;
-        <span class="hljs-keyword">this</span>.Won = won;
-        <span class="hljs-keyword">this</span>.ExpectedValue = expectedValue;
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Hands { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> DaysOnline { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Money Won { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Money ExpectedValue { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>We already see that it&#39;s quite verbose: basically we repeat each property name
-five times. But the issue I&#39;m discussing today is related to how we create 
-a new object based on another object. Let&#39;s say we need to make a copy of 
-a given statistics, but with <code>Hands</code> property increased by 1:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = <span class="hljs-keyword">new</span> PlayerStats(
-    existing.Hands + <span class="hljs-number">1</span>,
-    existing.DaysOnline,
-    existing.Won,
-    existing.ExpectedValue);
-</code></pre>
-<p>Not as simple as we could hope. Also, there is some room for mistakes here. For 
-instance, we could swap <code>Won</code> and <code>ExpectedValue</code> property calls
-and compiler won&#39;t let us know because the types are the same. So we probably
-want to use explicit constructor parameter names:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = <span class="hljs-keyword">new</span> PlayerStats(
-    hands: existing.Hands + <span class="hljs-number">1</span>,
-    daysOnline: existing.DaysOnline,
-    won: existing.Won,
-    expectedValue: existing.ExpectedValue);
-</code></pre>
-<p>But that leads to even more typing and repetition...</p>
-<h2 id="inspiration">Inspiration</h2>
-<p>F# is a functional-first language with immutability as first-class concept.
-In F# value objects are usually modelled with Records, here is our example
-reimplemented:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">PlayerStats</span> </span>= {
-    Hands: int
-    DaysOnline: int
-    Won: Money
-    ExpectedValue: Money
-}
-</code></pre>
-<p>Creation of new objects based on other objects is also solved properly in F#,
-thanks to the <strong><code>with</code></strong> keyword :</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> increasedHands = { existing <span class="hljs-keyword">with</span> Hands = existing.Hands + <span class="hljs-number">1</span> }
-</code></pre>
-<p>All the properties are copied from the source record except for the ones
-explicitly mentioned in the expression.</p>
-<h2 id="defining-with-in-c-">Defining With in C#</h2>
-<p>There&#39;s no <strong><code>with</code></strong> operator in C#, but we can try to come up with an
-alternative. We can define some fluent methods which would change
-property values one by one (they don&#39;t change the original object, but
-return a copy with changed value):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithHands</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> hands</span>) 
-</span>{
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> PlayerStats(
-        hands: hands,
-        daysOnline: existing.DaysOnline,
-        won: existing.Won,
-        expectedValue: existing.ExpectedValue);
-}
-
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithDaysOnline</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> daysOnline</span>) </span>{ ... }
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithWon</span>(<span class="hljs-params">Money won</span>) </span>{ ... }
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithExpectedValue</span> (<span class="hljs-params">Money expectedValue</span>) </span>{ ... }
-</code></pre>
-<p>The method implementation is very tedious but the usage gets much cleaner:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = existing.WithHands(existing.Hands + <span class="hljs-number">1</span>);
-</code></pre>
-<p>One way to avoid repetitive code is to generate it.</p>
-<h2 id="with-fody-plugin">With.Fody Plugin</h2>
-<p>In <a href="https://mikhail.io/2015/12/weaving-your-domain-classes-with-fody/">one of my previous posts</a>
-I described how C# value objects can be made less painful with 
-<a href="https://github.com/Fody/Fody">Fody</a> - a tool which changes your assembly at
-compilation time to provide some desired properties in automated and reliable
-fashion.</p>
-<p>Please welcome the new Fody plugin <a href="https://github.com/mikhailshilkov/With.Fody"><strong>With.Fody</strong></a> 
-which auto-implements <code>With</code> method bodies for C# immutable classes.</p>
-<p>Here is how to use this plugin for our imaginary example.</p>
-<p>First, add a reference to NuGet pakages <code>Fody</code> and <code>With.Fody</code>.</p>
-<p>Then, keep the <code>PlayerStats</code> class definition, but get rid of the bodies
-of <code>WithXyz</code> methods. Keep the signature but return something trivial like
-<code>null</code> or <code>this</code>:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithHands</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> hands</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithDaysOnline</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> daysOnline</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithWon</span>(<span class="hljs-params">Money won</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithExpectedValue</span> (<span class="hljs-params">Money expectedValue</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
-</code></pre>
-<p>Compile the project and you will see the following line in Build Output:</p>
-<pre class="highlight"><code class="hljs oxygene">&gt;      Fody/<span class="hljs-keyword">With</span>:   Added <span class="hljs-function"><span class="hljs-keyword">method</span> '<span class="hljs-title">With</span>' <span class="hljs-title">to</span> <span class="hljs-title">type</span> '<span class="hljs-title">PlayerStats</span>'.
-</span></code></pre><p>It means that the method bodies were re-implemented with calls to 
-class constructor with proper parameter values.</p>
-<p>The method stubs are needed to satisfy code completion tools like 
-IntelliSense and Resharper, otherwise we could skip them altogether.</p>
-<h2 id="single-with-for-multiple-properties">Single With() for Multiple Properties</h2>
-<p>In case you avoid <a href="https://mikhail.io/2015/08/units-of-measurement-in-domain-design/">Primitive Obsession</a>
-antipattern, you will often end up with classes which have unique types of 
-properties, e.g.</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripProfile</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">TripProfile</span>(<span class="hljs-params">
-        Distance totalDistance,
-        Speed averageSpeed,
-        Volume fuelConsumed</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.TotalDistance = totalDistance;
-        <span class="hljs-keyword">this</span>.AverageSpeed = averageSpeed;
-        <span class="hljs-keyword">this</span>.FuelConsumed = fuelConsumed;
-    }
-
-    <span class="hljs-keyword">public</span> Distance TotalDistance { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Speed AverageSpeed { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Volume FuelConsumed { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>In this case, the plugin can be smart enough to figure out which property
-you want to modify just by looking at the type of the argument. The single stub
-method can look like this:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> TripProfile With&lt;T&gt;(T <span class="hljs-keyword">value</span>) =&gt; <span class="hljs-keyword">this</span>;
-</code></pre>
-<p>This would get compiled into 3 strongly typed <code>With</code> methods with <code>Distance</code>,
-<code>Speed</code> and <code>Volume</code> arguments respectively. Resharper is still happy. And
-if you make a mistake and try to call the generic <code>With</code> method with an
-argument of wrong type (say <code>int</code>), the compiler will give you an error.</p>
-<p>It is safe to call <code>With</code> methods in the same assembly where the class is defined:
-the calls get adapted to the real implementation automatically.</p>
-<h2 id="how-to-get-started-with-your-classes">How to Get Started with Your Classes</h2>
-<p>Here are the requirements for the classes to be picked up by <strong><code>Fody.With</code></strong>:</p>
-<ol>
-<li>Have a single constructor.</li>
-<li>The constructor should have more than one argument.</li>
-<li>For each constructor agrument, there must be a gettable property with
-same name (case insensitive).</li>
-<li>At least one <code>With</code> stub must be defined as described above.</li>
-</ol>
-<p>You can check out more examples, look at the source code or raise an issue in
-<a href="https://github.com/mikhailshilkov/With.Fody">With.Fody github repository</a>.</p>
-<p>Give it a try and let me know what your think!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/immutability/'>Immutability</a>, <a href='/tags/code-generation/'>Code Generation</a>
     </div>
     
 </article>
