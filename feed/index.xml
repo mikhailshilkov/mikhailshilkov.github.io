@@ -3,13 +3,121 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-05-13T15:58:43.766Z</updated>
+    <updated>2018-05-18T15:27:15.407Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Azure Functions: Cold Starts Beyond First Request</title>
+        <link href="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load/"/>
+        <updated>2018-05-18T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2018-05-18,/2018/05/azure-functions-cold-starts-beyond-first-load/</id>
+        <content type="html"><![CDATA[<p>In my <a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">previous article</a>
+I&#39;ve explored the topic of Cold Starts in Azure Functions. Particularly, I&#39;ve measured the
+cold start delays per language and runtime version.</p>
+<p>I received some follow-up questions that I&#39;d like to explore in today&#39;s post:</p>
+<ul>
+<li>Can we avoid cold starts except the very first one by keeping the instance warm?</li>
+<li>Given one warm instance, if two requests come at the same time, will one request hit 
+a cold start because existing instance is busy with the other?</li>
+<li>In general, does a cold start happen at scale-out when a new extra instance is provisioned?</li>
+</ul>
+<p>Again, we are only talking Consumption Plan here.</p>
+<h2 id="theory">Theory</h2>
+<p>Azure Functions are running on instances provided by Azure App Service. Each instance is
+able to process several requests concurrently, which is different comparing to AWS Lambda.</p>
+<p>Thus, the following <em>could</em> be true:</p>
+<ul>
+<li>If we issue at least 1 request every 20 minutes, the first instance should stay warm for
+long time</li>
+<li>Simultaneous requests don&#39;t cause cold start unless the existing instance gets too busy</li>
+<li>When runtime decides to scale out and spin up a new instance, it could do so in the background,
+still forwarding incoming requests to the existing warm instance(s). Once the new instance
+is ready, it could be added to the pool without causing cold starts</li>
+<li>If so, cold starts are mitigated beyond the very first execution</li>
+</ul>
+<p>Let&#39;s put this theory under test!</p>
+<h2 id="keeping-always-warm">Keeping Always Warm</h2>
+<p>I&#39;ve tested a Function App which consists of two Functions:</p>
+<ul>
+<li>HTTP Function under test</li>
+<li>Timer Function which runs every 10 minutes and does nothing but logging 1 line of text</li>
+</ul>
+<p>I then measured the cold start statistics similar to all the tests from my previous article.</p>
+<p>During 2 days I was issuing infrequent requests to the same app, most of them would normally
+lead to a cold start. Interestingly, even though I was regularly firing the timer, Azure 
+switched instances to serve my application 2 times during the test period:</p>
+<p><img src="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load//cold-starts-keep-warm.png" alt="Infrequent Requests to Azure Functions with &quot;Keep It Warm&quot; Timer"></p>
+<p>I can see that most responses are fast, so timer &quot;warmer&quot; definitely helps.</p>
+<p>The first request(s) to a new instance are slower than subsequent ones. Still, they are faster
+than normal full cold start time, so it could be related to HTTP stack loading.</p>
+<p>Anyway, keeping Functions warm seems a viable strategy.</p>
+<h2 id="parallel-requests">Parallel Requests</h2>
+<p>What happens when there is a warm instance, but it&#39;s already busy with processing another
+request? Will the parallel request be delayed, or will it be processed by the same
+warm instance?</p>
+<p>I tested with a very lightweight function, which nevertheless takes some time to complete:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Delay500</span>(<span class="hljs-params">[HttpTrigger] HttpRequestMessage req</span>)
+</span>{
+    <span class="hljs-keyword">await</span> Task.Delay(<span class="hljs-number">500</span>);
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK, <span class="hljs-string">"Done"</span>);
+}
+</code></pre>
+<p>I believe it&#39;s an OK approximation for an IO-bound function.</p>
+<p>The test client then issued 2 to 10 parallel requests to this function and measured the
+response time for all requests.</p>
+<p>It&#39;s not the easiest chart to understand in full, but note the following:</p>
+<ul>
+<li><p>Each group of bars are for requests sent at the same time. Then there goes a pause about
+20 seconds before the next group of requests gets sent</p>
+</li>
+<li><p>The bars are colored by the instance which processed that request: same instance - same
+color</p>
+</li>
+</ul>
+<p><img src="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load//cold-starts-during-simultaneous-requests.png" alt="Azure Functions Response Time to Batches of Simultaneous Requests"></p>
+<p>Here are some observations from this experiment:</p>
+<ul>
+<li><p>Out of 64 requests, there were 11 cold starts</p>
+</li>
+<li><p>Same instance <em>can</em> process multiple simultaneous requests, e.g. one instance processed
+7 out of 10 requests in the last batch</p>
+</li>
+<li><p>Nonetheless, Azure is eager to spin up new instances for multiple requests. In total
+12 instances were created, which is even more than max amount of requests in any single
+batch</p>
+</li>
+<li><p>Some of those instances were actually never reused (gray-ish bars in batched x2 and x3,
+brown bar in x10)</p>
+</li>
+<li><p>The first request to each new instance pays the full cold start price. Runtime doesn&#39;t
+provision them in background while reusing existing instances for received requests</p>
+</li>
+<li><p>If an instance handled more than one request at a time, response time invariably suffers,
+even though the function is super lightweight (<code>Task.Delay</code>)</p>
+</li>
+</ul>
+<h2 id="conclusion">Conclusion</h2>
+<p>Getting back to the experiment goals, there are several things that we learned.</p>
+<p>For low-traffic apps with sporadic requests it makes sense to setup a &quot;warmer&quot; timer
+function firing every 10 minutes or so to prevent the only instance from being recycled.</p>
+<p>However, scale-out cold starts are real and I don&#39;t see any way to prevent them from
+happening.</p>
+<p>When multiple requests come in at the same time, we might expect some of them to hit
+a new instance and get slowed down. The exact algorithm of instance reuse is not
+entirely clear.</p>
+<p>Same instance is capable of processing multiple requests in parallel, so there are
+possibilities for optimization in terms of routing to warm instances during the
+provisioning of cold ones. </p>
+<p>If such optimizations happen, I&#39;ll be glad to re-run my tests and report any noticeable
+improvements.</p>
+<p>Stay tuned for more serverless perf goodness!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Azure Functions: Cold Starts in Numbers</title>
@@ -1654,130 +1762,6 @@ event to check how the whole setup works:</p>
 <p>You should get a 200-OK back and then see your event in Azure Function 
 invocation logs.</p>
 <p>Have fun!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Wanted: Effectively-Once Processing in Azure</title>
-        <link href="https://mikhail.io/2017/09/wanted-effectively-once-processing-in-azure/"/>
-        <updated>2017-09-25T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-09-25,/2017/09/wanted-effectively-once-processing-in-azure/</id>
-        <content type="html"><![CDATA[<p><em>This experimental post is a question. The question
-is too broad for StackOverflow, so I&#39;m posting it here. Please engage in the
-comments section, or forward the link to subject experts.</em></p>
-<p>TL;DR: Are there any known patterns / tools / frameworks to provide 
-scalable, stateful, effectively-once, end-to-end processing of messages, 
-to be hosted in Azure, preferably on PaaS-level of service?</p>
-<h2 id="motivational-example">Motivational Example</h2>
-<p>Let&#39;s say we are making a TODO app. There is a constant flow of requests
-to create a TODO in the system. Each request contains just two fields:
-a title and a project ID which TODO should belong to. Here is the definition:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">TodoRequest</span> </span>= {
-  ProjectId: int
-  Title: string
-}
-</code></pre>
-<p>Now, we want to process the request and assign each TODO an identifier,
-which should be an auto-incremented integer. Numeration is unique per project,
-so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Todo</span> </span>= {
-  ProjectId: int
-  Id: int
-  Title: string
-}
-</code></pre>
-<p>Now, instead of relying on some database sequences, I want to describe this
-transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
-(Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
-state (last generated ID) to a tuple of a TODO and post-processing state:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> create (request: TodoRequest, state: int) =
-  <span class="hljs-keyword">let</span> nextId = state + <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> todo = {
-    ProjectId = request.ProjectId
-    Id = nextId
-    Title = request.Title
-  }
-  todo, nextId
-</code></pre>
-<p>This is an extremely simple function, and I can use it to great success to
-process local, non-durable data.</p>
-<p>But if I need to make a reliable distributed application out of it, I need
-to take care of lots of things:</p>
-<ol>
-<li><p>No request should be lost. I need to persist all the requests into 
-a durable storage in case of processor crash. </p>
-</li>
-<li><p>Similarly, I need to persist TODO&#39;s too. Presumably, some downstream 
-logic will use the persisted data later on in TODO&#39;s lifecycle.</p>
-</li>
-<li><p>The state (the counter) must be durable too. In case of crash of processing
-function, I want to be able to restart processing after recovery. </p>
-</li>
-<li><p>Processing of the requests should be sequential per project ID. Otherwise
-I might get a clash of ID&#39;s in case two requests belonging to the same 
-project are processed concurrently.</p>
-</li>
-<li><p>I still want requests to different projects to be processed in parallel,
-to make sure the system scales up with the growth of project count.</p>
-</li>
-<li><p>There must be no holes or duplicates in TODO numbering per project, even
-in face of system failures. In worst case, I agree to tolerate a duplicated
-entry in the output log, but it must be exactly the same entry (i.e. two 
-entries with same project id, id and title).</p>
-</li>
-<li><p>The system should tolerate a permanent failure of any single hardware
-dependency and automatically fail-over within reasonable time.</p>
-</li>
-</ol>
-<p>It&#39;s not feasible to meet all of those requirements without relying on some
-battle-tested distributed services or frameworks.</p>
-<p>Which options do I know of?</p>
-<h2 id="transactions">Transactions</h2>
-<p>Traditionally, this kind of requirements were solved by using transactions
-in something like SQL Server. If I store requests, TODO&#39;s and current ID per
-project in the same relational database, I can make each processing step a
-single atomic transaction. </p>
-<p>This addresses all the concerns, as long as we can stay inside the single 
-database. That&#39;s probably a viable option for the TODO app, but less of so
-if I convert my toy example to some real applications like IoT data 
-processing.</p>
-<p>Can we do the same for distributed systems at scale?</p>
-<h2 id="azure-event-hubs">Azure Event Hubs</h2>
-<p>Since I touched IoT space, the logical choice would be to store our entries
-in Azure Event Hubs. That works for many criteria, but I don&#39;t see any available
-approach to make such processing consistent in the face of failures.</p>
-<p>When processing is done, we need to store 3 pieces: generated TODO event,
-current processing offset and current ID. Event goes to another event hub,
-processing offset is stored in Blob Storage and ID can be saved to something
-like Table Storage. </p>
-<p>But there&#39;s no way to store those 3 pieces atomically. Whichever order we 
-choose, we are bound to get anomalies in some specific failure modes.</p>
-<h2 id="azure-functions">Azure Functions</h2>
-<p>Azure Functions don&#39;t solve those problems. But I want to mention this
-Function-as-a-Service offering because they provide an ideal programming
-model for my use case.</p>
-<p>I need to take just one step from my domain function to Azure Function: 
-to define bindings for e.g. Event Hubs and Table Storage.</p>
-<p>However, reliability guarantees will stay poor. I won&#39;t get neither sequential
-processing per Event Hub partition key, nor atomic state commit.</p>
-<h2 id="azure-service-fabric">Azure Service Fabric</h2>
-<p>Service Fabric sounds like a good candidate service for reliable processing. 
-Unfortunately, I don&#39;t have much experience with it to judge.</p>
-<p>Please leave a comment if you do.</p>
-<h2 id="jvm-world">JVM World</h2>
-<p>There are products in JVM world which claim to solve my problem perfectly.</p>
-<p>Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
-Kafka release provides effectively-once processing semantics as long as
-data stay inside Kafka. Kafka does that with atomic publishing to multiple
-topics, and state storage based on compacted topics.</p>
-<p>Apache Flink has similar guarantees for its stream processing APIs.</p>
-<p>Great, but how do I get such awesomeness in .NET code, and without installing 
-expensive ZooKeeper-managed clusters?</p>
-<h2 id="call-for-feedback">Call for Feedback</h2>
-<p>Do you know a solution, product or service?</p>
-<p>Have you developed effectively-once processing on .NET / Azure stack?</p>
-<p>Are you in touch with somebody who works on such framework?</p>
-<p>Please leave a comment, or ping me on Twitter.</p>
 ]]></content>
     </entry>
     

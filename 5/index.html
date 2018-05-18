@@ -72,6 +72,132 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Mar 25th, 2017</div>
+    
+    <h1><a href='/2017/03/visualizing-dependency-tree-from-di-container/'>Visualizing Dependency Tree from DI Container</a></h1>
+    
+    <div class="post-content">
+        <p>So you are a C# developer. And you need to read the code and understand its
+structure. Maybe you&#39;ve just joined the project, or it&#39;s your own code you
+wrote 1 year ago. In any case, reading code is hard.</p>
+<p>Luckily, some good thought was applied to this particular piece of code.
+It&#39;s all broken down into small classes (they might even be SOLID!), and all 
+the dependencies are injected via constructors. It looks like it&#39;s your
+code indeed.</p>
+<p>So, you figured out that the entry point for your current use case is the
+class called <code>ThingService</code>. It&#39;s probably doing something with <code>Thing</code>&#39;s
+and that&#39;s what you need. The signature of the class constructor looks 
+like this:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ThingService</span>(<span class="hljs-params">
+    IGetThings readRepository,
+    ISaveThing saveRepository,
+    IParseAndValidateExcel&lt;Thing, <span class="hljs-keyword">string</span>&gt; fileParser,
+    IThingChangeDetector thingChangeDetector,
+    IMap&lt;Thing, ThingDTO&gt; thingToDtoMapper,
+    IMap&lt;<span class="hljs-keyword">int</span>, ThingDTO, Thing&gt; dtoToThingMapper</span>)
+</span></code></pre>
+<p>OK, so we clearly have 6 dependencies here, and they are all interfaces.
+We don&#39;t know where those interfaces are implemented, but hey - we&#39;ve got
+the best tooling in the industry, so right click on <code>IGetThings</code>, then 
+<code>Go To Implementation</code>.</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">DapperThingRepository</span>(<span class="hljs-params">
+    ICRUDAdapter adapter,
+    IDatabaseConnectionFactory connectionFactory,
+    IMap&lt;Thing, ThingRow&gt; thingRowMapper,
+    IMap&lt;ThingRow, Thing&gt; thingMapper</span>)
+</span></code></pre>
+<p>Now we know that we get <code>Thing</code> from Dapper, so probably from a SQL database.
+Let&#39;s go one level deeper and check where those Mappers are implemented.
+Right click, <code>Go To Implementation</code>... But instead of navigating to another code
+file you see</p>
+<pre class="highlight"><code class="hljs mathematica"><span class="hljs-keyword">Find</span> <span class="hljs-keyword">Symbol</span> Result - <span class="hljs-number">28</span> matches found
+</code></pre><p>Oh, right, looks like we use <code>IMap&lt;T, U&gt;</code> in more places. OK, we&#39;ll find the
+right one later, let&#39;s first check the connection factory... 
+Right click, <code>Go To Implementation</code>. Nah:</p>
+<pre class="highlight"><code class="hljs nginx"><span class="hljs-attribute">The</span> symbol has <span class="hljs-literal">no</span> implementation
+</code></pre><p>What? But the application works! Ah, <code>IDatabaseConnectionFactory</code> comes
+from an internal library, so most probably the implementation is also 
+inside that library.</p>
+<p>Clearly, navigation doesn&#39;t go that well so far.</p>
+<h2 id="dependency-graph">Dependency Graph</h2>
+<p>When code reading gets tricky, usually an image can boost the understanding.
+The picture below actually shows the graph of class dependencies from our
+example:</p>
+<p><img src="/2017/03/visualizing-dependency-tree-from-di-container//class-dependency-graph.png" alt="Class Dependency Graph"></p>
+<p>Each node is a class, each arrow is a dependency - an interface injected
+into the constructor. </p>
+<p>Just by looking at the picture for a minute of two you can start seeing some 
+structure, and get at least the high-level opinion about the application
+complexity and class relationships.</p>
+<p>Picture is also a great way of communication. Once you understand the structure,
+you can explain it to a colleague much easier with boxes and lines
+on the screen in addition to a plain wall of code.</p>
+<p>You can enrich such picture with comments at the time of writing and leave 
+it to your future self or anyone who would read the code in 2 years time.</p>
+<p>But now the question is - what&#39;s the easiest way to draw such dependency graph?</p>
+<h2 id="di-container">DI Container</h2>
+<p>The assumption of this post is that a dependency injection (DI) container
+of some kind is used in the project. If so, chances are that you can get such
+dependency graph from the container registrations.</p>
+<p>My example is based on <a href="https://simpleinjector.org/">Simple Injector</a> DI 
+container which is used by ourselves. So, further on I will explain how to
+draw a dependency graph from Simple Injector container.</p>
+<p>My guess is that any mature DI library will provide you with such possibility,
+mostly because the dependency graphs are built internally by any container 
+during its normal operations.</p>
+<h2 id="implementation">Implementation</h2>
+<p>The implementation idea of dependency graph visualization is quite simple, as
+the biggest chunk of work is done by Simple Injector itself. Here are the steps:</p>
+<ol>
+<li><p>Run all your DI registrations as you do in the actual application. This will
+initialize Container to the desired state.</p>
+</li>
+<li><p>Define which class should be the root of the dependency tree under study. 
+You can refine later, but you need to start somewhere.</p>
+</li>
+<li><p>Call <code>GetRegistration</code> method of DI container for the selected type. An instance
+of <code>InstanceProducer</code> type is returned.</p>
+</li>
+<li><p>Call <code>GetRelationships</code> method of the instance producer to retrieve all 
+interface/class pairs that the given type depends on. Save each relation into
+your output list.</p>
+</li>
+<li><p>Navigate through each dependency recursively to load further layers of the graph.
+Basically, do the depth-first search and save all found relations.</p>
+</li>
+<li><p>Convert the list of found relations into <a href="https://en.wikipedia.org/wiki/Graphviz">GraphViz</a>
+textual graph description.</p>
+</li>
+<li><p>Use a tool like <a href="http://www.webgraphviz.com/">WebGraphviz</a> do the actual
+visualization by converting text to picture.</p>
+</li>
+</ol>
+<p>There are several potential pitfalls on the way, like cyclic graphs, decorator
+registrations etc. To help you avoid those I&#39;ve created a small library to automate 
+steps 3 to 6 from the list above. See my 
+<a href="https://github.com/mikhailshilkov/SimpleInjector.Visualization">SimpleInjector.Visualization github repo</a> 
+and let me know if you find it useful.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>People are good at making sense of visual representations - use that skill to
+improve understanding and communication within your development team.</p>
+<p>Dependency injection practice requires a lot of ceremony to set it up and
+running. Leverage this work for the best: check what kind of insights you
+can get from that setup. Dependency graph visualization is one example of 
+such leverage, but there might be other gems in there. </p>
+<p>Just keep searching!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/dependency-injection/'>Dependency Injection</a>, <a href='/tags/visualization/'>Visualization</a>, <a href='/tags/clean-code/'>Clean Code</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Mar 16th, 2017</div>
     
     <h1><a href='/2017/03/azure-functions-as-facade-for-azure-monitoring/'>Azure Functions as a Facade for Azure Monitoring</a></h1>
@@ -930,77 +1056,6 @@ to the primary key change discussed above.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/event-sourcing/'>Event Sourcing</a>, <a href='/tags/neventstore/'>NEventStore</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/performance/'>Performance</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jan 26th, 2017</div>
-    
-    <h1><a href='/2017/01/my-praise-of-advent-of-code-2016/'>My Praise of Advent of Code 2016</a></h1>
-    
-    <div class="post-content">
-        <p>During the last days of December I was pleasing my internal need for solving 
-puzzles and tricky tasks by going through 
-<a href="http://adventofcode.com">Advent of Code 2016</a> challenge.</p>
-<p>The idea is simple: every day since December 1st to 25th, the site publishes 
-a new brain teaser. They are all aligned into one story: the Bad Easter Bunny 
-has stolen all the Chrismas gifts from Santa, and now you are the hero who 
-should break into the Bunny&#39;s headquarters and save the gifts for the kids.</p>
-<p>Having said that, each challenge is independent from the others, so you can 
-solve them in arbitrary order if you want. </p>
-<p><img src="/2017/01/my-praise-of-advent-of-code-2016//levelmap.png" alt="Advent Of Code Levels">
-<em>Advent Calendar in dark ASCII</em></p>
-<p>A puzzle consists of a description and an input data set associated with it.
-The solution is typically represented as a number or a short string, so it
-can be easily typed into the textbox. However, to get this solution you need to
-implement a program: computing it manually is not feasible.</p>
-<p>I started a bit late and got just the first 11 puzzles solved. Each puzzle 
-is doable in one sitting, usually half-an-hour to a couple hours of work,
-which is very nice.</p>
-<p>Some problems are purely about the correctness of your solution. The most
-engaging tasks were also computationally intensive, such that a straightforward
-solution took too much time to run to completion. You need to find a
-shortcut to make it faster, which is always fun.</p>
-<p><img src="/2017/01/my-praise-of-advent-of-code-2016//solved.png" alt="Problem Solved!">
-<em>You collect stars for providing the correct answers</em></p>
-<p>Apart from generic joy and satisfaction that one gets from solving programming
-challenges like these, I also consider it a good opportunity to try a
-new programming language or a paradygm.</p>
-<p>As I said, the tasks are relatively small, so you can feel the sense of
-accomplishment quite often, even being not very familiar with the programming
-language of choice.</p>
-<p>There are many other people solving the same puzzles and also sharing their
-solutions online. You can go and find the other implementations of a task
-that you just solved, and compare it to your approach. That&#39;s the great way
-to learn from other people, broaden your view and expose yourself to new
-tricks, data structures and APIs.</p>
-<p>I picked F# as my programming language for Advent of Code 2016. I chose to restrict
-myself to immutable data structures and pure functions. And it played out really nice,
-I am quite happy with speed of development, readability and performance of 
-the code.</p>
-<p><img src="/2017/01/my-praise-of-advent-of-code-2016//day8.png" alt="Day 8 solved">
-<em>Solution to one of the puzzles</em></p>
-<p>You can find my code for the first 11 puzzles in 
-<a href="https://github.com/mikhailshilkov/AdventOfCode2016">my github account</a>. 
-Full sets of F# solutions are available from 
-<a href="https://github.com/markheath/advent-of-code-2016/">Mark Heath</a> and 
-<a href="https://github.com/theburningmonk/AdventOfCodeFs">Yan Cui</a>.</p>
-<p>I included one of the solutions into 
-<a href="https://mikhail.io/2017/01/functional-programming-fsharp-talks/">The Taste of F# talk</a> that I did
-at a user group earlier this month.</p>
-<p>Next year I&#39;ll pick another language and will start on December 1st. I invite
-you to join me in solving Advent of Code 2017.</p>
-<p>Kudos to <a href="https://twitter.com/ericwastl">Eric Wastl</a> for creating and 
-maintaining the <a href="http://adventofcode.com">Advent of Code web site</a>.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/programming-puzzles/'>Programming Puzzles</a>, <a href='/tags/advent-of-code/'>Advent of Code</a>, <a href='/tags/programming-puzzles/'>Programming Puzzles</a>
     </div>
     
 </article>

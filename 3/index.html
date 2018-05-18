@@ -72,6 +72,140 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Sep 25th, 2017</div>
+    
+    <h1><a href='/2017/09/wanted-effectively-once-processing-in-azure/'>Wanted: Effectively-Once Processing in Azure</a></h1>
+    
+    <div class="post-content">
+        <p><em>This experimental post is a question. The question
+is too broad for StackOverflow, so I&#39;m posting it here. Please engage in the
+comments section, or forward the link to subject experts.</em></p>
+<p>TL;DR: Are there any known patterns / tools / frameworks to provide 
+scalable, stateful, effectively-once, end-to-end processing of messages, 
+to be hosted in Azure, preferably on PaaS-level of service?</p>
+<h2 id="motivational-example">Motivational Example</h2>
+<p>Let&#39;s say we are making a TODO app. There is a constant flow of requests
+to create a TODO in the system. Each request contains just two fields:
+a title and a project ID which TODO should belong to. Here is the definition:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">TodoRequest</span> </span>= {
+  ProjectId: int
+  Title: string
+}
+</code></pre>
+<p>Now, we want to process the request and assign each TODO an identifier,
+which should be an auto-incremented integer. Numeration is unique per project,
+so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Todo</span> </span>= {
+  ProjectId: int
+  Id: int
+  Title: string
+}
+</code></pre>
+<p>Now, instead of relying on some database sequences, I want to describe this
+transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
+(Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
+state (last generated ID) to a tuple of a TODO and post-processing state:</p>
+<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> create (request: TodoRequest, state: int) =
+  <span class="hljs-keyword">let</span> nextId = state + <span class="hljs-number">1</span>
+  <span class="hljs-keyword">let</span> todo = {
+    ProjectId = request.ProjectId
+    Id = nextId
+    Title = request.Title
+  }
+  todo, nextId
+</code></pre>
+<p>This is an extremely simple function, and I can use it to great success to
+process local, non-durable data.</p>
+<p>But if I need to make a reliable distributed application out of it, I need
+to take care of lots of things:</p>
+<ol>
+<li><p>No request should be lost. I need to persist all the requests into 
+a durable storage in case of processor crash. </p>
+</li>
+<li><p>Similarly, I need to persist TODO&#39;s too. Presumably, some downstream 
+logic will use the persisted data later on in TODO&#39;s lifecycle.</p>
+</li>
+<li><p>The state (the counter) must be durable too. In case of crash of processing
+function, I want to be able to restart processing after recovery. </p>
+</li>
+<li><p>Processing of the requests should be sequential per project ID. Otherwise
+I might get a clash of ID&#39;s in case two requests belonging to the same 
+project are processed concurrently.</p>
+</li>
+<li><p>I still want requests to different projects to be processed in parallel,
+to make sure the system scales up with the growth of project count.</p>
+</li>
+<li><p>There must be no holes or duplicates in TODO numbering per project, even
+in face of system failures. In worst case, I agree to tolerate a duplicated
+entry in the output log, but it must be exactly the same entry (i.e. two 
+entries with same project id, id and title).</p>
+</li>
+<li><p>The system should tolerate a permanent failure of any single hardware
+dependency and automatically fail-over within reasonable time.</p>
+</li>
+</ol>
+<p>It&#39;s not feasible to meet all of those requirements without relying on some
+battle-tested distributed services or frameworks.</p>
+<p>Which options do I know of?</p>
+<h2 id="transactions">Transactions</h2>
+<p>Traditionally, this kind of requirements were solved by using transactions
+in something like SQL Server. If I store requests, TODO&#39;s and current ID per
+project in the same relational database, I can make each processing step a
+single atomic transaction. </p>
+<p>This addresses all the concerns, as long as we can stay inside the single 
+database. That&#39;s probably a viable option for the TODO app, but less of so
+if I convert my toy example to some real applications like IoT data 
+processing.</p>
+<p>Can we do the same for distributed systems at scale?</p>
+<h2 id="azure-event-hubs">Azure Event Hubs</h2>
+<p>Since I touched IoT space, the logical choice would be to store our entries
+in Azure Event Hubs. That works for many criteria, but I don&#39;t see any available
+approach to make such processing consistent in the face of failures.</p>
+<p>When processing is done, we need to store 3 pieces: generated TODO event,
+current processing offset and current ID. Event goes to another event hub,
+processing offset is stored in Blob Storage and ID can be saved to something
+like Table Storage. </p>
+<p>But there&#39;s no way to store those 3 pieces atomically. Whichever order we 
+choose, we are bound to get anomalies in some specific failure modes.</p>
+<h2 id="azure-functions">Azure Functions</h2>
+<p>Azure Functions don&#39;t solve those problems. But I want to mention this
+Function-as-a-Service offering because they provide an ideal programming
+model for my use case.</p>
+<p>I need to take just one step from my domain function to Azure Function: 
+to define bindings for e.g. Event Hubs and Table Storage.</p>
+<p>However, reliability guarantees will stay poor. I won&#39;t get neither sequential
+processing per Event Hub partition key, nor atomic state commit.</p>
+<h2 id="azure-service-fabric">Azure Service Fabric</h2>
+<p>Service Fabric sounds like a good candidate service for reliable processing. 
+Unfortunately, I don&#39;t have much experience with it to judge.</p>
+<p>Please leave a comment if you do.</p>
+<h2 id="jvm-world">JVM World</h2>
+<p>There are products in JVM world which claim to solve my problem perfectly.</p>
+<p>Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
+Kafka release provides effectively-once processing semantics as long as
+data stay inside Kafka. Kafka does that with atomic publishing to multiple
+topics, and state storage based on compacted topics.</p>
+<p>Apache Flink has similar guarantees for its stream processing APIs.</p>
+<p>Great, but how do I get such awesomeness in .NET code, and without installing 
+expensive ZooKeeper-managed clusters?</p>
+<h2 id="call-for-feedback">Call for Feedback</h2>
+<p>Do you know a solution, product or service?</p>
+<p>Have you developed effectively-once processing on .NET / Azure stack?</p>
+<p>Are you in touch with somebody who works on such framework?</p>
+<p>Please leave a comment, or ping me on Twitter.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/architecture/'>Architecture</a>, <a href='/tags/data-processing/'>Data Processing</a>, <a href='/tags/stream-processing/'>Stream Processing</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Aug 31st, 2017</div>
     
     <h1><a href='/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/'>Azure Functions: Are They Really Infinitely Scalable and Elastic?</a></h1>
@@ -952,252 +1086,6 @@ the upcoming Orchestration framework for Function Apps.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>, <a href='/tags/azure-app-service/'>Azure App Service</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jul 4th, 2017</div>
-    
-    <h1><a href='/2017/07/sending-large-batches-to-azure-service-bus/'>Sending Large Batches to Azure Service Bus</a></h1>
-    
-    <div class="post-content">
-        <p>Azure Service Bus client supports sending messages in batches (<code>SendBatch</code>
-and <code>SendBatchAsync</code> methods of <code>QueueClient</code> and <code>TopicClient</code>). However,
-the size of a single batch must stay below 256k bytes, otherwise the whole
-batch will get rejected.</p>
-<p>How do we make sure that the batch-to-be-sent is going to fit? The rest 
-of this article will try to answer this seemingly simple question.</p>
-<h2 id="problem-statement">Problem Statement</h2>
-<p>Given a list of messages of arbitrary type <code>T</code>, we want to send them to Service
-Bus in batches. The amount of batches should be close to minimal, but
-obviously each one of them must satisfy the restriction of 256k max size.</p>
-<p>So, we want to implement a method with the following signature:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
-</code></pre>
-<p>which would work for collections of any size.</p>
-<p>To limit the scope, I will restrict the article to the following assumptions:</p>
-<ul>
-<li><p>Each individual message is less than 256k serialized. If that wasn&#39;t true,
-we&#39;d have to put the body into external blob storage first, and then send
-the reference. It&#39;s not directly related to the topic of discussion.</p>
-</li>
-<li><p>I&#39;ll use <code>public BrokeredMessage(object serializableObject)</code> constructor.
-Custom serialization could be used, but again, it&#39;s not related to batching,
-so I&#39;ll ignore it.</p>
-</li>
-<li><p>We won&#39;t care about transactions, i.e. if connectivity dies in the middle
-of sending the big batch, we might end up with partially sent batch.</p>
-</li>
-</ul>
-<h2 id="messages-of-known-size">Messages of Known Size</h2>
-<p>Let&#39;s start with a simple use case: the size of each message is known to us. 
-It&#39;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a 
-helpful extension method that will split an arbitrary collection based on
-a metric function and maximum chunk size:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(<span class="hljs-keyword">this</span> IEnumerable&lt;T&gt; source, Func&lt;T, <span class="hljs-keyword">long</span>&gt; metric, <span class="hljs-keyword">long</span> maxChunkSize)
-{
-    <span class="hljs-keyword">return</span> source
-        .Aggregate(
-            <span class="hljs-keyword">new</span>
-            {
-                Sum = <span class="hljs-number">0</span>L,
-                Current = (List&lt;T&gt;)<span class="hljs-literal">null</span>,
-                Result = <span class="hljs-keyword">new</span> List&lt;List&lt;T&gt;&gt;()
-            },
-            (agg, item) =&gt;
-            {
-                <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = metric(item);
-                <span class="hljs-keyword">if</span> (agg.Current == <span class="hljs-literal">null</span> || agg.Sum + <span class="hljs-keyword">value</span> &gt; maxChunkSize)
-                {
-                    <span class="hljs-keyword">var</span> current = <span class="hljs-keyword">new</span> List&lt;T&gt; { item };
-                    agg.Result.Add(current);
-                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = <span class="hljs-keyword">value</span>, Current = current, agg.Result };
-                }
-
-                agg.Current.Add(item);
-                <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = agg.Sum + <span class="hljs-keyword">value</span>, agg.Current, agg.Result };
-            })
-        .Result;
-}
-</code></pre>
-<p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">SendBigBatchAsync</span>(<span class="hljs-params">IEnumerable&lt;T&gt; messages, Func&lt;T, <span class="hljs-keyword">long</span>&gt; getSize</span>)
-</span>{
-    <span class="hljs-keyword">var</span> chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
-    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
-    {
-        <span class="hljs-keyword">var</span> brokeredMessages = chunk.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
-        <span class="hljs-keyword">await</span> client.SendBatchAsync(brokeredMessages);
-    }
-}
-
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">long</span> MaxServiceBusMessage = <span class="hljs-number">256000</span>;
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient client;
-</code></pre>
-<p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
-Another thing to notice is that we lost all-or-nothing guarantee: we might
-be able to send the first chunk, and then get an exception from subsequent
-parts. Some sort of retry mechanism is probably needed.</p>
-<h2 id="brokeredmessage-size">BrokeredMessage.Size</h2>
-<p>OK, how do we determine the size of each message? How do we implement 
-<code>getSize</code> function? </p>
-<p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
-rewrite our method the following way:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
-{
-    <span class="hljs-keyword">var</span> brokeredMessages = messages.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
-    <span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
-    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
-    {
-        <span class="hljs-keyword">await</span> client.SendBatchAsync(chunk);
-    }
-}
-</code></pre>
-<p>Unfortunately, this won&#39;t work properly. A quote from documentation:</p>
-<blockquote>
-<p>The value of Size is only accurate after the BrokeredMessage 
-instance is sent or received.</p>
-</blockquote>
-<p>My experiments show that <code>Size</code> of a draft message returns the size of 
-the message body, ignoring headers. If the message bodies are large, and
-each chunk has just a handful of them, the code might work ok-ish. </p>
-<p>But it will significantly underestimate the size of large batches of messages
-with small payload.</p>
-<p>So, for the rest of this article I&#39;ll try to adjust the calculation for headers.</p>
-<h2 id="fixed-header-size">Fixed Header Size</h2>
-<p>It could be that the header size of each message is always the same.
-Quite often people will set the same headers for all their messages,
-or set no custom headers at all. </p>
-<p>In this case, you might just measure this size once, and then put this
-fixed value inside a configuration file.</p>
-<p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> sizeBefore = message.Size;
-client.Send(message);
-<span class="hljs-keyword">var</span> sizeAfter = message.Size;
-<span class="hljs-keyword">var</span> headerSize = sizeAfter - sizeBefore;
-</code></pre>
-<p>Now you just need to adjust one line from the previous version of 
-<code>SendBigBatchAsync</code> method</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
-</code></pre>
-<p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
-per application.</p>
-<h2 id="measuring-of-header-size-per-message">Measuring of Header Size per Message</h2>
-<p>If the size of headers varies per message, you need a way to adjust batching
-algorithm accordingly. </p>
-<p>Unfortunately, I haven&#39;t found a straightforward way to accomplish that. It looks like
-you&#39;d have to serialize the headers yourself, and then measure the size of
-resulting binary. This is not a trivial operation to do correctly,
-and also implies some performance penalty.</p>
-<p>Sean Feldman <a href="https://weblogs.asp.net/sfeldman/asb-batching-brokered-messages">came up</a> 
-with a way to <em>estimate</em> the size of headers. That might be a good way to go,
-though the estimation tends to err on the safe side for messages with small
-payload.</p>
-<h2 id="heuristics-retry">Heuristics &amp; Retry</h2>
-<p>The last possibility that I want to consider is actually allow yourself
-violating the max size of the batch, but then handle the exception, retry
-the send operation and adjust future calculations based on actual measured size
-of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
-operation failed, so we can use this information.</p>
-<p>Here is a sketch of how to do that in code:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Sender is reused across requests</span>
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">BatchSender</span>
-{
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient queueClient;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> batchSizeLimit = <span class="hljs-number">262000</span>;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> headerSizeEstimate = <span class="hljs-number">54</span>; <span class="hljs-comment">// start with the smallest header possible</span>
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">BatchSender</span>(<span class="hljs-params">QueueClient queueClient</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.queueClient = queueClient;
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
-    {
-        <span class="hljs-keyword">var</span> packets = (<span class="hljs-keyword">from</span> m <span class="hljs-keyword">in</span> messages
-                     <span class="hljs-keyword">let</span> bm = <span class="hljs-keyword">new</span> BrokeredMessage(m)
-                     <span class="hljs-keyword">select</span> <span class="hljs-keyword">new</span> { Source = m, Brokered = bm, BodySize = bm.Size }).ToList();
-        <span class="hljs-keyword">var</span> chunks = packets.ChunkBy(p =&gt; <span class="hljs-keyword">this</span>.headerSizeEstimate + p.Brokered.Size, <span class="hljs-keyword">this</span>.batchSizeLimit);
-        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
-        {
-            <span class="hljs-keyword">try</span>
-            {
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.queueClient.SendBatchAsync(chunk.Select(p =&gt; p.Brokered));
-            }
-            <span class="hljs-keyword">catch</span> (MessageSizeExceededException)
-            {
-                <span class="hljs-keyword">var</span> maxHeader = packets.Max(p =&gt; p.Brokered.Size - p.BodySize);
-                <span class="hljs-keyword">if</span> (maxHeader &gt; <span class="hljs-keyword">this</span>.headerSizeEstimate)
-                {
-                    <span class="hljs-comment">// If failed messages had bigger headers, remember this header size </span>
-                    <span class="hljs-comment">// as max observed and use it in future calculations</span>
-                    <span class="hljs-keyword">this</span>.headerSizeEstimate = maxHeader;
-                }
-                <span class="hljs-keyword">else</span>
-                {
-                    <span class="hljs-comment">// Reduce max batch size to 95% of current value</span>
-                    <span class="hljs-keyword">this</span>.batchSizeLimit = (<span class="hljs-keyword">long</span>)(<span class="hljs-keyword">this</span>.batchSizeLimit * <span class="hljs-number">.95</span>);
-                }
-
-                <span class="hljs-comment">// Re-send the failed chunk</span>
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.SendBigBatchAsync(packets.Select(p =&gt; p.Source));
-            }
-
-        }
-    }
-}
-</code></pre>
-<p>The code example is quite involved, here is what actually happens:</p>
-<ol>
-<li><p>Create a brokered message for each message object, but also save the
-corresponding source message. This is critical to be able to re-send items:
-there&#39;s no way to send the same <code>BrokeredMessage</code> instance twice.</p>
-</li>
-<li><p>Also save the body size of the brokered message. We&#39;ll use it for retry
-calculation.</p>
-</li>
-<li><p>Start with some guess of header size estimate. I start with 54 bytes, 
-which seems to be the minimal header size possible.</p>
-</li>
-<li><p>Split the batch into chunks the same way we did before.</p>
-</li>
-<li><p>Try sending chunks one by one.</p>
-</li>
-<li><p>If send operation fails with <code>MessageSizeExceededException</code>, iterate
-through failed items and find out the actual header size of the message.</p>
-</li>
-<li><p>If that actual size is bigger than our known estimate, increase the estimate
-to the newly observed value. Retry sending the chunk (not the whole batch) with
-this new setting.</p>
-</li>
-<li><p>If the header is small, but message size is still too big - reduce the 
-allowed total size of the chunk. Retry again.</p>
-</li>
-</ol>
-<p>The combination of checks of steps 7 and 8 should make the mechanism reliable
-and self-adopting to message header payloads.</p>
-<p>Since we reuse the sender between send operations, the size parameters will
-also converge quite quickly and no more retries will be needed. Thus the 
-performance overhead should be minimal.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>It seems like there is no &quot;one size fits all&quot; solution for this problem at 
-the moment. The best implementation might depend on your messaging 
-requirements.</p>
-<p>But if you have the silver bullet solution, please leave a comment under
-this post and answer <a href="https://stackoverflow.com/questions/44779707/split-batch-of-messages-to-be-sent-to-azure-service-bus">my StackOverflow question</a>!</p>
-<p>Otherwise, let&#39;s hope that the new 
-<a href="https://github.com/azure/azure-service-bus-dotnet">.NET Standard-compatible Service Bus client</a>
-will solve this issue for us. Track <a href="https://github.com/Azure/azure-service-bus-dotnet/issues/109">this github issue</a>
-for status updates.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>
     </div>
     
 </article>
