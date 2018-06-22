@@ -82,6 +82,144 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Oct 5th, 2017</div>
+    
+    <h1><a href='/2017/10/azure-function-triggered-by-azure-event-grid/'>Azure Function Triggered by Azure Event Grid</a></h1>
+    
+    <div class="post-content">
+        <p><em>Update: I missed the elephant in the room. There actually exists a specialized
+trigger for Event Grid binding. In the portal, just select <code>Experimental</code>
+in <code>Scenario</code> drop down while creating the function. In precompiled 
+functions, reference <code>Microsoft.Azure.WebJobs.Extensions.EventGrid</code> NuGet
+package.</em></p>
+<p><em>The rest of the article describes my original approach to trigger an
+Azure Function from <a href="https://azure.microsoft.com/en-us/services/event-grid/">Azure Event Grid</a> 
+with generic Web Hook trigger.</em></p>
+<p>Here are the steps to follow:</p>
+<h2 id="create-a-function-with-webhook-trigger">Create a Function with Webhook Trigger</h2>
+<p>I&#39;m not aware of a specialized trigger type for Event Grid, so
+I decided to use Generic Webhook trigger (which is essentially an
+HTTP trigger).</p>
+<p>I used the Azure Portal to generate a function, so here is the 
+<code>function.json</code> that I got:</p>
+<pre class="highlight"><code class="hljs json">{
+  <span class="hljs-attr">"bindings"</span>: [
+    {
+      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"httpTrigger"</span>,
+      <span class="hljs-attr">"direction"</span>: <span class="hljs-string">"in"</span>,
+      <span class="hljs-attr">"webHookType"</span>: <span class="hljs-string">"genericJson"</span>,
+      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"req"</span>
+    },
+    {
+      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"http"</span>,
+      <span class="hljs-attr">"direction"</span>: <span class="hljs-string">"out"</span>,
+      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"res"</span>
+    }
+  ],
+  <span class="hljs-attr">"disabled"</span>: <span class="hljs-literal">false</span>
+}
+</code></pre>
+<p>For precompiled functions, just decorate it with <code>HttpTriggerAttribute</code> with
+POST method:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span>(<span class="hljs-params">
+    [HttpTrigger(AuthorizationLevel.Function, <span class="hljs-string">"post"</span></span>)] HttpRequestMessage req)
+</span></code></pre>
+<h2 id="parse-the-payload">Parse the Payload</h2>
+<p>Events from Event Grid will arrive in a specific predefined JSON format.
+Here is an example of events to expect:</p>
+<pre class="highlight"><code class="hljs json">[{
+  <span class="hljs-attr">"id"</span>: <span class="hljs-string">"0001"</span>,
+  <span class="hljs-attr">"eventType"</span>: <span class="hljs-string">"MyHelloWorld"</span>,
+  <span class="hljs-attr">"subject"</span>: <span class="hljs-string">"Hello World!"</span>,
+  <span class="hljs-attr">"eventTime"</span>: <span class="hljs-string">"2017-10-05T08:53:07"</span>,
+  <span class="hljs-attr">"data"</span>: {
+    <span class="hljs-attr">"hello"</span>: <span class="hljs-string">"world"</span>
+  },
+  <span class="hljs-attr">"topic"</span>: <span class="hljs-string">"/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1"</span>
+}]
+</code></pre>
+<p>To be able to parse those data more easily, I defined a C# class to deserialize
+JSON to:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">GridEvent</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> EventType { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Subject { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> DateTime EventTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> Dictionary&lt;<span class="hljs-keyword">string</span>, <span class="hljs-keyword">string</span>&gt; Data { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Topic { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+<p>Now, the function can read the events (note, that they are sent in arrays)
+from the body of POST request:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span>(<span class="hljs-params">HttpRequestMessage req, TraceWriter log</span>)
+</span>{
+    <span class="hljs-keyword">string</span> jsonContent = <span class="hljs-keyword">await</span> req.Content.ReadAsStringAsync();
+    <span class="hljs-keyword">var</span> events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
+
+    <span class="hljs-comment">// do something with events</span>
+
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK);
+}
+</code></pre>
+<h2 id="validate-the-endpoint">Validate the Endpoint</h2>
+<p>To prevent you from sending events to endpoints that you don&#39;t own, Event
+Grid requires each subsriber to validate itself. For this purpose, Event
+Grid will send events of the special type <code>SubscriptionValidation</code>. </p>
+<p>The validation request will contain a code, which we need to echo back in
+200-OK HTTP response. </p>
+<p>Here is a small piece of code to do just that:</p>
+<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">if</span> (req.Headers.GetValues(<span class="hljs-string">"Aeg-Event-Type"</span>).FirstOrDefault() == <span class="hljs-string">"SubscriptionValidation"</span>)
+{
+    <span class="hljs-keyword">var</span> code = events[<span class="hljs-number">0</span>].Data[<span class="hljs-string">"validationCode"</span>];
+    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK,
+        <span class="hljs-keyword">new</span> { validationResponse = code });
+}
+</code></pre>
+<p>The function is ready!</p>
+<h2 id="create-a-custom-event-grid-topic">Create a Custom Event Grid Topic</h2>
+<p>To test it out, go to the portal and create a custom Event Grid topic.
+Then click on Add Event Subscription button, give it a name and copy paste
+the function URL (including key) to Subscriber Endpoint field:</p>
+<p><img src="/2017/10/azure-function-triggered-by-azure-event-grid//function-url.png" alt="Azure Function URL"></p>
+<p><img src="/2017/10/azure-function-triggered-by-azure-event-grid//event-subscription.png" alt="Event Grid Subscription"></p>
+<p>Creating a subscription will immediately trigger a validation request to
+your function, so you should see one invocation in the logs.</p>
+<h2 id="send-custom-events">Send Custom Events</h2>
+<p>Now, go to your favorite HTTP client (curl, Postman, etc) and send a sample
+event to check how the whole setup works:</p>
+<pre class="highlight"><code class="hljs http"><span class="hljs-keyword">POST</span> <span class="hljs-string">/api/events</span> HTTP/1.1
+<span class="hljs-attribute">Host</span>: &lt;your-eventgrid-topic&gt;.westus2-1.eventgrid.azure.net
+<span class="hljs-attribute">aeg-sas-key</span>: &lt;key&gt;
+<span class="hljs-attribute">Content-Type</span>: application/json
+
+<span class="json">[{
+  <span class="hljs-attr">"id"</span>: <span class="hljs-string">"001"</span>,
+  <span class="hljs-attr">"eventType"</span>: <span class="hljs-string">"MyHelloWorld"</span>,
+  <span class="hljs-attr">"subject"</span>: <span class="hljs-string">"Hello World!"</span>,
+  <span class="hljs-attr">"eventTime"</span>: <span class="hljs-string">"2017-10-05T08:53:07"</span>,
+  <span class="hljs-attr">"data"</span>: {
+    <span class="hljs-attr">"hello"</span>: <span class="hljs-string">"world"</span>
+  }
+}]
+</span></code></pre>
+<p>Obviously, adjust the endpoint and key based on the data from the portal.</p>
+<p>You should get a 200-OK back and then see your event in Azure Function 
+invocation logs.</p>
+<p>Have fun!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/azure-event-grid/'>Azure Event Grid</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Sep 25th, 2017</div>
     
     <h1><a href='/2017/09/wanted-effectively-once-processing-in-azure/'>Wanted: Effectively-Once Processing in Azure</a></h1>
@@ -787,315 +925,6 @@ for more scenarios.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>, <a href='/tags/azure-app-service/'>Azure App Service</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>, <a href='/tags/durable-functions/'>Durable Functions</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jul 17th, 2017</div>
-    
-    <h1><a href='/2017/07/custom-auto-scaling-in-azure/'>Custom Autoscaling of Azure App Service with a Function App</a></h1>
-    
-    <div class="post-content">
-        <p>The power of cloud computing comes from its elasticity and ability to adapt to changing
-load. Most Azure services can be scaled up or down manually: by human interaction in the
-portal, or by running a command or a script.</p>
-<p>Some services in Azure also support Autoscaling, i.e. they may change the resource 
-allocation dynamically, based on predefined rules and current operational metrics.</p>
-<p>Azure App Service is one example of such service: it supports 
-<a href="https://docs.microsoft.com/en-us/azure/monitoring-and-diagnostics/insights-how-to-scale#scaling-based-on-a-pre-set-metric">Scaling based on a pre-set metric</a>.
-This is a powerful option that enables website or webjobs to react on varying load,
-e.g. based on CPU utilization.</p>
-<p>At the same time, the flexibility of the built-in autoscaling is somewhat
-limited:</p>
-<ul>
-<li><p>Only a handful of metrics is supported: for instance, Service Bus Queues 
-are supported as metric source, while Service Bus Subscriptions are not;</p>
-</li>
-<li><p>It&#39;s not possible to combine several metrics in one rule: e.g. scale down only if
-several queues are empty at the same time, not just one of them;</p>
-</li>
-<li><p>Thresholds are the same for any number of instances: I can&#39;t define
-a scale down rule threshold to be 60% for 8 instances but 30% for 2 instances;</p>
-</li>
-<li><p>The minimum time of reaction is limited to 5 minutes.</p>
-</li>
-</ul>
-<p>Other services, like SQL Database and Cosmos DB, don&#39;t have the built-in autoscaling
-functionality at all.</p>
-<p>This post starts the series of articles about custom implementation 
-of autoscaling. The implementation will be based on Azure Functions as building 
-blocks of scaling workflows.</p>
-<h2 id="goal">Goal</h2>
-<p>To keep the task very specific for now, I want the following from my first 
-custom autoscaling implementation:</p>
-<ul>
-<li><p>Be able to scale the amount of instances up and down in a given App Service 
-Plan;</p>
-</li>
-<li><p>Do so based on the given Service Bus Subscription backlog (amount of messages 
-pending to be processed);</p>
-</li>
-<li><p>Scale up, if the average backlog during any 10 minutes is above a threshold;</p>
-</li>
-<li><p>Scale down, if the maximum backlog during any 10 minutes is below another 
-(lower) threshold;</p>
-</li>
-<li><p>After scaling up or down, take a cooldown period of 10 minutes;</p>
-</li>
-<li><p>Have a log of scaling decisions and numbers behind;</p>
-</li>
-<li><p>Scaling rules should be extensible to allow more complex calculation later 
-on.</p>
-</li>
-</ul>
-<h2 id="architecture">Architecture</h2>
-<p>I decided that the scaling rules should be written in a general-purpose programming language
-(C# for this post), instead of just picking from a limited list of configurations.</p>
-<p>I chose Azure Functions as the mechanism to host and run this logic in Azure cloud. </p>
-<p>Here is a diagram of Functions that I ended up creating:</p>
-<p><img src="/2017/07/custom-auto-scaling-in-azure//AutoscalingArchitecture.png" alt="Autoscaling Architecture"></p>
-<p>The components of my autoscaling app are:</p>
-<ul>
-<li><p><strong>Metric Collector</strong> function is based on Timer trigger: it fires every minute and collects
-the subscription backlog metric from a given Service Bus Subscription;</p>
-</li>
-<li><p>Collector then sends this metric to the <strong>Metrics</strong> storage queue;</p>
-</li>
-<li><p><strong>Scaling Logic</strong> function pulls the metric from the queue. It maintains the 
-metric values for 10 minutes, calculates average/maximum value, and if they hit 
-thresholds - issues a command to scale App Service Plan up or down;</p>
-</li>
-<li><p>The command is sent to <strong>Actions</strong> storage queue;</p>
-</li>
-<li><p><strong>Scaler</strong> function receives the commands from the queue and executes 
-the re-scaling action on App Service Plan using Azure Management SDK.</p>
-</li>
-</ul>
-<p>The implementation of this workflow is discussed below. I am using Visual Studio 2017 Version 15.3 
-Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</p>
-<h2 id="metric-collector">Metric Collector</h2>
-<p>First, let&#39;s define <code>MetricValue</code> class, which simply holds time and value:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MetricValue</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MetricValue</span>(<span class="hljs-params">DateTime time, <span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Time = time;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
-    }
-
-    <span class="hljs-keyword">public</span> DateTime Time { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Value { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
-Plan name) and measured parameter name:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Metric</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Metric</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, <span class="hljs-keyword">string</span> name, MetricValue <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Name = name;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> MetricValue Value { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>The function definition has two associated bindings: timer trigger (runs every
-minute) and return binding to the storage queue:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"MetricCollector"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Metrics"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Metric <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">[TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> connectionString = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServiceBusConnection"</span>);
-    <span class="hljs-keyword">var</span> topic = Environment.GetEnvironmentVariable(<span class="hljs-string">"Topic"</span>);
-    <span class="hljs-keyword">var</span> subscription = Environment.GetEnvironmentVariable(<span class="hljs-string">"Subscription"</span>);
-
-    <span class="hljs-keyword">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
-    <span class="hljs-keyword">var</span> subscriptionClient = nsmgr.GetSubscription(topic, subscription);
-    <span class="hljs-keyword">var</span> backlog = subscriptionClient.MessageCountDetails.ActiveMessageCount;
-
-    log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{backlog}</span>"</span>);
-
-    <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
-    <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = <span class="hljs-keyword">new</span> MetricValue(DateTime.Now, (<span class="hljs-keyword">int</span>)backlog);
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Metric(resource, <span class="hljs-string">$"<span class="hljs-subst">{topic}</span>-<span class="hljs-subst">{subscription}</span>-backlog"</span>, <span class="hljs-keyword">value</span>);
-}
-</code></pre>
-<p>The function executes the following steps:</p>
-<ul>
-<li>Reads configuration value for Service Bus parameters;</li>
-<li>Connects to Service Bus and retrieves <code>ActiveMessageCount</code> for the given 
-subscription;</li>
-<li>Logs the value for tracing and debugging;</li>
-<li>Returns the metric value mentioning which resource it&#39;s intended for.</li>
-</ul>
-<h2 id="scaling-logic">Scaling Logic</h2>
-<p>The core of autoscaling implementation resides in <code>ScalingLogic</code> function. </p>
-<p>The function defines 4 (oh my!) bindings:</p>
-<ul>
-<li>Queue trigger to react on messages from the collector;</li>
-<li>Output queue binding to send commands with action to execute;</li>
-<li>Combination of input and output bindings to the same row in Table Storage to 
-keep the state in between function calls.</li>
-</ul>
-<p>The bindings are illustrated on the following picture:</p>
-<p><img src="/2017/07/custom-auto-scaling-in-azure//ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
-<p>And here is the corresponding Function signature:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"ScalingLogic"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Actions"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ScaleAction <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
-    [QueueTrigger(<span class="hljs-string">"Metrics"</span></span>)] Metric metric, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] ScalingStateEntity stateEntity, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] <span class="hljs-keyword">out</span> ScalingStateEntity newStateEntity,
-    TraceWriter log)
-</span></code></pre>
-<p>Table storage is partitioned per scalable resource, and state is stored per metric;
-thus multiple resources and metrics are supported out of the box.</p>
-<p>The function implementation is relatively complex, so I&#39;ll describe it in parts.</p>
-<p><code>ScaleAction</code> is a simple message class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">enum</span> ScaleActionType
-{
-    Up,
-    Down
-}
-
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScaleAction</span>
-{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ScaleAction</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, ScaleActionType type</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Type = type;
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
-
-    <span class="hljs-keyword">public</span> ScaleActionType Type { <span class="hljs-keyword">get</span>; }
-}
-</code></pre>
-<p>Table Storage only allows primitive types for its columns, like strings. 
-So I had to create a separate Table Storage entity class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingStateEntity</span> : <span class="hljs-title">TableEntity</span>
-{
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> SerializedState { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-}
-</code></pre>
-<p>which stores serialized state, from the state class itself:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingState</span>
-{
-    <span class="hljs-keyword">public</span> List&lt;MetricValue&gt; History { <span class="hljs-keyword">get</span>; } = <span class="hljs-keyword">new</span> List&lt;MetricValue&gt;();
-
-    <span class="hljs-keyword">public</span> DateTime LastScalingActionTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; } = DateTime.MinValue;
-}
-</code></pre>
-<p>Now let&#39;s look at the function body. It consists of four blocks. </p>
-<p>The first block retrieves the previous values of the metric and logs it too:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 1. Deserialize state</span>
-<span class="hljs-keyword">var</span> state = stateEntity?.SerializedState != <span class="hljs-literal">null</span> 
-    ? JsonConvert.DeserializeObject&lt;ScalingState&gt;(stateEntity.SerializedState) 
-    : <span class="hljs-keyword">new</span> ScalingState();
-<span class="hljs-keyword">var</span> history = state.History;
-log.Info(<span class="hljs-string">$"Scaling logic: Received <span class="hljs-subst">{metric.Name}</span>, previous state is <span class="hljs-subst">{<span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, history)}</span>"</span>);
-</code></pre>
-<p>The second block adds the current metric value and removes all metrics which are
-not in the target period of 10 minutes anymore:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 2. Add current metric value, remove old values</span>
-history.Add(metric.Value);
-history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
-</code></pre>
-<p>Now, the actual logic finally kicks in and produces the scaling action if average
-or maximum value is above or below respective thresholds. For my implementation I also
-chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 3. Compare the aggregates to thresholds, produce scaling action if needed</span>
-ScaleAction action = <span class="hljs-literal">null</span>;
-<span class="hljs-keyword">if</span> (history.Count &gt;= <span class="hljs-number">5</span>
-    &amp;&amp; DateTime.Now - state.LastScalingActionTime &gt; cooldownPeriod)
-{
-    <span class="hljs-keyword">var</span> average = (<span class="hljs-keyword">int</span>)history.Average(e =&gt; e.Value);
-    <span class="hljs-keyword">var</span> maximum = (<span class="hljs-keyword">int</span>)history.Max(e =&gt; e.Value);
-    <span class="hljs-keyword">if</span> (average &gt; thresholdUp)
-    {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{average}</span> is too high, scaling <span class="hljs-subst">{metric.ResourceName}</span> up..."</span>);
-        state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Up);
-    }
-    <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (maximum &lt; thresholdDown)
-    {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{maximum}</span> is low, scaling <span class="hljs-subst">{metric.ResourceName}</span> down..."</span>);
-        state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Down);
-    }
-}
-</code></pre>
-<p>Finally, the state is serialized back to table entity and action is returned: </p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 4. Serialize the state back and return the action</span>
-newStateEntity = stateEntity != <span class="hljs-literal">null</span> 
-    ? stateEntity 
-    : <span class="hljs-keyword">new</span> ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
-newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
-<span class="hljs-keyword">return</span> action;
-</code></pre>
-<p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message 
-gets sent to the output queue.</p>
-<h2 id="scaler">Scaler</h2>
-<p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
-I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Scaler"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[QueueTrigger(<span class="hljs-string">"Actions"</span></span>)] ScaleAction action, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> secrets = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServicePrincipal"</span>).Split(<span class="hljs-string">','</span>);
-    <span class="hljs-keyword">var</span> credentials = SdkContext.AzureCredentialsFactory
-        .FromServicePrincipal(secrets[<span class="hljs-number">0</span>], secrets[<span class="hljs-number">1</span>], secrets[<span class="hljs-number">2</span>], AzureEnvironment.AzureGlobalCloud);
-    <span class="hljs-keyword">var</span> azure = Azure.Configure()
-        .Authenticate(credentials)
-        .WithDefaultSubscription();
-
-    <span class="hljs-keyword">var</span> plan = azure.AppServices
-        .AppServicePlans
-        .List()
-        .First(p =&gt; p.Name.Contains(action.ResourceName));
-
-    <span class="hljs-keyword">var</span> newCapacity = action.Type == ScaleActionType.Down ? plan.Capacity - <span class="hljs-number">1</span> : plan.Capacity + <span class="hljs-number">1</span>;
-    log.Info(<span class="hljs-string">$"Scaler: Switching <span class="hljs-subst">{action.ResourceName}</span> from <span class="hljs-subst">{plan.Capacity}</span> <span class="hljs-subst">{action.Type}</span> to <span class="hljs-subst">{newCapacity}</span>"</span>);
-
-    plan.Update()
-        .WithCapacity(newCapacity)
-        .Apply();
-}
-</code></pre>
-<p>The functionality is pretty straightforward. Here are some links where you can read more about 
-<a href="https://docs.microsoft.com/en-us/dotnet/azure/dotnet-sdk-azure-authenticate?view=azure-dotnet#a-namemgmt-authaazure-management-libraries-for-net-authentication">Authentication in Azure Management libraries</a> 
-and <a href="https://github.com/Azure-Samples/app-service-dotnet-scale-web-apps">Managing Web App with Fluent SDK</a>.</p>
-<h2 id="conclusion-and-further-steps">Conclusion and Further Steps</h2>
-<p>This was quite a lot of code for a single blog post, but most of it was
-fairly straightforward. You can find the full implemenation in 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/servicebussubscription-to-appserviceplan/MetricCollector.cs">my github</a>.</p>
-<p>Overall, I&#39;ve established an application based on Azure Functions, which
-watches the predefined metrics and scales the specified resource up and down
-based on target metric values.</p>
-<p>The current example works only for the combination of Service Bus Subscription
-and App Service Plan, but it is clear how to extend it to more scenarios.</p>
-<p>The flexibility of such autoscaling solution exceeds the built-in functionality
-that is available in Azure Portal.</p>
-<p>The most complex part of my Autoscaling application is the Scaling Logic
-function. In the next article of the series, I will refactor it to use
-<a href="https://azure.github.io/azure-functions-durable-extension/index.html">Durable Functions</a> - 
-the upcoming Orchestration framework for Function Apps.</p>
-<p>Stay tuned, and happy scaling!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>, <a href='/tags/azure-app-service/'>Azure App Service</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>
     </div>
     
 </article>
