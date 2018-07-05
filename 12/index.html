@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -81,6 +76,154 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Jul 28th, 2015</div>
+    
+    <h1><a href='/2015/07/aurelia-element-animation-with-custom-attribute/'>Aurelia element animation with custom attribute</a></h1>
+    
+    <div class="post-content">
+        <p>I&#39;ve been exploring <a href="http://aurelia.io">Aurelia</a> javascript UI framework recently to get some experience needed
+for our next big project. One thing that I couldn&#39;t implement out of the box was a kind 
+of animation.</p>
+<p>I have a grid of values bound to View Model. View Model communicates to server, receives
+any updates of data and the grid got immediately updated, all that works great with Aurelia.
+Now I want to highlight the cell which has just received an updated value with a small
+background animation, like this:</p>
+<p><img src="/2015/07/aurelia-element-animation-with-custom-attribute//animation.gif" alt="Updated cell animation"></p>
+<p>Aurelia has a library called <a href="https://github.com/aurelia/animator-css">aurelia-animator-css</a> with a helper
+class to run CSS animation. If you use it directly in your View Model, you will end up with the code like</p>
+<pre><code class="lang-js">this.newMessageReceived =
+    msg =&gt; {
+        this.data.filter(i =&gt; i.id === msg.id).forEach(t =&gt; {
+            let editedItemIdx = this.data.indexOf(i);
+            var elem = this.element.querySelectorAll(&#39;tbody tr&#39;)[editedItemIdx + 1]
+                                   .querySelectorAll(&#39;td&#39;)[3];
+
+            this.animator.addClass(elem, &#39;background-animation&#39;).then(() =&gt; {
+                this.animator.removeClass(elem, &#39;background-animation&#39;);
+            });
+        });
+    };
+</code></pre>
+<p>So we get a new message, find the related item in our data, then find the index of that data. Then we use this
+index in query selector to get the exact row that needs animation, find the cell by hard coded index, and 
+finally use animator to highlight the background.</p>
+<p>Ouch... That smells. We spoiled our view model with view details, and all this code is very ugly and fragile.</p>
+<p>Good news: we can improve the solution with the Aurelia&#39;s feature called Custom Attributes. Let&#39;s create a new
+javascript file and call it <code>animateonchange.js</code>:</p>
+<pre><code class="lang-js">import {customAttribute} from &#39;aurelia-framework&#39;;
+
+@customAttribute(&#39;animateonchange&#39;)
+export class AnimateOnChangeCustomAttribute {
+
+}
+</code></pre>
+<p>I declared a class for our new attribute, so far it&#39;s empty. I imported customAttribute decorator from
+Aurelia framework: that the way we can define a name for our custom attribute. This can be avoided: if I
+change the name to <code>AnimateonchangeCustomAttribute</code>, Aurelia will infer the name from class name, but I want
+to stay explicit and keep the class name readable. Note that capital letters are not allowed in attribute name.</p>
+<p>Now, let&#39;s declare the constructor of the new class and inject all the dependencies:</p>
+<pre><code class="lang-js">import {inject, customAttribute} from &#39;aurelia-framework&#39;;
+import {CssAnimator} from &#39;aurelia-animator-css&#39;;
+
+@customAttribute(&#39;animateonchange&#39;)
+@inject(Element, CssAnimator)
+export class AnimateOnChangeCustomAttribute {
+
+    constructor(element, animator) {
+        this.element = element;
+        this.animator = animator;
+    }
+
+}
+</code></pre>
+<p>I used dependency injection to get attribute&#39;s element and CSS animator and save them into class fields.
+Here&#39;s how to use them:</p>
+<pre><code class="lang-js">import {inject, customAttribute} from &#39;aurelia-framework&#39;;
+import {CssAnimator} from &#39;aurelia-animator-css&#39;;
+
+@customAttribute(&#39;animateonchange&#39;)
+@inject(Element, CssAnimator)
+export class AnimateOnChangeCustomAttribute {
+    constructor(element, animator) {
+        this.element = element;
+        this.animator = animator;
+        this.initialValueSet = false;
+    }
+
+    valueChanged(newValue){
+        if (this.initialValueSet) {
+            this.animator.addClass(this.element, &#39;background-animation&#39;).then(() =&gt; {
+                this.animator.removeClass(this.element, &#39;background-animation&#39;);
+            });
+        }
+        this.initialValueSet = true;
+    }
+}
+</code></pre>
+<p>The new method <code>valueChanged</code> will be called every time the bound value changes. I want to ignore the
+first value (it&#39;s not an update yet), so I did that with <code>initialValueSet</code> flag. Then I just run CSS 
+animator. No DOM-related queries!</p>
+<p>Here is how we use the custom attribute from a view:</p>
+<pre><code class="lang-html">&lt;template&gt;
+
+    &lt;require from=&quot;./animateonchange&quot;&gt;&lt;/require&gt;
+
+    &lt;table class=&quot;table&quot;&gt;
+        &lt;tr repeat.for=&quot;item of data&quot;&gt;
+            &lt;td&gt;${item.value1}&lt;/td&gt;
+            &lt;td&gt;${item.value2}&lt;/td&gt;
+            &lt;td animateonchange.bind=&quot;item.value3ToUpdate&quot;&gt;${item.value3ToUpdate}&lt;/td&gt;
+            &lt;td&gt;${item.value4}&lt;/td&gt;
+        &lt;/tr&gt;
+    &lt;/table&gt;
+
+&lt;/template&gt;
+</code></pre>
+<p>First, we use <code>require</code> element to import custom attribute definition (make sure the path is correct
+and no <code>.js</code> extension is present).</p>
+<p>Second, we use <code>animateonchange.bind</code> to bind the value to the custom attributes. And it works!</p>
+<p>Of course, you need to define the CSS class, e.g.</p>
+<pre><code class="lang-css">.background-animation-add {
+    -webkit-animation: changeBack 0.5s;
+    animation: changeBack 0.5s;
+}
+.background-animation-remove {
+    -webkit-animation: fadeIn 0.5s;
+    animation: fadeIn 0.5s;
+}
+@-webkit-keyframes changeBack {
+    0% { background-color: white; }
+    50% { background-color: lightgreen; }
+    100% { background-color: white; }
+}
+@keyframes changeBack {
+    0% { background-color: white; }
+    50% { background-color: lightgreen; }
+    100% { background-color: white; }
+}
+</code></pre>
+<p>Here is a <a href="http://plnkr.co/edit/oa0Kb1hf6D9M2jl22vWD">plunkr link to a complete example</a></p>
+<p>Happy coding!</p>
+<p>Useful links:</p>
+<ul>
+<li><p><a href="http://aurelia.io/docs.html#custom-attributes">Aurelia Custom Attributes documentation</a></p>
+</li>
+<li><p><a href="http://blog.durandal.io/2015/07/17/animating-apps-with-aurelia-part-1/">Animating Apps with Aurelia - Part 1 by Rob Eisenberg</a></p>
+</li>
+</ul>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/animation/'>Animation</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">May 27th, 2015</div>
     
@@ -147,107 +290,107 @@ Happy reviews!</p>
     
     <div class="post-content">
         <p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
-<pre class="highlight"><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClass</span> : <span class="hljs-type">IVeryUsefulClass</span></span>
+<pre><code>public class VeryUsefulClass : IVeryUsefulClass
 {
-    <span class="hljs-keyword">private</span> readonly ISomething something;
-    <span class="hljs-keyword">private</span> readonly ISomethingElse somethingElse;
+    private readonly ISomething something;
+    private readonly ISomethingElse somethingElse;
 
-    <span class="hljs-keyword">public</span> VeryUsefulClass(ISomething something, ISomethingElse somethingElse)
+    public VeryUsefulClass(ISomething something, ISomethingElse somethingElse)
     {
-        <span class="hljs-keyword">this</span>.something = something;
-        <span class="hljs-keyword">this</span>.somethingElse = somethingElse;
+        this.something = something;
+        this.somethingElse = somethingElse;
     }
 
-    <span class="hljs-keyword">public</span> AwesomeResponse DoUsefullStaff(ImportantRequest request)
+    public AwesomeResponse DoUsefullStaff(ImportantRequest request)
     {
-        <span class="hljs-keyword">this</span>.something.DoSomething();
-        <span class="hljs-keyword">this</span>.somethingElse.DoSomethingElse();
-        <span class="hljs-keyword">return</span> ...;
+        this.something.DoSomething();
+        this.somethingElse.DoSomethingElse();
+        return ...;
     }
 }
 </code></pre><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
-<pre class="highlight"><code class="hljs typescript">[TestFixture]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> VeryUsefulClassTests
+<pre><code>[TestFixture]
+public class VeryUsefulClassTests
 {
     [Test]
-    <span class="hljs-keyword">public</span> <span class="hljs-built_in">void</span> WhenSomethingIsNullConstructorThrowsNullException()
+    public void WhenSomethingIsNullConstructorThrowsNullException()
     {
-        Assert.ThrowsException&lt;ArgumentNullException&gt;<span class="hljs-function">(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; 
-            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-params"><span class="hljs-literal">null</span>, <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.<span class="hljs-built_in">Object</span></span>)</span>);
+        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
+            new VeryUsefulClass(null, new Mock&lt;ISomethingElse&gt;.Object));
     }
 
-    [<span class="hljs-params">Test</span>]
-    <span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+    [Test]
+    public void WhenSomethingElseIsNullConstructorThrowsNullException()
     {
-        <span class="hljs-params">Assert</span>.<span class="hljs-params">ThrowsException</span>&lt;<span class="hljs-params">ArgumentNullException</span>&gt;(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; 
-            <span class="hljs-keyword">new</span> VeryUsefulClass(<span class="hljs-params"><span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.<span class="hljs-built_in">Object</span>, <span class="hljs-literal">null</span></span>)</span>);
+        Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; 
+            new VeryUsefulClass(new Mock&lt;ISomething&gt;.Object, null));
     }
 
-    [<span class="hljs-params">Test</span>]
-    <span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+    [Test]
+    public void ImportantRequestProducesAwesomeResponse()
     {
-        <span class="hljs-params">var</span> <span class="hljs-params">target</span> = <span class="hljs-params">new</span> <span class="hljs-params">VeryUsefulClass</span>(<span class="hljs-params"><span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;.<span class="hljs-built_in">Object</span>, 
-            <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;.<span class="hljs-built_in">Object</span></span>);
+        var target = new VeryUsefulClass(new Mock&lt;ISomething&gt;.Object, 
+            new Mock&lt;ISomethingElse&gt;.Object);
         ...
     }
 
     ...
 }
-</span></code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
+</code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
 <h2 id="make-it-better">Make it better</h2>
 <p>Now let&#39;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
-<pre class="highlight"><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">VeryUsefulClass</span><span class="hljs-params">(ISomething something, 
+<pre><code>public VeryUsefulClass(ISomething something, 
     ISomethingElse somethingElse, 
-    ISomethingNew somethingNew)</span>
-</span>{
+    ISomethingNew somethingNew)
+{
     ...
 }
 </code></pre><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&#39;s refactor the tests. First, let&#39;s declare all mocks as private fields and create them in set-up method:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">TestFixture</span>]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">VeryUsefulClassTests</span>
+<pre><code>[TestFixture]
+public class VeryUsefulClassTests
 {
-    <span class="hljs-keyword">private</span> Mock&lt;ISomething&gt; something;
-    <span class="hljs-keyword">private</span> Mock&lt;ISomethingElse&gt; somethingElse;
+    private Mock&lt;ISomething&gt; something;
+    private Mock&lt;ISomethingElse&gt; somethingElse;
 
-    [<span class="hljs-meta">SetUp</span>]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SetUp</span>(<span class="hljs-params"></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.something = <span class="hljs-keyword">new</span> Mock&lt;ISomething&gt;();
-        <span class="hljs-keyword">this</span>.somethingElse = <span class="hljs-keyword">new</span> Mock&lt;ISomethingElse&gt;();
+    [SetUp]
+    public void SetUp()
+    {
+        this.something = new Mock&lt;ISomething&gt;();
+        this.somethingElse = new Mock&lt;ISomethingElse&gt;();
     }
 ...
 </code></pre><p>This way the same clean mocks will be available for each and every test. To make use of them, let&#39;s create GetTarget method which will create an instance of class under test</p>
-<pre class="highlight"><code class="hljs kotlin"><span class="hljs-keyword">private</span> VeryUsefulClass GetTarget()
+<pre><code>private VeryUsefulClass GetTarget()
 {
-    <span class="hljs-keyword">return</span> new VeryUsefulClass(<span class="hljs-keyword">this</span>.something.Object, <span class="hljs-keyword">this</span>.somethingElse.Object);
+    return new VeryUsefulClass(this.something.Object, this.somethingElse.Object);
 }
 </code></pre><p>Now we are ready to rewrite our test methods with less duplication</p>
-<pre class="highlight"><code class="hljs typescript">[Test]
-<span class="hljs-keyword">public</span> <span class="hljs-built_in">void</span> WhenSomethingIsNullConstructorThrowsNullException()
+<pre><code>[Test]
+public void WhenSomethingIsNullConstructorThrowsNullException()
 {
-    <span class="hljs-keyword">this</span>.something = <span class="hljs-literal">null</span>;
-    Assert.ThrowsException&lt;ArgumentNullException&gt;<span class="hljs-function">(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; <span class="hljs-keyword">this</span>.GetTarget(<span class="hljs-params"></span>)</span>);
+    this.something = null;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; this.GetTarget());
 }
 
-[<span class="hljs-params">Test</span>]
-<span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">WhenSomethingElseIsNullConstructorThrowsNullException</span><span class="hljs-params">()</span>
+[Test]
+public void WhenSomethingElseIsNullConstructorThrowsNullException()
 {
-    <span class="hljs-params">this</span>.<span class="hljs-params">somethingElse</span> = <span class="hljs-params">null</span>;
-    <span class="hljs-params">Assert</span>.<span class="hljs-params">ThrowsException</span>&lt;<span class="hljs-params">ArgumentNullException</span>&gt;(<span class="hljs-params">(<span class="hljs-params"></span>) =&gt; <span class="hljs-keyword">this</span>.GetTarget(<span class="hljs-params"></span>)</span>);
+    this.somethingElse = null;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; this.GetTarget());
 }
 
-[<span class="hljs-params">Test</span>]
-<span class="hljs-params">public</span> <span class="hljs-params">void</span> <span class="hljs-params">ImportantRequestProducesAwesomeResponse</span><span class="hljs-params">()</span>
+[Test]
+public void ImportantRequestProducesAwesomeResponse()
 {
-    <span class="hljs-params">var</span> <span class="hljs-params">target</span> = <span class="hljs-params">this</span>.<span class="hljs-params">GetTarget</span><span class="hljs-params">()</span>;
+    var target = this.GetTarget();
     ...
 }
-</span></code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
+</code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
 <p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
 <h2 id="make-it-shine">Make it shine</h2>
 <p>I&#39;m still not quite satisfied with the amount of code we have to write for such a simple thing as the validation of ArgumentNullException being thrown from constructors. Imagine this: we have hundreds or thousands of classes which follow this same pattern, and we end up writing thousands tests which look almost exactly the same... </p>
 <p>I solved it with a simple helper method:</p>
-<pre class="highlight"><code class="hljs undefined">public void ConstructorMustThrowArgumentNullException(Type type)
+<pre><code class="lang-csharp">public void ConstructorMustThrowArgumentNullException(Type type)
 {
     foreach (var constructor in type.GetConstructors())
     {
@@ -267,16 +410,16 @@ Happy reviews!</p>
             try
             {
                 constructor.Invoke(mocksCopy);
-                Assert.Fail("ArgumentNullException expected for parameter {0} of 
-                             constructor, but no exception was thrown", 
+                Assert.Fail(&quot;ArgumentNullException expected for parameter {0} of 
+                             constructor, but no exception was thrown&quot;, 
                              parameters[i].Name);
             }
             catch (TargetInvocationException ex)
             {
                 Assert.AreEqual(typeof(ArgumentNullException), 
                     ex.InnerException.GetType(), 
-                    string.Format("ArgumentNullException expected for parameter {0} of 
-                        constructor, but exception of type {1} was thrown", 
+                    string.Format(&quot;ArgumentNullException expected for parameter {0} of 
+                        constructor, but exception of type {1} was thrown&quot;, 
                         parameters[i].Name, ex.InnerException.GetType()));
             }
         }
@@ -425,65 +568,65 @@ Happy reviews!</p>
 <p>Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, <a href="http://blogs.msdn.com/b/psssql/archive/2014/04/01/sql-server-2014-s-new-cardinality-estimator-part-1.aspx">the new cardinality estimator was introduced</a>. In two words, cardinality estimator is a piece of SQL functionality which estimates how many rows the engine might get for a specific query or a query part. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &quot;new&quot; also means &quot;less tested&quot;...</p>
 <p>Immediately after migration we found out that one of the stored procedures got much slower than before. That stored procedure was retrieving thousands of rows from a queue, and then did a series of transformations which took ages to complete. During the investigation we found that the query plan is far from being optimal, with massive scans of partitioned tables; and the reason was in ridiculously high estimations on one of the tables. That table was of moderate size (millions of rows), our query touched only some hundreds rows, while the estimate was... millions!</p>
 <p>Here is a repro to show this issue on any test database (database must be in SQL Server 2014 compatibility mode):</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> [dbo].[<span class="hljs-keyword">Store</span>](
-    <span class="hljs-keyword">Id</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">IDENTITY</span>(<span class="hljs-number">1</span>,<span class="hljs-number">1</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-    City <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-    <span class="hljs-keyword">Size</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-    <span class="hljs-keyword">Name</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-literal">NULL</span>,
-    <span class="hljs-keyword">CONSTRAINT</span> [PK_Store] PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED ([<span class="hljs-keyword">Id</span>] <span class="hljs-keyword">ASC</span>)
+<pre><code>CREATE TABLE [dbo].[Store](
+    Id int IDENTITY(1,1) NOT NULL,
+    City int NOT NULL,
+    Size int NOT NULL,
+    Name varchar(max) NULL,
+    CONSTRAINT [PK_Store] PRIMARY KEY CLUSTERED ([Id] ASC)
  ) 
 
- <span class="hljs-keyword">GO</span>
+ GO
 
- <span class="hljs-keyword">CREATE</span> NONCLUSTERED <span class="hljs-keyword">INDEX</span> [IX_Store] <span class="hljs-keyword">ON</span> [dbo].[<span class="hljs-keyword">Store</span>]
+ CREATE NONCLUSTERED INDEX [IX_Store] ON [dbo].[Store]
 (
-    City <span class="hljs-keyword">ASC</span>,
-    <span class="hljs-keyword">Size</span> <span class="hljs-keyword">ASC</span>
+    City ASC,
+    Size ASC
 )
 
-<span class="hljs-keyword">GO</span>
- <span class="hljs-keyword">TRUNCATE</span> <span class="hljs-keyword">TABLE</span> <span class="hljs-keyword">Store</span>
-<span class="hljs-keyword">INSERT</span> <span class="hljs-keyword">Store</span> 
-<span class="hljs-keyword">SELECT</span> i % <span class="hljs-number">101</span>, i % <span class="hljs-number">11</span>, <span class="hljs-string">'Store '</span> + <span class="hljs-keyword">CAST</span>(i <span class="hljs-keyword">AS</span> <span class="hljs-built_in">VARCHAR</span>)
-  <span class="hljs-keyword">FROM</span> 
- (<span class="hljs-keyword">SELECT</span> TOP <span class="hljs-number">100000</span> ROW_NUMBER() <span class="hljs-keyword">OVER</span> (<span class="hljs-keyword">ORDER</span> <span class="hljs-keyword">BY</span> s1.[object_id]) <span class="hljs-keyword">AS</span> i
-  <span class="hljs-keyword">FROM</span> sys.all_objects  s1, sys.all_objects  s2) numbers
-<span class="hljs-keyword">GO</span>
+GO
+ TRUNCATE TABLE Store
+INSERT Store 
+SELECT i % 101, i % 11, &#39;Store &#39; + CAST(i AS VARCHAR)
+  FROM 
+ (SELECT TOP 100000 ROW_NUMBER() OVER (ORDER BY s1.[object_id]) AS i
+  FROM sys.all_objects  s1, sys.all_objects  s2) numbers
+GO
 
-<span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> StoreRequest (City <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>, <span class="hljs-keyword">Size</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>)
+CREATE TABLE StoreRequest (City int NOT NULL, Size int NOT NULL)
 
-<span class="hljs-keyword">GO</span>
-<span class="hljs-keyword">DELETE</span> StoreRequest
-<span class="hljs-keyword">INSERT</span> StoreRequest <span class="hljs-keyword">values</span> (<span class="hljs-number">55</span>, <span class="hljs-number">1</span>)
-<span class="hljs-keyword">INSERT</span> StoreRequest <span class="hljs-keyword">values</span> (<span class="hljs-number">66</span>, <span class="hljs-number">2</span>)
+GO
+DELETE StoreRequest
+INSERT StoreRequest values (55, 1)
+INSERT StoreRequest values (66, 2)
 
-<span class="hljs-keyword">GO</span>
+GO
 
- <span class="hljs-keyword">SELECT</span> s.City
-   <span class="hljs-keyword">FROM</span> StoreRequest <span class="hljs-keyword">AS</span> r
-        <span class="hljs-keyword">INNER</span> <span class="hljs-keyword">JOIN</span> <span class="hljs-keyword">Store</span> <span class="hljs-keyword">AS</span> s  <span class="hljs-keyword">WITH</span>(<span class="hljs-keyword">INDEX</span>(IX_Store), FORCESEEK) 
-                    <span class="hljs-keyword">ON</span> s.City = r.City <span class="hljs-keyword">AND</span> s.Size = r.Size
-  <span class="hljs-keyword">WHERE</span> r.Size &lt;&gt; <span class="hljs-number">1</span> <span class="hljs-keyword">OR</span> s.City &lt;&gt; <span class="hljs-number">55</span>
+ SELECT s.City
+   FROM StoreRequest AS r
+        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
+                    ON s.City = r.City AND s.Size = r.Size
+  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
 </code></pre><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
 <p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
 <p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
 <p>Good news: it&#39;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
-<pre class="highlight"><code class="hljs stylus"> SELECT s<span class="hljs-selector-class">.City</span>
+<pre><code> SELECT s.City
    FROM StoreRequest AS r
         INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
-                    ON s<span class="hljs-selector-class">.City</span> = r<span class="hljs-selector-class">.City</span> AND s<span class="hljs-selector-class">.Size</span> = r<span class="hljs-selector-class">.Size</span>
-  WHERE s<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">1</span> OR s<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">55</span>
+                    ON s.City = r.City AND s.Size = r.Size
+  WHERE s.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
 </code></pre><p>Estimator is able to handle this situation correctly:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
 <p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
 <p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
-<pre class="highlight"><code class="hljs sql"> <span class="hljs-keyword">SELECT</span> s.City
-   <span class="hljs-keyword">FROM</span> StoreRequest <span class="hljs-keyword">AS</span> r
-        <span class="hljs-keyword">INNER</span> <span class="hljs-keyword">JOIN</span> <span class="hljs-keyword">Store</span> <span class="hljs-keyword">AS</span> s  <span class="hljs-keyword">WITH</span>(<span class="hljs-keyword">INDEX</span>(IX_Store), FORCESEEK) 
-                    <span class="hljs-keyword">ON</span> s.City = r.City <span class="hljs-keyword">AND</span> s.Size = r.Size
-  <span class="hljs-keyword">WHERE</span> r.Size &lt;&gt; <span class="hljs-number">1</span> <span class="hljs-keyword">OR</span> s.City &lt;&gt; <span class="hljs-number">55</span>
- <span class="hljs-keyword">OPTION</span>(QUERYTRACEON <span class="hljs-number">9481</span>) 
+<pre><code> SELECT s.City
+   FROM StoreRequest AS r
+        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
+                    ON s.City = r.City AND s.Size = r.Size
+  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
+ OPTION(QUERYTRACEON 9481) 
 </code></pre><p>And then we get this:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
 <p>Which is as good as the best attempt of SQL Server 2014 and much-much better than the worst one.</p>
@@ -492,11 +635,11 @@ Happy reviews!</p>
 <p>The estimate here is clearly incorrect. SQL Server knows the density of Size and City. It knows the cardinality of the temp table. The density information gives how many rows the join will produce. The WHERE clause will then remove a certain number of rows. With no statistics for the temp table, it does not know how many, but it will apply some standard guess.</p>
 <p>50000 is a completely bogus number, because the join cannot produce that many rows, and SQL Server is able to compute the join with out the WHERE clause decently. (Well, it estimates 90, when the number is 180.) No, this is obviously a case of the cardinality estimator giving up completely.</p>
 <p>It is worth noting that both these WHERE clauses gives reasonable estimates:</p>
-<pre class="highlight"><code class="hljs stylus">WHERE r<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR r<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
-WHERE s<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR s<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+<pre><code>WHERE r.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
+WHERE s.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
 </code></pre><p>Whereas these two gives the spooky 50000:</p>
-<pre class="highlight"><code class="hljs stylus">WHERE s<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR r<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
-WHERE r<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR s<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+<pre><code>WHERE s.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
+WHERE r.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
 </code></pre><ul>
 <li>Erland Sommarskog</li>
 </ul>
@@ -518,90 +661,6 @@ Happy coding!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/execution-plan/'>Execution Plan</a>, <a href='/tags/query-plan/'>Query Plan</a>, <a href='/tags/database/'>Database</a>, <a href='/tags/repro/'>Repro</a>, <a href='/tags/erland-sommarskog/'>Erland Sommarskog</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Feb 5th, 2015</div>
-    
-    <h1><a href='/2015/02/how-we-do-message-processing/'>How we do message processing</a></h1>
-    
-    <div class="post-content">
-        <p>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture:
-<img src="/2015/02/how-we-do-message-processing//architecture.jpg" alt="System architecture"></p>
-<p>The devices use communication channels to send messages to our gateway - the input point of our application. The application&#39;s goal is to understand what came in, do the required actions and save the information into the database for further processing. Let&#39;s consider the database to be the end point of processing. Sounds easy, right? But some difficulties appear with the growth of amount and diversity of incoming messages; so let&#39;s look at some of them.</p>
-<p>A few words on the target load level. Our system processes the messages from tens of thousands of devices, and we get from several hundreds to a thousand messages per second. If you numbers are different by orders of magnitude, it might be the case that your problems are going to look completely different and you&#39;ll need a different set of tools to solve them.</p>
-<p>Apart from the number of messages itself, there is a problem of irregularity and peak times. The application must be ready for relatively short peaks which might be about ten times higher than the average expectation. To address this problem we organize the system as a sequence of queues and corresponding processors.</p>
-<p>The input gateway doesn&#39;t do much of real job: it just receives a message from a client and puts it into the queue. This operation is very cheap, thus the gateway is capable of accepting a vast number of messages per second. Afterwards a separate process retrieves several messages - the amount it wants to get - from the queue and does the hard work. The processing happens asynchronously while the load on the system remains limited. Perhaps the time in the queue grows at peaks, but that&#39;s it.</p>
-<p>Normally the message processing is non-trivial and consists of several actions. Here we get to the next logical step: we break down the job into several stages, each one having a separate queue and a dedicated processor. The queues and processors are independent and may reside on separate physical servers; and we can tune and scale them independently:
-<img src="/2015/02/how-we-do-message-processing//sequence.jpg" alt="Sequence-based architecture"></p>
-<p>The first queue contains the messages from devices as-is, without decoding or transforming them. The first processor decodes them and puts them into the second queue. The second processor could, for instance, call a third-party service and enrich the message with some relevant information, and the third processor could save that information into the database.</p>
-<p>These are the basics, so what do we still need to consider?</p>
-<h3 id="define-your-values">Define your values</h3>
-<ol>
-<li><p>Simplicity of creation, change and support</p>
-<p> Asynchronous distributed message processing brings quite some extra complexity into the software product. You should constantly work on reducing this price. The code gets optimized to be, at first place, readable and straightforward for all the team members, cheap to be changed and supported. If nobody but the author can decrypt the code, no great architecture will make the team happy.</p>
-<p> This statements looks obvious, but it might take quite some time and effort before the team starts to consistently implement this principle and not just declare it. Do the regular refactoring whenever you feel you can make the code a bit better and simpler. All the source code should get reviewed and the most critical parts are better to be developed in pair.</p>
-</li>
-<li><p>Fault tolerance</p>
-<p> It makes sense to define your policies of hardware or subsystem failures handling from the very beginning. They will differ for different products. It might be the case that someone can throw away all the messages that come in during 5 minutes of a server reboot.</p>
-<p> In our system we don&#39;t want to lose messages. If a particular service is not currently available, a database call times out, or there is a random processing error, it must not result in information loss. The affected messages must be saved inside the queue and will be processed right after the problem is fixed.</p>
-<p> Suppose your code on one server calls a web service on another server in synchronous manner. If the second server is not available, the processing will fail, and you can&#39;t do anything but log the error. In case of asynchronous processing the message will wait for the second server to go live again.</p>
-</li>
-<li><p>Performance</p>
-<p> Processing rate per second, latency, load on the servers - all these are important parameters of application performance. That&#39;s why we choose the architecture to be flexible.</p>
-<p> Although, don&#39;t pay TOO much attention to optimization from the very beginning. Usually the majority of performance issues is created by relatively small pieces of code. Unfortunately people tend to be very bad at predicting where exactly those issues are going to appear. People write <a href="http://carlos.bueno.org/optimization/">books on pre-mature optimization</a>. So make sure that your architecture allows you to fine-tune the system and forget about optimization until the first load testing.</p>
-<p> At the same time, and for this reason, start running the load tests early on, and then include them into your standard testing procedure. Start optimizing only when the tests reveal a specific performance problem.</p>
-</li>
-</ol>
-<h3 id="fine-tune-your-mindset">Fine tune your mindset</h3>
-<ol>
-<li><p>Operate queues and asynchronous processors</p>
-<p> I already described this above. Our main tools are queues and processors. While the classic approach is &quot;get request, call remote code, wait for response, return it back to the originator&quot;, now we should always use &quot;get a message from a queue, process it, send a message to another queue&quot;. The right mix of these two approaches should enable both scalability and ease of development.</p>
-</li>
-<li><p>Break the processing down into several stages</p>
-<p> If message processing is complex enough to be split into several stages, do that by creating several queues and processors. Make sure that you don&#39;t make it too complex to understand by unneeded fragmentation: the right balance is important. Quite often you will see a split which feels natural for developers. If not, try thinking of possible failure points. If there are multiple reasons why a processor may fail, consider its breakdown.</p>
-</li>
-<li><p>Don&#39;t mix decoding and processing</p>
-<p> Usually the messages arrive encoded with a protocol which can be binary, XML, JSON, etc. Decode them into your native format as soon as possible. This will help you solve two problems. First, you might need to support multiple protocols; and after decoding you unify the format of all further messages. Second, logging and debugging gets simpler.</p>
-</li>
-<li><p>Make the queues topology configurable</p>
-<p> Structure your code in a way that allows you to change the configuration of queues relatively easy. Splitting a processor into two parts should not result in tons of refactoring. Don&#39;t make your code depend on a specific queue mechanism implementation: tomorrow you might want to change it.</p>
-</li>
-<li><p>Do batch processing</p>
-<p> Normally it makes sense to receive messages from a queue in batches, not one by one. The services that you use might accept arrays for faster processing and in this case one call will always be faster than a handful of small ones. One insertion of 100 rows into database is faster than 100 remote insertions.</p>
-</li>
-</ol>
-<h3 id="create-tooling">Create tooling</h3>
-<ol>
-<li><p>Implement total monitoring</p>
-<p> Invest into monitoring tools. It should be easy to see the charts of throughput, average processing time, queue size and time since last message with breakdown by queue.
-<img src="/2015/02/how-we-do-message-processing//monitoring.jpg" alt="Queue monitoring"></p>
-<p> We use monitoring tools not only on production and staging environments but also on testing servers and even developer&#39;s machines. Carefully baked charts are helpful during debug and load testing procedures.</p>
-</li>
-<li><p>Test everything</p>
-<p> Message processing systems are perfect fields to apply fully automated testing. Input data protocols are well-defined and there is no human interaction. Cover your code with unit tests. Make your queues pluggable so that you could mock your real queues out with test in-memory queues to run quick intercommunication tests. Finally, create full-blown integration tests which should be run on staging environment (and preferably also on production).</p>
-</li>
-<li><p>Store the failed messages</p>
-<p> Usually you don&#39;t want one erroneous message to stop the complete queue processing. Being able to diagnose the problem is equally important. So put all the failed messages into a specialized storage and put a spotlight on it. Make a tool to move messages back to the relevant queue as soon as the failure reason is addressed.</p>
-<p> Same or similar mechanism can be used to store the messages to be processed at some point of time in the future. Keep them in that special storage and check periodically if now is time to proceed.</p>
-</li>
-<li><p>Automate the deployment</p>
-<p> Application setup and update must require just one or two clicks. Strive for frequent updates on production; ideally - automated deployment on every commit to the dedicated branch. Deployment scripts or tools will help developers maintain their personal and testing environments up-to-date.</p>
-</li>
-</ol>
-<h3 id="wrapping-up">Wrapping up</h3>
-<p>Clean and understandable architecture provides developers with a good means of communication, helps figure out the similar vision and concepts. Architecture metaphor expressed in form of a picture or short document will bring you closer to smart design, will help find errors or plan a refactoring.</p>
-<p>Happy message processing!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/architecture/'>Architecture</a>, <a href='/tags/design/'>Design</a>, <a href='/tags/messages/'>Messages</a>, <a href='/tags/message-processing/'>Message Processing</a>
     </div>
     
 </article>
@@ -641,7 +700,7 @@ Happy coding!</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

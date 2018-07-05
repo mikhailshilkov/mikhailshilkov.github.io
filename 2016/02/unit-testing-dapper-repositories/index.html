@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -98,36 +93,36 @@ tests should be used instead. Let&#39;s have a look at another possibility.</p>
 <h2 id="an-example-of-a-repository">An Example of a Repository</h2>
 <p>Let&#39;s say we have a simple class and we want to populate instances of this class
 from the database:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Product</span>
+<pre><code class="lang-csharp">public class Product
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Description { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Description { get; set; }
 }
 </code></pre>
 <p>To be able to use Dapper for data access, we need an instance of <code>IDbConnection</code>.
 As we want to be able to mock the connection for unit tests, we need to create
 a factory interface to abstract it away:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IDatabaseConnectionFactory</span>
+<pre><code class="lang-csharp">public interface IDatabaseConnectionFactory
 {
-    <span class="hljs-function">IDbConnection <span class="hljs-title">GetConnection</span>(<span class="hljs-params"></span>)</span>;
+    IDbConnection GetConnection();
 }
 </code></pre>
 <p>Now the repository would get a connection from this factory and execute 
 Dapper queries on it:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ProductRepository</span>
+<pre><code class="lang-csharp">public class ProductRepository
 {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> IDatabaseConnectionFactory connectionFactory;
+    private readonly IDatabaseConnectionFactory connectionFactory;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ProductRepository</span>(<span class="hljs-params">IDatabaseConnectionFactory connectionFactory</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.connectionFactory = connectionFactory;
+    public ProductRepository(IDatabaseConnectionFactory connectionFactory)
+    {
+        this.connectionFactory = connectionFactory;
     }
 
-    <span class="hljs-keyword">public</span> Task&lt;IEnumerable&lt;Product&gt;&gt; GetAll()
+    public Task&lt;IEnumerable&lt;Product&gt;&gt; GetAll()
     {
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">this</span>.connectionFactory.GetConnection().QueryAsync&lt;Product&gt;(
-            <span class="hljs-string">"select * from Product"</span>);
+        return this.connectionFactory.GetConnection().QueryAsync&lt;Product&gt;(
+            &quot;select * from Product&quot;);
     }
 }
 </code></pre>
@@ -141,19 +136,19 @@ Dapper queries on it:</p>
 </ol>
 <p>Here is a helper class which uses another micro-ORM library <a href="http://ormlite.com/">OrmLite</a> to talk
 to SQLite database:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">InMemoryDatabase</span>
+<pre><code class="lang-csharp">public class InMemoryDatabase
 {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> OrmLiteConnectionFactory dbFactory = 
-        <span class="hljs-keyword">new</span> OrmLiteConnectionFactory(<span class="hljs-string">":memory:"</span>, SqliteOrmLiteDialectProvider.Instance);
+    private readonly OrmLiteConnectionFactory dbFactory = 
+        new OrmLiteConnectionFactory(&quot;:memory:&quot;, SqliteOrmLiteDialectProvider.Instance);
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> IDbConnection <span class="hljs-title">OpenConnection</span>(<span class="hljs-params"></span>) </span>=&gt; <span class="hljs-keyword">this</span>.dbFactory.OpenDbConnection();
+    public IDbConnection OpenConnection() =&gt; this.dbFactory.OpenDbConnection();
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> Insert&lt;T&gt;(IEnumerable&lt;T&gt; items)
+    public void Insert&lt;T&gt;(IEnumerable&lt;T&gt; items)
     {
-        <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> db = <span class="hljs-keyword">this</span>.OpenConnection())
+        using (var db = this.OpenConnection())
         {
             db.CreateTableIfNotExists&lt;T&gt;();
-            <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> item <span class="hljs-keyword">in</span> items)
+            foreach (var item in items)
             {
                 db.Insert(item);
             }
@@ -162,23 +157,23 @@ to SQLite database:</p>
 }
 </code></pre>
 <p>And here is the test for our <code>ProductRepository</code> class:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">Test</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">QueryTest</span>(<span class="hljs-params"></span>)
-</span>{
-    <span class="hljs-comment">// Arrange</span>
-    <span class="hljs-keyword">var</span> products = <span class="hljs-keyword">new</span> List&lt;Product&gt;
+<pre><code class="lang-csharp">[Test]
+public async Task QueryTest()
+{
+    // Arrange
+    var products = new List&lt;Product&gt;
     {
-        <span class="hljs-keyword">new</span> Product { ... },
-        <span class="hljs-keyword">new</span> Product { ... }
+        new Product { ... },
+        new Product { ... }
     };
-    <span class="hljs-keyword">var</span> db = <span class="hljs-keyword">new</span> InMemoryDatabase();
+    var db = new InMemoryDatabase();
     db.Insert(products);
     connectionFactoryMock.Setup(c =&gt; c.GetConnection()).Returns(db.OpenConnection());
 
-    <span class="hljs-comment">// Act</span>
-    <span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> <span class="hljs-keyword">new</span> ProductRepository(connectionFactoryMock.Object).GetAll();
+    // Act
+    var result = await new ProductRepository(connectionFactoryMock.Object).GetAll();
 
-    <span class="hljs-comment">// Assert</span>
+    // Assert
     result.ShouldBeEquivalentTo(products);
 }
 </code></pre>
@@ -265,7 +260,7 @@ during TDD development.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

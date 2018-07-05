@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -170,12 +165,12 @@ implement our own checkpoints based on a SQL table. This way each
 checkpoint update can become part of a SQL transaction and be committed
 or rolled back with normal guarantees provided by SQL Server.</p>
 <p>Here is a table that I created to hold my checkpoints:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubCheckpoint (
-  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">Offset</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubCheckpoint PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
+<pre><code class="lang-sql">CREATE TABLE EventHubCheckpoint (
+  Topic varchar(100) NOT NULL,
+  PartitionID varchar(100) NOT NULL,
+  SequenceNumber bigint NOT NULL,
+  Offset varchar(20) NOT NULL,
+  CONSTRAINT PK_EventHubCheckpoint PRIMARY KEY CLUSTERED (Topic, PartitionID)
 )
 </code></pre>
 <p>For each topic and partition of Event Hubs, we store two values: sequence
@@ -196,14 +191,14 @@ which makes proper lease manager redundand.</p>
 <p>Now, we want to be able to mark some messages as failed and to 
 re-process them later. To make Dead Letters transactional, we need another
 SQL table to hold the failed events:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubDeadLetter (
-  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">Offset</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  FailedAt datetime <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">Error</span> <span class="hljs-keyword">nvarchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubDeadLetter PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
+<pre><code class="lang-sql">CREATE TABLE EventHubDeadLetter (
+  Topic varchar(100) NOT NULL,
+  PartitionID varchar(100) NOT NULL,
+  SequenceNumber bigint NOT NULL,
+  Offset varchar(20) NOT NULL,
+  FailedAt datetime NOT NULL,
+  Error nvarchar(max) NOT NULL,
+  CONSTRAINT PK_EventHubDeadLetter PRIMARY KEY CLUSTERED (Topic, PartitionID)
 )
 </code></pre>
 <p>This table looks very similar to <code>EventHubCheckpoint</code> that I</p>
@@ -215,7 +210,7 @@ sit in the event hub anyway. You could still log it for diagnostics purpose - ju
 <code>varbinary</code> column.</p>
 <p>There&#39;s no notion of dead letters in Event Hubs SDK, so I defined my own
 interface <code>IDeadLetterManager</code> with a single <code>AddFailedEvents</code> method:</p>
-<pre class="highlight"><code class="hljs undefined">public interface IDeadLetterManager
+<pre><code class="lang-csharp">public interface IDeadLetterManager
 {
     Task AddFailedEvents(IEnumerable&lt;DeadLetter&lt;EventData&gt;&gt; deadLetters);
 }
@@ -244,42 +239,42 @@ into its constructor, and then I implement <code>IEventProcessor</code>&#39;s
 <li>Commit the transaction</li>
 </ol>
 <p>The code block that illustrates this workflow:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">ProcessEventsAsync</span>(<span class="hljs-params">
+<pre><code class="lang-csharp">public async Task ProcessEventsAsync(
     PartitionContext context, 
-    IEnumerable&lt;EventData&gt; eventDatas</span>)
-</span>{
-    <span class="hljs-comment">// 1. Instantiate a list of items to store failed events</span>
-    <span class="hljs-keyword">var</span> failedItems = <span class="hljs-keyword">new</span> List&lt;DeadLetter&lt;EventData&gt;&gt;();
+    IEnumerable&lt;EventData&gt; eventDatas)
+{
+    // 1. Instantiate a list of items to store failed events
+    var failedItems = new List&lt;DeadLetter&lt;EventData&gt;&gt;();
 
-    <span class="hljs-comment">// 2. Start a SQL transaction</span>
-    <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> scope = <span class="hljs-keyword">new</span> TransactionScope())
+    // 2. Start a SQL transaction
+    using (var scope = new TransactionScope())
     {
-        <span class="hljs-comment">// 3. Loop through all the received events in the batch</span>
-        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> eventData <span class="hljs-keyword">in</span> eventDatas)
+        // 3. Loop through all the received events in the batch
+        foreach (var eventData in eventDatas)
         {
-            <span class="hljs-keyword">try</span>
+            try
             {
-                <span class="hljs-comment">// 4. Process each item inside a try-catch block</span>
-                <span class="hljs-keyword">var</span> item = <span class="hljs-keyword">this</span>.Deserialize(eventData);
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.DoWork(item);
+                // 4. Process each item inside a try-catch block
+                var item = this.Deserialize(eventData);
+                await this.DoWork(item);
             }
-            <span class="hljs-keyword">catch</span> (Exception ex)
+            catch (Exception ex)
             {
-                <span class="hljs-comment">// 5. Add a failed event to the list</span>
-                failedItems.Add(<span class="hljs-keyword">new</span> DeadLetter&lt;EventData&gt;(eventData, DateTime.UtcNow, ex));
+                // 5. Add a failed event to the list
+                failedItems.Add(new DeadLetter&lt;EventData&gt;(eventData, DateTime.UtcNow, ex));
             }
         }
 
-        <span class="hljs-keyword">if</span> (failedItems.Any())
+        if (failedItems.Any())
         {
-            <span class="hljs-comment">// 6. Save failed items to Dead Letter table</span>
-            <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.dlq.AddFailedEvents(failedItems);
+            // 6. Save failed items to Dead Letter table
+            await this.dlq.AddFailedEvents(failedItems);
         }
 
-        <span class="hljs-comment">// 7. Update the checkpoint pointer</span>
-        <span class="hljs-keyword">await</span> context.CheckpointAsync();
+        // 7. Update the checkpoint pointer
+        await context.CheckpointAsync();
 
-        <span class="hljs-comment">// 8. Commit the transaction</span>
+        // 8. Commit the transaction
         scope.Complete();
     }
 }
@@ -363,7 +358,7 @@ sufficient for many real world scenarios.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

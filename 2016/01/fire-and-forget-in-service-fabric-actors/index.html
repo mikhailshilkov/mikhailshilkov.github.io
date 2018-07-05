@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -104,19 +99,19 @@ a message. This gives the best concurrency and scalability characteristics.</p>
 <strong>Ask</strong> model. Let&#39;s have a close look at this model, and then see how we can
 implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
 <p>Actor definition starts with an interface:</p>
-<pre class="highlight"><code class="hljs routeros">public<span class="hljs-built_in"> interface </span>IHardWorkingActor : IActor
+<pre><code>public interface IHardWorkingActor : IActor
 {
     Task DoWork(string payload);
 }
 </code></pre><p>As you can see, the method does not return any useful data, which means
 the client code isn&#39;t really interested in waiting for the operation to
 complete. Here&#39;s how we implement this interface in the Actor class:</p>
-<pre class="highlight"><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HardWorkingActor</span> : <span class="hljs-type">Actor</span>, <span class="hljs-type">IHardWorkingActor</span></span>
+<pre><code>public class HardWorkingActor : Actor, IHardWorkingActor
 {
-    <span class="hljs-keyword">public</span> async Task DoWork(string payload)
+    public async Task DoWork(string payload)
     {
-        ActorEventSource.Current.ActorMessage(<span class="hljs-keyword">this</span>, <span class="hljs-string">"Doing Work"</span>);
-        await Task.Delay(<span class="hljs-number">500</span>);
+        ActorEventSource.Current.ActorMessage(this, &quot;Doing Work&quot;);
+        await Task.Delay(500);
     }
 }
 </code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
@@ -125,36 +120,36 @@ from a queue or a web front-end and needs to go as fast as possible. It gets a p
 creates an actor proxy to dispatch the payload to, then it just wants 
 to continue with the next payload. Here is the &quot;Ask&quot; implementation based on 
 the Service Fabric samples:</p>
-<pre class="highlight"><code class="hljs routeros">int i = 0;
+<pre><code>int i = 0;
 var timer = new Stopwatch();
 timer.Start();
-<span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>)
+while (true)
 {
-    var<span class="hljs-built_in"> proxy </span>= ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), <span class="hljs-string">"fabric:/Application1"</span>);
-    await proxy.DoWork($<span class="hljs-string">"Work <span class="hljs-variable">${i++}</span>"</span>);
-    Console.WriteLine(<span class="hljs-variable">$@</span><span class="hljs-string">"Sent work to Actor {proxy.GetActorId()}, 
-                         rate is {i / timer.Elapsed.TotalSeconds}/sec"</span>);
+    var proxy = ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), &quot;fabric:/Application1&quot;);
+    await proxy.DoWork($&quot;Work ${i++}&quot;);
+    Console.WriteLine($@&quot;Sent work to Actor {proxy.GetActorId()}, 
+                         rate is {i / timer.Elapsed.TotalSeconds}/sec&quot;);
 }
 </code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
 block until the actor work is complete. When we run the client, no surprise that
 we get the rate of about 2 messages per second:</p>
-<pre class="highlight"><code class="hljs lsl">Sent work to Actor <span class="hljs-number">1647857287613311317</span>, rate is <span class="hljs-number">1</span>,<span class="hljs-number">98643230380293</span>/sec
+<pre><code>Sent work to Actor 1647857287613311317, rate is 1,98643230380293/sec
 </code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
 work and immediately proceed to the next one. Here&#39;s how the client call should
 look like:</p>
-<pre class="highlight"><code class="hljs less"><span class="hljs-selector-tag">proxy</span><span class="hljs-selector-class">.DoWork</span>($<span class="hljs-string">"Work ${i++}"</span>)<span class="hljs-selector-class">.FireAndForget</span>();
+<pre><code>proxy.DoWork($&quot;Work ${i++}&quot;).FireAndForget();
 </code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
 extension method and proceed immediately. It appears that the implementation 
 of such extension method is trivial:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TaskHelper</span>
+<pre><code>public static class TaskHelper
 {       
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">FireAndForget</span>(<span class="hljs-params"><span class="hljs-keyword">this</span> Task task</span>)
-    </span>{
-        Task.Run(<span class="hljs-keyword">async</span>() =&gt; <span class="hljs-keyword">await</span> task).ConfigureAwait(<span class="hljs-literal">false</span>);
+    public static void FireAndForget(this Task task)
+    {
+        Task.Run(async() =&gt; await task).ConfigureAwait(false);
     }
 } 
 </code></pre><p>The result looks quite different from what we had before:</p>
-<pre class="highlight"><code class="hljs lsl">Sent work to Actor <span class="hljs-number">-8450334792912439527</span>, rate is <span class="hljs-number">408</span>,<span class="hljs-number">484162592517</span>/sec
+<pre><code>Sent work to Actor -8450334792912439527, rate is 408,484162592517/sec
 </code></pre><p>400 messages per second, which is some 200x difference... </p>
 <p>The conclusions are simple:</p>
 <ul>
@@ -236,7 +231,7 @@ take the defaults for granted</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

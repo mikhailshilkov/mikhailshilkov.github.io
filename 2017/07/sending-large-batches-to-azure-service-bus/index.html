@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -97,7 +92,7 @@ of this article will try to answer this seemingly simple question.</p>
 Bus in batches. The amount of batches should be close to minimal, but
 obviously each one of them must satisfy the restriction of 256k max size.</p>
 <p>So, we want to implement a method with the following signature:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
+<pre><code class="lang-csharp">public Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
 </code></pre>
 <p>which would work for collections of any size.</p>
 <p>To limit the scope, I will restrict the article to the following assumptions:</p>
@@ -119,45 +114,45 @@ of sending the big batch, we might end up with partially sent batch.</p>
 It&#39;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a 
 helpful extension method that will split an arbitrary collection based on
 a metric function and maximum chunk size:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(<span class="hljs-keyword">this</span> IEnumerable&lt;T&gt; source, Func&lt;T, <span class="hljs-keyword">long</span>&gt; metric, <span class="hljs-keyword">long</span> maxChunkSize)
+<pre><code class="lang-csharp">public static List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(this IEnumerable&lt;T&gt; source, Func&lt;T, long&gt; metric, long maxChunkSize)
 {
-    <span class="hljs-keyword">return</span> source
+    return source
         .Aggregate(
-            <span class="hljs-keyword">new</span>
+            new
             {
-                Sum = <span class="hljs-number">0</span>L,
-                Current = (List&lt;T&gt;)<span class="hljs-literal">null</span>,
-                Result = <span class="hljs-keyword">new</span> List&lt;List&lt;T&gt;&gt;()
+                Sum = 0L,
+                Current = (List&lt;T&gt;)null,
+                Result = new List&lt;List&lt;T&gt;&gt;()
             },
             (agg, item) =&gt;
             {
-                <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = metric(item);
-                <span class="hljs-keyword">if</span> (agg.Current == <span class="hljs-literal">null</span> || agg.Sum + <span class="hljs-keyword">value</span> &gt; maxChunkSize)
+                var value = metric(item);
+                if (agg.Current == null || agg.Sum + value &gt; maxChunkSize)
                 {
-                    <span class="hljs-keyword">var</span> current = <span class="hljs-keyword">new</span> List&lt;T&gt; { item };
+                    var current = new List&lt;T&gt; { item };
                     agg.Result.Add(current);
-                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = <span class="hljs-keyword">value</span>, Current = current, agg.Result };
+                    return new { Sum = value, Current = current, agg.Result };
                 }
 
                 agg.Current.Add(item);
-                <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = agg.Sum + <span class="hljs-keyword">value</span>, agg.Current, agg.Result };
+                return new { Sum = agg.Sum + value, agg.Current, agg.Result };
             })
         .Result;
 }
 </code></pre>
 <p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">SendBigBatchAsync</span>(<span class="hljs-params">IEnumerable&lt;T&gt; messages, Func&lt;T, <span class="hljs-keyword">long</span>&gt; getSize</span>)
-</span>{
-    <span class="hljs-keyword">var</span> chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
-    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+<pre><code class="lang-csharp">public async Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, long&gt; getSize)
+{
+    var chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
+    foreach (var chunk in chunks)
     {
-        <span class="hljs-keyword">var</span> brokeredMessages = chunk.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
-        <span class="hljs-keyword">await</span> client.SendBatchAsync(brokeredMessages);
+        var brokeredMessages = chunk.Select(m =&gt; new BrokeredMessage(m));
+        await client.SendBatchAsync(brokeredMessages);
     }
 }
 
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">long</span> MaxServiceBusMessage = <span class="hljs-number">256000</span>;
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient client;
+private const long MaxServiceBusMessage = 256000;
+private readonly QueueClient client;
 </code></pre>
 <p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
 Another thing to notice is that we lost all-or-nothing guarantee: we might
@@ -168,13 +163,13 @@ parts. Some sort of retry mechanism is probably needed.</p>
 <code>getSize</code> function? </p>
 <p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
 rewrite our method the following way:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+<pre><code class="lang-csharp">public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
 {
-    <span class="hljs-keyword">var</span> brokeredMessages = messages.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
-    <span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
-    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+    var brokeredMessages = messages.Select(m =&gt; new BrokeredMessage(m));
+    var chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
+    foreach (var chunk in chunks)
     {
-        <span class="hljs-keyword">await</span> client.SendBatchAsync(chunk);
+        await client.SendBatchAsync(chunk);
     }
 }
 </code></pre>
@@ -196,14 +191,14 @@ or set no custom headers at all. </p>
 <p>In this case, you might just measure this size once, and then put this
 fixed value inside a configuration file.</p>
 <p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> sizeBefore = message.Size;
+<pre><code class="lang-csharp">var sizeBefore = message.Size;
 client.Send(message);
-<span class="hljs-keyword">var</span> sizeAfter = message.Size;
-<span class="hljs-keyword">var</span> headerSize = sizeAfter - sizeBefore;
+var sizeAfter = message.Size;
+var headerSize = sizeAfter - sizeBefore;
 </code></pre>
 <p>Now you just need to adjust one line from the previous version of 
 <code>SendBigBatchAsync</code> method</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
+<pre><code class="lang-csharp">var chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
 </code></pre>
 <p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
 per application.</p>
@@ -225,47 +220,47 @@ the send operation and adjust future calculations based on actual measured size
 of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
 operation failed, so we can use this information.</p>
 <p>Here is a sketch of how to do that in code:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Sender is reused across requests</span>
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">BatchSender</span>
+<pre><code class="lang-csharp">// Sender is reused across requests
+public class BatchSender
 {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient queueClient;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> batchSizeLimit = <span class="hljs-number">262000</span>;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> headerSizeEstimate = <span class="hljs-number">54</span>; <span class="hljs-comment">// start with the smallest header possible</span>
+    private readonly QueueClient queueClient;
+    private long batchSizeLimit = 262000;
+    private long headerSizeEstimate = 54; // start with the smallest header possible
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">BatchSender</span>(<span class="hljs-params">QueueClient queueClient</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.queueClient = queueClient;
+    public BatchSender(QueueClient queueClient)
+    {
+        this.queueClient = queueClient;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+    public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
     {
-        <span class="hljs-keyword">var</span> packets = (<span class="hljs-keyword">from</span> m <span class="hljs-keyword">in</span> messages
-                     <span class="hljs-keyword">let</span> bm = <span class="hljs-keyword">new</span> BrokeredMessage(m)
-                     <span class="hljs-keyword">select</span> <span class="hljs-keyword">new</span> { Source = m, Brokered = bm, BodySize = bm.Size }).ToList();
-        <span class="hljs-keyword">var</span> chunks = packets.ChunkBy(p =&gt; <span class="hljs-keyword">this</span>.headerSizeEstimate + p.Brokered.Size, <span class="hljs-keyword">this</span>.batchSizeLimit);
-        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+        var packets = (from m in messages
+                     let bm = new BrokeredMessage(m)
+                     select new { Source = m, Brokered = bm, BodySize = bm.Size }).ToList();
+        var chunks = packets.ChunkBy(p =&gt; this.headerSizeEstimate + p.Brokered.Size, this.batchSizeLimit);
+        foreach (var chunk in chunks)
         {
-            <span class="hljs-keyword">try</span>
+            try
             {
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.queueClient.SendBatchAsync(chunk.Select(p =&gt; p.Brokered));
+                await this.queueClient.SendBatchAsync(chunk.Select(p =&gt; p.Brokered));
             }
-            <span class="hljs-keyword">catch</span> (MessageSizeExceededException)
+            catch (MessageSizeExceededException)
             {
-                <span class="hljs-keyword">var</span> maxHeader = packets.Max(p =&gt; p.Brokered.Size - p.BodySize);
-                <span class="hljs-keyword">if</span> (maxHeader &gt; <span class="hljs-keyword">this</span>.headerSizeEstimate)
+                var maxHeader = packets.Max(p =&gt; p.Brokered.Size - p.BodySize);
+                if (maxHeader &gt; this.headerSizeEstimate)
                 {
-                    <span class="hljs-comment">// If failed messages had bigger headers, remember this header size </span>
-                    <span class="hljs-comment">// as max observed and use it in future calculations</span>
-                    <span class="hljs-keyword">this</span>.headerSizeEstimate = maxHeader;
+                    // If failed messages had bigger headers, remember this header size 
+                    // as max observed and use it in future calculations
+                    this.headerSizeEstimate = maxHeader;
                 }
-                <span class="hljs-keyword">else</span>
+                else
                 {
-                    <span class="hljs-comment">// Reduce max batch size to 95% of current value</span>
-                    <span class="hljs-keyword">this</span>.batchSizeLimit = (<span class="hljs-keyword">long</span>)(<span class="hljs-keyword">this</span>.batchSizeLimit * <span class="hljs-number">.95</span>);
+                    // Reduce max batch size to 95% of current value
+                    this.batchSizeLimit = (long)(this.batchSizeLimit * .95);
                 }
 
-                <span class="hljs-comment">// Re-send the failed chunk</span>
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.SendBigBatchAsync(packets.Select(p =&gt; p.Source));
+                // Re-send the failed chunk
+                await this.SendBigBatchAsync(packets.Select(p =&gt; p.Source));
             }
 
         }
@@ -385,7 +380,7 @@ for status updates.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

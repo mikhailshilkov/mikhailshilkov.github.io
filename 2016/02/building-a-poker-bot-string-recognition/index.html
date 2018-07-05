@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -141,26 +136,26 @@ look how these steps are implemented.</p>
 <p>Because the padding is removed from all 4 sides of the region, I decided to use
 <code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
 with black or white points defined as a helper type:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BW</span> </span>= B | W
+<pre><code class="lang-fsharp">type BW = B | W
 </code></pre>
 <p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
 like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> removePadding pixels =
-  <span class="hljs-keyword">let</span> allBlack s = Seq.exists ((=) W) s
-  <span class="hljs-keyword">let</span> maxWidth = Array2D.length1 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> maxHeight = Array2D.length2 pixels - <span class="hljs-number">1</span>
-  <span class="hljs-keyword">let</span> firstX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> lastX = [<span class="hljs-number">0.</span>.maxWidth] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> y -&gt; allBlack pixels.[y, <span class="hljs-number">0.</span>.maxHeight])
-  <span class="hljs-keyword">let</span> firstY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndex (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
-  <span class="hljs-keyword">let</span> lastY = [<span class="hljs-number">0.</span>.maxHeight] 
-    |&gt; Seq.tryFindIndexBack (<span class="hljs-keyword">fun</span> x -&gt; allBlack pixels.[<span class="hljs-number">0.</span>.maxWidth, x])
+<pre><code class="lang-fsharp">let removePadding pixels =
+  let allBlack s = Seq.exists ((=) W) s
+  let maxWidth = Array2D.length1 pixels - 1
+  let maxHeight = Array2D.length2 pixels - 1
+  let firstX = [0..maxWidth] 
+    |&gt; Seq.tryFindIndex (fun y -&gt; allBlack pixels.[y, 0..maxHeight])
+  let lastX = [0..maxWidth] 
+    |&gt; Seq.tryFindIndexBack (fun y -&gt; allBlack pixels.[y, 0..maxHeight])
+  let firstY = [0..maxHeight] 
+    |&gt; Seq.tryFindIndex (fun x -&gt; allBlack pixels.[0..maxWidth, x])
+  let lastY = [0..maxHeight] 
+    |&gt; Seq.tryFindIndexBack (fun x -&gt; allBlack pixels.[0..maxWidth, x])
 
-  <span class="hljs-keyword">match</span> (firstX, lastX, firstY, lastY) <span class="hljs-keyword">with</span>
+  match (firstX, lastX, firstY, lastY) with
   | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
-  | _ -&gt; Array2D.init <span class="hljs-number">0</span> <span class="hljs-number">0</span> (<span class="hljs-keyword">fun</span> _ _ -&gt; B)
+  | _ -&gt; Array2D.init 0 0 (fun _ _ -&gt; B)
 </code></pre>
 <p>The first part finds the amount of fully-black columns and rows in the array.
 Then, if white points are found, the second part returns a sub array based on
@@ -168,20 +163,20 @@ the indices, otherwise empty array is returned.</p>
 <h2 id="split-the-text-into-characters">Split the text into characters</h2>
 <p>First, we convert our 2D array into the list of lists, where each item in the
 top-level list represents a single column of pixels:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> pixelColumns =
-  [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)
+<pre><code class="lang-fsharp">let pixelColumns =
+  [0..Array2D.length1 pixels - 1] 
+  |&gt; Seq.map (fun x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)
 </code></pre>
 <p>Then we can fold this list of columns into the symbols, where each symbol itself
 is the list of columns:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> splitIntoSymbols (e : BW list) (state: BW list list list) = 
-  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let splitIntoSymbols (e : BW list) (state: BW list list list) = 
+  match state with
   | cur::rest -&gt;
-      <span class="hljs-keyword">if</span> isSeparator e <span class="hljs-keyword">then</span>
-        <span class="hljs-keyword">match</span> cur <span class="hljs-keyword">with</span>
-        | _::_ -&gt; []::state <span class="hljs-comment">// add new list</span>
-        | _ -&gt; state        <span class="hljs-comment">// skip if we already have empty item</span>
-      <span class="hljs-keyword">else</span> (e::cur)::rest   <span class="hljs-comment">// add e to current list</span>
+      if isSeparator e then
+        match cur with
+        | _::_ -&gt; []::state // add new list
+        | _ -&gt; state        // skip if we already have empty item
+      else (e::cur)::rest   // add e to current list
   | _ -&gt; [[e]]
 
 Seq.foldBack splitIntoSymbols pixelColumns []
@@ -194,32 +189,32 @@ columns, which are lists of pixels.</p>
 <p>This part was already described in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
 Basically we compare the list of black or white points to the patterns of
 the known symbols:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> getChar patterns bws =
-  <span class="hljs-keyword">let</span> samePatterns h p =
+<pre><code class="lang-fsharp">let getChar patterns bws =
+  let samePatterns h p =
     Seq.zip h p
-    |&gt; Seq.forall (<span class="hljs-keyword">fun</span> (v1, v2) -&gt; v1 = v2)
-  <span class="hljs-keyword">let</span> matchingPattern = 
+    |&gt; Seq.forall (fun (v1, v2) -&gt; v1 = v2)
+  let matchingPattern = 
     patterns 
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; List.length p.Pattern = List.length bws)
-      |&gt; Array.filter (<span class="hljs-keyword">fun</span> p -&gt; samePatterns bws p.Pattern)
+      |&gt; Array.filter (fun p -&gt; List.length p.Pattern = List.length bws)
+      |&gt; Array.filter (fun p -&gt; samePatterns bws p.Pattern)
       |&gt; Array.tryHead
-  defaultArg (Option.map (<span class="hljs-keyword">fun</span> p -&gt; p.Char) matchingPattern) '?'
+  defaultArg (Option.map (fun p -&gt; p.Char) matchingPattern) &#39;?&#39;
 </code></pre>
 <h2 id="putting-it-all-together">Putting it all together</h2>
 <p>The <code>recognizeString</code> function accepts lower-order functions to match 
 symbols and get pixels together with width and height of the region:</p>
-<pre class="highlight"><code class="hljs fs">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
+<pre><code class="lang-fsharp">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
 </code></pre>
 <p>It builds an array of pixels, removes padding and folds with recognition.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeString matchSymbol getPixel width height =
+<pre><code class="lang-fsharp">let recognizeString matchSymbol getPixel width height =
 
-  <span class="hljs-keyword">let</span> pixels = 
-    Array2D.init width height (<span class="hljs-keyword">fun</span> x y -&gt; isWhite (getPixel x y))
+  let pixels = 
+    Array2D.init width height (fun x y -&gt; isWhite (getPixel x y))
     |&gt; removePadding
 
-  <span class="hljs-keyword">let</span> pixelColumns =
-    [<span class="hljs-number">0.</span>.Array2D.length1 pixels - <span class="hljs-number">1</span>] 
-    |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; pixels.[x, <span class="hljs-number">0.</span>.Array2D.length2 pixels - <span class="hljs-number">1</span>] |&gt; List.ofArray)      
+  let pixelColumns =
+    [0..Array2D.length1 pixels - 1] 
+    |&gt; Seq.map (fun x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)      
 
   Seq.foldBack splitIntoSymbols pixelColumns []
   |&gt; List.map matchSymbol
@@ -228,7 +223,7 @@ symbols and get pixels together with width and height of the region:</p>
 </code></pre>
 <p>Then we use it with a specific recognition patterns, e.g. known digits in case
 of numbers recognition:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeNumber x =
+<pre><code class="lang-fsharp">let recognizeNumber x =
   recognizeString (getChar numberPatterns) x
 </code></pre>
 <p>A way to produce these patterns is discussed in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
@@ -308,7 +303,7 @@ for card recognition can be found in <a href="https://github.com/mikhailshilkov/
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

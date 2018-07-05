@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -101,64 +96,64 @@ I decided to use Generic Webhook trigger (which is essentially an
 HTTP trigger).</p>
 <p>I used the Azure Portal to generate a function, so here is the 
 <code>function.json</code> that I got:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"bindings"</span>: [
+<pre><code class="lang-json">{
+  &quot;bindings&quot;: [
     {
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"httpTrigger"</span>,
-      <span class="hljs-attr">"direction"</span>: <span class="hljs-string">"in"</span>,
-      <span class="hljs-attr">"webHookType"</span>: <span class="hljs-string">"genericJson"</span>,
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"req"</span>
+      &quot;type&quot;: &quot;httpTrigger&quot;,
+      &quot;direction&quot;: &quot;in&quot;,
+      &quot;webHookType&quot;: &quot;genericJson&quot;,
+      &quot;name&quot;: &quot;req&quot;
     },
     {
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"http"</span>,
-      <span class="hljs-attr">"direction"</span>: <span class="hljs-string">"out"</span>,
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"res"</span>
+      &quot;type&quot;: &quot;http&quot;,
+      &quot;direction&quot;: &quot;out&quot;,
+      &quot;name&quot;: &quot;res&quot;
     }
   ],
-  <span class="hljs-attr">"disabled"</span>: <span class="hljs-literal">false</span>
+  &quot;disabled&quot;: false
 }
 </code></pre>
 <p>For precompiled functions, just decorate it with <code>HttpTriggerAttribute</code> with
 POST method:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span>(<span class="hljs-params">
-    [HttpTrigger(AuthorizationLevel.Function, <span class="hljs-string">"post"</span></span>)] HttpRequestMessage req)
-</span></code></pre>
+<pre><code class="lang-csharp">public static Task&lt;HttpResponseMessage&gt; Run(
+    [HttpTrigger(AuthorizationLevel.Function, &quot;post&quot;)] HttpRequestMessage req)
+</code></pre>
 <h2 id="parse-the-payload">Parse the Payload</h2>
 <p>Events from Event Grid will arrive in a specific predefined JSON format.
 Here is an example of events to expect:</p>
-<pre class="highlight"><code class="hljs json">[{
-  <span class="hljs-attr">"id"</span>: <span class="hljs-string">"0001"</span>,
-  <span class="hljs-attr">"eventType"</span>: <span class="hljs-string">"MyHelloWorld"</span>,
-  <span class="hljs-attr">"subject"</span>: <span class="hljs-string">"Hello World!"</span>,
-  <span class="hljs-attr">"eventTime"</span>: <span class="hljs-string">"2017-10-05T08:53:07"</span>,
-  <span class="hljs-attr">"data"</span>: {
-    <span class="hljs-attr">"hello"</span>: <span class="hljs-string">"world"</span>
+<pre><code class="lang-json">[{
+  &quot;id&quot;: &quot;0001&quot;,
+  &quot;eventType&quot;: &quot;MyHelloWorld&quot;,
+  &quot;subject&quot;: &quot;Hello World!&quot;,
+  &quot;eventTime&quot;: &quot;2017-10-05T08:53:07&quot;,
+  &quot;data&quot;: {
+    &quot;hello&quot;: &quot;world&quot;
   },
-  <span class="hljs-attr">"topic"</span>: <span class="hljs-string">"/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1"</span>
+  &quot;topic&quot;: &quot;/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1&quot;
 }]
 </code></pre>
 <p>To be able to parse those data more easily, I defined a C# class to deserialize
 JSON to:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">GridEvent</span>
+<pre><code class="lang-csharp">public class GridEvent
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> EventType { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Subject { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> DateTime EventTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> Dictionary&lt;<span class="hljs-keyword">string</span>, <span class="hljs-keyword">string</span>&gt; Data { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Topic { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public string Id { get; set; }
+    public string EventType { get; set; }
+    public string Subject { get; set; }
+    public DateTime EventTime { get; set; }
+    public Dictionary&lt;string, string&gt; Data { get; set; }
+    public string Topic { get; set; }
 }
 </code></pre>
 <p>Now, the function can read the events (note, that they are sent in arrays)
 from the body of POST request:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;HttpResponseMessage&gt; <span class="hljs-title">Run</span>(<span class="hljs-params">HttpRequestMessage req, TraceWriter log</span>)
-</span>{
-    <span class="hljs-keyword">string</span> jsonContent = <span class="hljs-keyword">await</span> req.Content.ReadAsStringAsync();
-    <span class="hljs-keyword">var</span> events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
+<pre><code class="lang-csharp">public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req, TraceWriter log)
+{
+    string jsonContent = await req.Content.ReadAsStringAsync();
+    var events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
 
-    <span class="hljs-comment">// do something with events</span>
+    // do something with events
 
-    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK);
+    return req.CreateResponse(HttpStatusCode.OK);
 }
 </code></pre>
 <h2 id="validate-the-endpoint">Validate the Endpoint</h2>
@@ -168,11 +163,11 @@ Grid will send events of the special type <code>SubscriptionValidation</code>. <
 <p>The validation request will contain a code, which we need to echo back in
 200-OK HTTP response. </p>
 <p>Here is a small piece of code to do just that:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">if</span> (req.Headers.GetValues(<span class="hljs-string">"Aeg-Event-Type"</span>).FirstOrDefault() == <span class="hljs-string">"SubscriptionValidation"</span>)
+<pre><code class="lang-csharp">if (req.Headers.GetValues(&quot;Aeg-Event-Type&quot;).FirstOrDefault() == &quot;SubscriptionValidation&quot;)
 {
-    <span class="hljs-keyword">var</span> code = events[<span class="hljs-number">0</span>].Data[<span class="hljs-string">"validationCode"</span>];
-    <span class="hljs-keyword">return</span> req.CreateResponse(HttpStatusCode.OK,
-        <span class="hljs-keyword">new</span> { validationResponse = code });
+    var code = events[0].Data[&quot;validationCode&quot;];
+    return req.CreateResponse(HttpStatusCode.OK,
+        new { validationResponse = code });
 }
 </code></pre>
 <p>The function is ready!</p>
@@ -187,21 +182,21 @@ your function, so you should see one invocation in the logs.</p>
 <h2 id="send-custom-events">Send Custom Events</h2>
 <p>Now, go to your favorite HTTP client (curl, Postman, etc) and send a sample
 event to check how the whole setup works:</p>
-<pre class="highlight"><code class="hljs http"><span class="hljs-keyword">POST</span> <span class="hljs-string">/api/events</span> HTTP/1.1
-<span class="hljs-attribute">Host</span>: &lt;your-eventgrid-topic&gt;.westus2-1.eventgrid.azure.net
-<span class="hljs-attribute">aeg-sas-key</span>: &lt;key&gt;
-<span class="hljs-attribute">Content-Type</span>: application/json
+<pre><code class="lang-http">POST /api/events HTTP/1.1
+Host: &lt;your-eventgrid-topic&gt;.westus2-1.eventgrid.azure.net
+aeg-sas-key: &lt;key&gt;
+Content-Type: application/json
 
-<span class="json">[{
-  <span class="hljs-attr">"id"</span>: <span class="hljs-string">"001"</span>,
-  <span class="hljs-attr">"eventType"</span>: <span class="hljs-string">"MyHelloWorld"</span>,
-  <span class="hljs-attr">"subject"</span>: <span class="hljs-string">"Hello World!"</span>,
-  <span class="hljs-attr">"eventTime"</span>: <span class="hljs-string">"2017-10-05T08:53:07"</span>,
-  <span class="hljs-attr">"data"</span>: {
-    <span class="hljs-attr">"hello"</span>: <span class="hljs-string">"world"</span>
+[{
+  &quot;id&quot;: &quot;001&quot;,
+  &quot;eventType&quot;: &quot;MyHelloWorld&quot;,
+  &quot;subject&quot;: &quot;Hello World!&quot;,
+  &quot;eventTime&quot;: &quot;2017-10-05T08:53:07&quot;,
+  &quot;data&quot;: {
+    &quot;hello&quot;: &quot;world&quot;
   }
 }]
-</span></code></pre>
+</code></pre>
 <p>Obviously, adjust the endpoint and key based on the data from the portal.</p>
 <p>You should get a 200-OK back and then see your event in Azure Function 
 invocation logs.</p>
@@ -277,7 +272,7 @@ invocation logs.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

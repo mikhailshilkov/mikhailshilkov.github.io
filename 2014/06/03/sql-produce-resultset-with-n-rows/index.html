@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -89,25 +84,25 @@
         <p>Let&#39;s talk about T-SQL today.</p>
 <p>Sometimes you need to produce a result set, which would contain N rows with numbers 1...N in each row. For example, I needed to calculate some statistics per week for N weeks starting from today and going back to the past.</p>
 <p>Here is a table funtion which does the enumeration:</p>
-<pre class="highlight"><code class="hljs n1ql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">FUNCTION</span> dbo.fnEnumerateNumbers(@<span class="hljs-built_in">max</span> int) 
+<pre><code>CREATE FUNCTION dbo.fnEnumerateNumbers(@max int) 
 RETURNS TABLE 
-<span class="hljs-keyword">RETURN</span> 
-<span class="hljs-keyword">WITH</span>
- E1(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
-           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
-           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span> <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">UNION</span> <span class="hljs-keyword">ALL</span>
-           <span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span>),                 -<span class="hljs-number">-10E1</span>  <span class="hljs-keyword">or</span> <span class="hljs-number">10</span> rows
- E2(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E1 a, E1 b), -<span class="hljs-number">-10E2</span>  <span class="hljs-keyword">or</span> <span class="hljs-number">100</span> rows
- E4(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E2 a, E2 b), -<span class="hljs-number">-10E4</span>  <span class="hljs-keyword">or</span> <span class="hljs-number">10000</span> rows
- E8(N) <span class="hljs-keyword">AS</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> E4 a, E4 b)  -<span class="hljs-number">-10E8</span>  <span class="hljs-keyword">or</span> <span class="hljs-number">100000000</span> rows
-<span class="hljs-keyword">SELECT</span> TOP (@<span class="hljs-built_in">max</span>) N = ROW_NUMBER() <span class="hljs-keyword">OVER</span> (<span class="hljs-keyword">ORDER</span> <span class="hljs-keyword">BY</span> (<span class="hljs-keyword">SELECT</span> <span class="hljs-literal">NULL</span>)) 
-  <span class="hljs-keyword">FROM</span> E8
+RETURN 
+WITH
+ E1(N) AS (SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1 UNION ALL
+           SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1 UNION ALL
+           SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1 UNION ALL
+           SELECT 1),                 --10E1  or 10 rows
+ E2(N) AS (SELECT 1 FROM E1 a, E1 b), --10E2  or 100 rows
+ E4(N) AS (SELECT 1 FROM E2 a, E2 b), --10E4  or 10000 rows
+ E8(N) AS (SELECT 1 FROM E4 a, E4 b)  --10E8  or 100000000 rows
+SELECT TOP (@max) N = ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) 
+  FROM E8
 </code></pre><p>Usage is trivial:</p>
-<pre class="highlight"><code class="hljs n1ql"><span class="hljs-keyword">SELECT</span> N
-  <span class="hljs-keyword">FROM</span> dbo.fnEnumerateNumbers(<span class="hljs-number">100</span>)
+<pre><code>SELECT N
+  FROM dbo.fnEnumerateNumbers(100)
 </code></pre><p>And here is how I solved the task of enumerating weeks:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">SELECT</span> <span class="hljs-keyword">dateadd</span>(<span class="hljs-keyword">week</span>, <span class="hljs-number">1</span> - N, <span class="hljs-keyword">getutcdate</span>()) 
-  <span class="hljs-keyword">FROM</span> dbo.fnEnumerateNumbers(<span class="hljs-number">100</span>)
+<pre><code>SELECT dateadd(week, 1 - N, getutcdate()) 
+  FROM dbo.fnEnumerateNumbers(100)
 </code></pre><p>There are multiple possibilities to implement similar function, but I believe this way is the best one in terms of performance. No temporary tables, no table reads, no dependencies on table existance, and you can define your maximum yourself.</p>
 <p>Happy coding!</p>
 
@@ -181,7 +176,7 @@ RETURNS TABLE
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

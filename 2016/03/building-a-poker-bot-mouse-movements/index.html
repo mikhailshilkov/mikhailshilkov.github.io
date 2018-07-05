@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -109,8 +104,8 @@ by a human being. For this post, I will simplify the task to the following steps
 <h2 id="cursor-position">Cursor Position</h2>
 <p>It&#39;s really easy to understand where the mouse cursor currently is: just
 use <code>Control.MousePosition</code> property from the standard library:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> currentPosition () = 
-  <span class="hljs-keyword">let</span> mp = System.Windows.Forms.Control.MousePosition
+<pre><code class="lang-fsharp">let currentPosition () = 
+  let mp = System.Windows.Forms.Control.MousePosition
   (mp.X, mp.Y)
 </code></pre>
 <p>Note that your application doesn&#39;t have to be based on WinForms, just reference
@@ -119,11 +114,11 @@ the required assembly.</p>
 <p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
 library to control the mouse and the keyboard programmatically. It uses some
 weird coordinate system, so the function to move the mouse cursor looks like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> simulator = <span class="hljs-keyword">new</span> InputSimulator()
+<pre><code class="lang-fsharp">let simulator = new InputSimulator()
 
-<span class="hljs-keyword">let</span> moveTo x y =
-  <span class="hljs-keyword">let</span> toX = <span class="hljs-number">65535.</span> * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
-  <span class="hljs-keyword">let</span> toY = <span class="hljs-number">65535.</span> * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
+let moveTo x y =
+  let toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
+  let toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
   simulator.Mouse.MoveMouseTo(toX, toY)
 </code></pre>
 <p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
@@ -133,31 +128,31 @@ the top-left corner of the screen.</p>
 at least it should look decent. For this gradual movement function I used
 a nice F# feature called asynchronous workflows. Effectively, it looks like
 a loop with async sleep statements inside.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> moveToWorkflow step (toX, toY) = async {
-  <span class="hljs-keyword">let</span> (fromX, fromY) = currentPosition()
-  <span class="hljs-keyword">let</span> count = Math.Max(<span class="hljs-number">10</span>, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / <span class="hljs-number">20</span>)
-  <span class="hljs-keyword">for</span> i = <span class="hljs-number">0</span> <span class="hljs-keyword">to</span> count <span class="hljs-keyword">do</span>
-    <span class="hljs-keyword">let</span> x = step fromX toX count i |&gt; float
-    <span class="hljs-keyword">let</span> y = step fromY toY count i |&gt; float
+<pre><code class="lang-fsharp">let moveToWorkflow step (toX, toY) = async {
+  let (fromX, fromY) = currentPosition()
+  let count = Math.Max(10, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / 20)
+  for i = 0 to count do
+    let x = step fromX toX count i |&gt; float
+    let y = step fromY toY count i |&gt; float
     moveTo x y
-    <span class="hljs-keyword">do!</span> Async.Sleep <span class="hljs-number">3</span>
+    do! Async.Sleep 3
   }
 </code></pre>
 <p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
 Basically, it calculates a coordinate for n-th step of the movement. We can
 plug different implementations of this function to find the right balance of
 the movement style. Here is the simplest linear implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> linearStep from until max i =
+<pre><code class="lang-fsharp">let linearStep from until max i =
   from + (until - from) * i / max
 </code></pre>
 <p>The sinus-based implementation is a bit more verbose because of float-int 
 conversions:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> sinStep (from:int) (until:int) (max:int) (index:int) =
-  <span class="hljs-keyword">let</span> fromf = from |&gt; float
-  <span class="hljs-keyword">let</span> untilf = until |&gt; float
-  <span class="hljs-keyword">let</span> maxf = max |&gt; float
-  <span class="hljs-keyword">let</span> indexf = index |&gt; float
-  fromf + (untilf - fromf) * Math.Sin(Math.PI / <span class="hljs-number">2.</span> * indexf / maxf) |&gt; int
+<pre><code class="lang-fsharp">let sinStep (from:int) (until:int) (max:int) (index:int) =
+  let fromf = from |&gt; float
+  let untilf = until |&gt; float
+  let maxf = max |&gt; float
+  let indexf = index |&gt; float
+  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int
 </code></pre>
 <p>The following animation illustrates the concept: </p>
 <svg width="778" height="190" viewbox="0 0 500 190">
@@ -177,9 +172,9 @@ the <code>sinStep</code> function derived from sinus of time.</p>
 <p>A button is a rectangle and we want to click a random point inside it. So, all
 we need is to pick random coordinates, move the mouse there and send a 
 click event via the simulator:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickButton (minX, minY, maxX, maxY) =
-  <span class="hljs-keyword">let</span> r = <span class="hljs-keyword">new</span> Random()
-  <span class="hljs-keyword">let</span> p = (r.Next(minX, maxX), r.Next(minY, maxY))
+<pre><code class="lang-fsharp">let clickButton (minX, minY, maxX, maxY) =
+  let r = new Random()
+  let p = (r.Next(minX, maxX), r.Next(minY, maxY))
   moveToWorkflow sinStep p |&gt; Async.RunSynchronously
   simulator.Mouse.LeftButtonClick()
 </code></pre>
@@ -259,7 +254,7 @@ click event via the simulator:</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

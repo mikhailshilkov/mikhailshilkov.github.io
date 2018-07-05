@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -203,15 +198,15 @@ and pipelines in code?</p>
 <p>Here&#39;s how a transformation is typically represented in <em>Apache Storm</em>, the grand
 daddy of Big Data Stream Processing systems (transformations are called 
 <em>Bolts</em> in Storm, and code is Java):</p>
-<pre class="highlight"><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">TokenizerBolt</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">IRichBolt</span> </span>{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">execute</span><span class="hljs-params">(Tuple input)</span> </span>{
-        String wishlist = input.getString(<span class="hljs-number">0</span>);
-        <span class="hljs-keyword">for</span>(String gift: wishlist.split(<span class="hljs-string">", "</span>)) {
-            collector.emit(<span class="hljs-keyword">new</span> Values(gift));
+<pre><code class="lang-java">public class TokenizerBolt implements IRichBolt {
+    public void execute(Tuple input) {
+        String wishlist = input.getString(0);
+        for(String gift: wishlist.split(&quot;, &quot;)) {
+            collector.emit(new Values(gift));
         }
         collector.ack(input);
     }
-    <span class="hljs-comment">// Other code is omitted</span>
+    // Other code is omitted
 }
 </code></pre>
 <p>Tokenizer is a class which implements a predefined interface with <code>execute</code>
@@ -231,56 +226,56 @@ is what we can do:</p>
 <p>Our domain is very simple in Gift Count example. Still, we could describe <code>Gift</code>
 type to restrict it to be lowercase, not empty etc. But for the sake of simplisity 
 I&#39;ll limit it to one liner:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Gift</span> </span>= string
+<pre><code class="lang-fsharp">type Gift = string
 </code></pre>
 <p>Now, the type of the first transformation should be <code>string -&gt; Gift list</code>. So,
 our transformation is based on a function </p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tokenize (wishlist: string) =
-  wishlist.ToLowerInvariant().Split(<span class="hljs-string">", "</span>)
+<pre><code class="lang-fsharp">let tokenize (wishlist: string) =
+  wishlist.ToLowerInvariant().Split(&quot;, &quot;)
   |&gt; List.ofArray
-  |&gt; List.map (<span class="hljs-keyword">fun</span> x -&gt; x.Trim())
-  |&gt; List.filter (<span class="hljs-keyword">fun</span> x -&gt; x.Length &gt; <span class="hljs-number">0</span>)
+  |&gt; List.map (fun x -&gt; x.Trim())
+  |&gt; List.filter (fun x -&gt; x.Length &gt; 0)
 </code></pre>
 <p>The counting transformation is modeled in a similar way. The base function
 is of type <code>Gift list -&gt; (Gift * int) list</code> and is actually implemented as </p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> count xs = List.countBy id xs
+<pre><code class="lang-fsharp">let count xs = List.countBy id xs
 </code></pre>
 <p>Instead of using a real database, we will just print the counts to console.
 So the last optional step for our examples will be to print out the counts
 one by one. Here is a helper function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> print (gift, count) = sprintf <span class="hljs-string">"%i %s"</span> count gift
+<pre><code class="lang-fsharp">let print (gift, count) = sprintf &quot;%i %s&quot; count gift
 </code></pre>
 <p>Now, we can tokenize and count the gifts in a single list. But how do we
 aggregate data over time? Let&#39;s leave this to the pipelines.</p>
 <h2 id="pipelines">Pipelines</h2>
 <p>Let&#39;s have a look at a definition of a Storm pipeline (in Java):</p>
-<pre class="highlight"><code class="hljs java">TopologyBuilder builder = <span class="hljs-keyword">new</span> TopologyBuilder();
-builder.setSpout(<span class="hljs-string">"line-reader"</span>, <span class="hljs-keyword">new</span> LineReaderSpout());
-builder.setBolt(<span class="hljs-string">"gifts-spitter"</span>, <span class="hljs-keyword">new</span> GiftSpitterBolt()).shuffleGrouping(<span class="hljs-string">"line-reader"</span>);
-builder.setBolt(<span class="hljs-string">"gift-counter"</span>, <span class="hljs-keyword">new</span> GiftCounterBolt()).shuffleGrouping(<span class="hljs-string">"gifts-spitter"</span>);
+<pre><code class="lang-java">TopologyBuilder builder = new TopologyBuilder();
+builder.setSpout(&quot;line-reader&quot;, new LineReaderSpout());
+builder.setBolt(&quot;gifts-spitter&quot;, new GiftSpitterBolt()).shuffleGrouping(&quot;line-reader&quot;);
+builder.setBolt(&quot;gift-counter&quot;, new GiftCounterBolt()).shuffleGrouping(&quot;gifts-spitter&quot;);
 </code></pre>
 <p>There is a <code>Builder</code> class, which is capable to add Sources (<code>Spouts</code>) and Transformations
 (<code>Bolts</code>) to the pipeline. But again, there&#39;s no type story here: the stages are linked
 by name, and the types are just implementations of predefined interfaces.</p>
 <p>Here is another example of the pipeline, now from <em>Google Dataflow SDK</em> (still Java):</p>
-<pre class="highlight"><code class="hljs java">Pipeline
+<pre><code class="lang-java">Pipeline
     .create(options)
-    .apply(TextIO.Read.from(<span class="hljs-string">"..."</span>))
-    .apply(ParDo.named(<span class="hljs-string">"ExtractGifts"</span>).of(<span class="hljs-keyword">new</span> DoFn&lt;String, String&gt;() {
-         <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">processElement</span><span class="hljs-params">(ProcessContext c)</span> </span>{ <span class="hljs-comment">/* Implements tokenizer */</span> }
+    .apply(TextIO.Read.from(&quot;...&quot;))
+    .apply(ParDo.named(&quot;ExtractGifts&quot;).of(new DoFn&lt;String, String&gt;() {
+         public void processElement(ProcessContext c) { /* Implements tokenizer */ }
     }))    
     .apply(Count.&lt;String&gt;perElement())
-    .apply(MapElements.via(<span class="hljs-keyword">new</span> SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
-         <span class="hljs-function"><span class="hljs-keyword">public</span> String <span class="hljs-title">apply</span><span class="hljs-params">(KV&lt;String, Long&gt; element)</span> </span>{ <span class="hljs-comment">/* Formats results */</span> }
+    .apply(MapElements.via(new SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
+         public String apply(KV&lt;String, Long&gt; element) { /* Formats results */ }
     }))
-    .apply(TextIO.Write.to(<span class="hljs-string">"..."</span>));
+    .apply(TextIO.Write.to(&quot;...&quot;));
 </code></pre>
 <p>I consider this to be more descriptive. There is a clear flow of operations chained
 together. The types are visible and checked at compile time.</p>
 <p>How would we like to see this pipeline in F#? Our motivation example is going to
 be the same processing applied to a normal F# list of wishlists (strings). The following
 code snippet counts the gifts in wishlists and prints the result:</p>
-<pre class="highlight"><code class="hljs fs">wishlists
+<pre><code class="lang-fsharp">wishlists
 |&gt; List.collect tokenize
 |&gt; List.countBy id
 |&gt; List.map print
@@ -289,7 +284,7 @@ code snippet counts the gifts in wishlists and prints the result:</p>
 <p>My goal for the rest of the article will be to define a <code>Flow</code> module which would
 enable me to write a Stream Processing pipeline in the same fashion. Here is the
 target code:</p>
-<pre class="highlight"><code class="hljs fs">sourceOfWishlists
+<pre><code class="lang-fsharp">sourceOfWishlists
 |&gt; Flow.collect tokenize
 |&gt; Flow.countBy id
 |&gt; Flow.map print
@@ -310,12 +305,12 @@ stream processing are done in parallel, with separate tools and separate code ba
 The approach is called <em>Lambda Architecture</em>. Beam is declaring this approach outdated,
 offering a way to reuse streaming code and capacity also for bounded data workloads.</p>
 <p>To follow this modern path, we will declare our <code>Source</code> as following:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BoundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= unit -&gt; <span class="hljs-symbol">'T</span> seq
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">UnboundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= (<span class="hljs-symbol">'T</span> -&gt; unit) -&gt; unit
+<pre><code class="lang-fsharp">type BoundedSource&lt;&#39;T&gt; = unit -&gt; &#39;T seq
+type UnboundedSource&lt;&#39;T&gt; = (&#39;T -&gt; unit) -&gt; unit
 
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Source</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= 
-  | Bounded <span class="hljs-keyword">of</span> BoundedSource&lt;<span class="hljs-symbol">'T</span>&gt;
-  | Unbounded <span class="hljs-keyword">of</span> UnboundedSource&lt;<span class="hljs-symbol">'T</span>&gt;
+type Source&lt;&#39;T&gt; = 
+  | Bounded of BoundedSource&lt;&#39;T&gt;
+  | Unbounded of UnboundedSource&lt;&#39;T&gt;
 </code></pre>
 <p><code>Source</code> is a generic discriminated union with two cases. <code>Bounded</code> case represents
 a side effect-ful function, which returns a sequence of elements when called.
@@ -326,45 +321,45 @@ executed as the argument and returns nothing meaningful (<code>unit</code> again
 see a usage example later.</p>
 <p>The <code>Sink</code> represents an action to happen at the end of pipeline. I&#39;ve made it
 a discriminated union too, but with just one case:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Sink</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= | Action <span class="hljs-keyword">of</span> (<span class="hljs-symbol">'T</span> -&gt; unit)
+<pre><code class="lang-fsharp">type Sink&lt;&#39;T&gt; = | Action of (&#39;T -&gt; unit)
 </code></pre>
 <p>Now, we should be able to simulate an empty processing pipeline: directly connect 
 a source to a sink. Let&#39;s start with bounded data:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> copyPipeline source sink =
-  <span class="hljs-keyword">match</span> source, sink <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let copyPipeline source sink =
+  match source, sink with
   | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
-  | _ -&gt; failwith <span class="hljs-string">"Not supported yet"</span>
+  | _ -&gt; failwith &quot;Not supported yet&quot;
 
-<span class="hljs-keyword">let</span> gifts = seq [<span class="hljs-string">"Ball"</span>; <span class="hljs-string">"Train"</span>; <span class="hljs-string">"Doll"</span>]
-<span class="hljs-keyword">let</span> giftBoundedSource = (<span class="hljs-keyword">fun</span>() -&gt; gifts) |&gt; Bounded
+let gifts = seq [&quot;Ball&quot;; &quot;Train&quot;; &quot;Doll&quot;]
+let giftBoundedSource = (fun() -&gt; gifts) |&gt; Bounded
 
-<span class="hljs-keyword">let</span> consoleSink = (<span class="hljs-keyword">fun</span> (s: string) -&gt; Console.WriteLine s) |&gt; Action
+let consoleSink = (fun (s: string) -&gt; Console.WriteLine s) |&gt; Action
 
 copyPipeline giftBoundedSource consoleSink
 </code></pre>
 <p>This code will print out all the gift names from the sequence. Now, let&#39;s extend it to
 stream unbounded data. Before we can do that, let&#39;s introduce a helper class:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Triggered</span>&lt;<span class="hljs-title">'T</span>&gt;</span>() = 
-  <span class="hljs-keyword">let</span> subscribers = <span class="hljs-keyword">new</span> List&lt;<span class="hljs-symbol">'T</span> -&gt; unit&gt;()
-  <span class="hljs-keyword">member</span> this.DoNext x =
-    subscribers.ForEach(<span class="hljs-keyword">fun</span> s -&gt; s x)
-  <span class="hljs-keyword">member</span> this.Subscribe = subscribers.Add
+<pre><code class="lang-fsharp">type Triggered&lt;&#39;T&gt;() = 
+  let subscribers = new List&lt;&#39;T -&gt; unit&gt;()
+  member this.DoNext x =
+    subscribers.ForEach(fun s -&gt; s x)
+  member this.Subscribe = subscribers.Add
 </code></pre>
 <p>An instance of such class keeps a mutable list of subscribers. Subscribers are
 added by calling <code>Subscribe</code> method. Someone else can then call <code>DoNext</code> method,
 and each subscriber will get an item every time.</p>
 <p>Here&#39;s how we can use it for unbounded data processing:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> copyPipeline source sink =
-  <span class="hljs-keyword">match</span> source, sink <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let copyPipeline source sink =
+  match source, sink with
   | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
   | Unbounded ub, Action a -&gt; ub a
 
-<span class="hljs-keyword">let</span> consoleSource = <span class="hljs-keyword">new</span> Triggered&lt;string&gt;()
-<span class="hljs-keyword">let</span> unboundedSource = consoleSource.Subscribe |&gt; Unbounded
+let consoleSource = new Triggered&lt;string&gt;()
+let unboundedSource = consoleSource.Subscribe |&gt; Unbounded
 copyPipeline unboundedSource consoleSink
 
-Seq.initInfinite (<span class="hljs-keyword">fun</span> _ -&gt; Console.ReadLine())
-|&gt; Seq.takeWhile ((&lt;&gt;) <span class="hljs-string">"q"</span>)
+Seq.initInfinite (fun _ -&gt; Console.ReadLine())
+|&gt; Seq.takeWhile ((&lt;&gt;) &quot;q&quot;)
 |&gt; Seq.iter consoleSource.DoNext
 </code></pre>
 <p>This little program will echo whatever you enter into the console until you type 
@@ -383,22 +378,22 @@ and the data flows to the sink.</li>
 <p>Now it&#39;s time to implement the contracts for the flow that we defined
 in Gift Count example. The contract consists of two parts. The first part
 is a generic interface which defines all the operations that we need:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Runnable</span> </span>= unit -&gt; unit
+<pre><code class="lang-fsharp">type Runnable = unit -&gt; unit
 
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">IFlow</span>&lt;<span class="hljs-title">'a</span>&gt; </span>=
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> Map&lt;<span class="hljs-symbol">'b</span>&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> Collect&lt;<span class="hljs-symbol">'b</span>&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span> list) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> CountBy&lt;<span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span> * int&gt;
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> To: Sink&lt;<span class="hljs-symbol">'a</span>&gt; -&gt; Runnable
+type IFlow&lt;&#39;a&gt; =
+  abstract member Map&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b&gt;
+  abstract member Collect&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b list) -&gt; IFlow&lt;&#39;b&gt;
+  abstract member CountBy&lt;&#39;b when &#39;b: equality&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b * int&gt;
+  abstract member To: Sink&lt;&#39;a&gt; -&gt; Runnable
 </code></pre>
 <p>Then we define a module which is just a wrapper around the interface to
 enable F#-style API:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Flow =
-  <span class="hljs-keyword">let</span> map&lt;'TI, 'TO&gt; (f: 'TI -&gt; 'TO) (flow: IFlow&lt;'TI&gt;) = flow.Map f
-  <span class="hljs-keyword">let</span> collect&lt;'TI, 'TO&gt; (f: 'TI -&gt; 'TO list) (flow: IFlow&lt;'TI&gt;) = flow.Collect f
-  <span class="hljs-keyword">let</span> countBy&lt;<span class="hljs-symbol">'T</span>, 'TK <span class="hljs-keyword">when</span> 'TK: equality&gt; (f: <span class="hljs-symbol">'T</span> -&gt; 'TK) (flow: IFlow&lt;<span class="hljs-symbol">'T</span>&gt;) = flow.CountBy f
-  <span class="hljs-keyword">let</span> connectTo&lt;<span class="hljs-symbol">'T</span>&gt; sink (flow: IFlow&lt;<span class="hljs-symbol">'T</span>&gt;) = flow.To sink
-  <span class="hljs-keyword">let</span> run (r: Runnable) = r()
+<pre><code class="lang-fsharp">module Flow =
+  let map&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO) (flow: IFlow&lt;&#39;TI&gt;) = flow.Map f
+  let collect&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO list) (flow: IFlow&lt;&#39;TI&gt;) = flow.Collect f
+  let countBy&lt;&#39;T, &#39;TK when &#39;TK: equality&gt; (f: &#39;T -&gt; &#39;TK) (flow: IFlow&lt;&#39;T&gt;) = flow.CountBy f
+  let connectTo&lt;&#39;T&gt; sink (flow: IFlow&lt;&#39;T&gt;) = flow.To sink
+  let run (r: Runnable) = r()
 </code></pre>
 <p>Then, we just need an implementation of <code>IFlow</code> and a factory method to create
 an initial instance of flow given a data source. </p>
@@ -411,62 +406,62 @@ to build a visual graph of processing stages, to be used for documentation and d
 purposes.</p>
 <p>We will have a look at more advanced implementations in the further articles, but
 for now here is a naive version:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Runner =
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> mapTransform map = <span class="hljs-keyword">function</span>
+<pre><code class="lang-fsharp">module Runner =
+  let private mapTransform map = function
     | Bounded bs -&gt; bs &gt;&gt; Seq.map map |&gt; Bounded
     | Unbounded us -&gt;
-      <span class="hljs-keyword">fun</span> subscriber -&gt; map &gt;&gt; subscriber |&gt; us
+      fun subscriber -&gt; map &gt;&gt; subscriber |&gt; us
       |&gt; Unbounded
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> collectTransform mapToMany = <span class="hljs-keyword">function</span>
+  let private collectTransform mapToMany = function
     | Bounded bs -&gt; bs &gt;&gt; Seq.map mapToMany &gt;&gt; Seq.concat |&gt; Bounded
     | Unbounded us -&gt;
-      <span class="hljs-keyword">fun</span> subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
+      fun subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
       |&gt; Unbounded
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> countByTransform&lt;<span class="hljs-symbol">'a</span>, <span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt; (getKey: <span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) source =
-    <span class="hljs-keyword">let</span> state = <span class="hljs-keyword">new</span> Dictionary&lt;<span class="hljs-symbol">'b</span>, int&gt;()
-    <span class="hljs-keyword">let</span> addItem i = 
-      <span class="hljs-keyword">let</span> key = getKey i
-      <span class="hljs-keyword">let</span> value = <span class="hljs-keyword">if</span> state.ContainsKey key <span class="hljs-keyword">then</span> state.[key] <span class="hljs-keyword">else</span> <span class="hljs-number">0</span>
-      <span class="hljs-keyword">let</span> newValue = value + <span class="hljs-number">1</span>
+  let private countByTransform&lt;&#39;a, &#39;b when &#39;b: equality&gt; (getKey: &#39;a -&gt; &#39;b) source =
+    let state = new Dictionary&lt;&#39;b, int&gt;()
+    let addItem i = 
+      let key = getKey i
+      let value = if state.ContainsKey key then state.[key] else 0
+      let newValue = value + 1
       state.[key] &lt;- newValue
       (key, newValue)
 
-    <span class="hljs-keyword">match</span> source <span class="hljs-keyword">with</span>
+    match source with
     | Bounded bs -&gt; bs &gt;&gt; Seq.countBy getKey |&gt; Bounded
-    | Unbounded us -&gt; (<span class="hljs-keyword">fun</span> s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
+    | Unbounded us -&gt; (fun s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> stage source transform sink () =
-    <span class="hljs-keyword">match</span> transform source, sink <span class="hljs-keyword">with</span>
+  let private stage source transform sink () =
+    match transform source, sink with
     | Bounded bs, Action a -&gt; bs() |&gt; Seq.iter a
     | Unbounded us, Action a -&gt; us a
 
-  <span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">private</span> <span class="hljs-title">Flow</span>&lt;<span class="hljs-title">'a</span>&gt;</span>(source: Source&lt;<span class="hljs-symbol">'a</span>&gt;, connect: Sink&lt;<span class="hljs-symbol">'a</span>&gt; -&gt; Runnable) =
-    <span class="hljs-keyword">member</span> this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; t = <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-symbol">'b</span>&gt;(t source, stage source t) :&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
+  type private Flow&lt;&#39;a&gt;(source: Source&lt;&#39;a&gt;, connect: Sink&lt;&#39;a&gt; -&gt; Runnable) =
+    member this.Apply&lt;&#39;b&gt; t = new Flow&lt;&#39;b&gt;(t source, stage source t) :&gt; IFlow&lt;&#39;b&gt;
 
-    <span class="hljs-keyword">interface</span> IFlow&lt;<span class="hljs-symbol">'a</span>&gt; <span class="hljs-keyword">with</span>
-      <span class="hljs-keyword">member</span> this.Map&lt;<span class="hljs-symbol">'b</span>&gt; map = this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; (mapTransform map)
+    interface IFlow&lt;&#39;a&gt; with
+      member this.Map&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (mapTransform map)
 
-      <span class="hljs-keyword">member</span> this.Collect&lt;<span class="hljs-symbol">'b</span>&gt; map = this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; (collectTransform map)
+      member this.Collect&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (collectTransform map)
 
-      <span class="hljs-keyword">member</span> this.CountBy&lt;<span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt;(getKey) = 
-        this.Apply&lt;<span class="hljs-symbol">'b</span> * int&gt; (countByTransform&lt;<span class="hljs-symbol">'a</span>, <span class="hljs-symbol">'b</span>&gt; getKey)
+      member this.CountBy&lt;&#39;b when &#39;b: equality&gt;(getKey) = 
+        this.Apply&lt;&#39;b * int&gt; (countByTransform&lt;&#39;a, &#39;b&gt; getKey)
 
-      <span class="hljs-keyword">member</span> this.To(sink) = connect(sink)
+      member this.To(sink) = connect(sink)
 
-  <span class="hljs-keyword">let</span> from&lt;<span class="hljs-symbol">'a</span>&gt; source =
-    <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-symbol">'a</span>&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;<span class="hljs-symbol">'a</span>&gt;
+  let from&lt;&#39;a&gt; source =
+    new Flow&lt;&#39;a&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;&#39;a&gt;
 </code></pre>
 <p>The implementation details are not that important at the moment (even though it&#39;s
 just 37 lines of code), so I&#39;ll just proceed to the pipeline definition:</p>
-<pre class="highlight"><code class="hljs fs">unboundedSource                <span class="hljs-comment">// e.g. same console source as before</span>
-|&gt; Runner.from                 <span class="hljs-comment">// create Runner implementation of IFlow</span>
+<pre><code class="lang-fsharp">unboundedSource                // e.g. same console source as before
+|&gt; Runner.from                 // create Runner implementation of IFlow
 |&gt; Flow.collect tokenize
 |&gt; Flow.countBy id
 |&gt; Flow.map print
-|&gt; Flow.connectTo consoleSink  <span class="hljs-comment">// connect to the Sink</span>
-|&gt; Flow.run                    <span class="hljs-comment">// start listening for events</span>
+|&gt; Flow.connectTo consoleSink  // connect to the Sink
+|&gt; Flow.run                    // start listening for events
 </code></pre>
 <p>Here you can find 
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/streamprocessing/GiftCount.fs">the full code of the Gift Count example</a>.</p>
@@ -559,7 +554,7 @@ follow-ups:</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

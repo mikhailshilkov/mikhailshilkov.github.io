@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -81,6 +76,119 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Jul 27th, 2016</div>
+    
+    <h1><a href='/2016/07/mocking-api-calls-in-aurelia/'>Mocking API calls in Aurelia</a></h1>
+    
+    <div class="post-content">
+        <p><a href="http://aurelia.io">Aurelia</a> is a modern and slick single-page application framework. 
+&quot;Single-page application&quot; aspect means that it&#39;s loaded
+into the browser once, and then the navigation happens on the client side and
+all the data are loaded from a REST API endpoint.</p>
+<p>Let&#39;s say that our front-end Aurelia app is hosted at
+<code>myaureliaapp.com</code> while the REST API is hosted at
+<code>myaureliaapp.com/api</code>. The REST API is a server-side application,
+which can be implemented in .NET, Java, Node.JS etc., and it talks to
+a database of some kinds.</p>
+<p>For the front-end development purpose, it&#39;s usually useful to be able to
+mock the connection to API with some static manually generated data. This
+cuts the hard dependency between the client code, the backend code and database.
+It&#39;s much easier to mock the exact data set which is needed for the current
+development task.</p>
+<p>Fortunately, it can be easily done, and here is how.</p>
+<h2 id="identify-your-requests">Identify your requests</h2>
+<p>Create a list of the requests that you need to mock. For our example let&#39;s
+say you do the following requests from the application:</p>
+<pre><code>GET /api/products
+GET /api/products/{id}
+POST /api/products
+</code></pre><h2 id="put-your-mock-data-into-files">Put your mock data into files</h2>
+<p>Go to the root folder of your Aurelia app and create an <code>/api</code> folder. </p>
+<p>Create a <code>/api/products</code> subfolder and put a new file called <code>GET.json</code>. This
+file should contain the JSON of the product list, e.g.</p>
+<pre><code class="lang-json">[ { &quot;id&quot;: 1, &quot;name&quot;: &quot;Keyboard&quot;, &quot;price&quot;: &quot;60$&quot; },
+  { &quot;id&quot;: 2, &quot;name&quot;: &quot;Mouse&quot;, &quot;price&quot;: &quot;20$&quot; },
+  { &quot;id&quot;: 3, &quot;name&quot;: &quot;Headphones&quot;, &quot;price&quot;: &quot;80$&quot; }
+]
+</code></pre>
+<p>Create a new file called <code>POST.json</code> in the same folder. POST response won&#39;t 
+return any data, so the file can be as simple as</p>
+<pre><code class="lang-json">{}
+</code></pre>
+<p>Create subfolders <code>1</code>, <code>2</code> and <code>3</code> under <code>products</code> and create a <code>GET.json</code> 
+file in each of them. Every file contains the data for a specific product, e.g.</p>
+<pre><code class="lang-json">{ &quot;id&quot;: 1, 
+  &quot;name&quot;: &quot;Keyboard&quot;, 
+  &quot;price&quot;: &quot;60$&quot;,
+  &quot;category&quot;: &quot;Computer Accessories&quot;,
+  &quot;brand&quot;: &quot;Mousytech&quot;
+}
+</code></pre>
+<h2 id="configure-browsersync-to-mock-your-api-calls">Configure BrowserSync to mock your API calls</h2>
+<p>For the purpose of this post, I assume you are using 
+<a href="https://github.com/aurelia/skeleton-navigation">Aurelia Skeleton Navigation</a>
+starter kit, specifically 
+<a href="https://github.com/aurelia/skeleton-navigation/tree/master/skeleton-esnext">the version with Gulp-based tasks and BrowserSync</a>.
+If so, you should be familiar with <code>gulp serve</code> command, which serves your 
+application at <code>http://localhost:9000</code>. We will extend this command to host
+your API mock too.</p>
+<p>Navigate to <code>/build/tasks</code> folder and edit the <code>serve.js</code> file. Change the </p>
+<p>definition of <code>serve</code> task to the following code:</p>
+<pre><code class="lang-js">gulp.task(&#39;serve&#39;, [&#39;build&#39;], function(done) {
+  browserSync({
+    online: false,
+    open: false,
+    port: 9000,
+    server: {
+      baseDir: [&#39;.&#39;],
+      middleware: function(req, res, next) {
+        res.setHeader(&#39;Access-Control-Allow-Origin&#39;, &#39;*&#39;);
+
+        // Mock API calls
+        if (req.url.indexOf(&#39;/api/&#39;) &gt; -1) {
+          console.log(&#39;[serve] responding &#39; + req.method + &#39; &#39; + req.originalUrl);
+
+          var jsonResponseUri = req._parsedUrl.pathname + &#39;/&#39; + req.method + &#39;.json&#39;;
+
+          // Require file for logging purpose, if not found require will 
+          // throw an exception and middleware will cancel the retrieve action
+          var jsonResponse = require(&#39;../..&#39; + jsonResponseUri);
+
+          // Replace the original call with retrieving json file as reply
+          req.url = jsonResponseUri;
+          req.method = &#39;GET&#39;;
+        }
+
+        next();
+      }
+    }
+  }, done);
+});
+</code></pre>
+<h2 id="run-it">Run it</h2>
+<p>Now just run <code>gulp serve</code> (or <code>gulp watch</code>, which does <code>serve</code> and then watches
+files for changes). Every time your app makes an API call, you will see
+a line in the gulp console:</p>
+<pre><code>[serve] responding GET /api/products
+</code></pre><p>If you happen to make an invalid request with no mock defined, you will
+get an error:</p>
+<pre><code>[serve] responding GET /api/notproducts
+Error: Cannot find module &#39;../../api/notproducts/GET.json&#39;
+</code></pre><p>A complete example can be found in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/aurelia-api-mocks">my github repository</a>.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/browsersync/'>BrowserSync</a>, <a href='/tags/rest/'>REST</a>, <a href='/tags/api/'>API</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Jul 22nd, 2016</div>
     
@@ -152,7 +260,7 @@ as the decision produced from the graph.</p>
 <h2 id="code-sample">Code sample</h2>
 <p>We define a number of functions, each one of which represents one piece of decision 
 logic. Then we put them all into the list:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> rules = [
+<pre><code class="lang-fsharp">let rules = [
   overtakeLimpedPot overtakyHand snapshot value history;
   increaseTurnBetEQvsAI snapshot;
   allInTurnAfterCheckRaiseInLimpedPot snapshot history;
@@ -166,7 +274,7 @@ logic. Then we put them all into the list:</p>
 <code>snapshot</code> is used by all of them, while calculated hand <code>value</code> and previous
 action <code>history</code> are used only by some of the functions. </p>
 <p>Now, here is the definition of the facade decision making function:</p>
-<pre class="highlight"><code class="hljs fs">rules |&gt; List.fold (<span class="hljs-keyword">fun</span> opt rule -&gt; rule opt) None
+<pre><code class="lang-fsharp">rules |&gt; List.fold (fun opt rule -&gt; rule opt) None
 </code></pre>
 <p>It calculates the decision by folding the list of rules and passing current decision
 between them. <code>None</code> is the initial seed of the fold.</p>
@@ -220,31 +328,31 @@ low-level code talks to a service which knows how to calculate the time
 required for a vehicle to go from A to B:</p>
 <p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion-violated.png" alt="UML: dependency inversion violated"></p>
 <p>So the following code <strong>violates</strong> the first part of the Dependency Inversion:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">namespace</span> <span class="hljs-title">Mapping</span>
+<pre><code class="lang-csharp">namespace Mapping
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">RouteCalculator</span>
+    public class RouteCalculator
     {
-        <span class="hljs-function"><span class="hljs-keyword">public</span> TimeSpan <span class="hljs-title">CalculateDuration</span>(<span class="hljs-params">
-            <span class="hljs-keyword">double</span> fromLat, <span class="hljs-keyword">double</span> fromLng, <span class="hljs-keyword">double</span> toLat, <span class="hljs-keyword">double</span> toLng</span>)
-        </span>{
-            <span class="hljs-comment">// Call a 3rd party web service</span>
+        public TimeSpan CalculateDuration(
+            double fromLat, double fromLng, double toLat, double toLng)
+        {
+            // Call a 3rd party web service
         }
     }
 }
 
-<span class="hljs-keyword">namespace</span> <span class="hljs-title">Planning</span>
+namespace Planning
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripPlanner</span>
+    public class TripPlanner
     {
-        <span class="hljs-function"><span class="hljs-keyword">public</span> DateTime <span class="hljs-title">ExpectedArrival</span>(<span class="hljs-params">Trip trip</span>)
-        </span>{
-            <span class="hljs-keyword">var</span> calculator = <span class="hljs-keyword">new</span> RouteCalculator();
-            <span class="hljs-keyword">var</span> duration = calculator.CalculateDuration(
+        public DateTime ExpectedArrival(Trip trip)
+        {
+            var calculator = new RouteCalculator();
+            var duration = calculator.CalculateDuration(
                 trip.Origin.Latitude, 
                 trip.Origin.Longitude, 
                 trip.Destination.Latitude, 
                 trip.Destination.Longitude);
-            <span class="hljs-keyword">return</span> trip.Start.Add(duration);
+            return trip.Start.Add(duration);
         }
     }
 }
@@ -257,39 +365,39 @@ implementations:</p>
 <p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion-with-dependency-injection.png" alt="UML: dependency inversion with dependency injection"></p>
 <p>In Trip Planner we accept the interface as constructor parameter, and we&#39;ll get the 
 specific implementation at run time:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">namespace</span> <span class="hljs-title">Mapping</span>
+<pre><code class="lang-csharp">namespace Mapping
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">IRouteCalculator</span>
+    public class IRouteCalculator
     {
-        <span class="hljs-function">TimeSpan <span class="hljs-title">CalculateDuration</span>(<span class="hljs-params">
-            <span class="hljs-keyword">double</span> fromLat, <span class="hljs-keyword">double</span> fromLng, <span class="hljs-keyword">double</span> toLat, <span class="hljs-keyword">double</span> toLng</span>)</span>;
+        TimeSpan CalculateDuration(
+            double fromLat, double fromLng, double toLat, double toLng);
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">RouteCalculator</span> : <span class="hljs-title">IRouteCalculator</span>
+    public class RouteCalculator : IRouteCalculator
     {
-        <span class="hljs-comment">// Same implementation as before...</span>
+        // Same implementation as before...
     }
 }
 
-<span class="hljs-keyword">namespace</span> <span class="hljs-title">Planning</span>
+namespace Planning
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripPlanner</span>
+    public class TripPlanner
     {
-        <span class="hljs-keyword">private</span> IRouteCalculator calculator;
+        private IRouteCalculator calculator;
 
-        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">TripPlanner</span>(<span class="hljs-params">IRouteCalculator calculator</span>)
-        </span>{
-            <span class="hljs-keyword">this</span>.calculator = calculator;
+        public TripPlanner(IRouteCalculator calculator)
+        {
+            this.calculator = calculator;
         }
 
-        <span class="hljs-function"><span class="hljs-keyword">public</span> DateTime <span class="hljs-title">ExpectedArrival</span>(<span class="hljs-params">Trip trip</span>)
-        </span>{
-            <span class="hljs-keyword">var</span> duration = <span class="hljs-keyword">this</span>.calculator.CalculateDuration(
+        public DateTime ExpectedArrival(Trip trip)
+        {
+            var duration = this.calculator.CalculateDuration(
                 trip.Origin.Latitude, 
                 trip.Origin.Longitude, 
                 trip.Destination.Latitude, 
                 trip.Destination.Longitude);
-            <span class="hljs-keyword">return</span> trip.Start.Add(duration);
+            return trip.Start.Add(duration);
         }
     }
 }
@@ -333,39 +441,39 @@ level:</p>
 <p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion.png" alt="UML: dependency inversion"></p>
 <p>As you can see, I also renamed the interface. The name should reflect the way
 how the domain experts would think of this abstraction. Here is the result:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">namespace</span> <span class="hljs-title">Planning</span>
+<pre><code class="lang-csharp">namespace Planning
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">IDurationCalculator</span>
+    public class IDurationCalculator
     {
-        <span class="hljs-function">TimeSpan <span class="hljs-title">CalculateDuration</span>(<span class="hljs-params">Hub origin, Hub destination</span>)</span>;
+        TimeSpan CalculateDuration(Hub origin, Hub destination);
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripPlanner</span>
+    public class TripPlanner
     {
-        <span class="hljs-keyword">private</span> IDurationCalculator calculator;
+        private IDurationCalculator calculator;
 
-        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">TripPlanner</span>(<span class="hljs-params">IDurationCalculator calculator</span>)
-        </span>{
-            <span class="hljs-keyword">this</span>.calculator = calculator;
+        public TripPlanner(IDurationCalculator calculator)
+        {
+            this.calculator = calculator;
         }
 
-        <span class="hljs-function"><span class="hljs-keyword">public</span> DateTime <span class="hljs-title">ExpectedArrival</span>(<span class="hljs-params">Trip trip</span>)
-        </span>{
-            <span class="hljs-keyword">var</span> duration = <span class="hljs-keyword">this</span>.calculator.CalculateDuration(
+        public DateTime ExpectedArrival(Trip trip)
+        {
+            var duration = this.calculator.CalculateDuration(
                 trip.Origin, trip.Destination);
-            <span class="hljs-keyword">return</span> trip.Start.Add(duration);
+            return trip.Start.Add(duration);
         }
     }
 }
 
-<span class="hljs-keyword">namespace</span> <span class="hljs-title">Mapping</span>
+namespace Mapping
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">RouteCalculator</span> : <span class="hljs-title">IRouteCalculator</span>
+    public class RouteCalculator : IRouteCalculator
     {
-        <span class="hljs-function"><span class="hljs-keyword">public</span> TimeSpan <span class="hljs-title">CalculateDuration</span>(<span class="hljs-params">Hub origin, Hub destination</span>)
-        </span>{
-            <span class="hljs-comment">// Extract latitude and longitude from Hubs</span>
-            <span class="hljs-comment">// Call a 3rd party web service</span>
+        public TimeSpan CalculateDuration(Hub origin, Hub destination)
+        {
+            // Extract latitude and longitude from Hubs
+            // Call a 3rd party web service
         }
     }
 }
@@ -448,32 +556,32 @@ with one property value modified.</p>
 <h2 id="example">Example</h2>
 <p>Let&#39;s have a look at an illustration of this problem. Let&#39;s say we have a value
 type representing poker player statistics:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">PlayerStats</span>
+<pre><code class="lang-csharp">public class PlayerStats
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">PlayerStats</span>(<span class="hljs-params">
-        <span class="hljs-keyword">int</span> hands, 
-        <span class="hljs-keyword">int</span> daysOnline,
+    public PlayerStats(
+        int hands, 
+        int daysOnline,
         Money won, 
-        Money expectedValue</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Hands = hands;
-        <span class="hljs-keyword">this</span>.DaysOnline = daysOnline;
-        <span class="hljs-keyword">this</span>.Won = won;
-        <span class="hljs-keyword">this</span>.ExpectedValue = expectedValue;
+        Money expectedValue)
+    {
+        this.Hands = hands;
+        this.DaysOnline = daysOnline;
+        this.Won = won;
+        this.ExpectedValue = expectedValue;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Hands { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> DaysOnline { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Money Won { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Money ExpectedValue { <span class="hljs-keyword">get</span>; }
+    public int Hands { get; }
+    public int DaysOnline { get; }
+    public Money Won { get; }
+    public Money ExpectedValue { get; }
 }
 </code></pre>
 <p>We already see that it&#39;s quite verbose: basically we repeat each property name
 five times. But the issue I&#39;m discussing today is related to how we create 
 a new object based on another object. Let&#39;s say we need to make a copy of 
 a given statistics, but with <code>Hands</code> property increased by 1:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = <span class="hljs-keyword">new</span> PlayerStats(
-    existing.Hands + <span class="hljs-number">1</span>,
+<pre><code class="lang-csharp">var increasedHands = new PlayerStats(
+    existing.Hands + 1,
     existing.DaysOnline,
     existing.Won,
     existing.ExpectedValue);
@@ -482,8 +590,8 @@ a given statistics, but with <code>Hands</code> property increased by 1:</p>
 instance, we could swap <code>Won</code> and <code>ExpectedValue</code> property calls
 and compiler won&#39;t let us know because the types are the same. So we probably
 want to use explicit constructor parameter names:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = <span class="hljs-keyword">new</span> PlayerStats(
-    hands: existing.Hands + <span class="hljs-number">1</span>,
+<pre><code class="lang-csharp">var increasedHands = new PlayerStats(
+    hands: existing.Hands + 1,
     daysOnline: existing.DaysOnline,
     won: existing.Won,
     expectedValue: existing.ExpectedValue);
@@ -493,7 +601,7 @@ want to use explicit constructor parameter names:</p>
 <p>F# is a functional-first language with immutability as first-class concept.
 In F# value objects are usually modelled with Records, here is our example
 reimplemented:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">PlayerStats</span> </span>= {
+<pre><code class="lang-fsharp">type PlayerStats = {
     Hands: int
     DaysOnline: int
     Won: Money
@@ -502,7 +610,7 @@ reimplemented:</p>
 </code></pre>
 <p>Creation of new objects based on other objects is also solved properly in F#,
 thanks to the <strong><code>with</code></strong> keyword :</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> increasedHands = { existing <span class="hljs-keyword">with</span> Hands = existing.Hands + <span class="hljs-number">1</span> }
+<pre><code class="lang-fsharp">let increasedHands = { existing with Hands = existing.Hands + 1 }
 </code></pre>
 <p>All the properties are copied from the source record except for the ones
 explicitly mentioned in the expression.</p>
@@ -511,21 +619,21 @@ explicitly mentioned in the expression.</p>
 alternative. We can define some fluent methods which would change
 property values one by one (they don&#39;t change the original object, but
 return a copy with changed value):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithHands</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> hands</span>) 
-</span>{
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> PlayerStats(
+<pre><code class="lang-csharp">public PlayerStats WithHands(int hands) 
+{
+    return new PlayerStats(
         hands: hands,
         daysOnline: existing.DaysOnline,
         won: existing.Won,
         expectedValue: existing.ExpectedValue);
 }
 
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithDaysOnline</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> daysOnline</span>) </span>{ ... }
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithWon</span>(<span class="hljs-params">Money won</span>) </span>{ ... }
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithExpectedValue</span> (<span class="hljs-params">Money expectedValue</span>) </span>{ ... }
+public PlayerStats WithDaysOnline(int daysOnline) { ... }
+public PlayerStats WithWon(Money won) { ... }
+public PlayerStats WithExpectedValue (Money expectedValue) { ... }
 </code></pre>
 <p>The method implementation is very tedious but the usage gets much cleaner:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> increasedHands = existing.WithHands(existing.Hands + <span class="hljs-number">1</span>);
+<pre><code class="lang-csharp">var increasedHands = existing.WithHands(existing.Hands + 1);
 </code></pre>
 <p>One way to avoid repetitive code is to generate it.</p>
 <h2 id="with-fody-plugin">With.Fody Plugin</h2>
@@ -541,14 +649,14 @@ which auto-implements <code>With</code> method bodies for C# immutable classes.<
 <p>Then, keep the <code>PlayerStats</code> class definition, but get rid of the bodies
 of <code>WithXyz</code> methods. Keep the signature but return something trivial like
 <code>null</code> or <code>this</code>:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithHands</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> hands</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithDaysOnline</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> daysOnline</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithWon</span>(<span class="hljs-params">Money won</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
-<span class="hljs-function"><span class="hljs-keyword">public</span> PlayerStats <span class="hljs-title">WithExpectedValue</span> (<span class="hljs-params">Money expectedValue</span>) </span>=&gt; <span class="hljs-keyword">this</span>;
+<pre><code class="lang-csharp">public PlayerStats WithHands(int hands) =&gt; this;
+public PlayerStats WithDaysOnline(int daysOnline) =&gt; this;
+public PlayerStats WithWon(Money won) =&gt; this;
+public PlayerStats WithExpectedValue (Money expectedValue) =&gt; this;
 </code></pre>
 <p>Compile the project and you will see the following line in Build Output:</p>
-<pre class="highlight"><code class="hljs oxygene">&gt;      Fody/<span class="hljs-keyword">With</span>:   Added <span class="hljs-function"><span class="hljs-keyword">method</span> '<span class="hljs-title">With</span>' <span class="hljs-title">to</span> <span class="hljs-title">type</span> '<span class="hljs-title">PlayerStats</span>'.
-</span></code></pre><p>It means that the method bodies were re-implemented with calls to 
+<pre><code>&gt;      Fody/With:   Added method &#39;With&#39; to type &#39;PlayerStats&#39;.
+</code></pre><p>It means that the method bodies were re-implemented with calls to 
 class constructor with proper parameter values.</p>
 <p>The method stubs are needed to satisfy code completion tools like 
 IntelliSense and Resharper, otherwise we could skip them altogether.</p>
@@ -556,27 +664,27 @@ IntelliSense and Resharper, otherwise we could skip them altogether.</p>
 <p>In case you avoid <a href="https://mikhail.io/2015/08/units-of-measurement-in-domain-design/">Primitive Obsession</a>
 antipattern, you will often end up with classes which have unique types of 
 properties, e.g.</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">TripProfile</span>
+<pre><code class="lang-csharp">public class TripProfile
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">TripProfile</span>(<span class="hljs-params">
+    public TripProfile(
         Distance totalDistance,
         Speed averageSpeed,
-        Volume fuelConsumed</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.TotalDistance = totalDistance;
-        <span class="hljs-keyword">this</span>.AverageSpeed = averageSpeed;
-        <span class="hljs-keyword">this</span>.FuelConsumed = fuelConsumed;
+        Volume fuelConsumed)
+    {
+        this.TotalDistance = totalDistance;
+        this.AverageSpeed = averageSpeed;
+        this.FuelConsumed = fuelConsumed;
     }
 
-    <span class="hljs-keyword">public</span> Distance TotalDistance { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Speed AverageSpeed { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Volume FuelConsumed { <span class="hljs-keyword">get</span>; }
+    public Distance TotalDistance { get; }
+    public Speed AverageSpeed { get; }
+    public Volume FuelConsumed { get; }
 }
 </code></pre>
 <p>In this case, the plugin can be smart enough to figure out which property
 you want to modify just by looking at the type of the argument. The single stub
 method can look like this:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> TripProfile With&lt;T&gt;(T <span class="hljs-keyword">value</span>) =&gt; <span class="hljs-keyword">this</span>;
+<pre><code class="lang-csharp">public TripProfile With&lt;T&gt;(T value) =&gt; this;
 </code></pre>
 <p>This would get compiled into 3 strongly typed <code>With</code> methods with <code>Distance</code>,
 <code>Speed</code> and <code>Volume</code> arguments respectively. Resharper is still happy. And
@@ -622,11 +730,11 @@ implementation of &quot;INSERT or UPDATE&quot; command.</p>
 <h2 id="example">Example</h2>
 <p>Let&#39;s take a concrete example. You have a person object with just 3 fields, here is the
 type definition:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Person</span>
+<pre><code class="lang-csharp">public class Person
 {
-    <span class="hljs-keyword">public</span> Guid Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Email { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public Guid Id { get; set; }
+    public string Name { get; set; }
+    public string Email { get; set; }
 }
 </code></pre>
 <p>Persons are entities, so we chose a GUID for the primary key column. We always generate
@@ -635,16 +743,16 @@ the unique identifier at client side and just want to save the <code>Person</cod
 <p>The typical T-SQL developer&#39;s toolbox contains <code>SELECT</code>, <code>INSERT</code>,
 <code>UPDATE</code> and <code>DELETE</code> statements. <code>DELETE</code> is of no use here, but the combination of the other
 three can be employed to complete the task. The most straightforward option is</p>
-<pre class="highlight"><code class="hljs sql">IF NOT EXISTS(<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> Person <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>)
-  <span class="hljs-keyword">INSERT</span> Person (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (@<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email)
-<span class="hljs-keyword">ELSE</span>
-  <span class="hljs-keyword">UPDATE</span> Person <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = @<span class="hljs-keyword">Name</span> <span class="hljs-keyword">AND</span> Email = @Email <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>
+<pre><code class="lang-sql">IF NOT EXISTS(SELECT 1 FROM Person WHERE Id = @Id)
+  INSERT Person (Id, Name, Email) VALUES (@Id, @Name, @Email)
+ELSE
+  UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id
 </code></pre>
 <p>It&#39;s 4 lines of code instead of one, but it works. Being more fancy, we can reduce the code to
 3 lines of code:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">UPDATE</span> Person <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = @<span class="hljs-keyword">Name</span> <span class="hljs-keyword">AND</span> Email = @Email <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>
-<span class="hljs-keyword">IF</span> @@ROWCOUNT = <span class="hljs-number">0</span> <span class="hljs-keyword">THEN</span>
-  <span class="hljs-keyword">INSERT</span> Person (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (@<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email)
+<pre><code class="lang-sql">UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id
+IF @@ROWCOUNT = 0 THEN
+  INSERT Person (Id, Name, Email) VALUES (@Id, @Name, @Email)
 </code></pre>
 <p>It should also perform faster if you update more often then insert.</p>
 <p>Solved? Not completely...</p>
@@ -670,13 +778,13 @@ statement. Generally, it&#39;s quite powerful and can be used to save all the di
 table into a target table. But we can also use it for our simple task of saving a person.</p>
 <p><code>MERGE</code> is just one statement, so it&#39;s atomic and consistent. It performs very well. 
 But the syntax is... oh my god, it&#39;s horrible. Your eyes might bleed:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">MERGE</span> Person <span class="hljs-keyword">AS</span> target
-<span class="hljs-keyword">USING</span> (<span class="hljs-keyword">SELECT</span> @<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email) <span class="hljs-keyword">AS</span> <span class="hljs-keyword">source</span> (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email)
-   <span class="hljs-keyword">ON</span> (target.Id = source.Id)
- <span class="hljs-keyword">WHEN</span> <span class="hljs-keyword">MATCHED</span> <span class="hljs-keyword">THEN</span> 
-      <span class="hljs-keyword">UPDATE</span> <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = source.Name, Email = source.Email
- <span class="hljs-keyword">WHEN</span> <span class="hljs-keyword">NOT</span> <span class="hljs-keyword">MATCHED</span> <span class="hljs-keyword">THEN</span>
-      <span class="hljs-keyword">INSERT</span> (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (source.Id, source.Name, source.Email)
+<pre><code class="lang-sql">MERGE Person AS target
+USING (SELECT @Id, @Name, @Email) AS source (Id, Name, Email)
+   ON (target.Id = source.Id)
+ WHEN MATCHED THEN 
+      UPDATE SET Name = source.Name, Email = source.Email
+ WHEN NOT MATCHED THEN
+      INSERT (Id, Name, Email) VALUES (source.Id, source.Name, source.Email)
 </code></pre>
 <p>Yes, we repeat the name of each column 6 times. And we say <code>source</code> 7 times. And you can imagine
 how the <code>MERGE</code> of a table with 50 columns would look like. And how painful it is to add a new column
@@ -693,26 +801,26 @@ related to <a href="https://en.wikipedia.org/wiki/Object-relational_impedance_mi
 You do your work in your favourite 
 general-purpose language, but stay &quot;close to the metal&quot;, or rather to SQL engine statements.</p>
 <p>Here is how I invoke a <code>MERGE</code> statement for a Person object (given a connection from the pool):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> person = <span class="hljs-keyword">new</span> Person(...);
+<pre><code class="lang-csharp">var person = new Person(...);
 DapperAdapter.Merge(connection, person);
 </code></pre>
 <p>Voila! The implementation of generic <code>Merge</code> method takes care of the syntax complications.
 Write once, use everywhere:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> Merge&lt;TEntity&gt;(IDbConnection dbConnection, TEntity entity) <span class="hljs-keyword">where</span> TEntity : <span class="hljs-keyword">class</span>
+<pre><code class="lang-csharp">public void Merge&lt;TEntity&gt;(IDbConnection dbConnection, TEntity entity) where TEntity : class
 {
-    <span class="hljs-keyword">var</span> props = entity.GetType().GetProperties().Select(p =&gt; p.Name).ToList();
-    <span class="hljs-keyword">var</span> names = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props);
-    <span class="hljs-keyword">var</span> values = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props.Select(n =&gt; <span class="hljs-string">"@"</span> + n));
-    <span class="hljs-keyword">var</span> updates = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props.Select(n =&gt; <span class="hljs-string">$"<span class="hljs-subst">{n}</span> = @<span class="hljs-subst">{n}</span>"</span>));
+    var props = entity.GetType().GetProperties().Select(p =&gt; p.Name).ToList();
+    var names = string.Join(&quot;, &quot;, props);
+    var values = string.Join(&quot;, &quot;, props.Select(n =&gt; &quot;@&quot; + n));
+    var updates = string.Join(&quot;, &quot;, props.Select(n =&gt; $&quot;{n} = @{n}&quot;));
     dbConnection.Execute(
-        <span class="hljs-string">$@"MERGE <span class="hljs-subst">{entity.GetType().Name}</span> as target
-          USING (VALUES(<span class="hljs-subst">{values}</span>))
-          AS SOURCE (<span class="hljs-subst">{names}</span>)
+        $@&quot;MERGE {entity.GetType().Name} as target
+          USING (VALUES({values}))
+          AS SOURCE ({names})
           ON target.Id = @Id
           WHEN matched THEN
-            UPDATE SET <span class="hljs-subst">{updates}</span>
+            UPDATE SET {updates}
           WHEN not matched THEN
-            INSERT(<span class="hljs-subst">{names}</span>) VALUES(<span class="hljs-subst">{values}</span>);"</span>,
+            INSERT({names}) VALUES({values});&quot;,
         entity);
 }
 </code></pre>
@@ -731,193 +839,6 @@ toolbox, and use the tools wisely.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/t-sql/'>T-SQL</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/dapper/'>Dapper</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Apr 9th, 2016</div>
-    
-    <h1><a href='/2016/04/building-a-poker-bot-with-akka-net-actors/'>Building a Poker Bot with Akka.NET Actors</a></h1>
-    
-    <div class="post-content">
-        <p><em>This is the fourth part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
-to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
-easy and very enjoyable. Here are the previous parts:</em></p>
-<ul>
-<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
-<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
-<li><a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/"><em>Building a Poker Bot: Mouse Movements</em></a></li>
-</ul>
-<p>This post lays out the most exciting part of the bot. I&#39;ll compose the recognition, flow, decision and mouse clicking
-parts together into the bot application. The application is a console executable interacting with multiple 
-windows of poker room software.</p>
-<h2 id="flow">Flow</h2>
-<p>The following picture shows the outline of the application data flow:</p>
-<p><img src="/2016/04/building-a-poker-bot-with-akka-net-actors//pokeractors.png" alt="Actor Diagram"></p>
-<p><strong>Find Tables</strong> - Every half a second or so we scan all the windows and search for open poker tables among them.
-For each poker table we make a screenshot and send those to recognition.</p>
-<p><strong>Recognize Screen</strong> - Parse the data from the screenshot. Check whether it&#39;s our turn to make a play now, what
-the <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">hole cards</a> and 
-<a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">stacks</a> are, produce the detailed
-screen information and send it to decision maker.</p>
-<p><strong>Make Decision</strong> - Understand if that&#39;s a new hand or there was a past history before. See
-what the villains did and which new cards we got. Here the secret sauce comes to play and produces 
-a move to be made. Send the action to the mouse clicker.</p>
-<p><strong>Click Buttons</strong> - Based on the decision made, click the right buttons. It should be done with proper delays
-and <a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">human-like movements</a> so that the villain
-and poker room don&#39;t understand that it&#39;s bot who is playing.</p>
-<hr>
-<h2 id="let-the-actors-play">Let the Actors Play</h2>
-<p>Because of the multi-tabling, the application is intrinsically multi-threaded. At the same time,
-the different parts of the flow are executed at different cadence:</p>
-<ul>
-<li>Finding tables is triggered by time and is single-threaded</li>
-<li>Screen recognition, history detection and decision making run in sequence and can be executed in parallel
-for multiple tables</li>
-<li>Clicking the buttons is again single-threaded, as it must synchronize the outputs from the previous steps,
-put them in sequence with appropriate delays</li>
-</ul>
-<p>Here are the other treats of the flow:</p>
-<ul>
-<li>It is reactive and event based</li>
-<li>The flow is unidirectional, the output of one step goes to the input of the next step</li>
-<li>Most steps are stateless, but the history state needs to be preserved and, ideally, isolated from the other
-steps</li>
-</ul>
-<p>This list of features made me pick the Actor-based <a href="http://getakka.net">Akka.NET</a> framework to implement the flow.</p>
-<p>For sure, the application could be done with a bunch of procedural code instead. 
-But I found actors to be a useful modeling technique to be employed. 
-It goes well with reactive nature of the application and builds the nice 
-foundation for more complicated scenarios in the future.</p>
-<p>Also, I was curious how F# and Akka.NET would work together.</p>
-<h2 id="supervision-hierachy">Supervision Hierachy</h2>
-<p>In Akka.NET each actor has a supervisor actor who is managing its lifecycle. All actors together form a
-supervision tree. Here is the tree shown for the Player application:</p>
-<p><img src="/2016/04/building-a-poker-bot-with-akka-net-actors//actorhierachy.png" alt="Actor Hierachy"></p>
-<p>There is just one copy of both Table Finder and Button Clicker actors and they are supervised by the root
-User actor. </p>
-<p>For each poker table a Recognizer actor gets created. These actors are managed by Table 
-Finder. </p>
-<p>Each Recognizer actor creates an instance of Decision actor who keeps the hand history
-and makes decisions. </p>
-<p>Finally, all decisions are sent to one centralized Button Clicker actor whose job is 
-to click all the tables with proper delays and in order.</p>
-<hr>
-<h2 id="implementation-patterns">Implementation Patterns</h2>
-<p>All actors are implemented with <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">Functional Actor Patterns</a>
-which are described in <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">my previous post</a>.</p>
-<p>The basic idea is that each actor is defined in functional style with these
-building blocks:</p>
-<ul>
-<li>Type of incoming and, if needed, outgoing messages</li>
-<li>A domain function with business logic</li>
-<li>Actor function which puts those parts together</li>
-<li>Expression to spawn an actor based on actor function</li>
-</ul>
-<p>Let&#39;s look at the examples to understand this structure better.</p>
-<h2 id="table-finder">Table Finder</h2>
-<p>Table Finder does not have any meaningful input message. It gets a message from
-Akka.NET scheduling system just to be periodically activated.</p>
-<p>The domain function is called <code>findWindows</code> and has the type <code>unit -&gt; WindowInfo seq</code>.
-It returns the poker window screenshots and titles.</p>
-<p>Actor function of type <code>int -&gt; seq&lt;string * WindowInfo&gt;</code> is used by the 
-<a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to </p>
-<p>define the behavior. The ouput tuple defines an ID of an output actor and a
-message to send to it:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> findActor msg = 
-  findWindows ()
-  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; (<span class="hljs-string">"recognizer-actor-"</span> + x.TableName, x))
-</code></pre>
-<p>Here is how I spawn the singleton instance of this actor:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tableFinderRef = 
-  actorOfRouteToChildren findActor (spawnChild recognizer)
-  |&gt; spawn system <span class="hljs-string">"table-finder-actor"</span>
-</code></pre>
-<p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
-<code>spawn</code> function with proper parameter order:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> spawnChild childActor name (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) = 
-  spawn mailbox.Context name childActor
-</code></pre>
-<p>We can also extend it to debug messages when new actors get created.</p>
-<h2 id="recognizer">Recognizer</h2>
-<p>Recognizer receives the <code>WindowInfo</code> produced by the Table Finder.</p>
-<p>The domain function has the type of <code>Bitmap -&gt; Screen</code>. You can read more about table
-recognition in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Part 1</a> and
-<a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">Part 2</a>
-of these series.</p>
-<p>Actor function is an implementation of 
-<a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern. 
-The output is a decision message for Decision Maker actor which is a supervised 
-child of the Recognizer. Here is the actor function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeActor (window : WindowInfo) =
-  <span class="hljs-keyword">let</span> result = recognize window.Bitmap
-  { WindowTitle = window.Title 
-    TableName = window.TableName 
-    Screen = result 
-    Bitmap = window.Bitmap }
-</code></pre>
-<p>And here is the spawn function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizer = actorOfConvertToChild recognizeActor (spawnChild decider <span class="hljs-string">"decider"</span>)
-</code></pre>
-<p>Notice how this expression was used in Table Finder instantiation above.</p>
-<h2 id="decision-maker">Decision Maker</h2>
-<p>Decision Maker actor function is an implementation of 
-<a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#StatefulConverter">Stateful Converter</a> pattern. It receives
-a decision message from a Recognizer. The output is a click message for a 
-singleton Clicker actor. It also needs to preserve some state between two calls.
-In the minimalistic implementation this state holds the previous screen that
-it received, so that if the same message is received twice, the later message is 
-ignored.</p>
-<p>This way the actor function has the type of 
-<code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code> 
-and looks like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decisionActor msg lastScreen =
-  <span class="hljs-keyword">let</span> screen = msg.Screen
-  <span class="hljs-keyword">match</span> lastScreen <span class="hljs-keyword">with</span>
-  | Some s <span class="hljs-keyword">when</span> s = screen -&gt; (None, lastScreen)
-  | _ -&gt;
-    <span class="hljs-keyword">let</span> action = decide screen
-    <span class="hljs-keyword">let</span> outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
-    (Some outMsg, Some screen)
-</code></pre>
-<p>Here is the spawn function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decider = actorOfStatefulConvert decisionActor None clickerRef
-</code></pre>
-<p>where <code>None</code> represents the initial state.</p>
-<h2 id="button-clicker">Button Clicker</h2>
-<p>Clicker actor has the simplest implementation because it does not send messages to other actors.
-Here is the message that it receives from Decision Maker:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickTarget</span> </span>= (int * int * int * int)
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickerMessage</span> </span>= {
-  WindowTitle: string
-  Clicks: ClickTarget[]
-}
-</code></pre>
-<p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
-clicks as side effect. You can read more about the mouse movements in 
-<a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">Part 3</a>
-of these series.</p>
-<p><a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
-pattern is used for this actor, so actor function isn&#39;t
-really needed. We spawn the singleton instance with the following statement:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickerRef = actorOfSink click |&gt; spawn system <span class="hljs-string">"clicker-actor"</span>
-</code></pre>
-<p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>The top layer of poker player application is composed of small single-purpose
-actors which talk to each other by sending messages. </p>
-<p>Thanks to succinct F# language and functional actor patterns this layer is
-very thin, and thus easy to understand and maintain. </p>
-<p>The business logic is isolated and by itself has no dependency on Akka.NET.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/actor-model/'>Actor Model</a>, <a href='/tags/functional-programming/'>Functional Programming</a>
     </div>
     
 </article>
@@ -957,7 +878,7 @@ very thin, and thus easy to understand and maintain. </p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

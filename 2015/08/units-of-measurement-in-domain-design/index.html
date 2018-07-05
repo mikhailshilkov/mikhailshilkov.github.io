@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -91,23 +86,23 @@ When working with 3rd party code, you can always find an answer on stack overflo
 <p>Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.</p>
 <h2 id="problem-statement">Problem statement</h2>
 <p>Our toy example will be about cars and fuel consumption. You receive some data about the trip of your car, e.g. an instance of</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+<pre><code class="lang-csharp">public interface ITrip
 {
-    <span class="hljs-keyword">double</span> FuelUsed { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">double</span> Distance { <span class="hljs-keyword">get</span>; }
+    double FuelUsed { get; }
+    double Distance { get; }
 }
 </code></pre>
 <p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = trip.FuelUsed / trip.Distance;
+<pre><code class="lang-csharp">var fuelRate = trip.FuelUsed / trip.Distance;
 </code></pre>
 <p>You get the value, but what is it? Let&#39;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+<pre><code class="lang-csharp">public interface ITrip
 {
-    <span class="hljs-keyword">double</span> FuelUsedInLiters { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">double</span> DistanceInKilometers { <span class="hljs-keyword">get</span>; }
+    double FuelUsedInLiters { get; }
+    double DistanceInKilometers { get; }
 }
 
-<span class="hljs-keyword">var</span> fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * <span class="hljs-number">100.0</span> / trip.DistanceInKilometers;
+var fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * 100.0 / trip.DistanceInKilometers;
 </code></pre>
 <p>Now it&#39;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
 <ol>
@@ -122,25 +117,25 @@ When working with 3rd party code, you can always find an answer on stack overflo
 <h2 id="defining-the-units">Defining the units</h2>
 <p>I tried several options like generic classes for units, but I ended up having a struct per measurement. The code is very boring and repetitive, but it provides me with the strongest compile-time checks and nice readability. If you are too bored with typing, you can do some code generation or just use 3rd party that suits you.
 So, my end result looks like</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITrip</span>
+<pre><code class="lang-csharp">public interface ITrip
 {
-    Volume FuelUsed { <span class="hljs-keyword">get</span>; }
-    Distance Distance { <span class="hljs-keyword">get</span>; }
+    Volume FuelUsed { get; }
+    Distance Distance { get; }
 }
 </code></pre>
 <p>Let&#39;s see how Distance is defined (Volume will be almost exactly same):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">struct</span> Distance
+<pre><code class="lang-csharp">public struct Distance
 {
-    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">Distance</span>(<span class="hljs-params"><span class="hljs-keyword">double</span> kilometers</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Kilometers = kilometers;
+    private Distance(double kilometers)
+    {
+        this.Kilometers = kilometers;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Kilometers { <span class="hljs-keyword">get</span>; }
+    public double Kilometers { get; }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Meters =&gt; <span class="hljs-keyword">this</span>.Kilometers / <span class="hljs-number">1000.0</span>;
+    public double Meters =&gt; this.Kilometers / 1000.0;
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance Zero = <span class="hljs-keyword">new</span> Distance(<span class="hljs-number">0.0</span>);
+    public static readonly Distance Zero = new Distance(0.0);
 
     ...
 }
@@ -161,72 +156,72 @@ Of course, default constructor is still public, but you can only create a zero v
 <p>So, how do we create measurement objects?</p>
 <h3 id="factory-method">Factory method</h3>
 <p>The classic way is a set of static factory methods:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromKilometers</span>(<span class="hljs-params"><span class="hljs-keyword">double</span> kilometers</span>)
-</span>{
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Distance(kilometers);
+<pre><code class="lang-cs">public static Distance FromKilometers(double kilometers)
+{
+    return new Distance(kilometers);
 }
 
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">FromMeters</span>(<span class="hljs-params"><span class="hljs-keyword">double</span> meters</span>)
-</span>{
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Distance(meters / <span class="hljs-number">1000.0</span>);
+public static Distance FromMeters(double meters)
+{
+    return new Distance(meters / 1000.0);
 }
 </code></pre>
 <p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
 <h3 id="extension-method">Extension method</h3>
 <p>Imagine you have the following code which converts an integer value of a database result into our units</p>
-<pre class="highlight"><code class="hljs cs">trip.Distance = Distance.FromMeters(database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
+<pre><code class="lang-cs">trip.Distance = Distance.FromMeters(database.ReadInt32(&quot;TotalDistance&quot;)
                         .GetDefaultOrEmpty());
 </code></pre>
 <p>Such a long expression reads better with a fluent interface like</p>
-<pre class="highlight"><code class="hljs cs">trip.Distance = database.ReadInt32(<span class="hljs-string">"TotalDistance"</span>)
+<pre><code class="lang-cs">trip.Distance = database.ReadInt32(&quot;TotalDistance&quot;)
                         .GetDefaultOrEmpty()
                         .MetersToDistance();
 </code></pre>
 <p><code>MetersToDistance</code> in this case is an extension method:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">DistanceExtensions</span>
+<pre><code class="lang-cs">public static class DistanceExtensions
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-title">MetersToDistance</span>(<span class="hljs-params"><span class="hljs-keyword">this</span> <span class="hljs-keyword">double</span> meters</span>)
-    </span>{
-        <span class="hljs-keyword">return</span> Distance.FromMeters(meters);
+    public static Distance MetersToDistance(this double meters)
+    {
+        return Distance.FromMeters(meters);
     }
 }
 </code></pre>
 <h3 id="operator-with-static-class-using">Operator with static class using</h3>
 <p>C# 6 brings us a new language construct. Now we can import a static helper class</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">using</span> <span class="hljs-keyword">static</span> Units.Constants;
+<pre><code class="lang-cs">using static Units.Constants;
 </code></pre>
 <p>And then we can write something like</p>
-<pre class="highlight"><code class="hljs ebnf"><span class="hljs-attribute">var distance</span> = 10.0 * km;
+<pre><code>var distance = 10.0 * km;
 </code></pre><p>where <code>km</code> is defined in that static class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Constants</span>
+<pre><code class="lang-cs">public static class Constants
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> Distance km = Distance.FromKilometers(<span class="hljs-number">1.0</span>);
+    public static readonly Distance km = Distance.FromKilometers(1.0);
 }
 </code></pre>
 <p>This may not look like idiomatic C#, but I think it&#39;s very good at least for writing unit tests:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> target = <span class="hljs-keyword">new</span> Trip
+<pre><code class="lang-cs">var target = new Trip
 {
-    DistanceOnFoot = <span class="hljs-number">5</span> * km,
-    DistanceOnBicycle = <span class="hljs-number">10</span> * km,
-    DistanceOnCar = <span class="hljs-number">30</span> * km
+    DistanceOnFoot = 5 * km,
+    DistanceOnBicycle = 10 * km,
+    DistanceOnCar = 30 * km
 };
-target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span class="hljs-number">10</span> + <span class="hljs-number">5</span>) * km);
+target.TotalDistance.Should().Be((30 + 10 + 5) * km);
 </code></pre>
 <p>For this to compile you just need to define the operator overload:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Distance <span class="hljs-keyword">operator</span>*(<span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span>, Distance distance)
+<pre><code class="lang-cs">public static Distance operator*(int value, Distance distance)
 {
-    <span class="hljs-keyword">return</span> Distance.FromKilometers(<span class="hljs-keyword">value</span> * distance.Kilometers);
+    return Distance.FromKilometers(value * distance.Kilometers);
 }
 </code></pre>
 <h2 id="conversion-and-printing">Conversion and printing</h2>
 <p>More advanced unit conversions are easy with unit classes. A common use case would be to convert metric units to imperial system. All you need to do is to add another calculated property</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Distance class</span>
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> MilesInKilometer = <span class="hljs-number">0.621371192</span>;
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">double</span> FeetInMeter = = <span class="hljs-number">3.2808399</span>;
+<pre><code class="lang-cs">// Distance class
+private const double MilesInKilometer = 0.621371192;
+private const double FeetInMeter = = 3.2808399;
 
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Miles =&gt; <span class="hljs-keyword">this</span>.Kilometers * MilesInKilometer;
+public double Miles =&gt; this.Kilometers * MilesInKilometer;
 
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">double</span> Feet =&gt; <span class="hljs-keyword">this</span>.Meters * FeetInMeter;
+public double Feet =&gt; this.Meters * FeetInMeter;
 </code></pre>
 <p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
 <ul>
@@ -239,15 +234,15 @@ target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span cl
 <h2 id="unit-derivation">Unit derivation</h2>
 <p>Once you write more unit classes, you will definitely want to derive the calculation result of two units into the third one. In our example, we want to divide <code>Volume</code> of fuel used by <code>Distance</code> to get fuel <code>ConsumptionRate</code>.</p>
 <p>There&#39;s no magic that you could do here. You will have to define <code>ConsumptionRate</code> class the same way you defined the other two, and then just overload the operation</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ConsumptionRate <span class="hljs-keyword">operator</span>/(Volume volume, Distance distance)
+<pre><code class="lang-cs">public static ConsumptionRate operator/(Volume volume, Distance distance)
 {
-    <span class="hljs-keyword">return</span> ConsumptionRate
-        .FromLitersPer100Kilometers(volume.Liters * <span class="hljs-number">100.0</span> / distance.Kilometers);
+    return ConsumptionRate
+        .FromLitersPer100Kilometers(volume.Liters * 100.0 / distance.Kilometers);
 }
 </code></pre>
 <p>Of course, you&#39;ll have to define all the required combinations explicitly.</p>
 <p>If you defined Constants as described above, you&#39;ll be able to instantiate values in your tests in the following way:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> fuelRate = <span class="hljs-number">7.5</span> * lit / (<span class="hljs-number">100</span> * km);
+<pre><code class="lang-cs">var fuelRate = 7.5 * lit / (100 * km);
 </code></pre>
 <h2 id="should-i-use-3rd-party-libraries-for-that-">Should I use 3rd party libraries for that?</h2>
 <p>It depends. Of course, people implemented all this functionality about 1 million times before you, so there are numerous libraries on GitHub.</p>
@@ -325,7 +320,7 @@ target.TotalDistance.Should().Be((<span class="hljs-number">30</span> + <span cl
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

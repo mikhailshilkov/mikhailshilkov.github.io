@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -103,12 +98,12 @@ and the hill pattern disappeared, days looks much more alike.</p>
 quite bothering. Are we loosing data?</p>
 <p>I headed towards Analytics console of Application Insights to dig deeper.
 Here is the query that reproduces the problem:</p>
-<pre class="highlight"><code class="hljs coq">customEvents
-| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]), timestamp
-| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
-| <span class="hljs-type">render</span> timechart
+<pre><code>customEvents
+| where name == &quot;EventXReceived&quot;
+| where timestamp &gt;= ago(22d)
+| project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]), timestamp
+| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
+| render timechart
 </code></pre><p>and I got the same chart as before:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics1.png" alt="Trend on Application Insights Analytics"></p>
 <p>I checked the history of our source code repository and deployments and I
@@ -118,21 +113,21 @@ version 2.1 to version 2.3.</p>
 data instead of sending all events to the server. After reading 
 <a href="https://docs.microsoft.com/en-us/azure/application-insights/app-insights-sampling">Sampling in Application Insights</a>
 article, I came up with the following query to see the sampling rate:</p>
-<pre class="highlight"><code class="hljs applescript">customEvents
-| <span class="hljs-keyword">where</span> <span class="hljs-built_in">name</span> == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-keyword">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-built_in">summarize</span> <span class="hljs-number">100</span>/avg(itemCount) <span class="hljs-keyword">by</span> bin(timestamp, <span class="hljs-number">1</span>d) 
+<pre><code>customEvents
+| where name == &quot;EventXReceived&quot;
+| where timestamp &gt;= ago(22d)
+| summarize 100/avg(itemCount) by bin(timestamp, 1d) 
 | render areachart
 </code></pre><p>and the result is self-explanatory:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//sampling-rate.png" alt="Sampling Rate"></p>
 <p>Clearly, the sampling rate dropped from 100% down to about 30% right when
 the anomaly started. The sampling-adjusted query (note <code>itemCount</code> multiplication)</p>
-<pre class="highlight"><code class="hljs coq">customEvents
-| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]) * itemCount, timestamp
-| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
-| <span class="hljs-type">render</span> timechart
+<pre><code>customEvents
+| where name == &quot;EventXReceived&quot;
+| where timestamp &gt;= ago(22d)
+| project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]) * itemCount, timestamp
+| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
+| render timechart
 </code></pre><p>puts us back to the point when results make sense:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics2.png" alt="Adjusted Trend on Application Insights Analytics"></p>
 <p>The third week&#39;s Thursday was bank holiday in several European countries, so 
@@ -210,7 +205,7 @@ confusing people and to show more useful charts?</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -141,20 +136,20 @@ logging the message, saving the data to the external storage and so on.</p>
 <p>So, we don&#39;t need the majority of actor features in this case. The whole actor
 processing could be represented by a function of type <code>&#39;a -&gt; unit</code>. Here 
 is an example of a core function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> print msg =
-  printn <span class="hljs-string">"Message received: %A"</span> msg
+<pre><code class="lang-fsharp">let print msg =
+  printn &quot;Message received: %A&quot; msg
 </code></pre>
 <p>So how do we make an actor out of this function? Well, it&#39;s already implemented
 as <code>actorOf</code> helper function in Akka.NET F# extensions:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfSink (f : <span class="hljs-symbol">'a</span> -&gt; unit) = actorOf f
+<pre><code class="lang-fsharp">let actorOfSink (f : &#39;a -&gt; unit) = actorOf f
 </code></pre>
 <p>And here is how we spawn an actor instance:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printActorRef = 
+<pre><code class="lang-fsharp">let printActorRef = 
   actorOfSink print 
-  |&gt; spawn system <span class="hljs-string">"print-actor"</span>
+  |&gt; spawn system &quot;print-actor&quot;
 
-printActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message received: 3" is printed</span>
+printActorRef &lt;! 3
+// &quot;Message received: 3&quot; is printed
 </code></pre>
 <p>That&#39;s the simplicity that I&#39;m searching for. Let&#39;s look at a slightly more
 complex example.</p>
@@ -166,22 +161,22 @@ it to another predefined actor.</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//converter.png" alt="Converter actor"></p>
 <p>The core of this actor is a classic function with one input and one output
 parameter (type <code>&#39;a - &#39;b</code>):</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> square msg =
+<pre><code class="lang-fsharp">let square msg =
   msg * msg
 </code></pre>
 <p>The actor function is similar to the one of Message Sink, but it also accepts
 a reference to the output actor and knows how to send messages to it:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvert f outputRef =
-  actorOf2 (<span class="hljs-keyword">fun</span> _ msg -&gt; outputRef &lt;! f msg)
+<pre><code class="lang-fsharp">let actorOfConvert f outputRef =
+  actorOf2 (fun _ msg -&gt; outputRef &lt;! f msg)
 </code></pre>
 <p>Here is how we spawn an instance of a Converter using our <code>print-actor</code> as the
 output:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareActorRef = 
+<pre><code class="lang-fsharp">let squareActorRef = 
   actorOfConvert square printActorRef 
-  |&gt; spawn system <span class="hljs-string">"square-actor"</span>
+  |&gt; spawn system &quot;square-actor&quot;
 
-squareActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message received: 9" is printed</span>
+squareActorRef &lt;! 3
+// &quot;Message received: 9&quot; is printed
 </code></pre>
 <p>Both actor patterns had no notion of state so far. Let&#39;s see how we can 
 treat the statefulness in a functional way.</p>
@@ -199,33 +194,33 @@ first message becomes the input state of the second message:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//statefulsinkfunctional.png" alt="Stateful Sink functional actor"></p>
 <p>Here is an example of a function which prints out the index of a message together
 with the message contents:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printIndex index msg =
-  printn <span class="hljs-string">"Message [%i] received: %A"</span> index msg
-  index + <span class="hljs-number">1</span>
+<pre><code class="lang-fsharp">let printIndex index msg =
+  printn &quot;Message [%i] received: %A&quot; index msg
+  index + 1
 </code></pre>
 <p>For the actor implementation we need a recursive function so we can&#39;t use 
 <code>actorOf2</code> anymore. Actor workflow is a bit more lines but still very simple:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulSink f initialState (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
+<pre><code class="lang-fsharp">let actorOfStatefulSink f initialState (mailbox : Actor&lt;&#39;a&gt;) =
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
+  let rec imp lastState =
     actor {
-      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
-      <span class="hljs-keyword">let</span> newState = f msg lastState
-      <span class="hljs-keyword">return!</span> imp newState
+      let! msg = mailbox.Receive()
+      let newState = f msg lastState
+      return! imp newState
     }
 
   imp initialState
 </code></pre>
 <p>And here is a usage example:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> printIndexActorRef = 
-  actorOfSink printIndex <span class="hljs-number">1</span>
-  |&gt; spawn system <span class="hljs-string">"print-ix-actor"</span>
+<pre><code class="lang-fsharp">let printIndexActorRef = 
+  actorOfSink printIndex 1
+  |&gt; spawn system &quot;print-ix-actor&quot;
 
-printActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message [1] received: 3" is printed</span>
+printActorRef &lt;! 3
+// &quot;Message [1] received: 3&quot; is printed
 
-printActorRef &lt;! <span class="hljs-number">4</span>
-<span class="hljs-comment">// "Message [2] received: 4" is printed</span>
+printActorRef &lt;! 4
+// &quot;Message [2] received: 4&quot; is printed
 </code></pre>
 <hr>
 <p><a name="StatefulConverter" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/undefined"></a></p>
@@ -237,34 +232,34 @@ next actor:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//statefulconverter.png" alt="Stateful Converter actor"></p>
 <p>Here is a function which squares the messaged number, then calculates the running total
 and sends it forward:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareAndSum sum msg =
-  <span class="hljs-keyword">let</span> result = sum + msg*msg
+<pre><code class="lang-fsharp">let squareAndSum sum msg =
+  let result = sum + msg*msg
   (result, result)
 </code></pre>
 <p>In this particular case the output message and state are equal, but they don&#39;t
 have to be. Here is the actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
+<pre><code class="lang-fsharp">let actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;&#39;a&gt;) =
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp lastState =
+  let rec imp lastState =
     actor {
-      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
-      <span class="hljs-keyword">let</span> (result, newState) = f msg lastState
+      let! msg = mailbox.Receive()
+      let (result, newState) = f msg lastState
       outputRef &lt;! result
-      <span class="hljs-keyword">return!</span> imp newState
+      return! imp newState
     }
 
   imp initialState
 </code></pre>
 <p>And a usage example:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareAndSumActorRef = 
-  actorOfConvert square <span class="hljs-number">0</span> printIndexActorRef 
-  |&gt; spawn system <span class="hljs-string">"square-sum-actor"</span>
+<pre><code class="lang-fsharp">let squareAndSumActorRef = 
+  actorOfConvert square 0 printIndexActorRef 
+  |&gt; spawn system &quot;square-sum-actor&quot;
 
-squareAndSumActorRef &lt;! <span class="hljs-number">3</span>
-<span class="hljs-comment">// "Message [1] received: 9" is printed</span>
+squareAndSumActorRef &lt;! 3
+// &quot;Message [1] received: 9&quot; is printed
 
-squareAndSumActorRef &lt;! <span class="hljs-number">4</span>
-<span class="hljs-comment">// "Message [2] received: 25" is printed</span>
+squareAndSumActorRef &lt;! 4
+// &quot;Message [2] received: 25&quot; is printed
 </code></pre>
 <hr>
 <p><a name="ConverterSupervisor" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/undefined"></a></p>
@@ -280,18 +275,18 @@ comes in. (We can&#39;t spawn it before the first message because the
 reference that we store in the state, something like this:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//childasstate.png" alt="Supervised Child as State"></p>
 <p>Here is the generic actor implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> actorOfConvertToChild f spawnChild (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) =
+<pre><code class="lang-fsharp">let actorOfConvertToChild f spawnChild (mailbox : Actor&lt;&#39;a&gt;) =
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">rec</span> imp state =
+  let rec imp state =
     actor {
-      <span class="hljs-keyword">let</span> newstate =
-        <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
+      let newstate =
+        match state with
         | Some s -&gt; s
         | None -&gt; spawnChild mailbox
 
-      <span class="hljs-keyword">let!</span> msg = mailbox.Receive()
+      let! msg = mailbox.Receive()
       newstate &lt;! f msg
-      <span class="hljs-keyword">return!</span> imp (Some newstate)
+      return! imp (Some newstate)
     }
 
   imp None
@@ -299,9 +294,9 @@ reference that we store in the state, something like this:</p>
 <p>The only difference is that we accept a <code>spawnChild</code> function instead of
 pre-baked actor reference. Here is the first calculator example refactored
 to Print actor being a child of Square actor.</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> squareWithChildRef = 
-  actorOfConvertToChild print (spawnChild square <span class="hljs-string">"print-actor"</span>)
-  |&gt; spawn system <span class="hljs-string">"square-with-child-actor"</span>
+<pre><code class="lang-fsharp">let squareWithChildRef = 
+  actorOfConvertToChild print (spawnChild square &quot;print-actor&quot;)
+  |&gt; spawn system &quot;square-with-child-actor&quot;
 </code></pre>
 <p>Notice that the <code>square</code> and <code>print</code> functions have exactly the same signatures
 and implementations as we used before, and the concern of actor hierarchy is 
@@ -323,33 +318,33 @@ message processing to one or more of them:</p>
 of type <code>&#39;a -&gt; seq&lt;string * &#39;b&gt;</code>, where <code>&#39;a</code> is the type of incoming messages,
 <code>&#39;b</code> is the type of outgoing messages, and <code>string</code> represents the identifier of the 
 actor to get the message. Here is a sample implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> routeSensorData msg = 
-  msg |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; (<span class="hljs-string">"sensor-actor-"</span> + x.SensorId, x.Temperature))
+<pre><code class="lang-fsharp">let routeSensorData msg = 
+  msg |&gt; Seq.map (fun x -&gt; (&quot;sensor-actor-&quot; + x.SensorId, x.Temperature))
 </code></pre>
 <p>Based on the incoming metadata (sensor identifier) the actor forwards its
 temperature to corresponding sensor-specific actor. </p>
 <p>Here is the implementation of the generic actor function:</p>
-<pre class="highlight"><code class="hljs coq"><span class="hljs-keyword">let</span> actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;'a&gt;) =
+<pre><code>let actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;&#39;a&gt;) =
 
-  <span class="hljs-keyword">let</span> getActor id = 
-    <span class="hljs-keyword">let</span> actorRef = mailbox.<span class="hljs-keyword">Context</span>.Child(id)
-    <span class="hljs-keyword">if</span> actorRef.IsNobody() <span class="hljs-keyword">then</span>
+  let getActor id = 
+    let actorRef = mailbox.Context.Child(id)
+    if actorRef.IsNobody() then
       spawnChild id mailbox
-    <span class="hljs-keyword">else</span> 
+    else 
       actorRef
 
-  <span class="hljs-keyword">let</span> rec imp () =
+  let rec imp () =
     actor {
-      <span class="hljs-keyword">let</span>! msg = mailbox.Receive()
-      f msg |<span class="hljs-type">&gt; Seq</span>.iter (<span class="hljs-keyword">fun</span> (id, x) -&gt; (getActor id) &lt;! x) 
-      <span class="hljs-keyword">return</span>! imp ()
+      let! msg = mailbox.Receive()
+      f msg |&gt; Seq.iter (fun (id, x) -&gt; (getActor id) &lt;! x) 
+      return! imp ()
     }
 
   imp ()
 </code></pre><p>And a usage example:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> sensorRouterRef = 
+<pre><code class="lang-fsharp">let sensorRouterRef = 
   actorOfRouteToChildren routeSensorData (spawnChild square)
-  |&gt; spawn system <span class="hljs-string">"route-sensor-actor"</span>
+  |&gt; spawn system &quot;route-sensor-actor&quot;
 </code></pre>
 <p>Note that <code>spawnChild</code> does not accept the child ID anymore because it&#39;s being
 controlled by the router itself.</p>
@@ -434,7 +429,7 @@ code.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

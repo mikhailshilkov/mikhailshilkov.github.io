@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -81,6 +76,137 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Feb 19th, 2018</div>
+    
+    <h1><a href='/2018/02/azure-durable-functions-in-fsharp/'>Azure Durable Functions in F#</a></h1>
+    
+    <div class="post-content">
+        <p>Azure Functions are designed for stateless, fast-to-execute,
+simple actions. Typically, they are triggered by an HTTP call or a queue message,
+then they read something from the storage or database and return the result
+to the caller or send it to another queue. All within several seconds at most.</p>
+<p>However, there exists a preview of <a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">Durable Functions</a>,
+an extension that lets you write stateful functions for long-running workflows.
+Here is a picture of one possible workflow from the docs:</p>
+<p><img src="/2018/02/azure-durable-functions-in-fsharp//fan-out-fan-in.png" alt="Fan-out Fan-in Workflow"></p>
+<p>Such workflows might take arbitrary time to complete. Instead of blocking and
+waiting for all that period, Durable Functions use the combination of
+Storage Queues and Tables to do all the work asynchronously.</p>
+<p>The code still <em>feels</em> like one continuous thing because it&#39;s programmed
+as a single orchestrator function. So, it&#39;s easier for a human to reason 
+about the functionality without the complexities of low-level communication.</p>
+<p>I won&#39;t describe Durable Functions any further, just go read
+<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">documentation</a>,
+it&#39;s nice and clean.</p>
+<h2 id="language-support">Language Support</h2>
+<p>As of February 2018, Durable Functions are still in preview. That also means
+that language support is limited:</p>
+<blockquote>
+<p>Currently C# is the only supported language for Durable Functions. This 
+includes orchestrator functions and activity functions. In the future, 
+we will add support for all languages that Azure Functions supports.</p>
+</blockquote>
+<p>I was a bit disappointed that F# is not an option. But actually, since
+Durable Functions support precompiled .NET assembly model, pretty much
+anything doable in C# can be done in F# too.</p>
+<p>The goal of this post is to show that you can write Durable Functions in F#.
+I used precompiled .NET Standard 2.0 F# Function App running on 2.0 preview
+runtime.</p>
+<h2 id="orchestration-functions">Orchestration Functions</h2>
+<p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
+Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
+Here is a simple example of orchestrator in C#:</p>
+<pre><code class="lang-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
+{
+    var outputs = new List&lt;string&gt;();
+
+    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;));
+    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;));
+    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;));
+
+    // returns [&quot;Hello Tokyo!&quot;, &quot;Hello Seattle!&quot;, &quot;Hello London!&quot;]
+    return outputs;
+}
+</code></pre>
+<p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
+computation expression. The direct refactoring could look something like</p>
+<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
+  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)   |&gt; Async.AwaitTask
+  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;) |&gt; Async.AwaitTask
+  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)  |&gt; Async.AwaitTask
+  return [hello1; hello2; hello3]
+} |&gt; Async.StartAsTask
+</code></pre>
+<p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
+trigger because multi-threading operations are not allowed:</p>
+<blockquote>
+<p>Orchestrator code must never initiate any async operation except by 
+using the DurableOrchestrationContext API. The Durable Task Framework 
+executes orchestrator code on a single thread and cannot interact with 
+any other threads that could be scheduled by other async APIs.</p>
+</blockquote>
+<p>To solve this issue, we need to keep working with <code>Task</code> directly. This is
+not very handy with standard F# libraries. So, I pulled an extra NuGet
+package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
+<p>The above function now looks very simple:</p>
+<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
+  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)
+  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;)
+  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)
+  return [hello1; hello2; hello3]
+}
+</code></pre>
+<p>And the best part is that it works just fine.</p>
+<p><code>SayHello</code> function is Activity trigger based, and no special effort is required
+to implement it in F#:</p>
+<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
+let SayHello([&lt;ActivityTrigger&gt;] name) =
+  sprintf &quot;Hello %s!&quot; name
+</code></pre>
+<h2 id="more-examples">More Examples</h2>
+<p>Durable Functions repository comes with 
+<a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/precompiled">a set of 4 samples</a>
+implemented in C#. I took all of those samples and ported them over to F#.</p>
+<p>You&#39;ve already seen the first <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/HelloSequence.fs"><code>Hello Sequence</code> sample</a>
+above: the orchestrator calls the activity function 3 times and combines the
+results. As simple as it looks, the function will actually run 3 times for each
+execution, saving state before each subsequent call.</p>
+<p>The second <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/BackupSiteContent.fs"><code>Backup Site Content</code> sample</a>
+is using this persistence mechanism to run
+a potentially slow workflow of copying all files from a given directory to
+a backup location. It shows how multiple activities can be executed in
+parallel:</p>
+<pre><code class="lang-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
+let! results = Task.WhenAll tasks
+</code></pre>
+<p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
+demos a potentially infinite actor-like workflow, where state can exist and
+evolve for indefinite period of time. The key API calls are based on
+<code>OrchestrationContext</code>:</p>
+<pre><code class="lang-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
+let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)
+</code></pre>
+<p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
+has several twists, like output binding for activity (<code>ICollector</code> is required
+instead of C#&#39;s <code>out</code> parameter), third-party integration (Twilio to send SMSs),
+recursive sub-function to loop through several attempts and context-based
+timers for reliable timeout implementation.</p>
+<p>So, if you happen to be an F# fan, you can still give Durable Functions a try.
+Be sure to leave your feedback, so that the library could get even better 
+before going GA.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/durable-functions/'>Durable Functions</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Feb 6th, 2018</div>
     
@@ -224,24 +350,24 @@ version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work wi
 versions.</p>
 <p>Now we can implement our trace server as a console application. The main
 method looks like this:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Main</span>(<span class="hljs-params"><span class="hljs-keyword">string</span>[] args</span>) <span class="hljs-comment">// args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;</span>
-</span>{
-    <span class="hljs-comment">// 1. Run trace server</span>
-    <span class="hljs-keyword">var</span> connectionInfo = <span class="hljs-keyword">new</span> SqlConnectionInfo(args[<span class="hljs-number">0</span>])
+<pre><code class="lang-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
+{
+    // 1. Run trace server
+    var connectionInfo = new SqlConnectionInfo(args[0])
     {
-        DatabaseName = args[<span class="hljs-number">1</span>],
-        UseIntegratedSecurity = <span class="hljs-literal">true</span>
+        DatabaseName = args[1],
+        UseIntegratedSecurity = true
     };
-    <span class="hljs-keyword">var</span> trace = <span class="hljs-keyword">new</span> TraceServer();
-    trace.InitializeAsReader(connectionInfo, args[<span class="hljs-number">2</span>]);
+    var trace = new TraceServer();
+    trace.InitializeAsReader(connectionInfo, args[2]);
 
-    <span class="hljs-comment">// 2. Continuously read traces and send them to event hubs</span>
-    <span class="hljs-keyword">var</span> tokenSource = <span class="hljs-keyword">new</span> CancellationTokenSource();
-    <span class="hljs-keyword">var</span> readerTask = Task.Factory.StartNew(() =&gt; ReadTrace(trace, tokenSource.Token), tokenSource.Token);
-    <span class="hljs-keyword">var</span> senderTask = Task.Factory.StartNew(() =&gt; SendToEventHubs(tokenSource.Token), tokenSource.Token);
+    // 2. Continuously read traces and send them to event hubs
+    var tokenSource = new CancellationTokenSource();
+    var readerTask = Task.Factory.StartNew(() =&gt; ReadTrace(trace, tokenSource.Token), tokenSource.Token);
+    var senderTask = Task.Factory.StartNew(() =&gt; SendToEventHubs(tokenSource.Token), tokenSource.Token);
 
-    <span class="hljs-comment">// 3. Stop the trace</span>
-    Console.WriteLine(<span class="hljs-string">"Press any key to stop..."</span>);
+    // 3. Stop the trace
+    Console.WriteLine(&quot;Press any key to stop...&quot;);
     Console.ReadKey();
     tokenSource.Cancel();
     Task.WaitAll(readerTask, senderTask);
@@ -251,23 +377,23 @@ method looks like this:</p>
 security, and then starts the Trace Server.</p>
 <p>Because of the large volume, I made trace reader and event sender to work on separate
 threads. They talk to each other via a concurrent queue:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">readonly</span> ConcurrentQueue&lt;<span class="hljs-keyword">string</span>&gt; eventQueue = <span class="hljs-keyword">new</span> ConcurrentQueue&lt;<span class="hljs-keyword">string</span>&gt;();
+<pre><code class="lang-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();
 </code></pre>
 <p>Finally, when operator presses any key, the cancellation is requested and the reader and
 sender get shut down.</p>
 <p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
 (with some exclusions) to the concurrent in-memory queue:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">ReadTrace</span>(<span class="hljs-params">TraceServer trace, CancellationToken token</span>)
-</span>{ 
-    <span class="hljs-keyword">while</span> (trace.Read() &amp;&amp; !token.IsCancellationRequested)
+<pre><code class="lang-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
+{ 
+    while (trace.Read() &amp;&amp; !token.IsCancellationRequested)
     {
-        <span class="hljs-keyword">var</span> eventClass = trace[<span class="hljs-string">"EventClass"</span>].ToString();
-        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">string</span>.Compare(eventClass, <span class="hljs-string">"RPC:Completed"</span>) == <span class="hljs-number">0</span>)
+        var eventClass = trace[&quot;EventClass&quot;].ToString();
+        if (string.Compare(eventClass, &quot;RPC:Completed&quot;) == 0)
         {
-            <span class="hljs-keyword">var</span> textData = trace[<span class="hljs-string">"TextData"</span>].ToString();
-            <span class="hljs-keyword">if</span> (!textData.Contains(<span class="hljs-string">"sp_reset_connection"</span>)
-                &amp;&amp; !textData.Contains(<span class="hljs-string">"sp_trace"</span>)
-                &amp;&amp; !textData.Contains(<span class="hljs-string">"sqlagent"</span>))
+            var textData = trace[&quot;TextData&quot;].ToString();
+            if (!textData.Contains(&quot;sp_reset_connection&quot;)
+                &amp;&amp; !textData.Contains(&quot;sp_trace&quot;)
+                &amp;&amp; !textData.Contains(&quot;sqlagent&quot;))
             {
                 eventQueue.Enqueue(textData);
             }
@@ -280,20 +406,20 @@ sender get shut down.</p>
 </code></pre>
 <p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
 events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">SendToEventHubs</span>(<span class="hljs-params">CancellationToken token</span>)
-</span>{
-    <span class="hljs-keyword">var</span> client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
-    <span class="hljs-keyword">var</span> batch = client.CreateBatch();
-    <span class="hljs-keyword">while</span> (!token.IsCancellationRequested)
+<pre><code class="lang-csharp">private static void SendToEventHubs(CancellationToken token)
+{
+    var client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
+    var batch = client.CreateBatch();
+    while (!token.IsCancellationRequested)
     {
-        <span class="hljs-keyword">if</span> (!eventQueue.TryDequeue(<span class="hljs-keyword">out</span> <span class="hljs-keyword">string</span> sql))
+        if (!eventQueue.TryDequeue(out string sql))
         {
-            Thread.Sleep(<span class="hljs-number">10</span>);
-            <span class="hljs-keyword">continue</span>;
+            Thread.Sleep(10);
+            continue;
         }
 
-        <span class="hljs-keyword">var</span> eventData = <span class="hljs-keyword">new</span> EventData(Encoding.UTF8.GetBytes(sql));
-        <span class="hljs-keyword">if</span> (!batch.TryAdd(eventData) &amp;&amp; batch.Count &gt; <span class="hljs-number">0</span>)
+        var eventData = new EventData(Encoding.UTF8.GetBytes(sql));
+        if (!batch.TryAdd(eventData) &amp;&amp; batch.Count &gt; 0)
         {
             client.SendAsync(batch.ToEnumerable())
                 .ContinueWith(OnAsyncMethodFailed, token, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
@@ -307,9 +433,9 @@ events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
 even before they get full, just to keep that process closer to real time.</p>
 <p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
 callback to print it to console:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">OnMyAsyncMethodFailed</span>(<span class="hljs-params">Task task</span>)
-</span>{
-    Console.WriteLine(task.Exception?.ToString() ?? <span class="hljs-string">"null error"</span>);
+<pre><code class="lang-csharp">private static void OnMyAsyncMethodFailed(Task task)
+{
+    Console.WriteLine(task.Exception?.ToString() ?? &quot;null error&quot;);
 }
 </code></pre>
 <p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
@@ -329,25 +455,25 @@ expand until it catches up with the workload.</p>
 <p>But as long as you don&#39;t run the trace server, it won&#39;t consume any servers and won&#39;t cost you
 a dime. </p>
 <p>Here is the implementation of Trace Replay Azure Function:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Replay</span>
+<pre><code class="lang-csharp">public static class Replay
 {
-    [<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Replay"</span>)</span>]
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Run</span>(<span class="hljs-params">
-        [EventHubTrigger(<span class="hljs-string">"sqltrace"</span>, Connection = <span class="hljs-string">"EventHubsConn"</span></span>)] <span class="hljs-keyword">string</span> sql,
+    [FunctionName(&quot;Replay&quot;)]
+    public static void Run(
+        [EventHubTrigger(&quot;sqltrace&quot;, Connection = &quot;EventHubsConn&quot;)] string sql,
         TraceWriter log)
-    </span>{
-        <span class="hljs-keyword">var</span> commandName = sql
-            .Split(<span class="hljs-literal">null</span>)
-            .SkipWhile(r =&gt; r != <span class="hljs-string">"exec"</span> &amp;&amp; r != <span class="hljs-string">"sp_executesql"</span>)
-            .FirstOrDefault(r =&gt; !r.Contains(<span class="hljs-string">"exec"</span>)) ?? <span class="hljs-string">"&lt;empty&gt;"</span>;
+    {
+        var commandName = sql
+            .Split(null)
+            .SkipWhile(r =&gt; r != &quot;exec&quot; &amp;&amp; r != &quot;sp_executesql&quot;)
+            .FirstOrDefault(r =&gt; !r.Contains(&quot;exec&quot;)) ?? &quot;&lt;empty&gt;&quot;;
 
-        <span class="hljs-keyword">var</span> stopwatch = <span class="hljs-keyword">new</span> Stopwatch();
+        var stopwatch = new Stopwatch();
         stopwatch.Start();
 
-        <span class="hljs-keyword">try</span>
+        try
         {
-            <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> sqlConnection = <span class="hljs-keyword">new</span> SqlConnection(AzureSqlConnectionString))
-            <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> cmd = <span class="hljs-keyword">new</span> SqlCommand())
+            using (var sqlConnection = new SqlConnection(AzureSqlConnectionString))
+            using (var cmd = new SqlCommand())
             {
                 sqlConnection.Open();
 
@@ -356,22 +482,22 @@ a dime. </p>
 
                 cmd.Connection = sqlConnection;
 
-                <span class="hljs-keyword">int</span> count = <span class="hljs-number">0</span>;
-                <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> reader = cmd.ExecuteReader())
+                int count = 0;
+                using (var reader = cmd.ExecuteReader())
                 {
-                    <span class="hljs-keyword">while</span> (reader.Read())
+                    while (reader.Read())
                     {
                         count++;
                     }
                 }
 
-                log.Info(<span class="hljs-string">$"Processed <span class="hljs-subst">{commandName}</span> in <span class="hljs-subst">{stopwatch.ElapsedMilliseconds}</span> ms with <span class="hljs-subst">{count}</span> rows"</span>);
+                log.Info($&quot;Processed {commandName} in {stopwatch.ElapsedMilliseconds} ms with {count} rows&quot;);
             }
         }
-        <span class="hljs-keyword">catch</span> (Exception ex)
+        catch (Exception ex)
         {
-            log.Error(<span class="hljs-string">$"Error in <span class="hljs-subst">{commandName}</span> in <span class="hljs-subst">{stopwatch.ElapsedMilliseconds}</span> <span class="hljs-subst">{ex.Message}</span>"</span>);
-            <span class="hljs-keyword">throw</span>;
+            log.Error($&quot;Error in {commandName} in {stopwatch.ElapsedMilliseconds} {ex.Message}&quot;);
+            throw;
         }
     }
 }
@@ -436,12 +562,12 @@ you the most:
 <p>I start with a domain model. The model is composed of immutable F# types (records and discriminated
 unions) and pure functions.</p>
 <p>We have two players, so we need a type for them:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Player</span> </span>= X | O
+<pre><code class="lang-fsharp">type Player = X | O
 </code></pre>
 <p>In addition, there is a useful function to return the other player based on the given one.
 Simple pattern-matching will do:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Player =
-  <span class="hljs-keyword">let</span> other = <span class="hljs-keyword">function</span> | X -&gt; O | O -&gt; X
+<pre><code class="lang-fsharp">module Player =
+  let other = function | X -&gt; O | O -&gt; X
 </code></pre>
 <p>The domain code is the most important part of the application, so I want it to be covered
 by unit tests. Of course, the above function doesn&#39;t really warrant testing, but it&#39;s a nice
@@ -453,21 +579,21 @@ That is, instead of defining specific tests, we define properties which hold for
 <li>Other player of other player is the player itself</li>
 </ul>
 <p>Here is the code with <a href="https://github.com/haf/expecto">Expecto</a> and <a href="https://github.com/fscheck/FsCheck">FsCheck</a>:</p>
-<pre class="highlight"><code class="hljs fs">testProperty <span class="hljs-string">"Other player is not equal to player"</span> &lt;| <span class="hljs-keyword">fun</span> x -&gt;
-  Expect.notEqual x (Player.other x) <span class="hljs-string">"Other should be different from original"</span>
+<pre><code class="lang-fsharp">testProperty &quot;Other player is not equal to player&quot; &lt;| fun x -&gt;
+  Expect.notEqual x (Player.other x) &quot;Other should be different from original&quot;
 
-testProperty <span class="hljs-string">"Other player of other player is the player itself"</span> &lt;| <span class="hljs-keyword">fun</span> x -&gt;
-  Expect.equal x (Player.other (Player.other x)) <span class="hljs-string">"Other other should be equal to original"</span>
+testProperty &quot;Other player of other player is the player itself&quot; &lt;| fun x -&gt;
+  Expect.equal x (Player.other (Player.other x)) &quot;Other other should be equal to original&quot;
 </code></pre>
 <p>Let&#39;s move on to modelling the game. I decided to define a union type to be used for
 horizontal and vertical positions of the cells:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Position</span> </span>= One | Two | Three
+<pre><code class="lang-fsharp">type Position = One | Two | Three
 </code></pre>
 <p>I could use the normal integers instead, but I don&#39;t want to be worried about validating
 the ranges all the time.</p>
 <p>My first record type models the move, or action done by a player: it has <code>X</code> and <code>Y</code>
 positions of the chosen cell, plus the player information:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Move</span> </span>= {
+<pre><code class="lang-fsharp">type Move = {
   X: Position
   Y: Position
   By: Player
@@ -475,7 +601,7 @@ positions of the chosen cell, plus the player information:</p>
 </code></pre>
 <p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
 design of the whole application:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">RunningGame</span> </span>= {
+<pre><code class="lang-fsharp">type RunningGame = {
   MovesDone: Move list
   PossibleMoves: Move list
 }
@@ -499,9 +625,9 @@ most trivial bot is a one-liner: it picks a random move from the collection</li>
 correspond to possible moves, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">REST API</a> below</li>
 </ul>
 <p>Now, we can model a game which is already finished:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameOutcome</span> </span>= Won <span class="hljs-keyword">of</span> Player | Tie
+<pre><code class="lang-fsharp">type GameOutcome = Won of Player | Tie
 
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">FinishedGame</span> </span>= {
+type FinishedGame = {
   MovesDone: Move list
   Outcome: GameOutcome
 }
@@ -509,28 +635,28 @@ correspond to possible moves, see <a href="/2018/01/tictactoe-with-fsharp-azuref
 <p>Each finished game has a list of moves and the outcome: either one player won, or there
 was a tie.</p>
 <p>Each state of a game can be described by the union of the previous two states:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameState</span> </span>= 
-  | Finished <span class="hljs-keyword">of</span> FinishedGame
-  | InProgress <span class="hljs-keyword">of</span> RunningGame
+<pre><code class="lang-fsharp">type GameState = 
+  | Finished of FinishedGame
+  | InProgress of RunningGame
 </code></pre>
 <h2 id="modeling-game-flow">Modeling Game Flow</h2>
 <p>Now, when all the types are in place, we can model the game flow. The flow is a sequence
 of transitions between game states, implemented with pure functions.</p>
 <p>First, each game starts at the same state, which is an empty field, and X turn. Here
 is the value which represents this initial state:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Game =
-  <span class="hljs-keyword">let</span> initialState = 
-    <span class="hljs-keyword">let</span> positions = [One; Two; Three]
-    <span class="hljs-keyword">let</span> cells = seq { 
-      <span class="hljs-keyword">for</span> x <span class="hljs-keyword">in</span> positions <span class="hljs-keyword">do</span>
-         <span class="hljs-keyword">for</span> y <span class="hljs-keyword">in</span> positions <span class="hljs-keyword">do</span>
-            <span class="hljs-keyword">yield</span> { X = x; Y = y; By = X }
+<pre><code class="lang-fsharp">module Game =
+  let initialState = 
+    let positions = [One; Two; Three]
+    let cells = seq { 
+      for x in positions do
+         for y in positions do
+            yield { X = x; Y = y; By = X }
       }
     { MovesDone = []; PossibleMoves = List.ofSeq cells }
 </code></pre>
 <p>After each move is made, we need a function to evaluate move outcome: whether current
 game is finished or is still in progress. I defined a function <code>evaluate</code> for that:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> evaluate (history: Move list): GameOutcome option = ...
+<pre><code class="lang-fsharp">let private evaluate (history: Move list): GameOutcome option = ...
 </code></pre>
 <p>I don&#39;t show the full body here, since it&#39;s quite boring in evaluating rows, columns
 and diagonals for three-in-a-row. See the <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe/Game.fs#L42-L56">full code</a> 
@@ -545,14 +671,14 @@ doesn&#39;t make sense</li>
 <li>The result <em>can</em> be a finished game</li>
 </ul>
 <p>Here is the function implementation:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> makeMove (game: RunningGame) (move: Move): GameState =
-  <span class="hljs-keyword">let</span> movesDone = move :: game.MovesDone
-  <span class="hljs-keyword">match</span> evaluate movesDone <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let makeMove (game: RunningGame) (move: Move): GameState =
+  let movesDone = move :: game.MovesDone
+  match evaluate movesDone with
   | Some result -&gt; Finished { MovesDone = movesDone; Outcome = result }
   | None -&gt;
-    <span class="hljs-keyword">let</span> possibleMoves = 
+    let possibleMoves = 
       List.except [move] game.PossibleMoves
-      |&gt; List.map (<span class="hljs-keyword">fun</span> m -&gt; { m <span class="hljs-keyword">with</span> By = Player.other m.By })
+      |&gt; List.map (fun m -&gt; { m with By = Player.other m.By })
     InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }
 </code></pre>
 <p>It works like this:</p>
@@ -566,9 +692,9 @@ moves same as before, but excluding the move and assigned to the other player</l
 <p>Tic-Tic-Toe is two-player game, so I defined another function which runs
 a turn of 2 moves by 2 players, given the decision making functions of both
 players (so it&#39;s a higher-order function):</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> makeRound player1 player2 gameState =
-  <span class="hljs-keyword">let</span> newGameState = player1 gameState |&gt; makeMove gameState
-  <span class="hljs-keyword">match</span> newGameState <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let makeRound player1 player2 gameState =
+  let newGameState = player1 gameState |&gt; makeMove gameState
+  match newGameState with
   | Finished _ -&gt; newGameState
   | InProgress p -&gt; player2 p |&gt; makeMove p
 </code></pre>
@@ -608,17 +734,17 @@ all kinds of input lists to try to break our property. If it succeeds, it will
 print the exact input which causes the test to fail.</p>
 <p>Here is how one such test is implemented.</p>
 <p>A helper function plays a sequence of indexes as moves:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> playSequence moves = 
-  <span class="hljs-keyword">let</span> playOne s i =
-    <span class="hljs-keyword">match</span> s <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let playSequence moves = 
+  let playOne s i =
+    match s with
     | InProgress p -&gt; Game.makeMove p (p.PossibleMoves.[i % p.PossibleMoves.Length])
     | _ -&gt; s
   List.fold playOne (InProgress Game.initialState) moves
 </code></pre>
 <p>Then the property &quot;The game is always finished after 9 moves&quot; is simply:</p>
-<pre class="highlight"><code class="hljs fs">testProp <span class="hljs-string">"The game is always finished after 9 moves"</span> &lt;| <span class="hljs-keyword">fun</span> (Gen.ListOf9 xs) -&gt;
-  <span class="hljs-keyword">let</span> result = playSequence xs
-  Expect.isTrue (Game.isFinished result) <span class="hljs-string">"Game should be finished"</span>
+<pre><code class="lang-fsharp">testProp &quot;The game is always finished after 9 moves&quot; &lt;| fun (Gen.ListOf9 xs) -&gt;
+  let result = playSequence xs
+  Expect.isTrue (Game.isFinished result) &quot;Game should be finished&quot;
 </code></pre>
 <p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&#39;s a
 generator that I <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/Gen.fs#L31-L32">defined</a>, 
@@ -631,24 +757,24 @@ so that the list always contains exactly 9 elements.</p>
 service will expose to the clients. I define my API in REST model.</p>
 <p>The main resource is <code>/game</code> resource. To start a new game, a client has to send
 <code>POST</code> command:</p>
-<pre class="highlight"><code class="hljs stata"><span class="hljs-keyword">POST</span> /game
-Content-<span class="hljs-keyword">Type</span>: application/json
+<pre><code>POST /game
+Content-Type: application/json
 
-{ <span class="hljs-string">"name"</span>: <span class="hljs-string">"Mikhail"</span> }
+{ &quot;name&quot;: &quot;Mikhail&quot; }
 </code></pre><p>And the response body is JSON which denotes a new game created:</p>
-<pre class="highlight"><code class="hljs json">{
-    <span class="hljs-attr">"id"</span>: <span class="hljs-string">"5d7b2261"</span>,
-    <span class="hljs-attr">"busyCells"</span>: [],
-    <span class="hljs-attr">"links"</span>: [
+<pre><code class="lang-json">{
+    &quot;id&quot;: &quot;5d7b2261&quot;,
+    &quot;busyCells&quot;: [],
+    &quot;links&quot;: [
         {
-            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y1"</span>,
-            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/0"</span>
+            &quot;rel&quot;: &quot;x1y1&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/0&quot;
         },
         {
-            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y2"</span>,
-            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/1"</span>
+            &quot;rel&quot;: &quot;x1y2&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/1&quot;
         },
-        // ... <span class="hljs-number">7</span> more links follow
+        // ... 7 more links follow
     ]
 }
 </code></pre>
@@ -657,55 +783,56 @@ because no moves have been made.</p>
 <p>More importantly, it contains a list of links, each one of which has a <code>rel</code>
 field representing a cell, and a link. The client should <code>POST</code> to this link
 if it wants to make a move on the corresponding cell:</p>
-<pre class="highlight"><code class="hljs awk">POST <span class="hljs-regexp">/game/</span><span class="hljs-number">5</span>d7b2261<span class="hljs-regexp">/move/</span><span class="hljs-number">1</span>
+<pre><code>POST /game/5d7b2261/move/1
 </code></pre><p>And the response is:</p>
-<pre class="highlight"><code class="hljs json">{
-    <span class="hljs-attr">"id"</span>: <span class="hljs-string">"5d7b2261"</span>,
-    <span class="hljs-attr">"result"</span>: <span class="hljs-literal">null</span>,
-    <span class="hljs-attr">"busyCells"</span>: [
+<pre><code class="lang-json">{
+    &quot;id&quot;: &quot;5d7b2261&quot;,
+    &quot;result&quot;: null,
+    &quot;busyCells&quot;: [
         {
-            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x2y3"</span>,
-            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"O"</span>
+            &quot;name&quot;: &quot;x2y3&quot;,
+            &quot;value&quot;: &quot;O&quot;
         },
         {
-            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x1y2"</span>,
-            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"X"</span>
+            &quot;name&quot;: &quot;x1y2&quot;,
+            &quot;value&quot;: &quot;X&quot;
         }
     ],
-    <span class="hljs-attr">"links"</span>: [
+    &quot;links&quot;: [
         {
-            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y1"</span>,
-            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/0"</span>
+            &quot;rel&quot;: &quot;x1y1&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/0&quot;
         },
         {
-            <span class="hljs-attr">"rel"</span>: <span class="hljs-string">"x1y3"</span>,
-            <span class="hljs-attr">"href"</span>: <span class="hljs-string">"/game/5d7b2261/move/1"</span>
+            &quot;rel&quot;: &quot;x1y3&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/1&quot;
         },
-        // ... <span class="hljs-number">5</span> more links follow
+        // ... 5 more links follow
     ]
 }
 </code></pre>
 <p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
 list of links now has only 7 links, based on the count of free cells.</p>
 <p>The client keeps navigating the links until it gets non-empty <code>result</code> field:</p>
-<pre class="highlight"><code class="hljs json">{
-    <span class="hljs-attr">"id"</span>: <span class="hljs-string">"5d7b2261"</span>,
-    <span class="hljs-attr">"result"</span>: <span class="hljs-string">"You Win!"</span>,
-    <span class="hljs-attr">"busyCells"</span>: [
+<pre><code class="lang-json">{
+    &quot;id&quot;: &quot;5d7b2261&quot;,
+    &quot;result&quot;: &quot;You Win!&quot;,
+    &quot;busyCells&quot;: [
         {
-            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x3y1"</span>,
-            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"X"</span>
+            &quot;name&quot;: &quot;x3y1&quot;,
+            &quot;value&quot;: &quot;X&quot;
         },
         {
-            <span class="hljs-attr">"name"</span>: <span class="hljs-string">"x3y2"</span>,
-            <span class="hljs-attr">"value"</span>: <span class="hljs-string">"O"</span>
+            &quot;name&quot;: &quot;x3y2&quot;,
+            &quot;value&quot;: &quot;O&quot;
         },
         // ... more cells here
     ],
-    <span class="hljs-attr">"links"</span>: [],
-    <span class="hljs-attr">"score"</span>: <span class="hljs-number">401</span>
+    &quot;links&quot;: [],
+    &quot;score&quot;: 401
 }
-</code></pre><p>This denotes the end of the game. There&#39;s no more links to navigate, so the client knows it
+</code></pre>
+<p>This denotes the end of the game. There&#39;s no more links to navigate, so the client knows it
 has to stop playing.</p>
 <p>This API is designed in HATEOAS-style (Hypermedia as the Engine of Application State). The
 clients only need to know the initial URL, while all the other URLs are received from the
@@ -715,12 +842,12 @@ previous responses. It resembles the way a human navigates websites.</p>
 <p>I implemented the above API with Azure Functions. I used .NET Standard based v2 runtime
 with precompiled F# functions.</p>
 <p>The initial <code>POST /game</code> request is handled by <code>Start</code> function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameRequest</span> </span>= { Name: string }
+<pre><code class="lang-fsharp">type GameRequest = { Name: string }
 
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Cell</span> </span>= { Name: string; Value: string }
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Link</span> </span>= { Rel:  string; Href:  string }
+type Cell = { Name: string; Value: string }
+type Link = { Rel:  string; Href:  string }
 
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">GameDTO</span> </span>= {
+type GameDTO = {
   Id: string
   Result: string
   BusyCells: Cell list
@@ -728,14 +855,14 @@ with precompiled F# functions.</p>
   Score: int
 }
 
-<span class="hljs-meta">[&lt;FunctionName("Start")&gt;]</span>
-<span class="hljs-keyword">let</span> start(<span class="hljs-meta">[&lt;HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "game")&gt;]</span> req: GameRequest,
-          <span class="hljs-meta">[&lt;Table("TicTacToe")&gt;]</span> store: ICollector&lt;GameEntity&gt;) =
-  <span class="hljs-keyword">let</span> gameid = Guid.NewGuid().ToString()
-  <span class="hljs-keyword">let</span> state = InProgress Game.initialState
-  <span class="hljs-keyword">let</span> serializedState = JsonConvert.SerializeObject state
-  store.Add(GameEntity(PartitionKey = <span class="hljs-string">"default"</span>, RowKey = gameid, Name = req.Name, State = serializedState))
-  ObjectResult(Api.serialize gameid state <span class="hljs-number">0</span>)
+[&lt;FunctionName(&quot;Start&quot;)&gt;]
+let start([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game&quot;)&gt;] req: GameRequest,
+          [&lt;Table(&quot;TicTacToe&quot;)&gt;] store: ICollector&lt;GameEntity&gt;) =
+  let gameid = Guid.NewGuid().ToString()
+  let state = InProgress Game.initialState
+  let serializedState = JsonConvert.SerializeObject state
+  store.Add(GameEntity(PartitionKey = &quot;default&quot;, RowKey = gameid, Name = req.Name, State = serializedState))
+  ObjectResult(Api.serialize gameid state 0)
 </code></pre>
 <p>The outline of this function:</p>
 <ul>
@@ -748,16 +875,16 @@ with precompiled F# functions.</p>
 <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Functions/Api.fs#L30-L51">serialized</a> game response of type <code>GameDTO</code></li>
 </ul>
 <p>The second Function <code>Play</code> handles the moves:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("Play")&gt;]</span>
-<span class="hljs-keyword">let</span> play(<span class="hljs-meta">[&lt;HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "game/{gameid}/move/{index}")&gt;]</span> 
+<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;Play&quot;)&gt;]
+let play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game/{gameid}/move/{index}&quot;)&gt;] 
          req: HttpRequest, gameid: string, index: int,
-         <span class="hljs-meta">[&lt;Table("TicTacToe", "default", "{gameid}")&gt;]</span> entity: GameEntity) =
-  <span class="hljs-keyword">let</span> state = JsonConvert.DeserializeObject&lt;GameState&gt; entity.State
-  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
+         [&lt;Table(&quot;TicTacToe&quot;, &quot;default&quot;, &quot;{gameid}&quot;)&gt;] entity: GameEntity) =
+  let state = JsonConvert.DeserializeObject&lt;GameState&gt; entity.State
+  match state with
   | Finished _ -&gt; BadRequestResult() :&gt; IActionResult
-  | InProgress p <span class="hljs-keyword">when</span> index &lt; <span class="hljs-number">0</span> || index &gt;= p.PossibleMoves.Length -&gt; BadRequestResult() :&gt; IActionResult
+  | InProgress p when index &lt; 0 || index &gt;= p.PossibleMoves.Length -&gt; BadRequestResult() :&gt; IActionResult
   | InProgress p -&gt; 
-    <span class="hljs-keyword">let</span> result = Game.makeRound (<span class="hljs-keyword">fun</span> _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
+    let result = Game.makeRound (fun _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
     entity.State &lt;- JsonConvert.SerializeObject result
     entity.Score &lt;- Scoring.calculateScore (DateTime.UtcNow - entity.StartedAt).TotalMilliseconds result
     ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult
@@ -781,10 +908,10 @@ function. Its goal is to pick the <code>O</code> move for any given game-in-prog
 <p>Obviously, 3x3 Tic-Tac-Toe is a very simple game and it&#39;s quite easy to make a perfectly
 playing bot. This wasn&#39;t the goal though: it&#39;s more fun for a human to win.</p>
 <p>So, actually, the only property test that I ended up implementing is the following:</p>
-<pre class="highlight"><code class="hljs fs">testProp <span class="hljs-string">"Bot is able to play O at any possible position"</span> &lt;| <span class="hljs-keyword">fun</span> (Gen.ListOfNonNegative xs) -&gt;
-  <span class="hljs-keyword">let</span> human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
-  <span class="hljs-keyword">let</span> round s i =
-    <span class="hljs-keyword">match</span> s <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">testProp &quot;Bot is able to play O at any possible position&quot; &lt;| fun (Gen.ListOfNonNegative xs) -&gt;
+  let human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
+  let round s i =
+    match s with
     | InProgress p -&gt; Game.makeRound (human i p) Bot.pickMove p
     | _ -&gt; s
   List.fold round (InProgress Game.initialState) xs |&gt; ignore
@@ -802,31 +929,31 @@ but it&#39;s too boring to play against.</p>
 <p>I implemented the bot using the approach described in my 
 <a href="https://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Functional Fold as Decision Tree Pattern</a>
 post:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> pickMove (game: RunningGame) = 
+<pre><code class="lang-fsharp">let pickMove (game: RunningGame) = 
   [winNow O; notLoseNow; pickRandom]
   |&gt; Seq.ofList
-  |&gt; Seq.choose (<span class="hljs-keyword">fun</span> x -&gt; x game)
+  |&gt; Seq.choose (fun x -&gt; x game)
   |&gt; Seq.head
 </code></pre>
 <p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
 decision will be promoted to final decision.</p>
 <p>And here are those functions:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> winNow player (game: RunningGame) =
-  <span class="hljs-keyword">let</span> isWin = <span class="hljs-keyword">function</span> | Finished { Outcome = Won x } <span class="hljs-keyword">when</span> x = player -&gt; <span class="hljs-keyword">true</span> | _ -&gt; <span class="hljs-keyword">false</span>
+<pre><code class="lang-fsharp">let winNow player (game: RunningGame) =
+  let isWin = function | Finished { Outcome = Won x } when x = player -&gt; true | _ -&gt; false
   game.PossibleMoves
-  |&gt; List.tryFind (<span class="hljs-keyword">fun</span> move -&gt; Game.makeMove game move |&gt; isWin)
+  |&gt; List.tryFind (fun move -&gt; Game.makeMove game move |&gt; isWin)
 
-<span class="hljs-keyword">let</span> notLoseNow (game: RunningGame) =
-  <span class="hljs-keyword">let</span> canLose = <span class="hljs-keyword">function</span> 
-    | InProgress p -&gt; <span class="hljs-keyword">match</span> winNow X p <span class="hljs-keyword">with</span> | Some _ -&gt; <span class="hljs-keyword">true</span> | None -&gt; <span class="hljs-keyword">false</span>
-    | _ -&gt; <span class="hljs-keyword">false</span>
-  <span class="hljs-keyword">let</span> notLosingMoves =
+let notLoseNow (game: RunningGame) =
+  let canLose = function 
+    | InProgress p -&gt; match winNow X p with | Some _ -&gt; true | None -&gt; false
+    | _ -&gt; false
+  let notLosingMoves =
     game.PossibleMoves
-    |&gt; List.filter (<span class="hljs-keyword">fun</span> move -&gt; Game.makeMove game move |&gt; canLose |&gt; not)
-  <span class="hljs-keyword">if</span> List.isEmpty notLosingMoves &amp;&amp; notLosingMoves.Length &lt; game.PossibleMoves.Length <span class="hljs-keyword">then</span> None
-  <span class="hljs-keyword">else</span> Some (notLosingMoves.[random.Next notLosingMoves.Length])
+    |&gt; List.filter (fun move -&gt; Game.makeMove game move |&gt; canLose |&gt; not)
+  if List.isEmpty notLosingMoves &amp;&amp; notLosingMoves.Length &lt; game.PossibleMoves.Length then None
+  else Some (notLosingMoves.[random.Next notLosingMoves.Length])
 
-<span class="hljs-keyword">let</span> pickRandom (game: RunningGame) = 
+let pickRandom (game: RunningGame) = 
   Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])
 </code></pre>
 <p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
@@ -837,45 +964,45 @@ of all players.</p>
 <p>The score is calculated based on two principles: the less moves you make, and the faster
 you play, the higher the score is. Move count is more important than timing.</p>
 <p>These principles are nicely expressed as property tests:</p>
-<pre class="highlight"><code class="hljs fs">testProp <span class="hljs-string">"The score of faster game is not lower than slower game"</span> 
-  &lt;| <span class="hljs-keyword">fun</span> (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
-  <span class="hljs-keyword">let</span> (slower, faster) = maxmin id duration1 duration2
-  <span class="hljs-keyword">let</span> scoreFaster = Scoring.calculateScore faster game
-  <span class="hljs-keyword">let</span> scoreSlower = Scoring.calculateScore slower game
-  Expect.isGreaterThanOrEqual scoreFaster scoreSlower <span class="hljs-string">"Bigger duration has lower score (or same)"</span>
+<pre><code class="lang-fsharp">testProp &quot;The score of faster game is not lower than slower game&quot; 
+  &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
+  let (slower, faster) = maxmin id duration1 duration2
+  let scoreFaster = Scoring.calculateScore faster game
+  let scoreSlower = Scoring.calculateScore slower game
+  Expect.isGreaterThanOrEqual scoreFaster scoreSlower &quot;Bigger duration has lower score (or same)&quot;
 
-testProp <span class="hljs-string">"The score of won game in less moves is greater than game with more moves"</span> 
-  &lt;| <span class="hljs-keyword">fun</span> (Gen.Positive duration1) (Gen.Positive duration2) game1 game2 -&gt;
-  <span class="hljs-keyword">let</span> (slower, faster) = maxmin id duration1 duration2
-  <span class="hljs-keyword">let</span> (moreMoves, lessMoves) = maxmin List.length game1 game2
-  <span class="hljs-keyword">let</span> score1 = Scoring.calculateScore slower (Finished { Outcome = Won X; MovesDone = lessMoves })
-  <span class="hljs-keyword">let</span> score2 = Scoring.calculateScore faster (Finished { Outcome = Won X; MovesDone = moreMoves })
-  <span class="hljs-keyword">if</span> moreMoves.Length = lessMoves.Length <span class="hljs-keyword">then</span>
-    Expect.isGreaterThanOrEqual score1 score2 <span class="hljs-string">"Bigger duration has lower score (or same)"</span>
-  <span class="hljs-keyword">else</span>
-    Expect.isGreaterThan score1 score2 <span class="hljs-string">"More moves have lower score"</span>
+testProp &quot;The score of won game in less moves is greater than game with more moves&quot; 
+  &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game1 game2 -&gt;
+  let (slower, faster) = maxmin id duration1 duration2
+  let (moreMoves, lessMoves) = maxmin List.length game1 game2
+  let score1 = Scoring.calculateScore slower (Finished { Outcome = Won X; MovesDone = lessMoves })
+  let score2 = Scoring.calculateScore faster (Finished { Outcome = Won X; MovesDone = moreMoves })
+  if moreMoves.Length = lessMoves.Length then
+    Expect.isGreaterThanOrEqual score1 score2 &quot;Bigger duration has lower score (or same)&quot;
+  else
+    Expect.isGreaterThan score1 score2 &quot;More moves have lower score&quot;
 </code></pre>
 <p>Note that tests are parameterized for durations and game states. We don&#39;t have to come up with specific
 scenarios: the framework should take care of those.</p>
 <p>One of the possible implementations for scoring is:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> calculateScore duration (state: GameState) =
-  <span class="hljs-keyword">let</span> durationScore = (<span class="hljs-number">100.0</span> * (<span class="hljs-number">1.0</span> - duration / (duration + <span class="hljs-number">10000.0</span>))) |&gt; int
-  <span class="hljs-keyword">match</span> state <span class="hljs-keyword">with</span>
-  | Finished { Outcome = Won X; MovesDone = ms } -&gt; (<span class="hljs-number">11</span> - ms.Length) * <span class="hljs-number">100</span> + durationScore
+<pre><code class="lang-fsharp">let calculateScore duration (state: GameState) =
+  let durationScore = (100.0 * (1.0 - duration / (duration + 10000.0))) |&gt; int
+  match state with
+  | Finished { Outcome = Won X; MovesDone = ms } -&gt; (11 - ms.Length) * 100 + durationScore
   | Finished { Outcome = Tie } -&gt; durationScore
-  | _ -&gt; <span class="hljs-number">0</span>
+  | _ -&gt; 0
 </code></pre>
 <p>Now, the leaderboard piece. You&#39;ve already seen the bits of this functionality in Azure Functions: 
 they store the game state into Azure Table Storage.</p>
 <p>There is another Azure Function which handles <code>GET</code> requests to <code>/leaderboard</code> resource. It
 loads all the past games from Table Storage, and then passes them to leaderboard calculation
 function below:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> calculateLeaderboard top ns =
+<pre><code class="lang-fsharp">let calculateLeaderboard top ns =
   ns
-  |&gt; Seq.filter (<span class="hljs-keyword">fun</span> entity -&gt; snd entity &gt; <span class="hljs-number">0</span> &amp;&amp; not (String.IsNullOrEmpty (fst entity)))
+  |&gt; Seq.filter (fun entity -&gt; snd entity &gt; 0 &amp;&amp; not (String.IsNullOrEmpty (fst entity)))
   |&gt; Seq.sortByDescending snd
   |&gt; Seq.truncate top
-  |&gt; Seq.mapi (<span class="hljs-keyword">fun</span> index entity -&gt; { Index = index + <span class="hljs-number">1</span>; Name = fst entity; Score = snd entity })
+  |&gt; Seq.mapi (fun index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })
 </code></pre>
 <h2 id="wrapping-up">Wrapping Up</h2>
 <p>Ok, the application is simple, but the blog post ended up being quite long. Thank you if you
@@ -1045,30 +1172,30 @@ jump to runnable project, you can get it from
 <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/6-precompiled-timer">my github</a>.</p>
 <p>We start with creating a new F# library project for .NET Standard 2. Run
 in your command line:</p>
-<pre class="highlight"><code class="hljs sh">dotnet new classlib --language F<span class="hljs-comment"># --name HelloFunctions</span>
+<pre><code class="lang-sh">dotnet new classlib --language F# --name HelloFunctions
 </code></pre>
 <p>This command creates a folder with two files: <code>HelloFunctions.fsproj</code> project
 file and <code>Library.fs</code> source code file.</p>
 <p>Now, add a reference to Azure Functions NuGet package:</p>
-<pre class="highlight"><code class="hljs sh">dotnet add package Microsoft.NET.Sdk.Functions
+<pre><code class="lang-sh">dotnet add package Microsoft.NET.Sdk.Functions
 </code></pre>
 <h2 id="define-a-function">Define a Function</h2>
 <p>Open <code>Library.fs</code> code file and change it to the following code:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">namespace</span> HelloFunctions
+<pre><code class="lang-fsharp">namespace HelloFunctions
 
-<span class="hljs-keyword">open</span> System
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs.Host
+open System
+open Microsoft.Azure.WebJobs
+open Microsoft.Azure.WebJobs.Host
 
-<span class="hljs-keyword">module</span> Say =
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> daysUntil (d: DateTime) =
+module Say =
+  let private daysUntil (d: DateTime) =
     (d - DateTime.Now).TotalDays |&gt; int
 
-  <span class="hljs-keyword">let</span> hello (timer: TimerInfo, log: TraceWriter) =
-    <span class="hljs-keyword">let</span> christmas = <span class="hljs-keyword">new</span> DateTime(<span class="hljs-number">2017</span>, <span class="hljs-number">12</span>, <span class="hljs-number">25</span>)
+  let hello (timer: TimerInfo, log: TraceWriter) =
+    let christmas = new DateTime(2017, 12, 25)
 
     daysUntil christmas
-    |&gt; sprintf <span class="hljs-string">"%d days until Christmas"</span>
+    |&gt; sprintf &quot;%d days until Christmas&quot;
     |&gt; log.Info
 </code></pre>
 <p>We defined a function <code>hello</code> which should be triggered by Functions runtime
@@ -1077,16 +1204,16 @@ days we still need to wait before Christmas 2017.</p>
 <p>To convert this simple F# function to an Azure Function, create a folder called
 <code>Hello</code> (or choose any other name) next to the project file and add 
 <code>function.json</code> file in there:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"bindings"</span>: [
+<pre><code class="lang-json">{
+  &quot;bindings&quot;: [
     {
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"timer"</span>,
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"timerTrigger"</span>,
-      <span class="hljs-attr">"schedule"</span>: <span class="hljs-string">"0 * * * * *"</span>
+      &quot;name&quot;: &quot;timer&quot;,
+      &quot;type&quot;: &quot;timerTrigger&quot;,
+      &quot;schedule&quot;: &quot;0 * * * * *&quot;
     }
   ],
-  <span class="hljs-attr">"scriptFile"</span>: <span class="hljs-string">"../bin/HelloFunctions.dll"</span>,
-  <span class="hljs-attr">"entryPoint"</span>: <span class="hljs-string">"HelloFunctions.Say.hello"</span>
+  &quot;scriptFile&quot;: &quot;../bin/HelloFunctions.dll&quot;,
+  &quot;entryPoint&quot;: &quot;HelloFunctions.Say.hello&quot;
 }
 </code></pre>
 <p>We defined that:</p>
@@ -1099,7 +1226,7 @@ days we still need to wait before Christmas 2017.</p>
 <p>There are a couple more configuration files needed to be able to
 run the Function App locally. <code>host.json</code> defines hosting parameters; empty
 file will do for now:</p>
-<pre class="highlight"><code class="hljs json">{
+<pre><code class="lang-json">{
 }
 </code></pre>
 <p>Most triggers need to connect to a Storage Account. For examples, timer
@@ -1107,10 +1234,10 @@ trigger uses it to hold leases to define which running instance will
 actually execute the action every minute. Copy a connection string to your 
 Storage Account (local Storage emulator is fine too) and put it into 
 <code>local.settings.json</code> file:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"IsEncrypted"</span>: <span class="hljs-literal">false</span>,
-  <span class="hljs-attr">"Values"</span>: {
-    <span class="hljs-attr">"AzureWebJobsStorage"</span>: <span class="hljs-string">"...your connection string..."</span>
+<pre><code class="lang-json">{
+  &quot;IsEncrypted&quot;: false,
+  &quot;Values&quot;: {
+    &quot;AzureWebJobsStorage&quot;: &quot;...your connection string...&quot;
   }
 }
 </code></pre>
@@ -1118,22 +1245,22 @@ Storage Account (local Storage emulator is fine too) and put it into
 to Azure by default.</p>
 <p>Finally, we need to modify <code>fsproj</code> file to make the build tool copy those
 files into <code>bin</code> folder. Add the following section in there:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-name">ItemGroup</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"Hello\function.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"host.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"local.settings.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-<span class="hljs-tag">&lt;/<span class="hljs-name">ItemGroup</span>&gt;</span>
+<pre><code class="lang-xml">&lt;ItemGroup&gt;
+  &lt;Content Include=&quot;Hello\function.json&quot;&gt;
+    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+  &lt;/Content&gt;
+  &lt;Content Include=&quot;host.json&quot;&gt;
+    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+  &lt;/Content&gt;
+  &lt;Content Include=&quot;local.settings.json&quot;&gt;
+    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+  &lt;/Content&gt;
+&lt;/ItemGroup&gt;
 </code></pre>
 <h2 id="run-app-locally">Run App Locally</h2>
 <p>The first step is to build and publish our Function App with <code>dotnet</code>
 commands:</p>
-<pre class="highlight"><code class="hljs sh">dotnet build
+<pre><code class="lang-sh">dotnet build
 dotnet publish
 </code></pre>
 <p>The first line produces the dll file and the second line copies it
@@ -1141,7 +1268,7 @@ and all of its dependencies to <code>publish</code> folder.</p>
 <p>The nice thing about Azure Functions is that you can easily run them
 locally on a development machine. Execute the following command to 
 install the runtime and all the required libraries:</p>
-<pre class="highlight"><code class="hljs sh">npm install -g azure-functions-core-tools@core
+<pre><code class="lang-sh">npm install -g azure-functions-core-tools@core
 </code></pre>
 <p>This will add a <code>func</code> CLI to your system which is the tool to
 use for all Function related operations.</p>
@@ -1169,7 +1296,7 @@ creating an empty Function App in the portal, or via Azure CLI (<code>func</code
 does not support that).</p>
 <p>Then run the following command to deploy your precompiled function to
 this app:</p>
-<pre class="highlight"><code class="hljs sh">func azure functionapp publish &lt;FunctionAppName&gt;
+<pre><code class="lang-sh">func azure functionapp publish &lt;FunctionAppName&gt;
 </code></pre>
 <p>At the first run, it will verify your Azure credentials.</p>
 <p>In real-life production scenarios your workflow is probably going to be
@@ -1190,34 +1317,34 @@ for the rest of the article I will focus on several approaches to
 implement HTTP functions. Nonetheless, the same techique can be applied to
 other triggers too.</p>
 <p>F# code for the simplest HTTP Function can look like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">namespace</span> PrecompiledApp
+<pre><code class="lang-fsharp">namespace PrecompiledApp
 
-<span class="hljs-keyword">open</span> Microsoft.AspNetCore.Mvc
-<span class="hljs-keyword">open</span> Microsoft.AspNetCore.Http
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs.Host
+open Microsoft.AspNetCore.Mvc
+open Microsoft.AspNetCore.Http
+open Microsoft.Azure.WebJobs.Host
 
-<span class="hljs-keyword">module</span> PrecompiledHttp =
+module PrecompiledHttp =
 
-  <span class="hljs-keyword">let</span> run(req: HttpRequest, log: TraceWriter) =
-    log.Info(<span class="hljs-string">"F# HTTP trigger function processed a request."</span>)
-    ContentResult(Content = <span class="hljs-string">"HO HO HO Merry Christmas"</span>, ContentType = <span class="hljs-string">"text/html"</span>)
+  let run(req: HttpRequest, log: TraceWriter) =
+    log.Info(&quot;F# HTTP trigger function processed a request.&quot;)
+    ContentResult(Content = &quot;HO HO HO Merry Christmas&quot;, ContentType = &quot;text/html&quot;)
 </code></pre>
 <p>You can find a full example of HTTP Function App 
 <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/5-precompiled">here</a>.</p>
 <p>This code is using ASP.NET Core classes for request and response. It&#39;s still
 just an F# function, so we need to bind it to a trigger in <code>function.json</code>:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"bindings"</span>: [
+<pre><code class="lang-json">{
+  &quot;bindings&quot;: [
     {
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"httpTrigger"</span>,
-      <span class="hljs-attr">"methods"</span>: [<span class="hljs-string">"get"</span>],
-      <span class="hljs-attr">"authLevel"</span>: <span class="hljs-string">"anonymous"</span>,
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"req"</span>,
-      <span class="hljs-attr">"route"</span>: <span class="hljs-string">"hellosanta"</span>
+      &quot;type&quot;: &quot;httpTrigger&quot;,
+      &quot;methods&quot;: [&quot;get&quot;],
+      &quot;authLevel&quot;: &quot;anonymous&quot;,
+      &quot;name&quot;: &quot;req&quot;,
+      &quot;route&quot;: &quot;hellosanta&quot;
     }
   ],
-  <span class="hljs-attr">"scriptFile"</span>: <span class="hljs-string">"../bin/PrecompiledApp.dll"</span>,
-  <span class="hljs-attr">"entryPoint"</span>: <span class="hljs-string">"PrecompiledApp.PrecompiledHttp.run"</span>
+  &quot;scriptFile&quot;: &quot;../bin/PrecompiledApp.dll&quot;,
+  &quot;entryPoint&quot;: &quot;PrecompiledApp.PrecompiledHttp.run&quot;
 }
 </code></pre>
 <p>If you run the app, the function will be hosted at localhost</p>
@@ -1233,13 +1360,13 @@ favourite F# libraries.</p>
 <p><a href="http://suave.io/">Suave</a> is one of the most popular libraries to 
 implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
 <p>Let&#39;s first make a small twist to HTTP trigger definition in <code>function.json</code>:</p>
-<pre class="highlight"><code class="hljs undefined">"bindings": [
+<pre><code class="lang-json">&quot;bindings&quot;: [
   {
-    "type": "httpTrigger",
-    "methods": ["get"],
-    "authLevel": "anonymous",
-    "name": "req",
-    "route": "{*anything}"
+    &quot;type&quot;: &quot;httpTrigger&quot;,
+    &quot;methods&quot;: [&quot;get&quot;],
+    &quot;authLevel&quot;: &quot;anonymous&quot;,
+    &quot;name&quot;: &quot;req&quot;,
+    &quot;route&quot;: &quot;{*anything}&quot;
   }
 ],
 </code></pre>
@@ -1247,23 +1374,23 @@ implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
 to this function. That&#39;s because we want Suave to take care of routing
 for us.</p>
 <p>The definition of such routing will look familiar to all Suave users:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> App =
-  <span class="hljs-keyword">open</span> Suave
-  <span class="hljs-keyword">open</span> Suave.Successful
-  <span class="hljs-keyword">open</span> Suave.Operators
-  <span class="hljs-keyword">open</span> Suave.Filters
+<pre><code class="lang-fsharp">module App =
+  open Suave
+  open Suave.Successful
+  open Suave.Operators
+  open Suave.Filters
 
-  <span class="hljs-keyword">let</span> app = 
+  let app = 
     GET &gt;=&gt; choose
-      [ path <span class="hljs-string">"/api/what"</span> &gt;=&gt; OK <span class="hljs-string">"Every time we love, every time we give, it's Christmas."</span>
-        path <span class="hljs-string">"/api/when"</span> &gt;=&gt; OK <span class="hljs-string">"Christmas isn't a season. It's a feeling."</span>
-        path <span class="hljs-string">"/api/how"</span> &gt;=&gt; OK <span class="hljs-string">"For it is in giving that we receive."</span> ]
+      [ path &quot;/api/what&quot; &gt;=&gt; OK &quot;Every time we love, every time we give, it&#39;s Christmas.&quot;
+        path &quot;/api/when&quot; &gt;=&gt; OK &quot;Christmas isn&#39;t a season. It&#39;s a feeling.&quot;
+        path &quot;/api/how&quot; &gt;=&gt; OK &quot;For it is in giving that we receive.&quot; ]
 </code></pre>
 <p>Azure Function is just a one-liner wiring Suave app into the pipeline:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Http =
-  <span class="hljs-keyword">open</span> Suave.Azure.Functions.Context
+<pre><code class="lang-fsharp">module Http =
+  open Suave.Azure.Functions.Context
 
-  <span class="hljs-keyword">let</span> run req =
+  let run req =
     req |&gt; runWebPart App.app  |&gt; Async.StartAsTask
 </code></pre>
 <p>The heavy lifting is done by <code>runWebPart</code> function, which is a utility
@@ -1283,12 +1410,12 @@ package manager.</p>
 <p>It is totally possible to use Paket with Azure Functions. There isn&#39;t much
 specific to Azure Functions, really. Here is an example of <code>paket.dependecies</code>
 file</p>
-<pre class="highlight"><code class="hljs stylus">source https:<span class="hljs-comment">//www.nuget.org/api/v2</span>
+<pre><code>source https://www.nuget.org/api/v2
 
-framework: &gt;= netstandard2.<span class="hljs-number">0</span>
-nuget FSharp<span class="hljs-selector-class">.Core</span>
-nuget Microsoft<span class="hljs-selector-class">.NET</span><span class="hljs-selector-class">.Sdk</span><span class="hljs-selector-class">.Functions</span>
-nuget Microsoft<span class="hljs-selector-class">.AspNetCore</span><span class="hljs-selector-class">.Mvc</span><span class="hljs-selector-class">.Core</span>
+framework: &gt;= netstandard2.0
+nuget FSharp.Core
+nuget Microsoft.NET.Sdk.Functions
+nuget Microsoft.AspNetCore.Mvc.Core
 </code></pre><p>that I used in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/8-paket">example</a> 
 which demonstrates Paket + Functions combination.</p>
 <h2 id="attribute-based-functions">Attribute-Based Functions</h2>
@@ -1298,8 +1425,8 @@ programming model where these files are auto-generated by Functions SDK.</p>
 <p>This programming model is based on attributes, which are similar to WebJobs 
 SDK attributes. With this approach, there&#39;s no <code>function.json</code> file in 
 the project. Instead, the function declaration is decorated with attributes:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("AttributeBased")&gt;]</span>
-<span class="hljs-keyword">let</span> run(<span class="hljs-meta">[&lt;HttpTrigger&gt;]</span> req: HttpRequest, log: TraceWriter)
+<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;AttributeBased&quot;)&gt;]
+let run([&lt;HttpTrigger&gt;] req: HttpRequest, log: TraceWriter)
 </code></pre>
 <p>The same development flow still works. Once you run <code>dotnet build</code>, a new 
 <code>function.json</code> file will be generated and placed into <code>bin</code> folder. Functions 
@@ -1308,8 +1435,8 @@ runtime will be able to use it to run the function as usual.</p>
 equivalent:</p>
 <ol>
 <li><p>It manifests itself with</p>
-<pre class="highlight"><code class="hljs undefined"> "generatedBy": "Microsoft.NET.Sdk.Functions.Generator-1.0.6",
- "configurationSource": "attributes",
+<pre><code class="lang-json"> &quot;generatedBy&quot;: &quot;Microsoft.NET.Sdk.Functions.Generator-1.0.6&quot;,
+ &quot;configurationSource&quot;: &quot;attributes&quot;,
 </code></pre>
 </li>
 <li><p>In case you use input and output bindings, you won&#39;t be able to see them
@@ -1344,42 +1471,6 @@ machine, and then seamlessly transfer it into the cloud.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-advent-calendar/'>F# Advent Calendar</a>, <a href='/tags/azure/'>Azure</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Nov 10th, 2017</div>
-    
-    <h1><a href='/2017/11/azure-functions-fsharp-talk/'>Azure F#unctions Talk at FSharping Meetup in Prague</a></h1>
-    
-    <div class="post-content">
-        <p>On November 8th 2017 I gave a talk about developing Azure Functions
-in F# at
-<a href="https://www.meetup.com/FSharping/events/244137693/">FSharping</a>
-meetup in Prague. </p>
-<p>I really enjoyed giving this talk: the audience was
-great and asked awesome questions. One more prove that F# community is
-so welcoming and energizing!</p>
-<p>All the demos of that session can be found in my
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples">github repository</a>.</p>
-<p>The slides were only a small portion of my talk, but you can see them
-below anyways.</p>
-<p>Link to full-screen HTML slides: 
-<a href="https://mikhail.io/talks/fsharping-azure-functions/">Azure F#unctions</a></p>
-<p>Slides on SlideShare:</p>
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/oQIZywbdCRXdQA" width="595" height="485" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen=""> 
-</iframe> 
-
-<p>Thanks for attending my talk! Feel free to post any feedback in the comments.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/talk/'>Talk</a>, <a href='/tags/meetup/'>Meetup</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/slides/'>Slides</a>
     </div>
     
 </article>
@@ -1419,7 +1510,7 @@ below anyways.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

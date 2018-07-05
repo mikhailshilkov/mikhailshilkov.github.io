@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -170,18 +165,18 @@ It returns the poker window screenshots and titles.</p>
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to </p>
 <p>define the behavior. The ouput tuple defines an ID of an output actor and a
 message to send to it:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> findActor msg = 
+<pre><code class="lang-fsharp">let findActor msg = 
   findWindows ()
-  |&gt; Seq.map (<span class="hljs-keyword">fun</span> x -&gt; (<span class="hljs-string">"recognizer-actor-"</span> + x.TableName, x))
+  |&gt; Seq.map (fun x -&gt; (&quot;recognizer-actor-&quot; + x.TableName, x))
 </code></pre>
 <p>Here is how I spawn the singleton instance of this actor:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tableFinderRef = 
+<pre><code class="lang-fsharp">let tableFinderRef = 
   actorOfRouteToChildren findActor (spawnChild recognizer)
-  |&gt; spawn system <span class="hljs-string">"table-finder-actor"</span>
+  |&gt; spawn system &quot;table-finder-actor&quot;
 </code></pre>
 <p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
 <code>spawn</code> function with proper parameter order:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> spawnChild childActor name (mailbox : Actor&lt;<span class="hljs-symbol">'a</span>&gt;) = 
+<pre><code class="lang-fsharp">let spawnChild childActor name (mailbox : Actor&lt;&#39;a&gt;) = 
   spawn mailbox.Context name childActor
 </code></pre>
 <p>We can also extend it to debug messages when new actors get created.</p>
@@ -195,15 +190,15 @@ of these series.</p>
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern. 
 The output is a decision message for Decision Maker actor which is a supervised 
 child of the Recognizer. Here is the actor function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizeActor (window : WindowInfo) =
-  <span class="hljs-keyword">let</span> result = recognize window.Bitmap
+<pre><code class="lang-fsharp">let recognizeActor (window : WindowInfo) =
+  let result = recognize window.Bitmap
   { WindowTitle = window.Title 
     TableName = window.TableName 
     Screen = result 
     Bitmap = window.Bitmap }
 </code></pre>
 <p>And here is the spawn function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> recognizer = actorOfConvertToChild recognizeActor (spawnChild decider <span class="hljs-string">"decider"</span>)
+<pre><code class="lang-fsharp">let recognizer = actorOfConvertToChild recognizeActor (spawnChild decider &quot;decider&quot;)
 </code></pre>
 <p>Notice how this expression was used in Table Finder instantiation above.</p>
 <h2 id="decision-maker">Decision Maker</h2>
@@ -217,24 +212,24 @@ ignored.</p>
 <p>This way the actor function has the type of 
 <code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code> 
 and looks like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decisionActor msg lastScreen =
-  <span class="hljs-keyword">let</span> screen = msg.Screen
-  <span class="hljs-keyword">match</span> lastScreen <span class="hljs-keyword">with</span>
-  | Some s <span class="hljs-keyword">when</span> s = screen -&gt; (None, lastScreen)
+<pre><code class="lang-fsharp">let decisionActor msg lastScreen =
+  let screen = msg.Screen
+  match lastScreen with
+  | Some s when s = screen -&gt; (None, lastScreen)
   | _ -&gt;
-    <span class="hljs-keyword">let</span> action = decide screen
-    <span class="hljs-keyword">let</span> outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
+    let action = decide screen
+    let outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
     (Some outMsg, Some screen)
 </code></pre>
 <p>Here is the spawn function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> decider = actorOfStatefulConvert decisionActor None clickerRef
+<pre><code class="lang-fsharp">let decider = actorOfStatefulConvert decisionActor None clickerRef
 </code></pre>
 <p>where <code>None</code> represents the initial state.</p>
 <h2 id="button-clicker">Button Clicker</h2>
 <p>Clicker actor has the simplest implementation because it does not send messages to other actors.
 Here is the message that it receives from Decision Maker:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickTarget</span> </span>= (int * int * int * int)
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ClickerMessage</span> </span>= {
+<pre><code class="lang-fsharp">type ClickTarget = (int * int * int * int)
+type ClickerMessage = {
   WindowTitle: string
   Clicks: ClickTarget[]
 }
@@ -246,7 +241,7 @@ of these series.</p>
 <p><a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
 pattern is used for this actor, so actor function isn&#39;t
 really needed. We spawn the singleton instance with the following statement:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> clickerRef = actorOfSink click |&gt; spawn system <span class="hljs-string">"clicker-actor"</span>
+<pre><code class="lang-fsharp">let clickerRef = actorOfSink click |&gt; spawn system &quot;clicker-actor&quot;
 </code></pre>
 <p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
 <h2 id="conclusion">Conclusion</h2>
@@ -326,7 +321,7 @@ very thin, and thus easy to understand and maintain. </p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

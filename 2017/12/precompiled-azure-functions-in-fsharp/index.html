@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -116,30 +111,30 @@ jump to runnable project, you can get it from
 <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/6-precompiled-timer">my github</a>.</p>
 <p>We start with creating a new F# library project for .NET Standard 2. Run
 in your command line:</p>
-<pre class="highlight"><code class="hljs sh">dotnet new classlib --language F<span class="hljs-comment"># --name HelloFunctions</span>
+<pre><code class="lang-sh">dotnet new classlib --language F# --name HelloFunctions
 </code></pre>
 <p>This command creates a folder with two files: <code>HelloFunctions.fsproj</code> project
 file and <code>Library.fs</code> source code file.</p>
 <p>Now, add a reference to Azure Functions NuGet package:</p>
-<pre class="highlight"><code class="hljs sh">dotnet add package Microsoft.NET.Sdk.Functions
+<pre><code class="lang-sh">dotnet add package Microsoft.NET.Sdk.Functions
 </code></pre>
 <h2 id="define-a-function">Define a Function</h2>
 <p>Open <code>Library.fs</code> code file and change it to the following code:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">namespace</span> HelloFunctions
+<pre><code class="lang-fsharp">namespace HelloFunctions
 
-<span class="hljs-keyword">open</span> System
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs.Host
+open System
+open Microsoft.Azure.WebJobs
+open Microsoft.Azure.WebJobs.Host
 
-<span class="hljs-keyword">module</span> Say =
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> daysUntil (d: DateTime) =
+module Say =
+  let private daysUntil (d: DateTime) =
     (d - DateTime.Now).TotalDays |&gt; int
 
-  <span class="hljs-keyword">let</span> hello (timer: TimerInfo, log: TraceWriter) =
-    <span class="hljs-keyword">let</span> christmas = <span class="hljs-keyword">new</span> DateTime(<span class="hljs-number">2017</span>, <span class="hljs-number">12</span>, <span class="hljs-number">25</span>)
+  let hello (timer: TimerInfo, log: TraceWriter) =
+    let christmas = new DateTime(2017, 12, 25)
 
     daysUntil christmas
-    |&gt; sprintf <span class="hljs-string">"%d days until Christmas"</span>
+    |&gt; sprintf &quot;%d days until Christmas&quot;
     |&gt; log.Info
 </code></pre>
 <p>We defined a function <code>hello</code> which should be triggered by Functions runtime
@@ -148,16 +143,16 @@ days we still need to wait before Christmas 2017.</p>
 <p>To convert this simple F# function to an Azure Function, create a folder called
 <code>Hello</code> (or choose any other name) next to the project file and add 
 <code>function.json</code> file in there:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"bindings"</span>: [
+<pre><code class="lang-json">{
+  &quot;bindings&quot;: [
     {
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"timer"</span>,
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"timerTrigger"</span>,
-      <span class="hljs-attr">"schedule"</span>: <span class="hljs-string">"0 * * * * *"</span>
+      &quot;name&quot;: &quot;timer&quot;,
+      &quot;type&quot;: &quot;timerTrigger&quot;,
+      &quot;schedule&quot;: &quot;0 * * * * *&quot;
     }
   ],
-  <span class="hljs-attr">"scriptFile"</span>: <span class="hljs-string">"../bin/HelloFunctions.dll"</span>,
-  <span class="hljs-attr">"entryPoint"</span>: <span class="hljs-string">"HelloFunctions.Say.hello"</span>
+  &quot;scriptFile&quot;: &quot;../bin/HelloFunctions.dll&quot;,
+  &quot;entryPoint&quot;: &quot;HelloFunctions.Say.hello&quot;
 }
 </code></pre>
 <p>We defined that:</p>
@@ -170,7 +165,7 @@ days we still need to wait before Christmas 2017.</p>
 <p>There are a couple more configuration files needed to be able to
 run the Function App locally. <code>host.json</code> defines hosting parameters; empty
 file will do for now:</p>
-<pre class="highlight"><code class="hljs json">{
+<pre><code class="lang-json">{
 }
 </code></pre>
 <p>Most triggers need to connect to a Storage Account. For examples, timer
@@ -178,10 +173,10 @@ trigger uses it to hold leases to define which running instance will
 actually execute the action every minute. Copy a connection string to your 
 Storage Account (local Storage emulator is fine too) and put it into 
 <code>local.settings.json</code> file:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"IsEncrypted"</span>: <span class="hljs-literal">false</span>,
-  <span class="hljs-attr">"Values"</span>: {
-    <span class="hljs-attr">"AzureWebJobsStorage"</span>: <span class="hljs-string">"...your connection string..."</span>
+<pre><code class="lang-json">{
+  &quot;IsEncrypted&quot;: false,
+  &quot;Values&quot;: {
+    &quot;AzureWebJobsStorage&quot;: &quot;...your connection string...&quot;
   }
 }
 </code></pre>
@@ -189,22 +184,22 @@ Storage Account (local Storage emulator is fine too) and put it into
 to Azure by default.</p>
 <p>Finally, we need to modify <code>fsproj</code> file to make the build tool copy those
 files into <code>bin</code> folder. Add the following section in there:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-name">ItemGroup</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"Hello\function.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"host.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Content</span> <span class="hljs-attr">Include</span>=<span class="hljs-string">"local.settings.json"</span>&gt;</span>
-    <span class="hljs-tag">&lt;<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>PreserveNewest<span class="hljs-tag">&lt;/<span class="hljs-name">CopyToOutputDirectory</span>&gt;</span>
-  <span class="hljs-tag">&lt;/<span class="hljs-name">Content</span>&gt;</span>
-<span class="hljs-tag">&lt;/<span class="hljs-name">ItemGroup</span>&gt;</span>
+<pre><code class="lang-xml">&lt;ItemGroup&gt;
+  &lt;Content Include=&quot;Hello\function.json&quot;&gt;
+    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+  &lt;/Content&gt;
+  &lt;Content Include=&quot;host.json&quot;&gt;
+    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+  &lt;/Content&gt;
+  &lt;Content Include=&quot;local.settings.json&quot;&gt;
+    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+  &lt;/Content&gt;
+&lt;/ItemGroup&gt;
 </code></pre>
 <h2 id="run-app-locally">Run App Locally</h2>
 <p>The first step is to build and publish our Function App with <code>dotnet</code>
 commands:</p>
-<pre class="highlight"><code class="hljs sh">dotnet build
+<pre><code class="lang-sh">dotnet build
 dotnet publish
 </code></pre>
 <p>The first line produces the dll file and the second line copies it
@@ -212,7 +207,7 @@ and all of its dependencies to <code>publish</code> folder.</p>
 <p>The nice thing about Azure Functions is that you can easily run them
 locally on a development machine. Execute the following command to 
 install the runtime and all the required libraries:</p>
-<pre class="highlight"><code class="hljs sh">npm install -g azure-functions-core-tools@core
+<pre><code class="lang-sh">npm install -g azure-functions-core-tools@core
 </code></pre>
 <p>This will add a <code>func</code> CLI to your system which is the tool to
 use for all Function related operations.</p>
@@ -240,7 +235,7 @@ creating an empty Function App in the portal, or via Azure CLI (<code>func</code
 does not support that).</p>
 <p>Then run the following command to deploy your precompiled function to
 this app:</p>
-<pre class="highlight"><code class="hljs sh">func azure functionapp publish &lt;FunctionAppName&gt;
+<pre><code class="lang-sh">func azure functionapp publish &lt;FunctionAppName&gt;
 </code></pre>
 <p>At the first run, it will verify your Azure credentials.</p>
 <p>In real-life production scenarios your workflow is probably going to be
@@ -261,34 +256,34 @@ for the rest of the article I will focus on several approaches to
 implement HTTP functions. Nonetheless, the same techique can be applied to
 other triggers too.</p>
 <p>F# code for the simplest HTTP Function can look like this:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">namespace</span> PrecompiledApp
+<pre><code class="lang-fsharp">namespace PrecompiledApp
 
-<span class="hljs-keyword">open</span> Microsoft.AspNetCore.Mvc
-<span class="hljs-keyword">open</span> Microsoft.AspNetCore.Http
-<span class="hljs-keyword">open</span> Microsoft.Azure.WebJobs.Host
+open Microsoft.AspNetCore.Mvc
+open Microsoft.AspNetCore.Http
+open Microsoft.Azure.WebJobs.Host
 
-<span class="hljs-keyword">module</span> PrecompiledHttp =
+module PrecompiledHttp =
 
-  <span class="hljs-keyword">let</span> run(req: HttpRequest, log: TraceWriter) =
-    log.Info(<span class="hljs-string">"F# HTTP trigger function processed a request."</span>)
-    ContentResult(Content = <span class="hljs-string">"HO HO HO Merry Christmas"</span>, ContentType = <span class="hljs-string">"text/html"</span>)
+  let run(req: HttpRequest, log: TraceWriter) =
+    log.Info(&quot;F# HTTP trigger function processed a request.&quot;)
+    ContentResult(Content = &quot;HO HO HO Merry Christmas&quot;, ContentType = &quot;text/html&quot;)
 </code></pre>
 <p>You can find a full example of HTTP Function App 
 <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/5-precompiled">here</a>.</p>
 <p>This code is using ASP.NET Core classes for request and response. It&#39;s still
 just an F# function, so we need to bind it to a trigger in <code>function.json</code>:</p>
-<pre class="highlight"><code class="hljs json">{
-  <span class="hljs-attr">"bindings"</span>: [
+<pre><code class="lang-json">{
+  &quot;bindings&quot;: [
     {
-      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"httpTrigger"</span>,
-      <span class="hljs-attr">"methods"</span>: [<span class="hljs-string">"get"</span>],
-      <span class="hljs-attr">"authLevel"</span>: <span class="hljs-string">"anonymous"</span>,
-      <span class="hljs-attr">"name"</span>: <span class="hljs-string">"req"</span>,
-      <span class="hljs-attr">"route"</span>: <span class="hljs-string">"hellosanta"</span>
+      &quot;type&quot;: &quot;httpTrigger&quot;,
+      &quot;methods&quot;: [&quot;get&quot;],
+      &quot;authLevel&quot;: &quot;anonymous&quot;,
+      &quot;name&quot;: &quot;req&quot;,
+      &quot;route&quot;: &quot;hellosanta&quot;
     }
   ],
-  <span class="hljs-attr">"scriptFile"</span>: <span class="hljs-string">"../bin/PrecompiledApp.dll"</span>,
-  <span class="hljs-attr">"entryPoint"</span>: <span class="hljs-string">"PrecompiledApp.PrecompiledHttp.run"</span>
+  &quot;scriptFile&quot;: &quot;../bin/PrecompiledApp.dll&quot;,
+  &quot;entryPoint&quot;: &quot;PrecompiledApp.PrecompiledHttp.run&quot;
 }
 </code></pre>
 <p>If you run the app, the function will be hosted at localhost</p>
@@ -304,13 +299,13 @@ favourite F# libraries.</p>
 <p><a href="http://suave.io/">Suave</a> is one of the most popular libraries to 
 implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
 <p>Let&#39;s first make a small twist to HTTP trigger definition in <code>function.json</code>:</p>
-<pre class="highlight"><code class="hljs undefined">"bindings": [
+<pre><code class="lang-json">&quot;bindings&quot;: [
   {
-    "type": "httpTrigger",
-    "methods": ["get"],
-    "authLevel": "anonymous",
-    "name": "req",
-    "route": "{*anything}"
+    &quot;type&quot;: &quot;httpTrigger&quot;,
+    &quot;methods&quot;: [&quot;get&quot;],
+    &quot;authLevel&quot;: &quot;anonymous&quot;,
+    &quot;name&quot;: &quot;req&quot;,
+    &quot;route&quot;: &quot;{*anything}&quot;
   }
 ],
 </code></pre>
@@ -318,23 +313,23 @@ implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
 to this function. That&#39;s because we want Suave to take care of routing
 for us.</p>
 <p>The definition of such routing will look familiar to all Suave users:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> App =
-  <span class="hljs-keyword">open</span> Suave
-  <span class="hljs-keyword">open</span> Suave.Successful
-  <span class="hljs-keyword">open</span> Suave.Operators
-  <span class="hljs-keyword">open</span> Suave.Filters
+<pre><code class="lang-fsharp">module App =
+  open Suave
+  open Suave.Successful
+  open Suave.Operators
+  open Suave.Filters
 
-  <span class="hljs-keyword">let</span> app = 
+  let app = 
     GET &gt;=&gt; choose
-      [ path <span class="hljs-string">"/api/what"</span> &gt;=&gt; OK <span class="hljs-string">"Every time we love, every time we give, it's Christmas."</span>
-        path <span class="hljs-string">"/api/when"</span> &gt;=&gt; OK <span class="hljs-string">"Christmas isn't a season. It's a feeling."</span>
-        path <span class="hljs-string">"/api/how"</span> &gt;=&gt; OK <span class="hljs-string">"For it is in giving that we receive."</span> ]
+      [ path &quot;/api/what&quot; &gt;=&gt; OK &quot;Every time we love, every time we give, it&#39;s Christmas.&quot;
+        path &quot;/api/when&quot; &gt;=&gt; OK &quot;Christmas isn&#39;t a season. It&#39;s a feeling.&quot;
+        path &quot;/api/how&quot; &gt;=&gt; OK &quot;For it is in giving that we receive.&quot; ]
 </code></pre>
 <p>Azure Function is just a one-liner wiring Suave app into the pipeline:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Http =
-  <span class="hljs-keyword">open</span> Suave.Azure.Functions.Context
+<pre><code class="lang-fsharp">module Http =
+  open Suave.Azure.Functions.Context
 
-  <span class="hljs-keyword">let</span> run req =
+  let run req =
     req |&gt; runWebPart App.app  |&gt; Async.StartAsTask
 </code></pre>
 <p>The heavy lifting is done by <code>runWebPart</code> function, which is a utility
@@ -354,12 +349,12 @@ package manager.</p>
 <p>It is totally possible to use Paket with Azure Functions. There isn&#39;t much
 specific to Azure Functions, really. Here is an example of <code>paket.dependecies</code>
 file</p>
-<pre class="highlight"><code class="hljs stylus">source https:<span class="hljs-comment">//www.nuget.org/api/v2</span>
+<pre><code>source https://www.nuget.org/api/v2
 
-framework: &gt;= netstandard2.<span class="hljs-number">0</span>
-nuget FSharp<span class="hljs-selector-class">.Core</span>
-nuget Microsoft<span class="hljs-selector-class">.NET</span><span class="hljs-selector-class">.Sdk</span><span class="hljs-selector-class">.Functions</span>
-nuget Microsoft<span class="hljs-selector-class">.AspNetCore</span><span class="hljs-selector-class">.Mvc</span><span class="hljs-selector-class">.Core</span>
+framework: &gt;= netstandard2.0
+nuget FSharp.Core
+nuget Microsoft.NET.Sdk.Functions
+nuget Microsoft.AspNetCore.Mvc.Core
 </code></pre><p>that I used in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/8-paket">example</a> 
 which demonstrates Paket + Functions combination.</p>
 <h2 id="attribute-based-functions">Attribute-Based Functions</h2>
@@ -369,8 +364,8 @@ programming model where these files are auto-generated by Functions SDK.</p>
 <p>This programming model is based on attributes, which are similar to WebJobs 
 SDK attributes. With this approach, there&#39;s no <code>function.json</code> file in 
 the project. Instead, the function declaration is decorated with attributes:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("AttributeBased")&gt;]</span>
-<span class="hljs-keyword">let</span> run(<span class="hljs-meta">[&lt;HttpTrigger&gt;]</span> req: HttpRequest, log: TraceWriter)
+<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;AttributeBased&quot;)&gt;]
+let run([&lt;HttpTrigger&gt;] req: HttpRequest, log: TraceWriter)
 </code></pre>
 <p>The same development flow still works. Once you run <code>dotnet build</code>, a new 
 <code>function.json</code> file will be generated and placed into <code>bin</code> folder. Functions 
@@ -379,8 +374,8 @@ runtime will be able to use it to run the function as usual.</p>
 equivalent:</p>
 <ol>
 <li><p>It manifests itself with</p>
-<pre class="highlight"><code class="hljs undefined"> "generatedBy": "Microsoft.NET.Sdk.Functions.Generator-1.0.6",
- "configurationSource": "attributes",
+<pre><code class="lang-json"> &quot;generatedBy&quot;: &quot;Microsoft.NET.Sdk.Functions.Generator-1.0.6&quot;,
+ &quot;configurationSource&quot;: &quot;attributes&quot;,
 </code></pre>
 </li>
 <li><p>In case you use input and output bindings, you won&#39;t be able to see them
@@ -478,7 +473,7 @@ machine, and then seamlessly transfer it into the cloud.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

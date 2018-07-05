@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -96,15 +91,15 @@ background animation, like this:</p>
 <p><img src="/2015/07/aurelia-element-animation-with-custom-attribute//animation.gif" alt="Updated cell animation"></p>
 <p>Aurelia has a library called <a href="https://github.com/aurelia/animator-css">aurelia-animator-css</a> with a helper
 class to run CSS animation. If you use it directly in your View Model, you will end up with the code like</p>
-<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">this</span>.newMessageReceived =
-    <span class="hljs-function"><span class="hljs-params">msg</span> =&gt;</span> {
-        <span class="hljs-keyword">this</span>.data.filter(<span class="hljs-function"><span class="hljs-params">i</span> =&gt;</span> i.id === msg.id).forEach(<span class="hljs-function"><span class="hljs-params">t</span> =&gt;</span> {
-            <span class="hljs-keyword">let</span> editedItemIdx = <span class="hljs-keyword">this</span>.data.indexOf(i);
-            <span class="hljs-keyword">var</span> elem = <span class="hljs-keyword">this</span>.element.querySelectorAll(<span class="hljs-string">'tbody tr'</span>)[editedItemIdx + <span class="hljs-number">1</span>]
-                                   .querySelectorAll(<span class="hljs-string">'td'</span>)[<span class="hljs-number">3</span>];
+<pre><code class="lang-js">this.newMessageReceived =
+    msg =&gt; {
+        this.data.filter(i =&gt; i.id === msg.id).forEach(t =&gt; {
+            let editedItemIdx = this.data.indexOf(i);
+            var elem = this.element.querySelectorAll(&#39;tbody tr&#39;)[editedItemIdx + 1]
+                                   .querySelectorAll(&#39;td&#39;)[3];
 
-            <span class="hljs-keyword">this</span>.animator.addClass(elem, <span class="hljs-string">'background-animation'</span>).then(<span class="hljs-function"><span class="hljs-params">()</span> =&gt;</span> {
-                <span class="hljs-keyword">this</span>.animator.removeClass(elem, <span class="hljs-string">'background-animation'</span>);
+            this.animator.addClass(elem, &#39;background-animation&#39;).then(() =&gt; {
+                this.animator.removeClass(elem, &#39;background-animation&#39;);
             });
         });
     };
@@ -115,10 +110,10 @@ finally use animator to highlight the background.</p>
 <p>Ouch... That smells. We spoiled our view model with view details, and all this code is very ugly and fragile.</p>
 <p>Good news: we can improve the solution with the Aurelia&#39;s feature called Custom Attributes. Let&#39;s create a new
 javascript file and call it <code>animateonchange.js</code>:</p>
-<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">import</span> {customAttribute} <span class="hljs-keyword">from</span> <span class="hljs-string">'aurelia-framework'</span>;
+<pre><code class="lang-js">import {customAttribute} from &#39;aurelia-framework&#39;;
 
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
-<span class="hljs-keyword">export</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AnimateOnChangeCustomAttribute</span> </span>{
+@customAttribute(&#39;animateonchange&#39;)
+export class AnimateOnChangeCustomAttribute {
 
 }
 </code></pre>
@@ -127,41 +122,41 @@ Aurelia framework: that the way we can define a name for our custom attribute. T
 change the name to <code>AnimateonchangeCustomAttribute</code>, Aurelia will infer the name from class name, but I want
 to stay explicit and keep the class name readable. Note that capital letters are not allowed in attribute name.</p>
 <p>Now, let&#39;s declare the constructor of the new class and inject all the dependencies:</p>
-<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">import</span> {inject, customAttribute} <span class="hljs-keyword">from</span> <span class="hljs-string">'aurelia-framework'</span>;
-<span class="hljs-keyword">import</span> {CssAnimator} <span class="hljs-keyword">from</span> <span class="hljs-string">'aurelia-animator-css'</span>;
+<pre><code class="lang-js">import {inject, customAttribute} from &#39;aurelia-framework&#39;;
+import {CssAnimator} from &#39;aurelia-animator-css&#39;;
 
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
+@customAttribute(&#39;animateonchange&#39;)
 @inject(Element, CssAnimator)
-<span class="hljs-keyword">export</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AnimateOnChangeCustomAttribute</span> </span>{
+export class AnimateOnChangeCustomAttribute {
 
-    <span class="hljs-keyword">constructor</span>(element, animator) {
-        <span class="hljs-keyword">this</span>.element = element;
-        <span class="hljs-keyword">this</span>.animator = animator;
+    constructor(element, animator) {
+        this.element = element;
+        this.animator = animator;
     }
 
 }
 </code></pre>
 <p>I used dependency injection to get attribute&#39;s element and CSS animator and save them into class fields.
 Here&#39;s how to use them:</p>
-<pre class="highlight"><code class="hljs javascript"><span class="hljs-keyword">import</span> {inject, customAttribute} <span class="hljs-keyword">from</span> <span class="hljs-string">'aurelia-framework'</span>;
-<span class="hljs-keyword">import</span> {CssAnimator} <span class="hljs-keyword">from</span> <span class="hljs-string">'aurelia-animator-css'</span>;
+<pre><code class="lang-js">import {inject, customAttribute} from &#39;aurelia-framework&#39;;
+import {CssAnimator} from &#39;aurelia-animator-css&#39;;
 
-@customAttribute(<span class="hljs-string">'animateonchange'</span>)
+@customAttribute(&#39;animateonchange&#39;)
 @inject(Element, CssAnimator)
-<span class="hljs-keyword">export</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AnimateOnChangeCustomAttribute</span> </span>{
-    <span class="hljs-keyword">constructor</span>(element, animator) {
-        <span class="hljs-keyword">this</span>.element = element;
-        <span class="hljs-keyword">this</span>.animator = animator;
-        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">false</span>;
+export class AnimateOnChangeCustomAttribute {
+    constructor(element, animator) {
+        this.element = element;
+        this.animator = animator;
+        this.initialValueSet = false;
     }
 
     valueChanged(newValue){
-        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>.initialValueSet) {
-            <span class="hljs-keyword">this</span>.animator.addClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>).then(<span class="hljs-function"><span class="hljs-params">()</span> =&gt;</span> {
-                <span class="hljs-keyword">this</span>.animator.removeClass(<span class="hljs-keyword">this</span>.element, <span class="hljs-string">'background-animation'</span>);
+        if (this.initialValueSet) {
+            this.animator.addClass(this.element, &#39;background-animation&#39;).then(() =&gt; {
+                this.animator.removeClass(this.element, &#39;background-animation&#39;);
             });
         }
-        <span class="hljs-keyword">this</span>.initialValueSet = <span class="hljs-literal">true</span>;
+        this.initialValueSet = true;
     }
 }
 </code></pre>
@@ -169,42 +164,42 @@ Here&#39;s how to use them:</p>
 first value (it&#39;s not an update yet), so I did that with <code>initialValueSet</code> flag. Then I just run CSS 
 animator. No DOM-related queries!</p>
 <p>Here is how we use the custom attribute from a view:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-name">template</span>&gt;</span>
+<pre><code class="lang-html">&lt;template&gt;
 
-    <span class="hljs-tag">&lt;<span class="hljs-name">require</span> <span class="hljs-attr">from</span>=<span class="hljs-string">"./animateonchange"</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">require</span>&gt;</span>
+    &lt;require from=&quot;./animateonchange&quot;&gt;&lt;/require&gt;
 
-    <span class="hljs-tag">&lt;<span class="hljs-name">table</span> <span class="hljs-attr">class</span>=<span class="hljs-string">"table"</span>&gt;</span>
-        <span class="hljs-tag">&lt;<span class="hljs-name">tr</span> <span class="hljs-attr">repeat.for</span>=<span class="hljs-string">"item of data"</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-name">td</span>&gt;</span>${item.value1}<span class="hljs-tag">&lt;/<span class="hljs-name">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-name">td</span>&gt;</span>${item.value2}<span class="hljs-tag">&lt;/<span class="hljs-name">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-name">td</span> <span class="hljs-attr">animateonchange.bind</span>=<span class="hljs-string">"item.value3ToUpdate"</span>&gt;</span>${item.value3ToUpdate}<span class="hljs-tag">&lt;/<span class="hljs-name">td</span>&gt;</span>
-            <span class="hljs-tag">&lt;<span class="hljs-name">td</span>&gt;</span>${item.value4}<span class="hljs-tag">&lt;/<span class="hljs-name">td</span>&gt;</span>
-        <span class="hljs-tag">&lt;/<span class="hljs-name">tr</span>&gt;</span>
-    <span class="hljs-tag">&lt;/<span class="hljs-name">table</span>&gt;</span>
+    &lt;table class=&quot;table&quot;&gt;
+        &lt;tr repeat.for=&quot;item of data&quot;&gt;
+            &lt;td&gt;${item.value1}&lt;/td&gt;
+            &lt;td&gt;${item.value2}&lt;/td&gt;
+            &lt;td animateonchange.bind=&quot;item.value3ToUpdate&quot;&gt;${item.value3ToUpdate}&lt;/td&gt;
+            &lt;td&gt;${item.value4}&lt;/td&gt;
+        &lt;/tr&gt;
+    &lt;/table&gt;
 
-<span class="hljs-tag">&lt;/<span class="hljs-name">template</span>&gt;</span>
+&lt;/template&gt;
 </code></pre>
 <p>First, we use <code>require</code> element to import custom attribute definition (make sure the path is correct
 and no <code>.js</code> extension is present).</p>
 <p>Second, we use <code>animateonchange.bind</code> to bind the value to the custom attributes. And it works!</p>
 <p>Of course, you need to define the CSS class, e.g.</p>
-<pre class="highlight"><code class="hljs css"><span class="hljs-selector-class">.background-animation-add</span> {
-    <span class="hljs-attribute">-webkit-animation</span>: changeBack <span class="hljs-number">0.5s</span>;
-    <span class="hljs-attribute">animation</span>: changeBack <span class="hljs-number">0.5s</span>;
+<pre><code class="lang-css">.background-animation-add {
+    -webkit-animation: changeBack 0.5s;
+    animation: changeBack 0.5s;
 }
-<span class="hljs-selector-class">.background-animation-remove</span> {
-    <span class="hljs-attribute">-webkit-animation</span>: fadeIn <span class="hljs-number">0.5s</span>;
-    <span class="hljs-attribute">animation</span>: fadeIn <span class="hljs-number">0.5s</span>;
+.background-animation-remove {
+    -webkit-animation: fadeIn 0.5s;
+    animation: fadeIn 0.5s;
 }
-@-<span class="hljs-keyword">webkit</span>-<span class="hljs-keyword">keyframes</span> changeBack {
-    0% { <span class="hljs-attribute">background-color</span>: white; }
-    50% { <span class="hljs-attribute">background-color</span>: lightgreen; }
-    100% { <span class="hljs-attribute">background-color</span>: white; }
+@-webkit-keyframes changeBack {
+    0% { background-color: white; }
+    50% { background-color: lightgreen; }
+    100% { background-color: white; }
 }
-@<span class="hljs-keyword">keyframes</span> changeBack {
-    0% { <span class="hljs-attribute">background-color</span>: white; }
-    50% { <span class="hljs-attribute">background-color</span>: lightgreen; }
-    100% { <span class="hljs-attribute">background-color</span>: white; }
+@keyframes changeBack {
+    0% { background-color: white; }
+    50% { background-color: lightgreen; }
+    100% { background-color: white; }
 }
 </code></pre>
 <p>Here is a <a href="http://plnkr.co/edit/oa0Kb1hf6D9M2jl22vWD">plunkr link to a complete example</a></p>
@@ -287,7 +282,7 @@ and no <code>.js</code> extension is present).</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

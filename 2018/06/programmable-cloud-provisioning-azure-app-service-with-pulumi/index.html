@@ -29,12 +29,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -136,7 +131,7 @@ to be different in subtle ways</li>
 <p>Azure comes with a powerful set of tools to manage resources with code.</p>
 <p>You can use PowerShell, CLI scripts or custom code like C# to do with code
 whatever is possible to do via portal.</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> webApp = azure.WebApps.Define(appName)
+<pre><code class="lang-csharp">var webApp = azure.WebApps.Define(appName)
     .WithRegion(Region.WestEurope)
     .WithNewResourceGroup(rgName)
     .WithNewFreeAppServicePlan()
@@ -191,17 +186,17 @@ requested</li>
 <p>I&#39;m using TypeScript to define my Azure resources in Pulumi. So, the program
 is a normal Node.js application with <code>index.ts</code> file, package references in 
 <code>package.json</code> and one extra file <code>Pulumi.yaml</code> to define the program:</p>
-<pre class="highlight"><code class="hljs yaml"><span class="hljs-attr">name:</span> <span class="hljs-string">azure-appservice</span>
-<span class="hljs-attr">runtime:</span> <span class="hljs-string">nodejs</span>
+<pre><code class="lang-yaml">name: azure-appservice
+runtime: nodejs
 </code></pre>
 <p>Our <code>index.js</code> is as simple as a bunch of <code>import</code> statements followed by
 creating TypeScript objects per desired resource. The simplest program can
 look like this:</p>
-<pre class="highlight"><code class="hljs ts"><span class="hljs-keyword">import</span> * <span class="hljs-keyword">as</span> pulumi <span class="hljs-keyword">from</span> <span class="hljs-string">"@pulumi/pulumi"</span>;
-<span class="hljs-keyword">import</span> * <span class="hljs-keyword">as</span> azure <span class="hljs-keyword">from</span> <span class="hljs-string">"@pulumi/azure"</span>;
+<pre><code class="lang-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
+import * as azure from &quot;@pulumi/azure&quot;;
 
-<span class="hljs-keyword">const</span> resourceGroup = <span class="hljs-keyword">new</span> azure.core.ResourceGroup(<span class="hljs-string">"myrg"</span>, {
-    location: <span class="hljs-string">"West Europe"</span>
+const resourceGroup = new azure.core.ResourceGroup(&quot;myrg&quot;, {
+    location: &quot;West Europe&quot;
 });
 </code></pre>
 <p>When executed by <code>pulumi update</code> command, this program will create a new
@@ -210,19 +205,19 @@ Resource Group in your Azure subscription.</p>
 <p>When multiple resources are created, the properties of one resource will
 depend on properties of the others. E.g. I&#39;ve defined the Resource Group
 above, and now I want to create an App Service Plan under this Group:</p>
-<pre class="highlight"><code class="hljs ts"><span class="hljs-keyword">const</span> resourceGroupArgs = {
+<pre><code class="lang-ts">const resourceGroupArgs = {
     resourceGroupName: resourceGroup.name,
     location: resourceGroup.location
 };
 
-<span class="hljs-keyword">const</span> appServicePlan = <span class="hljs-keyword">new</span> azure.appservice.Plan(<span class="hljs-string">"myplan"</span>, {
+const appServicePlan = new azure.appservice.Plan(&quot;myplan&quot;, {
     ...resourceGroupArgs,
 
-    kind: <span class="hljs-string">"App"</span>,
+    kind: &quot;App&quot;,
 
     sku: {
-        tier: <span class="hljs-string">"Basic"</span>,
-        size: <span class="hljs-string">"B1"</span>,
+        tier: &quot;Basic&quot;,
+        size: &quot;B1&quot;,
     },
 });
 </code></pre>
@@ -239,7 +234,7 @@ so the actually provisioned group will be named e.g. <code>&quot;myrg65fb103e&qu
 and then it will get propagated to <code>Input</code> by Pulumi.</p>
 <p>There is also a nice way to return the end values of <code>Output</code>&#39;s from Pulumi
 program. Let&#39;s say we define an App Service:</p>
-<pre class="highlight"><code class="hljs ts"><span class="hljs-keyword">const</span> app = <span class="hljs-keyword">new</span> azure.appservice.AppService(<span class="hljs-string">"mywebsite"</span>, {
+<pre><code class="lang-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
     ...resourceGroupArgs,
 
     appServicePlanId: appServicePlan.id
@@ -251,47 +246,47 @@ properties from <code>resourceGroupArgs</code>.</p>
 Plan ID.</p>
 <p>Lastly, we can now export App Service host name from our program, e.g.
 for the user to be able to go to the web site immediately after deployment:</p>
-<pre class="highlight"><code class="hljs ts">exports.hostname = app.defaultSiteHostname;
+<pre><code class="lang-ts">exports.hostname = app.defaultSiteHostname;
 </code></pre>
 <p><code>Output</code> can also be transformed with <code>apply</code> function. Here is the code to
 format output URL:</p>
-<pre class="highlight"><code class="hljs ts">exports.endpoint = app.defaultSiteHostname.apply(<span class="hljs-function"><span class="hljs-params">n</span> =&gt;</span> <span class="hljs-string">`https://<span class="hljs-subst">${n}</span>`</span>);
+<pre><code class="lang-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);
 </code></pre>
 <p>Running <code>pulumi update</code> from CLI will then print the endpoint for us:</p>
-<pre class="highlight"><code class="hljs sh">---outputs:---
-endpoint: <span class="hljs-string">"https://mywebsiteb76260b5.azurewebsites.net"</span>
+<pre><code class="lang-sh">---outputs:---
+endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;
 </code></pre>
 <p>Multiple outputs can be combined with <code>pulumi.all</code>, e.g. given SQL Server
 and Database, we could make a connection string:</p>
-<pre class="highlight"><code class="hljs ts"><span class="hljs-keyword">const</span> connectionString = 
-    pulumi.all([sqlServer, database]).apply(<span class="hljs-function">(<span class="hljs-params">[server, db]</span>) =&gt;</span> 
-        <span class="hljs-string">`Server=tcp:<span class="hljs-subst">${server}</span>.database.windows.net;initial catalog=<span class="hljs-subst">${db}</span>;user ID=<span class="hljs-subst">${username}</span>;password=<span class="hljs-subst">${pwd}</span>;Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`</span>)
+<pre><code class="lang-ts">const connectionString = 
+    pulumi.all([sqlServer, database]).apply(([server, db]) =&gt; 
+        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)
 </code></pre>
 <h2 id="using-the-power-of-npm">Using the Power of NPM</h2>
 <p>Since our program is just a TypeScript application, we are free to use any
 3rd party package which exists out there in NPM.</p>
 <p>For instance, we can install Azure Storage SDK. Just</p>
-<pre class="highlight"><code class="hljs sh">npm install azure-storage@2.9.0-preview
+<pre><code class="lang-sh">npm install azure-storage@2.9.0-preview
 </code></pre>
 <p>and then we can write a function to produce SAS token for a Blob in Azure
 Storage:</p>
-<pre class="highlight"><code class="hljs ts"><span class="hljs-keyword">import</span> * <span class="hljs-keyword">as</span> azurestorage <span class="hljs-keyword">from</span> <span class="hljs-string">"azure-storage"</span>;
+<pre><code class="lang-ts">import * as azurestorage from &quot;azure-storage&quot;;
 
-<span class="hljs-comment">// Given an Azure blob, create a SAS URL that can read it.</span>
-<span class="hljs-keyword">export</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">signedBlobReadUrl</span>(<span class="hljs-params">
+// Given an Azure blob, create a SAS URL that can read it.
+export function signedBlobReadUrl(
     blob: azure.storage.Blob | azure.storage.ZipBlob,
     account: azure.storage.Account,
     container: azure.storage.Container,
-</span>): <span class="hljs-title">pulumi</span>.<span class="hljs-title">Output</span>&lt;<span class="hljs-title">string</span>&gt; </span>{
-    <span class="hljs-keyword">const</span> signatureExpiration = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Date</span>(<span class="hljs-number">2100</span>, <span class="hljs-number">1</span>);
+): pulumi.Output&lt;string&gt; {
+    const signatureExpiration = new Date(2100, 1);
 
-    <span class="hljs-keyword">return</span> pulumi.all([
+    return pulumi.all([
         account.primaryConnectionString,
         container.name,
         blob.name,
-    ]).apply(<span class="hljs-function">(<span class="hljs-params">[connectionString, containerName, blobName]</span>) =&gt;</span> {
-        <span class="hljs-keyword">let</span> blobService = <span class="hljs-keyword">new</span> azurestorage.BlobService(connectionString);
-        <span class="hljs-keyword">let</span> signature = blobService.generateSharedAccessSignature(
+    ]).apply(([connectionString, containerName, blobName]) =&gt; {
+        let blobService = new azurestorage.BlobService(connectionString);
+        let signature = blobService.generateSharedAccessSignature(
             containerName,
             blobName,
             {
@@ -302,7 +297,7 @@ Storage:</p>
             }
         );
 
-        <span class="hljs-keyword">return</span> blobService.getUrl(containerName, blobName, signature);
+        return blobService.getUrl(containerName, blobName, signature);
     });
 }
 </code></pre>
@@ -316,18 +311,18 @@ files as part of the same workflow.</p>
 feature of App Service:</p>
 <ol>
 <li><p>Define Storage Account and Container</p>
-<pre class="highlight"><code class="hljs ts"> <span class="hljs-keyword">const</span> storageAccount = <span class="hljs-keyword">new</span> azure.storage.Account(<span class="hljs-string">"mystorage"</span>, {
+<pre><code class="lang-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
      ...resourceGroupArgs,
 
-     accountKind: <span class="hljs-string">"StorageV2"</span>,
-     accountTier: <span class="hljs-string">"Standard"</span>,
-     accountReplicationType: <span class="hljs-string">"LRS"</span>,
+     accountKind: &quot;StorageV2&quot;,
+     accountTier: &quot;Standard&quot;,
+     accountReplicationType: &quot;LRS&quot;,
  });
 
- <span class="hljs-keyword">const</span> storageContainer = <span class="hljs-keyword">new</span> azure.storage.Container(<span class="hljs-string">"mycontainer"</span>, {
+ const storageContainer = new azure.storage.Container(&quot;mycontainer&quot;, {
      resourceGroupName: resourceGroup.name,
      storageAccountName: storageAccount.name,
-     containerAccessType: <span class="hljs-string">"private"</span>,
+     containerAccessType: &quot;private&quot;,
  });
 </code></pre>
 </li>
@@ -335,26 +330,26 @@ feature of App Service:</p>
 some test HTML, ASP.NET application, or anything supported by App Service.</p>
 </li>
 <li><p>Produce a zip file from that folder in Pulumi program:</p>
-<pre class="highlight"><code class="hljs ts"> <span class="hljs-keyword">const</span> blob = <span class="hljs-keyword">new</span> azure.storage.ZipBlob(<span class="hljs-string">"myzip"</span>, {
+<pre><code class="lang-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
      resourceGroupName: resourceGroup.name,
      storageAccountName: storageAccount.name,
      storageContainerName: storageContainer.name,
-     <span class="hljs-keyword">type</span>: <span class="hljs-string">"block"</span>,
+     type: &quot;block&quot;,
 
-     content: <span class="hljs-keyword">new</span> pulumi.asset.FileArchive(<span class="hljs-string">"wwwroot"</span>)
+     content: new pulumi.asset.FileArchive(&quot;wwwroot&quot;)
  });
 </code></pre>
 </li>
 <li><p>Produce SAS Blob URL and assign it to App Service Run-as-Zip setting:</p>
-<pre class="highlight"><code class="hljs ts"> <span class="hljs-keyword">const</span> codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
+<pre><code class="lang-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
 
- <span class="hljs-keyword">const</span> app = <span class="hljs-keyword">new</span> azure.appservice.AppService(<span class="hljs-string">"mywebsite"</span>, {
+ const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
      ...resourceGroupArgs,
 
      appServicePlanId: appServicePlan.id,
 
      appSettings: {
-         <span class="hljs-string">"WEBSITE_RUN_FROM_ZIP"</span>: codeBlobUrl
+         &quot;WEBSITE_RUN_FROM_ZIP&quot;: codeBlobUrl
      }
  });
 </code></pre>
@@ -456,7 +451,7 @@ components on their own.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

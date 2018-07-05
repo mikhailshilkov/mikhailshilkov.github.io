@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -121,25 +116,25 @@ runtime.</p>
 <p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
 Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
 Here is a simple example of orchestrator in C#:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;List&lt;<span class="hljs-keyword">string</span>&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
+<pre><code class="lang-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
 {
-    <span class="hljs-keyword">var</span> outputs = <span class="hljs-keyword">new</span> List&lt;<span class="hljs-keyword">string</span>&gt;();
+    var outputs = new List&lt;string&gt;();
 
-    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>));
-    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>));
-    outputs.Add(<span class="hljs-keyword">await</span> context.CallActivityAsync&lt;<span class="hljs-keyword">string</span>&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>));
+    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;));
+    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;));
+    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;));
 
-    <span class="hljs-comment">// returns ["Hello Tokyo!", "Hello Seattle!", "Hello London!"]</span>
-    <span class="hljs-keyword">return</span> outputs;
+    // returns [&quot;Hello Tokyo!&quot;, &quot;Hello Seattle!&quot;, &quot;Hello London!&quot;]
+    return outputs;
 }
 </code></pre>
 <p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
 computation expression. The direct refactoring could look something like</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> Run(<span class="hljs-meta">[&lt;OrchestrationTrigger&gt;]</span> context: DurableOrchestrationContext) = async {
-  <span class="hljs-keyword">let!</span> hello1 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>)   |&gt; Async.AwaitTask
-  <span class="hljs-keyword">let!</span> hello2 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>) |&gt; Async.AwaitTask
-  <span class="hljs-keyword">let!</span> hello3 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>)  |&gt; Async.AwaitTask
-  <span class="hljs-keyword">return</span> [hello1; hello2; hello3]
+<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
+  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)   |&gt; Async.AwaitTask
+  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;) |&gt; Async.AwaitTask
+  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)  |&gt; Async.AwaitTask
+  return [hello1; hello2; hello3]
 } |&gt; Async.StartAsTask
 </code></pre>
 <p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
@@ -154,19 +149,19 @@ any other threads that could be scheduled by other async APIs.</p>
 not very handy with standard F# libraries. So, I pulled an extra NuGet
 package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
 <p>The above function now looks very simple:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> Run(<span class="hljs-meta">[&lt;OrchestrationTrigger&gt;]</span> context: DurableOrchestrationContext) = task {
-  <span class="hljs-keyword">let!</span> hello1 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Tokyo"</span>)
-  <span class="hljs-keyword">let!</span> hello2 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"Seattle"</span>)
-  <span class="hljs-keyword">let!</span> hello3 = context.CallActivityAsync&lt;string&gt;(<span class="hljs-string">"E1_SayHello"</span>, <span class="hljs-string">"London"</span>)
-  <span class="hljs-keyword">return</span> [hello1; hello2; hello3]
+<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
+  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)
+  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;)
+  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)
+  return [hello1; hello2; hello3]
 }
 </code></pre>
 <p>And the best part is that it works just fine.</p>
 <p><code>SayHello</code> function is Activity trigger based, and no special effort is required
 to implement it in F#:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-meta">[&lt;FunctionName("E1_SayHello")&gt;]</span>
-<span class="hljs-keyword">let</span> SayHello(<span class="hljs-meta">[&lt;ActivityTrigger&gt;]</span> name) =
-  sprintf <span class="hljs-string">"Hello %s!"</span> name
+<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
+let SayHello([&lt;ActivityTrigger&gt;] name) =
+  sprintf &quot;Hello %s!&quot; name
 </code></pre>
 <h2 id="more-examples">More Examples</h2>
 <p>Durable Functions repository comes with 
@@ -181,15 +176,15 @@ is using this persistence mechanism to run
 a potentially slow workflow of copying all files from a given directory to
 a backup location. It shows how multiple activities can be executed in
 parallel:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tasks = Array.map (<span class="hljs-keyword">fun</span> f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(<span class="hljs-string">"E2_CopyFileToBlob"</span>, f)) files
-<span class="hljs-keyword">let!</span> results = Task.WhenAll tasks
+<pre><code class="lang-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
+let! results = Task.WhenAll tasks
 </code></pre>
 <p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
 demos a potentially infinite actor-like workflow, where state can exist and
 evolve for indefinite period of time. The key API calls are based on
 <code>OrchestrationContext</code>:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> counterState = counterContext.GetInput&lt;int&gt;()
-<span class="hljs-keyword">let!</span> command = counterContext.WaitForExternalEvent&lt;string&gt;(<span class="hljs-string">"operation"</span>)
+<pre><code class="lang-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
+let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)
 </code></pre>
 <p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
 has several twists, like output binding for activity (<code>ICollector</code> is required
@@ -270,7 +265,7 @@ before going GA.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

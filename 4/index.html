@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -81,6 +76,213 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Jul 24th, 2017</div>
+    
+    <h1><a href='/2017/07/custom-autoscaling-with-durable-functions/'>Custom Autoscaling with Durable Functions</a></h1>
+    
+    <div class="post-content">
+        <p>In my previous post 
+<a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">Custom Autoscaling of Azure App Service with a Function App</a>
+I&#39;ve created a Function App which watches a Service Bus Subscription
+backlog and adjusts the scale of App Service based on the observed load.</p>
+<p>It works fine but there are two minor issues that I would like to address
+in this article:</p>
+<ul>
+<li><p><strong>Scaling Logic</strong> function from that workflow needs to preserve state
+between calls. I used Table Storage bindings for that, which proved to
+be a bit verbose and low level: I needed to manage conversion to entity and 
+JSON serialization myself;</p>
+</li>
+<li><p>There is no feedback from <strong>Scaler</strong> function (which executes the change)
+back to <strong>Scaling Logic</strong> function. Thus, if scaling operation is slow or
+fails, there is no easy way to notify the logic about that.</p>
+</li>
+</ul>
+<p>Let&#39;s see how these issues can be solved with Azure Durable Functions.</p>
+<h2 id="meet-durable-functions">Meet Durable Functions</h2>
+<p>Microsoft has recently announced the preview of 
+<a href="https://azure.github.io/azure-functions-durable-extension/">Durable Functions</a>:</p>
+<blockquote>
+<p>Durable Functions is an Azure Functions extension for building long-running, 
+stateful function orchestrations in code using C# in a serverless environment.</p>
+</blockquote>
+<p>The library is built on top of <a href="https://github.com/Azure/durabletask">Durable Task Framework</a>
+and introduces several patterns for Function coordination and stateful
+processing. Please go read the <a href="https://azure.github.io/azure-functions-durable-extension/">documentation</a>,
+it&#39;s great and has some very useful examples.</p>
+<p>I decided to give Durable Functions a try for my autoscaling workflow. Feel
+free to refer to <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">the first part</a>
+to understand my goals and the previous implementation.</p>
+<h2 id="architecture">Architecture</h2>
+<p>The flow of metric collection, scaling logic and scaling action stays the
+same. The state and cross-function communication aspects are now delegated
+to Durable Functions, so the diagram becomes somewhat simpler:</p>
+<p><img src="/2017/07/custom-autoscaling-with-durable-functions//AutoscalingArchitecture.png" alt="Autoscaling Architecture"></p>
+<p>The blue sign on <strong>Scaling Logic</strong> function denotes its statefulness.</p>
+<p>Let&#39;s walk through the functions implementation to see how the workflow
+plays out.</p>
+<p>This time I&#39;ll start with <strong>Scaler</strong> function and then flow from right to left
+to make the explanation more clear.</p>
+<h2 id="scaler">Scaler</h2>
+<p><strong>Scaler</strong> function applies the scaling decisions to the Azure resource, App
+Service Plan in my case. I&#39;ve extracted App Service related code to a helper, 
+to keep the function minimal and clean. You can see the full code in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+<p><strong>Scaler</strong> function is triggered by Durable Function&#39;s <code>ActivityTrigger</code>. That
+basically means that it&#39;s ready to be called from other functions. Here is
+the code:</p>
+<pre><code class="lang-csharp">[FunctionName(nameof(Scaler))]
+public static int Scaler([ActivityTrigger] DurableActivityContext context)
+{
+    var action = context.GetInput&lt;ScaleAction&gt;();
+
+    var newCapacity = ScalingHelper.ChangeAppServiceInstanceCount(
+        action.ResourceName,
+        action.Type == ScaleActionType.Down ? -1 : +1);
+
+    return newCapacity;
+}
+</code></pre>
+<p>In order to receive an input value, I utilize <code>context.GetInput()</code> method.
+I believe that the team is working on support of custom classes 
+(<code>ScaleAction</code> in my case) directly as function parameters.</p>
+<p>The function then executes the scale change and returns back the new capacity
+of App Service Plan. Note that this is new: we were not able to return
+values in the previous implementation.</p>
+<h2 id="scaling-logic">Scaling Logic</h2>
+<p><strong>Scaling Logic</strong> is using <a href="https://azure.github.io/azure-functions-durable-extension/articles/samples/counter.html">Stateful Actor pattern</a>.
+One instance of such actor is created for each scalable resource (I only use
+1 now). Here is the implementation (again, simplified for readability):</p>
+<pre><code class="lang-csharp">[FunctionName(nameof(ScalingLogic))]
+public static async Task&lt;ScalingState&gt; ScalingLogic(
+    [OrchestrationTrigger] DurableOrchestrationContext context, 
+    TraceWriter log)
+{
+    var state = context.GetInput&lt;ScalingState&gt;();
+
+    var metric = await context.WaitForExternalEvent&lt;Metric&gt;(nameof(Metric));
+
+    UpdateHistory(state.History, metric.Value);
+    ScaleAction action = CalculateScalingAction(state);
+
+    if (action != null)
+    {
+        var result = await context.CallFunctionAsync&lt;int&gt;(nameof(Scaler), action);
+        log.Info($&quot;Scaling logic: Scaled to {result} instances.&quot;);
+        state.LastScalingActionTime = context.CurrentUtcDateTime;
+    }
+
+    context.ContinueAsNew(state);
+    return state;
+}
+</code></pre>
+<p>Here is how it works:</p>
+<ul>
+<li><p>Function is bound to <code>OrchestrationTrigger</code>, yet another trigger type from
+Durable Functions;</p>
+</li>
+<li><p>It loads durable state from the received <code>context</code>;</p>
+</li>
+<li><p>It then waits for an external event called Metric (to be sent by <strong>Collector</strong>
+function, see the next section);</p>
+</li>
+<li><p>When an event is received, the function updates its state and calculates
+if a scaling action is warranted;</p>
+</li>
+<li><p>If yes, it calls <strong>Scaler</strong> function and sends the scale action. It expects
+an integer result, denoting the new amount of instances;</p>
+</li>
+<li><p>It then calls <code>ContinueAsNew</code> method to start a new iteration of the actor
+loop, providing the updated state.</p>
+</li>
+</ul>
+<p>One important note: the orchestrated function 
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/topics/checkpointing-and-replay.html">has to be deterministic</a>. 
+That means, for example, that <code>DateTime.Now</code> is not allowed to be used. 
+I use <code>context.CurrentUtcDateTime</code> instead for time-related calculations.</p>
+<p>The implementation of this function solves both problems that I mentioned 
+in the introduction. We do not manage state storage and serialization manually,
+and we now have the ability to get feedback from <strong>Scaler</strong> function.</p>
+<h2 id="metrics-collector">Metrics Collector</h2>
+<p>I&#39;ve extracted Service Bus related code to a helper to keep the code sample
+minimal and clean. You can see the full code in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+<p>Here is the remaining implementation of <strong>Metric Collector</strong>:</p>
+<pre><code class="lang-csharp">[FunctionName(nameof(MetricCollector))]
+public static async Task MetricCollector(
+    [TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo myTimer,
+    [OrchestrationClient] DurableOrchestrationClient client,
+    TraceWriter log)
+{
+    var resource = Environment.GetEnvironmentVariable(&quot;ResourceToScale&quot;);
+
+    var status = await client.GetStatusAsync(resource);
+    if (status == null)
+    {
+        await client.StartNewAsync(nameof(ScalingLogic), resource, new ScalingState());
+    }
+    else
+    {
+        var metric = ServiceBusHelper.GetSubscriptionMetric(resource);
+        log.Info($&quot;Collector: Current metric value is {metric.Value.Value} at {DateTime.Now}&quot;);
+        await client.RaiseEventAsync(resource, nameof(Metric), metric);
+    }
+}
+</code></pre>
+<p>It&#39;s still a timer-triggered &quot;normal&quot; (non-durable) function, but now it 
+also has an additional binding to <code>OrchestrationClient</code>. This client is used 
+to communicate metric data to the <strong>Scaling Logic</strong>.</p>
+<p>With the current implementation, <strong>Metric Collector</strong> also has a second
+responsibility: actor instance management. At every iteration, it queries
+for the current status of corresponding actor. If that is <code>null</code>, Collector
+creates a new instance with initial empty state.</p>
+<p>To my liking, this aspect is a bit unfortunate, but it seems to be required
+with the current implementation of Durable Functions framework. See 
+<a href="https://github.com/Azure/azure-functions-durable-extension/issues/21">my related question on github</a>.</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>I adjusted the initial flow of autoscaling functions to use Durable Functions
+library. It made the state management look more straightforward, and also
+allowed direct communication between two functions in strongly-typed
+request-response manner.</p>
+<p>The resulting code is relatively clear and resembles the typical structure
+of async-await code that C# developers are used to.</p>
+<p>There are some downsides that I found about Durable Functions too:</p>
+<ul>
+<li><p>This is a very early preview, so there are some implementation issues.
+A couple times I managed to put my functions into a state where they were stuck
+and no calls could be made anymore. The only way I could get out of there is by
+clearing some blobs in the Storage Account;</p>
+</li>
+<li><p>The actor instance management story feels raw. The function, which needs to
+send events to actors, has to manage their lifecycle and instance IDs. I would
+need to add some more checks to make the code production ready, e.g. to 
+restart actors if they end up in faulty state;</p>
+</li>
+<li><p>There are some concurrency issues in function-to-function communication
+to be resolved;</p>
+</li>
+<li><p>Some discipline is required to keep Durable functions side-effect free
+and deterministic. The multiple executions caused by awaits and replays are
+counter-intuitive (at least for novice devs), and thus error-prone.</p>
+</li>
+</ul>
+<p>Having said that, I believe Durable Functions can be a very useful abstraction
+to simplify some of the more advanced scenarios and workflows. I look
+forward to further iterations of the library, and I will keep trying it out
+for more scenarios.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>, <a href='/tags/azure-app-service/'>Azure App Service</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>, <a href='/tags/durable-functions/'>Durable Functions</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Jul 17th, 2017</div>
     
@@ -166,56 +368,56 @@ the re-scaling action on App Service Plan using Azure Management SDK.</p>
 Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</p>
 <h2 id="metric-collector">Metric Collector</h2>
 <p>First, let&#39;s define <code>MetricValue</code> class, which simply holds time and value:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MetricValue</span>
+<pre><code class="lang-csharp">public class MetricValue
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MetricValue</span>(<span class="hljs-params">DateTime time, <span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Time = time;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
+    public MetricValue(DateTime time, int value)
+    {
+        this.Time = time;
+        this.Value = value;
     }
 
-    <span class="hljs-keyword">public</span> DateTime Time { <span class="hljs-keyword">get</span>; }
+    public DateTime Time { get; }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Value { <span class="hljs-keyword">get</span>; }
+    public int Value { get; }
 }
 </code></pre>
 <p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
 Plan name) and measured parameter name:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Metric</span>
+<pre><code class="lang-csharp">public class Metric
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Metric</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, <span class="hljs-keyword">string</span> name, MetricValue <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Name = name;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
+    public Metric(string resourceName, string name, MetricValue value)
+    {
+        this.ResourceName = resourceName;
+        this.Name = name;
+        this.Value = value;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
+    public string ResourceName { get; }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; }
+    public string Name { get; }
 
-    <span class="hljs-keyword">public</span> MetricValue Value { <span class="hljs-keyword">get</span>; }
+    public MetricValue Value { get; }
 }
 </code></pre>
 <p>The function definition has two associated bindings: timer trigger (runs every
 minute) and return binding to the storage queue:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"MetricCollector"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Metrics"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Metric <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">[TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> connectionString = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServiceBusConnection"</span>);
-    <span class="hljs-keyword">var</span> topic = Environment.GetEnvironmentVariable(<span class="hljs-string">"Topic"</span>);
-    <span class="hljs-keyword">var</span> subscription = Environment.GetEnvironmentVariable(<span class="hljs-string">"Subscription"</span>);
+<pre><code class="lang-csharp">[FunctionName(&quot;MetricCollector&quot;)]
+[return: Queue(&quot;Metrics&quot;)]
+public static Metric MetricCollector([TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo myTimer, TraceWriter log)
+{
+    var connectionString = Environment.GetEnvironmentVariable(&quot;ServiceBusConnection&quot;);
+    var topic = Environment.GetEnvironmentVariable(&quot;Topic&quot;);
+    var subscription = Environment.GetEnvironmentVariable(&quot;Subscription&quot;);
 
-    <span class="hljs-keyword">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
-    <span class="hljs-keyword">var</span> subscriptionClient = nsmgr.GetSubscription(topic, subscription);
-    <span class="hljs-keyword">var</span> backlog = subscriptionClient.MessageCountDetails.ActiveMessageCount;
+    var nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
+    var subscriptionClient = nsmgr.GetSubscription(topic, subscription);
+    var backlog = subscriptionClient.MessageCountDetails.ActiveMessageCount;
 
-    log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{backlog}</span>"</span>);
+    log.Info($&quot;Collector: Current metric value is {backlog}&quot;);
 
-    <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
-    <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = <span class="hljs-keyword">new</span> MetricValue(DateTime.Now, (<span class="hljs-keyword">int</span>)backlog);
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Metric(resource, <span class="hljs-string">$"<span class="hljs-subst">{topic}</span>-<span class="hljs-subst">{subscription}</span>-backlog"</span>, <span class="hljs-keyword">value</span>);
+    var resource = Environment.GetEnvironmentVariable(&quot;ResourceToScale&quot;);
+    var value = new MetricValue(DateTime.Now, (int)backlog);
+    return new Metric(resource, $&quot;{topic}-{subscription}-backlog&quot;, value);
 }
 </code></pre>
 <p>The function executes the following steps:</p>
@@ -238,121 +440,121 @@ keep the state in between function calls.</li>
 <p>The bindings are illustrated on the following picture:</p>
 <p><img src="/2017/07/custom-auto-scaling-in-azure//ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
 <p>And here is the corresponding Function signature:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"ScalingLogic"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Actions"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ScaleAction <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
-    [QueueTrigger(<span class="hljs-string">"Metrics"</span></span>)] Metric metric, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] ScalingStateEntity stateEntity, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] <span class="hljs-keyword">out</span> ScalingStateEntity newStateEntity,
+<pre><code class="lang-csharp">[FunctionName(&quot;ScalingLogic&quot;)]
+[return: Queue(&quot;Actions&quot;)]
+public static ScaleAction ScalingLogic(
+    [QueueTrigger(&quot;Metrics&quot;)] Metric metric, 
+    [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] ScalingStateEntity stateEntity, 
+    [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] out ScalingStateEntity newStateEntity,
     TraceWriter log)
-</span></code></pre>
+</code></pre>
 <p>Table storage is partitioned per scalable resource, and state is stored per metric;
 thus multiple resources and metrics are supported out of the box.</p>
 <p>The function implementation is relatively complex, so I&#39;ll describe it in parts.</p>
 <p><code>ScaleAction</code> is a simple message class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">enum</span> ScaleActionType
+<pre><code class="lang-csharp">public enum ScaleActionType
 {
     Up,
     Down
 }
 
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScaleAction</span>
+public class ScaleAction
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ScaleAction</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, ScaleActionType type</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Type = type;
+    public ScaleAction(string resourceName, ScaleActionType type)
+    {
+        this.ResourceName = resourceName;
+        this.Type = type;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
+    public string ResourceName { get; }
 
-    <span class="hljs-keyword">public</span> ScaleActionType Type { <span class="hljs-keyword">get</span>; }
+    public ScaleActionType Type { get; }
 }
 </code></pre>
 <p>Table Storage only allows primitive types for its columns, like strings. 
 So I had to create a separate Table Storage entity class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingStateEntity</span> : <span class="hljs-title">TableEntity</span>
+<pre><code class="lang-csharp">public class ScalingStateEntity : TableEntity
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> SerializedState { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public string SerializedState { get; set; }
 }
 </code></pre>
 <p>which stores serialized state, from the state class itself:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingState</span>
+<pre><code class="lang-csharp">public class ScalingState
 {
-    <span class="hljs-keyword">public</span> List&lt;MetricValue&gt; History { <span class="hljs-keyword">get</span>; } = <span class="hljs-keyword">new</span> List&lt;MetricValue&gt;();
+    public List&lt;MetricValue&gt; History { get; } = new List&lt;MetricValue&gt;();
 
-    <span class="hljs-keyword">public</span> DateTime LastScalingActionTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; } = DateTime.MinValue;
+    public DateTime LastScalingActionTime { get; set; } = DateTime.MinValue;
 }
 </code></pre>
 <p>Now let&#39;s look at the function body. It consists of four blocks. </p>
 <p>The first block retrieves the previous values of the metric and logs it too:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 1. Deserialize state</span>
-<span class="hljs-keyword">var</span> state = stateEntity?.SerializedState != <span class="hljs-literal">null</span> 
+<pre><code class="lang-csharp">// 1. Deserialize state
+var state = stateEntity?.SerializedState != null 
     ? JsonConvert.DeserializeObject&lt;ScalingState&gt;(stateEntity.SerializedState) 
-    : <span class="hljs-keyword">new</span> ScalingState();
-<span class="hljs-keyword">var</span> history = state.History;
-log.Info(<span class="hljs-string">$"Scaling logic: Received <span class="hljs-subst">{metric.Name}</span>, previous state is <span class="hljs-subst">{<span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, history)}</span>"</span>);
+    : new ScalingState();
+var history = state.History;
+log.Info($&quot;Scaling logic: Received {metric.Name}, previous state is {string.Join(&quot;, &quot;, history)}&quot;);
 </code></pre>
 <p>The second block adds the current metric value and removes all metrics which are
 not in the target period of 10 minutes anymore:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 2. Add current metric value, remove old values</span>
+<pre><code class="lang-csharp">// 2. Add current metric value, remove old values
 history.Add(metric.Value);
 history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
 </code></pre>
 <p>Now, the actual logic finally kicks in and produces the scaling action if average
 or maximum value is above or below respective thresholds. For my implementation I also
 chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 3. Compare the aggregates to thresholds, produce scaling action if needed</span>
-ScaleAction action = <span class="hljs-literal">null</span>;
-<span class="hljs-keyword">if</span> (history.Count &gt;= <span class="hljs-number">5</span>
+<pre><code class="lang-csharp">// 3. Compare the aggregates to thresholds, produce scaling action if needed
+ScaleAction action = null;
+if (history.Count &gt;= 5
     &amp;&amp; DateTime.Now - state.LastScalingActionTime &gt; cooldownPeriod)
 {
-    <span class="hljs-keyword">var</span> average = (<span class="hljs-keyword">int</span>)history.Average(e =&gt; e.Value);
-    <span class="hljs-keyword">var</span> maximum = (<span class="hljs-keyword">int</span>)history.Max(e =&gt; e.Value);
-    <span class="hljs-keyword">if</span> (average &gt; thresholdUp)
+    var average = (int)history.Average(e =&gt; e.Value);
+    var maximum = (int)history.Max(e =&gt; e.Value);
+    if (average &gt; thresholdUp)
     {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{average}</span> is too high, scaling <span class="hljs-subst">{metric.ResourceName}</span> up..."</span>);
+        log.Info($&quot;Scaling logic: Value {average} is too high, scaling {metric.ResourceName} up...&quot;);
         state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Up);
+        action = new ScaleAction(metric.ResourceName, ScaleActionType.Up);
     }
-    <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (maximum &lt; thresholdDown)
+    else if (maximum &lt; thresholdDown)
     {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{maximum}</span> is low, scaling <span class="hljs-subst">{metric.ResourceName}</span> down..."</span>);
+        log.Info($&quot;Scaling logic: Value {maximum} is low, scaling {metric.ResourceName} down...&quot;);
         state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Down);
+        action = new ScaleAction(metric.ResourceName, ScaleActionType.Down);
     }
 }
 </code></pre>
 <p>Finally, the state is serialized back to table entity and action is returned: </p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 4. Serialize the state back and return the action</span>
-newStateEntity = stateEntity != <span class="hljs-literal">null</span> 
+<pre><code class="lang-csharp">// 4. Serialize the state back and return the action
+newStateEntity = stateEntity != null 
     ? stateEntity 
-    : <span class="hljs-keyword">new</span> ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
+    : new ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
 newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
-<span class="hljs-keyword">return</span> action;
+return action;
 </code></pre>
 <p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message 
 gets sent to the output queue.</p>
 <h2 id="scaler">Scaler</h2>
 <p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
 I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Scaler"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[QueueTrigger(<span class="hljs-string">"Actions"</span></span>)] ScaleAction action, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> secrets = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServicePrincipal"</span>).Split(<span class="hljs-string">','</span>);
-    <span class="hljs-keyword">var</span> credentials = SdkContext.AzureCredentialsFactory
-        .FromServicePrincipal(secrets[<span class="hljs-number">0</span>], secrets[<span class="hljs-number">1</span>], secrets[<span class="hljs-number">2</span>], AzureEnvironment.AzureGlobalCloud);
-    <span class="hljs-keyword">var</span> azure = Azure.Configure()
+<pre><code class="lang-csharp">[FunctionName(&quot;Scaler&quot;)]
+public static void Scaler([QueueTrigger(&quot;Actions&quot;)] ScaleAction action, TraceWriter log)
+{
+    var secrets = Environment.GetEnvironmentVariable(&quot;ServicePrincipal&quot;).Split(&#39;,&#39;);
+    var credentials = SdkContext.AzureCredentialsFactory
+        .FromServicePrincipal(secrets[0], secrets[1], secrets[2], AzureEnvironment.AzureGlobalCloud);
+    var azure = Azure.Configure()
         .Authenticate(credentials)
         .WithDefaultSubscription();
 
-    <span class="hljs-keyword">var</span> plan = azure.AppServices
+    var plan = azure.AppServices
         .AppServicePlans
         .List()
         .First(p =&gt; p.Name.Contains(action.ResourceName));
 
-    <span class="hljs-keyword">var</span> newCapacity = action.Type == ScaleActionType.Down ? plan.Capacity - <span class="hljs-number">1</span> : plan.Capacity + <span class="hljs-number">1</span>;
-    log.Info(<span class="hljs-string">$"Scaler: Switching <span class="hljs-subst">{action.ResourceName}</span> from <span class="hljs-subst">{plan.Capacity}</span> <span class="hljs-subst">{action.Type}</span> to <span class="hljs-subst">{newCapacity}</span>"</span>);
+    var newCapacity = action.Type == ScaleActionType.Down ? plan.Capacity - 1 : plan.Capacity + 1;
+    log.Info($&quot;Scaler: Switching {action.ResourceName} from {plan.Capacity} {action.Type} to {newCapacity}&quot;);
 
     plan.Update()
         .WithCapacity(newCapacity)
@@ -407,7 +609,7 @@ of this article will try to answer this seemingly simple question.</p>
 Bus in batches. The amount of batches should be close to minimal, but
 obviously each one of them must satisfy the restriction of 256k max size.</p>
 <p>So, we want to implement a method with the following signature:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
+<pre><code class="lang-csharp">public Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
 </code></pre>
 <p>which would work for collections of any size.</p>
 <p>To limit the scope, I will restrict the article to the following assumptions:</p>
@@ -429,45 +631,45 @@ of sending the big batch, we might end up with partially sent batch.</p>
 It&#39;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a 
 helpful extension method that will split an arbitrary collection based on
 a metric function and maximum chunk size:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(<span class="hljs-keyword">this</span> IEnumerable&lt;T&gt; source, Func&lt;T, <span class="hljs-keyword">long</span>&gt; metric, <span class="hljs-keyword">long</span> maxChunkSize)
+<pre><code class="lang-csharp">public static List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(this IEnumerable&lt;T&gt; source, Func&lt;T, long&gt; metric, long maxChunkSize)
 {
-    <span class="hljs-keyword">return</span> source
+    return source
         .Aggregate(
-            <span class="hljs-keyword">new</span>
+            new
             {
-                Sum = <span class="hljs-number">0</span>L,
-                Current = (List&lt;T&gt;)<span class="hljs-literal">null</span>,
-                Result = <span class="hljs-keyword">new</span> List&lt;List&lt;T&gt;&gt;()
+                Sum = 0L,
+                Current = (List&lt;T&gt;)null,
+                Result = new List&lt;List&lt;T&gt;&gt;()
             },
             (agg, item) =&gt;
             {
-                <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = metric(item);
-                <span class="hljs-keyword">if</span> (agg.Current == <span class="hljs-literal">null</span> || agg.Sum + <span class="hljs-keyword">value</span> &gt; maxChunkSize)
+                var value = metric(item);
+                if (agg.Current == null || agg.Sum + value &gt; maxChunkSize)
                 {
-                    <span class="hljs-keyword">var</span> current = <span class="hljs-keyword">new</span> List&lt;T&gt; { item };
+                    var current = new List&lt;T&gt; { item };
                     agg.Result.Add(current);
-                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = <span class="hljs-keyword">value</span>, Current = current, agg.Result };
+                    return new { Sum = value, Current = current, agg.Result };
                 }
 
                 agg.Current.Add(item);
-                <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> { Sum = agg.Sum + <span class="hljs-keyword">value</span>, agg.Current, agg.Result };
+                return new { Sum = agg.Sum + value, agg.Current, agg.Result };
             })
         .Result;
 }
 </code></pre>
 <p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">SendBigBatchAsync</span>(<span class="hljs-params">IEnumerable&lt;T&gt; messages, Func&lt;T, <span class="hljs-keyword">long</span>&gt; getSize</span>)
-</span>{
-    <span class="hljs-keyword">var</span> chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
-    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+<pre><code class="lang-csharp">public async Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, long&gt; getSize)
+{
+    var chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
+    foreach (var chunk in chunks)
     {
-        <span class="hljs-keyword">var</span> brokeredMessages = chunk.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
-        <span class="hljs-keyword">await</span> client.SendBatchAsync(brokeredMessages);
+        var brokeredMessages = chunk.Select(m =&gt; new BrokeredMessage(m));
+        await client.SendBatchAsync(brokeredMessages);
     }
 }
 
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">long</span> MaxServiceBusMessage = <span class="hljs-number">256000</span>;
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient client;
+private const long MaxServiceBusMessage = 256000;
+private readonly QueueClient client;
 </code></pre>
 <p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
 Another thing to notice is that we lost all-or-nothing guarantee: we might
@@ -478,13 +680,13 @@ parts. Some sort of retry mechanism is probably needed.</p>
 <code>getSize</code> function? </p>
 <p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
 rewrite our method the following way:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+<pre><code class="lang-csharp">public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
 {
-    <span class="hljs-keyword">var</span> brokeredMessages = messages.Select(m =&gt; <span class="hljs-keyword">new</span> BrokeredMessage(m));
-    <span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
-    <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+    var brokeredMessages = messages.Select(m =&gt; new BrokeredMessage(m));
+    var chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
+    foreach (var chunk in chunks)
     {
-        <span class="hljs-keyword">await</span> client.SendBatchAsync(chunk);
+        await client.SendBatchAsync(chunk);
     }
 }
 </code></pre>
@@ -506,14 +708,14 @@ or set no custom headers at all. </p>
 <p>In this case, you might just measure this size once, and then put this
 fixed value inside a configuration file.</p>
 <p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> sizeBefore = message.Size;
+<pre><code class="lang-csharp">var sizeBefore = message.Size;
 client.Send(message);
-<span class="hljs-keyword">var</span> sizeAfter = message.Size;
-<span class="hljs-keyword">var</span> headerSize = sizeAfter - sizeBefore;
+var sizeAfter = message.Size;
+var headerSize = sizeAfter - sizeBefore;
 </code></pre>
 <p>Now you just need to adjust one line from the previous version of 
 <code>SendBigBatchAsync</code> method</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
+<pre><code class="lang-csharp">var chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
 </code></pre>
 <p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
 per application.</p>
@@ -535,47 +737,47 @@ the send operation and adjust future calculations based on actual measured size
 of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
 operation failed, so we can use this information.</p>
 <p>Here is a sketch of how to do that in code:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Sender is reused across requests</span>
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">BatchSender</span>
+<pre><code class="lang-csharp">// Sender is reused across requests
+public class BatchSender
 {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> QueueClient queueClient;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> batchSizeLimit = <span class="hljs-number">262000</span>;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> headerSizeEstimate = <span class="hljs-number">54</span>; <span class="hljs-comment">// start with the smallest header possible</span>
+    private readonly QueueClient queueClient;
+    private long batchSizeLimit = 262000;
+    private long headerSizeEstimate = 54; // start with the smallest header possible
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">BatchSender</span>(<span class="hljs-params">QueueClient queueClient</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.queueClient = queueClient;
+    public BatchSender(QueueClient queueClient)
+    {
+        this.queueClient = queueClient;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+    public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
     {
-        <span class="hljs-keyword">var</span> packets = (<span class="hljs-keyword">from</span> m <span class="hljs-keyword">in</span> messages
-                     <span class="hljs-keyword">let</span> bm = <span class="hljs-keyword">new</span> BrokeredMessage(m)
-                     <span class="hljs-keyword">select</span> <span class="hljs-keyword">new</span> { Source = m, Brokered = bm, BodySize = bm.Size }).ToList();
-        <span class="hljs-keyword">var</span> chunks = packets.ChunkBy(p =&gt; <span class="hljs-keyword">this</span>.headerSizeEstimate + p.Brokered.Size, <span class="hljs-keyword">this</span>.batchSizeLimit);
-        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> chunk <span class="hljs-keyword">in</span> chunks)
+        var packets = (from m in messages
+                     let bm = new BrokeredMessage(m)
+                     select new { Source = m, Brokered = bm, BodySize = bm.Size }).ToList();
+        var chunks = packets.ChunkBy(p =&gt; this.headerSizeEstimate + p.Brokered.Size, this.batchSizeLimit);
+        foreach (var chunk in chunks)
         {
-            <span class="hljs-keyword">try</span>
+            try
             {
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.queueClient.SendBatchAsync(chunk.Select(p =&gt; p.Brokered));
+                await this.queueClient.SendBatchAsync(chunk.Select(p =&gt; p.Brokered));
             }
-            <span class="hljs-keyword">catch</span> (MessageSizeExceededException)
+            catch (MessageSizeExceededException)
             {
-                <span class="hljs-keyword">var</span> maxHeader = packets.Max(p =&gt; p.Brokered.Size - p.BodySize);
-                <span class="hljs-keyword">if</span> (maxHeader &gt; <span class="hljs-keyword">this</span>.headerSizeEstimate)
+                var maxHeader = packets.Max(p =&gt; p.Brokered.Size - p.BodySize);
+                if (maxHeader &gt; this.headerSizeEstimate)
                 {
-                    <span class="hljs-comment">// If failed messages had bigger headers, remember this header size </span>
-                    <span class="hljs-comment">// as max observed and use it in future calculations</span>
-                    <span class="hljs-keyword">this</span>.headerSizeEstimate = maxHeader;
+                    // If failed messages had bigger headers, remember this header size 
+                    // as max observed and use it in future calculations
+                    this.headerSizeEstimate = maxHeader;
                 }
-                <span class="hljs-keyword">else</span>
+                else
                 {
-                    <span class="hljs-comment">// Reduce max batch size to 95% of current value</span>
-                    <span class="hljs-keyword">this</span>.batchSizeLimit = (<span class="hljs-keyword">long</span>)(<span class="hljs-keyword">this</span>.batchSizeLimit * <span class="hljs-number">.95</span>);
+                    // Reduce max batch size to 95% of current value
+                    this.batchSizeLimit = (long)(this.batchSizeLimit * .95);
                 }
 
-                <span class="hljs-comment">// Re-send the failed chunk</span>
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.SendBigBatchAsync(packets.Select(p =&gt; p.Source));
+                // Re-send the failed chunk
+                await this.SendBigBatchAsync(packets.Select(p =&gt; p.Source));
             }
 
         }
@@ -659,12 +861,12 @@ and the hill pattern disappeared, days looks much more alike.</p>
 quite bothering. Are we loosing data?</p>
 <p>I headed towards Analytics console of Application Insights to dig deeper.
 Here is the query that reproduces the problem:</p>
-<pre class="highlight"><code class="hljs coq">customEvents
-| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]), timestamp
-| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
-| <span class="hljs-type">render</span> timechart
+<pre><code>customEvents
+| where name == &quot;EventXReceived&quot;
+| where timestamp &gt;= ago(22d)
+| project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]), timestamp
+| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
+| render timechart
 </code></pre><p>and I got the same chart as before:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics1.png" alt="Trend on Application Insights Analytics"></p>
 <p>I checked the history of our source code repository and deployments and I
@@ -674,21 +876,21 @@ version 2.1 to version 2.3.</p>
 data instead of sending all events to the server. After reading 
 <a href="https://docs.microsoft.com/en-us/azure/application-insights/app-insights-sampling">Sampling in Application Insights</a>
 article, I came up with the following query to see the sampling rate:</p>
-<pre class="highlight"><code class="hljs applescript">customEvents
-| <span class="hljs-keyword">where</span> <span class="hljs-built_in">name</span> == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-keyword">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-built_in">summarize</span> <span class="hljs-number">100</span>/avg(itemCount) <span class="hljs-keyword">by</span> bin(timestamp, <span class="hljs-number">1</span>d) 
+<pre><code>customEvents
+| where name == &quot;EventXReceived&quot;
+| where timestamp &gt;= ago(22d)
+| summarize 100/avg(itemCount) by bin(timestamp, 1d) 
 | render areachart
 </code></pre><p>and the result is self-explanatory:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//sampling-rate.png" alt="Sampling Rate"></p>
 <p>Clearly, the sampling rate dropped from 100% down to about 30% right when
 the anomaly started. The sampling-adjusted query (note <code>itemCount</code> multiplication)</p>
-<pre class="highlight"><code class="hljs coq">customEvents
-| <span class="hljs-type">where</span> name == <span class="hljs-string">"EventXReceived"</span>
-| <span class="hljs-type">where</span> timestamp &gt;= ago(<span class="hljs-number">22</span>d)
-| <span class="hljs-type">project</span> PointCount = todouble(customMeasurements[<span class="hljs-string">"EventXReceived_Count"</span>]) * itemCount, timestamp
-| <span class="hljs-type">summarize</span> EventXReceived = <span class="hljs-built_in">sum</span>(PointCount) <span class="hljs-built_in">by</span> bin(timestamp, <span class="hljs-number">1</span>d)
-| <span class="hljs-type">render</span> timechart
+<pre><code>customEvents
+| where name == &quot;EventXReceived&quot;
+| where timestamp &gt;= ago(22d)
+| project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]) * itemCount, timestamp
+| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
+| render timechart
 </code></pre><p>puts us back to the point when results make sense:</p>
 <p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics2.png" alt="Adjusted Trend on Application Insights Analytics"></p>
 <p>The third week&#39;s Thursday was bank holiday in several European countries, so 
@@ -734,230 +936,6 @@ HTTPS and HTTP/2 support.</p>
     
 </article>
 
-    <article class="post">
-    <div class="post-date">May 29th, 2017</div>
-    
-    <h1><a href='/2017/05/reliable-consumer-of-azure-event-hubs/'>Reliable Consumer of Azure Event Hubs</a></h1>
-    
-    <div class="post-content">
-        <p><a href="https://azure.microsoft.com/en-us/services/event-hubs/">Azure Event Hubs</a> is
-a log-based messaging system-as-a-service in Azure cloud. It&#39;s designed to be able to handle huge
-amount of data, and naturally supports multiple consumers.</p>
-<h2 id="event-hubs-and-service-bus">Event Hubs and Service Bus</h2>
-<p>While Event Hubs are formally part of Azure Service Bus family of products,
-in fact its model is quite different.</p>
-<p>&quot;Traditional&quot; Service Bus service is organized around queues (subscriptions
-are just queues with the topic being the source of messages). Each consumer 
-can peek messages from the queue, do the required processing and then
-complete the message to remove it from the queue, or abort the processing.
-Abortion will leave the message at the queue, or will move it to the Dead Letter
-Queue. Completion/abortion are granular per message; and the status of each
-message is managed by the Service Bus broker.</p>
-<p><img src="/2017/05/reliable-consumer-of-azure-event-hubs//service-bus-processors.png" alt="Service Bus Processors"></p>
-<p>Event Hubs service is different. Each Hub represnts a log of messages.
-Event producer appends data to the end of the log, and consumers can read this log,
-but they can&#39;t remove or change the status of events there.</p>
-<p>Each event has an offset associated with it. And the only operation that is
-supported for consumers is &quot;give me some messages starting at the offset X&quot;.</p>
-<p><img src="/2017/05/reliable-consumer-of-azure-event-hubs//event-hub-processors.png" alt="Event Hub Processors"></p>
-<p>While this approach might seem simplistic, it actually  makes consumers 
-more powerful:</p>
-<ul>
-<li><p>The messages do not disappear from the Hub after being processed for the
-first time. So, if needed, the consumer can go back and re-process older
-events again;</p>
-</li>
-<li><p>Multiple consumers are always supported, out of the box. They just read
-the same log, after all;</p>
-</li>
-<li><p>Each consumer can go at its own pace, drop and resume processing whenever
-needed, with no effect on other consumers.</p>
-</li>
-</ul>
-<p>There are some disadvantages too:</p>
-<ul>
-<li><p>Consumers have to manage their own state of the processing progress, i.e.
-they have to save the offset of the last processed event;</p>
-</li>
-<li><p>There is no way to mark any specific event as failed to be able to reprocess
-it later. There&#39;s no notion of Dead Letter Queue either.</p>
-</li>
-</ul>
-<h2 id="event-processor-host">Event Processor Host</h2>
-<p>To overcome the first complication, Microsoft provides the consumer API called
-<a href="https://github.com/Microsoft/azure-docs/blob/master/articles/event-hubs/event-hubs-programming-guide.md">EventProcessorHost</a>.
-This API has an implementation of consumers based on checkpointing. All you
-need to do is to provide a callback to process a batch of events, and then call
-<code>CheckpointAsync</code> method, which saves the current offset of the last message
-into Azure Blob Storage. If the consumer restarts at any point in time, it will
-read the last checkpoint to find the current offset, and will then continue
-processing from that point on.</p>
-<p>It works great for some scenarios, but the event delivery/processing guarantees
-are relatively low in this case:</p>
-<ul>
-<li><p>Any failures are ignored: there&#39;s no retry or Dead Letter Queue</p>
-</li>
-<li><p>There are no transactions between event hub checkpoints and the data sinks
-that the processor works with (i.e. data stores where processed messages 
-end up at)</p>
-</li>
-</ul>
-<p>In this post I want to focus on a way to process events with higher consistency
-requirements, in particular:</p>
-<ul>
-<li><p>Event Hub processor modifies data in a SQL Database, and such 
-processing is transactional per batch of messages</p>
-</li>
-<li><p>Each event should be (successfully) processed exactly once</p>
-</li>
-<li><p>If event processing failed, it should be marked as failed and kept 
-available to be reprocessed at later point in time</p>
-</li>
-</ul>
-<p>While end-to-end exactly-once processing would require changes of the 
-producers too, we will only focus on consumer side in this post.</p>
-<h2 id="transactional-checkpoints-in-sql">Transactional Checkpoints in SQL</h2>
-<p>If checkpoint information is stored in Azure Blobs, there is no obvious way to
-implement distributed transactions between SQL Database and Azure Storage.</p>
-<p>However, we can override the default checkpointing mechanism and 
-implement our own checkpoints based on a SQL table. This way each 
-checkpoint update can become part of a SQL transaction and be committed
-or rolled back with normal guarantees provided by SQL Server.</p>
-<p>Here is a table that I created to hold my checkpoints:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubCheckpoint (
-  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">Offset</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubCheckpoint PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
-)
-</code></pre>
-<p>For each topic and partition of Event Hubs, we store two values: sequence
-number and offset, which together uniquely identify the consumer position.</p>
-<p>Conveniently, Event Host Processor provides an extensibility point to
-override the default checkpoint manager with a custom one. For that we
-need to implement <code>ICheckpointManager</code> interface to work with our SQL
-table.</p>
-<p>The implementation mainly consists of 3 methods: <code>CreateCheckpointIfNotExistsAsync</code>,
-<code>GetCheckpointAsync</code> and <code>UpdateCheckpointAsync</code>. The names are pretty
-much self-explanatory, and my Dapper-based implementation is quite trivial.
-You can find the code <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLCheckpointManager.cs">here</a>.</p>
-<p>For now, I&#39;m ignoring the related topic of lease management and corresponding
-interface <code>ILeaseManager</code>. It&#39;s quite a subject on its own; for the sake
-of simplicity I&#39;ll assume we have just one consumer process per partition,
-which makes proper lease manager redundand.</p>
-<h2 id="dead-letter-queue">Dead Letter Queue</h2>
-<p>Now, we want to be able to mark some messages as failed and to 
-re-process them later. To make Dead Letters transactional, we need another
-SQL table to hold the failed events:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> EventHubDeadLetter (
-  Topic <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  PartitionID <span class="hljs-built_in">varchar</span>(<span class="hljs-number">100</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  SequenceNumber <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">Offset</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-number">20</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  FailedAt datetime <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">Error</span> <span class="hljs-keyword">nvarchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-  <span class="hljs-keyword">CONSTRAINT</span> PK_EventHubDeadLetter PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (Topic, PartitionID)
-)
-</code></pre>
-<p>This table looks very similar to <code>EventHubCheckpoint</code> that I</p>
-<p>defined above. That is because they are effectively storing pointers to
-events in a hub. Dead Letters have two additional columns to store error
-timestamp and text.</p>
-<p>There is no need to store the message content, because failed events still
-sit in the event hub anyway. You could still log it for diagnostics purpose - just make an extra
-<code>varbinary</code> column.</p>
-<p>There&#39;s no notion of dead letters in Event Hubs SDK, so I defined my own
-interface <code>IDeadLetterManager</code> with a single <code>AddFailedEvents</code> method:</p>
-<pre class="highlight"><code class="hljs undefined">public interface IDeadLetterManager
-{
-    Task AddFailedEvents(IEnumerable&lt;DeadLetter&lt;EventData&gt;&gt; deadLetters);
-}
-
-public class DeadLetter&lt;T&gt;
-{
-    public T Data { get; set; }
-    public DateTime FailureTime { get; set; }
-    public Exception Exception { get; set; }
-}
-</code></pre>
-<p>Dapper-based implementation is trivial again, you can find the code 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLDeadLetterManager.cs">here</a>.</p>
-<h2 id="putting-it-together-event-host">Putting It Together: Event Host</h2>
-<p>My final solution is still using <code>EventHostProcessor</code>. I pass <code>SQLCheckpointManager</code> 
-into its constructor, and then I implement <code>IEventProcessor</code>&#39;s 
-<code>ProcessEventsAsync</code> method in the following way:</p>
-<ol>
-<li>Instantiate a list of items to store failed events</li>
-<li>Start a SQL transaction</li>
-<li>Loop through all the received events in the batch</li>
-<li>Process each item inside a try-catch block</li>
-<li>If exception happens, add the current event to the list of failed events</li>
-<li>After all items are processed, save failed events to Dead Letter table</li>
-<li>Update the checkpoint pointer</li>
-<li>Commit the transaction</li>
-</ol>
-<p>The code block that illustrates this workflow:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">ProcessEventsAsync</span>(<span class="hljs-params">
-    PartitionContext context, 
-    IEnumerable&lt;EventData&gt; eventDatas</span>)
-</span>{
-    <span class="hljs-comment">// 1. Instantiate a list of items to store failed events</span>
-    <span class="hljs-keyword">var</span> failedItems = <span class="hljs-keyword">new</span> List&lt;DeadLetter&lt;EventData&gt;&gt;();
-
-    <span class="hljs-comment">// 2. Start a SQL transaction</span>
-    <span class="hljs-keyword">using</span> (<span class="hljs-keyword">var</span> scope = <span class="hljs-keyword">new</span> TransactionScope())
-    {
-        <span class="hljs-comment">// 3. Loop through all the received events in the batch</span>
-        <span class="hljs-keyword">foreach</span> (<span class="hljs-keyword">var</span> eventData <span class="hljs-keyword">in</span> eventDatas)
-        {
-            <span class="hljs-keyword">try</span>
-            {
-                <span class="hljs-comment">// 4. Process each item inside a try-catch block</span>
-                <span class="hljs-keyword">var</span> item = <span class="hljs-keyword">this</span>.Deserialize(eventData);
-                <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.DoWork(item);
-            }
-            <span class="hljs-keyword">catch</span> (Exception ex)
-            {
-                <span class="hljs-comment">// 5. Add a failed event to the list</span>
-                failedItems.Add(<span class="hljs-keyword">new</span> DeadLetter&lt;EventData&gt;(eventData, DateTime.UtcNow, ex));
-            }
-        }
-
-        <span class="hljs-keyword">if</span> (failedItems.Any())
-        {
-            <span class="hljs-comment">// 6. Save failed items to Dead Letter table</span>
-            <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.dlq.AddFailedEvents(failedItems);
-        }
-
-        <span class="hljs-comment">// 7. Update the checkpoint pointer</span>
-        <span class="hljs-keyword">await</span> context.CheckpointAsync();
-
-        <span class="hljs-comment">// 8. Commit the transaction</span>
-        scope.Complete();
-    }
-}
-</code></pre>
-<h2 id="conclusion">Conclusion</h2>
-<p>My implementation of Event Hubs consumer consists of 3 parts: checkpoint 
-manager that saves processing progress per partition into a SQL table;
-dead letter manager that persists information about processing errors;
-and an event host which uses both to provide transactional processing
-of events.</p>
-<p>The transaction scope is limited to SQL Server databases, but it might be
-sufficient for many real world scenarios.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-event-hubs/'>Azure Event Hubs</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
@@ -993,7 +971,7 @@ sufficient for many real world scenarios.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

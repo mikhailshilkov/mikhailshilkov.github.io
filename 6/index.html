@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -82,6 +77,153 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Feb 1st, 2017</div>
+    
+    <h1><a href='/2017/02/coding-puzzle-in-fsharp-find-the-number-of-islands/'>Coding Puzzle in F#: Find the Number of Islands</a></h1>
+    
+    <div class="post-content">
+        <p>Here&#39;s a programming puzzle. Given 2D matrix of 0&#39;s and 1&#39;s, find the number of islands. 
+A group of connected 1&#39;s forms an island. For example, the below matrix contains 5 islands</p>
+<pre><code>Input : mat = {{1, 1, 0, 0, 0},
+               {0, 1, 0, 0, 1},
+               {1, 0, 0, 1, 1},
+               {0, 0, 0, 0, 0},
+               {1, 0, 1, 0, 1}}
+Output : 5
+</code></pre><p>A typical solution to this problem will be implemented in C++, Java or C# and will involve
+a loop to iterate through the matrix, and another loop or recursion to traverse islands.
+The traversal progress will be tracked in an auxiliary mutable array, denoting the visited
+nodes. An example of such solution (and the definition of the problem above) can be
+found <a href="http://www.geeksforgeeks.org/find-number-of-islands/">here</a>.</p>
+<p>I want to give an example of solution done in F#, with generic immutable data structures
+and pure functions.</p>
+<h2 id="graph-traversal">Graph Traversal</h2>
+<p>First of all, this puzzle is a variation of the standard problem: Counting number of 
+connected components in a graph.</p>
+<p><img src="/2017/02/coding-puzzle-in-fsharp-find-the-number-of-islands//islands.png" alt="Connected Graph Components"></p>
+<p>I will start my implementation with a graph traversal implementation, and then we
+will apply it to the 2D matrix at hand.</p>
+<p>The graph is defined by the following type:</p>
+<pre><code class="lang-fsharp">type Graph&lt;&#39;a&gt; = {
+  Nodes: seq&lt;&#39;a&gt;
+  Neighbours: &#39;a -&gt; seq&lt;&#39;a&gt;
+}
+</code></pre>
+<p>It is a record type with two fields: a sequence of all nodes, and a function to
+get neighbour nodes for a given node. The type of the node is generic: I&#39;ll use
+numbers for our example, but <code>Graph</code> type doesn&#39;t care much.</p>
+<p>The traversal plan is the following:</p>
+<ol>
+<li><p>Go through the sequence of graph nodes.</p>
+</li>
+<li><p>Keep two accumulator data structures: the list of disjoint sub-graphs 
+(sets of nodes connected to each other) and the set of visited nodes. 
+Both are empty at the beginning.</p>
+</li>
+<li><p>If the current node is not in the visited set, recursively traverse all
+neighbours to find the current connected component.</p>
+</li>
+<li><p>The connected component traversal is the Depth-First Search, each node
+is added to both current set and total visited set.</p>
+</li>
+</ol>
+<p>Let&#39;s start the implementation from inside out. The following recursive function
+adds a node to the accumulated sets and calls itself for non-visited neighbours:</p>
+<pre><code class="lang-fsharp">let rec visitNode accumulator visited node =
+  let newAccumulator = Set.add node accumulator
+  let newVisited = Set.add node visited
+
+  graph.Neighbours node
+  |&gt; Seq.filter (fun n -&gt; Set.contains n newVisited |&gt; not)
+  |&gt; Seq.fold (fun (acc, vis) n -&gt; visitNode acc vis n) (newAccumulator, newVisited)
+</code></pre>
+<p>The type of this function is <code>Set&lt;&#39;a&gt; -&gt; Set&lt;&#39;a&gt; -&gt; &#39;a -&gt; Set&lt;&#39;a&gt; * Set&lt;&#39;a&gt;</code>.</p>
+<p>Step 3 is implemented with <code>visitComponent</code> function:</p>
+<pre><code class="lang-fsharp">let visitComponent (sets, visited) node =
+  if Set.contains node visited 
+  then sets, visited
+  else
+    let newIsland, newVisited = visitNode Set.empty visited node
+    newIsland :: sets, newVisited
+</code></pre>
+<p>Now, the graph traversal is just a <code>fold</code> of graph nodes with <code>visitComponent</code> function.</p>
+<pre><code class="lang-fsharp">module Graph =
+  let findConnectedComponents graph = 
+    graph.Nodes
+    |&gt; Seq.fold visitComponent ([], Set.empty)
+    |&gt; fst
+</code></pre>
+<p>This is the only public function of our graph API, available for the client 
+applications. The <code>visitNode</code> and <code>visitComponent</code> are defined as local functions
+underneath (and they close over the graph value).</p>
+<h2 id="2d-matrix">2D Matrix</h2>
+<p>Now, let&#39;s forget about the graphs for a second and model the 2D matrix of integers.
+The type definition is simple, it&#39;s just an alias for the array:</p>
+<pre><code class="lang-fsharp">type Matrix2D = int[,]
+</code></pre>
+<p>Now, we need to be able to traverse the matrix, i.e. iterate through all elements and
+find the neighbours of each element. </p>
+<p>The implementation below is mostly busy validating the boundaries of the array. The
+neighbours of a cell are up to 8 cells around it, diagonal elements included.</p>
+<pre><code class="lang-fsharp">module Matrix2D =
+  let allCells (mx: Matrix2D) = seq {
+    for x in [0 .. Array2D.length1 mx - 1] do
+      for y in [0 .. Array2D.length2 mx - 1] -&gt; x, y
+  }
+
+  let neighbours (mx: Matrix2D) (x,y) =
+    Seq.crossproduct [x-1 .. x+1] [y-1 .. y+1]
+    |&gt; Seq.filter (fun (i, j) -&gt; i &gt;= 0 &amp;&amp; j &gt;= 0 
+                              &amp;&amp; i &lt; Array2D.length1 mx 
+                              &amp;&amp; j &lt; Array2D.length2 mx)
+    |&gt; Seq.filter (fun (i, j) -&gt; i &lt;&gt; x || j &lt;&gt; y)
+</code></pre>
+<h2 id="putting-it-all-together">Putting It All Together</h2>
+<p>Now we are all set to solve the puzzle. Here is our input array:</p>
+<pre><code class="lang-fsharp">let mat = array2D
+            [| [|1; 1; 0; 0; 0|];
+               [|0; 1; 0; 0; 1|];
+               [|1; 0; 0; 1; 1|];
+               [|0; 0; 0; 0; 0|];
+               [|1; 0; 1; 0; 1|]
+            |]
+</code></pre>
+<p>We need a function to define if a given cell is a piece of an island:</p>
+<pre><code class="lang-fsharp">let isNode (x, y) = mat.[x, y] = 1
+</code></pre>
+<p>And here is the essence of the solution - our graph definition. Both <code>Nodes</code>
+and <code>Neightbours</code> are matrix cells filtered to contain 1&#39;s. </p>
+<pre><code class="lang-fsharp">let graph = {
+  Nodes = Matrix2D.allCells mat |&gt; Seq.filter isNode
+  Neighbours = Matrix2D.neighbours mat &gt;&gt; Seq.filter isNode
+}
+</code></pre>
+<p>The result is calculated with one-liner:</p>
+<pre><code class="lang-fsharp">graph |&gt; Graph.findConnectedComponents |&gt; List.length
+</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>The implementation above represents my attempt to solve in a functional way
+the puzzle which is normally solved in imperative style. I took a step
+back and tried to model the underlying concepts with separate data structures.
+The types and functions might be reused for similar problems in the same
+domain space.</p>
+<p>While not a rocket science, the Connected Islands puzzle is a good exercise
+and provides a nice example of functional concepts, which I&#39;m planning to
+use while discussing FP and F#.</p>
+<p>The full code can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/ConnectedIslands.fs">my github</a>.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/programming-puzzles/'>Programming Puzzles</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jan 29th, 2017</div>
     
     <h1><a href='/2017/01/event-sourcing-optimizing-neventstore-sql-read-performance/'>Event Sourcing: Optimizing NEventStore SQL read performance</a></h1>
@@ -106,22 +248,22 @@ When you initialize
 it with a connection string to an empty database, the provider will go
 on and create two tables with schema, indexes etc. The most important
 table is <code>Commits</code> and it gets the following schema:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> dbo.Commits
+<pre><code class="lang-sql">CREATE TABLE dbo.Commits
 (
-  BucketId          <span class="hljs-built_in">varchar</span>(<span class="hljs-number">40</span>),
-  StreamId          <span class="hljs-built_in">char</span>(<span class="hljs-number">40</span>),
-  StreamRevision    <span class="hljs-built_in">int</span>,
+  BucketId          varchar(40),
+  StreamId          char(40),
+  StreamRevision    int,
   Items             tinyint,
   CommitId          uniqueidentifier,
-  CommitSequence    <span class="hljs-built_in">int</span>,
-  CheckpointNumber  <span class="hljs-built_in">bigint</span> <span class="hljs-keyword">IDENTITY</span>(<span class="hljs-number">1</span>, <span class="hljs-number">1</span>),
-  Payload           varbinary(<span class="hljs-keyword">max</span>),
+  CommitSequence    int,
+  CheckpointNumber  bigint IDENTITY(1, 1),
+  Payload           varbinary(max),
   CommitStamp       datetime2
 )
-<span class="hljs-keyword">GO</span>
-<span class="hljs-keyword">ALTER</span> <span class="hljs-keyword">TABLE</span> dbo.Commits 
-<span class="hljs-keyword">ADD</span> <span class="hljs-keyword">CONSTRAINT</span> PK_Commits 
-PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (CheckpointNumber)
+GO
+ALTER TABLE dbo.Commits 
+ADD CONSTRAINT PK_Commits 
+PRIMARY KEY CLUSTERED (CheckpointNumber)
 </code></pre>
 <p>I removed several columns, most indexes and constraints to make the script
 more readable.</p>
@@ -148,9 +290,9 @@ large streams with hundreds or thousands of events.</p>
 <h2 id="tuning-for-reads">Tuning for Reads</h2>
 <p>After seeing this, I decided to re-think the primary index of the
 <code>Commits</code> table. Here is what I came down to:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">ALTER</span> <span class="hljs-keyword">TABLE</span> dbo.Commits 
-<span class="hljs-keyword">ADD</span> <span class="hljs-keyword">CONSTRAINT</span> PK_Commits 
-PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED (BucketId, StreamId, CommitSequence)
+<pre><code class="lang-sql">ALTER TABLE dbo.Commits 
+ADD CONSTRAINT PK_Commits 
+PRIMARY KEY CLUSTERED (BucketId, StreamId, CommitSequence)
 </code></pre>
 <p>Now, all the commits of one stream are physically located together in the
 clustered index.</p>
@@ -431,15 +573,15 @@ and pipelines in code?</p>
 <p>Here&#39;s how a transformation is typically represented in <em>Apache Storm</em>, the grand
 daddy of Big Data Stream Processing systems (transformations are called 
 <em>Bolts</em> in Storm, and code is Java):</p>
-<pre class="highlight"><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">TokenizerBolt</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">IRichBolt</span> </span>{
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">execute</span><span class="hljs-params">(Tuple input)</span> </span>{
-        String wishlist = input.getString(<span class="hljs-number">0</span>);
-        <span class="hljs-keyword">for</span>(String gift: wishlist.split(<span class="hljs-string">", "</span>)) {
-            collector.emit(<span class="hljs-keyword">new</span> Values(gift));
+<pre><code class="lang-java">public class TokenizerBolt implements IRichBolt {
+    public void execute(Tuple input) {
+        String wishlist = input.getString(0);
+        for(String gift: wishlist.split(&quot;, &quot;)) {
+            collector.emit(new Values(gift));
         }
         collector.ack(input);
     }
-    <span class="hljs-comment">// Other code is omitted</span>
+    // Other code is omitted
 }
 </code></pre>
 <p>Tokenizer is a class which implements a predefined interface with <code>execute</code>
@@ -459,56 +601,56 @@ is what we can do:</p>
 <p>Our domain is very simple in Gift Count example. Still, we could describe <code>Gift</code>
 type to restrict it to be lowercase, not empty etc. But for the sake of simplisity 
 I&#39;ll limit it to one liner:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Gift</span> </span>= string
+<pre><code class="lang-fsharp">type Gift = string
 </code></pre>
 <p>Now, the type of the first transformation should be <code>string -&gt; Gift list</code>. So,
 our transformation is based on a function </p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> tokenize (wishlist: string) =
-  wishlist.ToLowerInvariant().Split(<span class="hljs-string">", "</span>)
+<pre><code class="lang-fsharp">let tokenize (wishlist: string) =
+  wishlist.ToLowerInvariant().Split(&quot;, &quot;)
   |&gt; List.ofArray
-  |&gt; List.map (<span class="hljs-keyword">fun</span> x -&gt; x.Trim())
-  |&gt; List.filter (<span class="hljs-keyword">fun</span> x -&gt; x.Length &gt; <span class="hljs-number">0</span>)
+  |&gt; List.map (fun x -&gt; x.Trim())
+  |&gt; List.filter (fun x -&gt; x.Length &gt; 0)
 </code></pre>
 <p>The counting transformation is modeled in a similar way. The base function
 is of type <code>Gift list -&gt; (Gift * int) list</code> and is actually implemented as </p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> count xs = List.countBy id xs
+<pre><code class="lang-fsharp">let count xs = List.countBy id xs
 </code></pre>
 <p>Instead of using a real database, we will just print the counts to console.
 So the last optional step for our examples will be to print out the counts
 one by one. Here is a helper function:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> print (gift, count) = sprintf <span class="hljs-string">"%i %s"</span> count gift
+<pre><code class="lang-fsharp">let print (gift, count) = sprintf &quot;%i %s&quot; count gift
 </code></pre>
 <p>Now, we can tokenize and count the gifts in a single list. But how do we
 aggregate data over time? Let&#39;s leave this to the pipelines.</p>
 <h2 id="pipelines">Pipelines</h2>
 <p>Let&#39;s have a look at a definition of a Storm pipeline (in Java):</p>
-<pre class="highlight"><code class="hljs java">TopologyBuilder builder = <span class="hljs-keyword">new</span> TopologyBuilder();
-builder.setSpout(<span class="hljs-string">"line-reader"</span>, <span class="hljs-keyword">new</span> LineReaderSpout());
-builder.setBolt(<span class="hljs-string">"gifts-spitter"</span>, <span class="hljs-keyword">new</span> GiftSpitterBolt()).shuffleGrouping(<span class="hljs-string">"line-reader"</span>);
-builder.setBolt(<span class="hljs-string">"gift-counter"</span>, <span class="hljs-keyword">new</span> GiftCounterBolt()).shuffleGrouping(<span class="hljs-string">"gifts-spitter"</span>);
+<pre><code class="lang-java">TopologyBuilder builder = new TopologyBuilder();
+builder.setSpout(&quot;line-reader&quot;, new LineReaderSpout());
+builder.setBolt(&quot;gifts-spitter&quot;, new GiftSpitterBolt()).shuffleGrouping(&quot;line-reader&quot;);
+builder.setBolt(&quot;gift-counter&quot;, new GiftCounterBolt()).shuffleGrouping(&quot;gifts-spitter&quot;);
 </code></pre>
 <p>There is a <code>Builder</code> class, which is capable to add Sources (<code>Spouts</code>) and Transformations
 (<code>Bolts</code>) to the pipeline. But again, there&#39;s no type story here: the stages are linked
 by name, and the types are just implementations of predefined interfaces.</p>
 <p>Here is another example of the pipeline, now from <em>Google Dataflow SDK</em> (still Java):</p>
-<pre class="highlight"><code class="hljs java">Pipeline
+<pre><code class="lang-java">Pipeline
     .create(options)
-    .apply(TextIO.Read.from(<span class="hljs-string">"..."</span>))
-    .apply(ParDo.named(<span class="hljs-string">"ExtractGifts"</span>).of(<span class="hljs-keyword">new</span> DoFn&lt;String, String&gt;() {
-         <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">processElement</span><span class="hljs-params">(ProcessContext c)</span> </span>{ <span class="hljs-comment">/* Implements tokenizer */</span> }
+    .apply(TextIO.Read.from(&quot;...&quot;))
+    .apply(ParDo.named(&quot;ExtractGifts&quot;).of(new DoFn&lt;String, String&gt;() {
+         public void processElement(ProcessContext c) { /* Implements tokenizer */ }
     }))    
     .apply(Count.&lt;String&gt;perElement())
-    .apply(MapElements.via(<span class="hljs-keyword">new</span> SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
-         <span class="hljs-function"><span class="hljs-keyword">public</span> String <span class="hljs-title">apply</span><span class="hljs-params">(KV&lt;String, Long&gt; element)</span> </span>{ <span class="hljs-comment">/* Formats results */</span> }
+    .apply(MapElements.via(new SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
+         public String apply(KV&lt;String, Long&gt; element) { /* Formats results */ }
     }))
-    .apply(TextIO.Write.to(<span class="hljs-string">"..."</span>));
+    .apply(TextIO.Write.to(&quot;...&quot;));
 </code></pre>
 <p>I consider this to be more descriptive. There is a clear flow of operations chained
 together. The types are visible and checked at compile time.</p>
 <p>How would we like to see this pipeline in F#? Our motivation example is going to
 be the same processing applied to a normal F# list of wishlists (strings). The following
 code snippet counts the gifts in wishlists and prints the result:</p>
-<pre class="highlight"><code class="hljs fs">wishlists
+<pre><code class="lang-fsharp">wishlists
 |&gt; List.collect tokenize
 |&gt; List.countBy id
 |&gt; List.map print
@@ -517,7 +659,7 @@ code snippet counts the gifts in wishlists and prints the result:</p>
 <p>My goal for the rest of the article will be to define a <code>Flow</code> module which would
 enable me to write a Stream Processing pipeline in the same fashion. Here is the
 target code:</p>
-<pre class="highlight"><code class="hljs fs">sourceOfWishlists
+<pre><code class="lang-fsharp">sourceOfWishlists
 |&gt; Flow.collect tokenize
 |&gt; Flow.countBy id
 |&gt; Flow.map print
@@ -538,12 +680,12 @@ stream processing are done in parallel, with separate tools and separate code ba
 The approach is called <em>Lambda Architecture</em>. Beam is declaring this approach outdated,
 offering a way to reuse streaming code and capacity also for bounded data workloads.</p>
 <p>To follow this modern path, we will declare our <code>Source</code> as following:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">BoundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= unit -&gt; <span class="hljs-symbol">'T</span> seq
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">UnboundedSource</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= (<span class="hljs-symbol">'T</span> -&gt; unit) -&gt; unit
+<pre><code class="lang-fsharp">type BoundedSource&lt;&#39;T&gt; = unit -&gt; &#39;T seq
+type UnboundedSource&lt;&#39;T&gt; = (&#39;T -&gt; unit) -&gt; unit
 
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Source</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= 
-  | Bounded <span class="hljs-keyword">of</span> BoundedSource&lt;<span class="hljs-symbol">'T</span>&gt;
-  | Unbounded <span class="hljs-keyword">of</span> UnboundedSource&lt;<span class="hljs-symbol">'T</span>&gt;
+type Source&lt;&#39;T&gt; = 
+  | Bounded of BoundedSource&lt;&#39;T&gt;
+  | Unbounded of UnboundedSource&lt;&#39;T&gt;
 </code></pre>
 <p><code>Source</code> is a generic discriminated union with two cases. <code>Bounded</code> case represents
 a side effect-ful function, which returns a sequence of elements when called.
@@ -554,45 +696,45 @@ executed as the argument and returns nothing meaningful (<code>unit</code> again
 see a usage example later.</p>
 <p>The <code>Sink</code> represents an action to happen at the end of pipeline. I&#39;ve made it
 a discriminated union too, but with just one case:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Sink</span>&lt;<span class="hljs-title">'T</span>&gt; </span>= | Action <span class="hljs-keyword">of</span> (<span class="hljs-symbol">'T</span> -&gt; unit)
+<pre><code class="lang-fsharp">type Sink&lt;&#39;T&gt; = | Action of (&#39;T -&gt; unit)
 </code></pre>
 <p>Now, we should be able to simulate an empty processing pipeline: directly connect 
 a source to a sink. Let&#39;s start with bounded data:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> copyPipeline source sink =
-  <span class="hljs-keyword">match</span> source, sink <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let copyPipeline source sink =
+  match source, sink with
   | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
-  | _ -&gt; failwith <span class="hljs-string">"Not supported yet"</span>
+  | _ -&gt; failwith &quot;Not supported yet&quot;
 
-<span class="hljs-keyword">let</span> gifts = seq [<span class="hljs-string">"Ball"</span>; <span class="hljs-string">"Train"</span>; <span class="hljs-string">"Doll"</span>]
-<span class="hljs-keyword">let</span> giftBoundedSource = (<span class="hljs-keyword">fun</span>() -&gt; gifts) |&gt; Bounded
+let gifts = seq [&quot;Ball&quot;; &quot;Train&quot;; &quot;Doll&quot;]
+let giftBoundedSource = (fun() -&gt; gifts) |&gt; Bounded
 
-<span class="hljs-keyword">let</span> consoleSink = (<span class="hljs-keyword">fun</span> (s: string) -&gt; Console.WriteLine s) |&gt; Action
+let consoleSink = (fun (s: string) -&gt; Console.WriteLine s) |&gt; Action
 
 copyPipeline giftBoundedSource consoleSink
 </code></pre>
 <p>This code will print out all the gift names from the sequence. Now, let&#39;s extend it to
 stream unbounded data. Before we can do that, let&#39;s introduce a helper class:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Triggered</span>&lt;<span class="hljs-title">'T</span>&gt;</span>() = 
-  <span class="hljs-keyword">let</span> subscribers = <span class="hljs-keyword">new</span> List&lt;<span class="hljs-symbol">'T</span> -&gt; unit&gt;()
-  <span class="hljs-keyword">member</span> this.DoNext x =
-    subscribers.ForEach(<span class="hljs-keyword">fun</span> s -&gt; s x)
-  <span class="hljs-keyword">member</span> this.Subscribe = subscribers.Add
+<pre><code class="lang-fsharp">type Triggered&lt;&#39;T&gt;() = 
+  let subscribers = new List&lt;&#39;T -&gt; unit&gt;()
+  member this.DoNext x =
+    subscribers.ForEach(fun s -&gt; s x)
+  member this.Subscribe = subscribers.Add
 </code></pre>
 <p>An instance of such class keeps a mutable list of subscribers. Subscribers are
 added by calling <code>Subscribe</code> method. Someone else can then call <code>DoNext</code> method,
 and each subscriber will get an item every time.</p>
 <p>Here&#39;s how we can use it for unbounded data processing:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">let</span> copyPipeline source sink =
-  <span class="hljs-keyword">match</span> source, sink <span class="hljs-keyword">with</span>
+<pre><code class="lang-fsharp">let copyPipeline source sink =
+  match source, sink with
   | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
   | Unbounded ub, Action a -&gt; ub a
 
-<span class="hljs-keyword">let</span> consoleSource = <span class="hljs-keyword">new</span> Triggered&lt;string&gt;()
-<span class="hljs-keyword">let</span> unboundedSource = consoleSource.Subscribe |&gt; Unbounded
+let consoleSource = new Triggered&lt;string&gt;()
+let unboundedSource = consoleSource.Subscribe |&gt; Unbounded
 copyPipeline unboundedSource consoleSink
 
-Seq.initInfinite (<span class="hljs-keyword">fun</span> _ -&gt; Console.ReadLine())
-|&gt; Seq.takeWhile ((&lt;&gt;) <span class="hljs-string">"q"</span>)
+Seq.initInfinite (fun _ -&gt; Console.ReadLine())
+|&gt; Seq.takeWhile ((&lt;&gt;) &quot;q&quot;)
 |&gt; Seq.iter consoleSource.DoNext
 </code></pre>
 <p>This little program will echo whatever you enter into the console until you type 
@@ -611,22 +753,22 @@ and the data flows to the sink.</li>
 <p>Now it&#39;s time to implement the contracts for the flow that we defined
 in Gift Count example. The contract consists of two parts. The first part
 is a generic interface which defines all the operations that we need:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Runnable</span> </span>= unit -&gt; unit
+<pre><code class="lang-fsharp">type Runnable = unit -&gt; unit
 
-<span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">IFlow</span>&lt;<span class="hljs-title">'a</span>&gt; </span>=
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> Map&lt;<span class="hljs-symbol">'b</span>&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> Collect&lt;<span class="hljs-symbol">'b</span>&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span> list) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> CountBy&lt;<span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt; : (<span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) -&gt; IFlow&lt;<span class="hljs-symbol">'b</span> * int&gt;
-  <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">member</span> To: Sink&lt;<span class="hljs-symbol">'a</span>&gt; -&gt; Runnable
+type IFlow&lt;&#39;a&gt; =
+  abstract member Map&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b&gt;
+  abstract member Collect&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b list) -&gt; IFlow&lt;&#39;b&gt;
+  abstract member CountBy&lt;&#39;b when &#39;b: equality&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b * int&gt;
+  abstract member To: Sink&lt;&#39;a&gt; -&gt; Runnable
 </code></pre>
 <p>Then we define a module which is just a wrapper around the interface to
 enable F#-style API:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Flow =
-  <span class="hljs-keyword">let</span> map&lt;'TI, 'TO&gt; (f: 'TI -&gt; 'TO) (flow: IFlow&lt;'TI&gt;) = flow.Map f
-  <span class="hljs-keyword">let</span> collect&lt;'TI, 'TO&gt; (f: 'TI -&gt; 'TO list) (flow: IFlow&lt;'TI&gt;) = flow.Collect f
-  <span class="hljs-keyword">let</span> countBy&lt;<span class="hljs-symbol">'T</span>, 'TK <span class="hljs-keyword">when</span> 'TK: equality&gt; (f: <span class="hljs-symbol">'T</span> -&gt; 'TK) (flow: IFlow&lt;<span class="hljs-symbol">'T</span>&gt;) = flow.CountBy f
-  <span class="hljs-keyword">let</span> connectTo&lt;<span class="hljs-symbol">'T</span>&gt; sink (flow: IFlow&lt;<span class="hljs-symbol">'T</span>&gt;) = flow.To sink
-  <span class="hljs-keyword">let</span> run (r: Runnable) = r()
+<pre><code class="lang-fsharp">module Flow =
+  let map&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO) (flow: IFlow&lt;&#39;TI&gt;) = flow.Map f
+  let collect&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO list) (flow: IFlow&lt;&#39;TI&gt;) = flow.Collect f
+  let countBy&lt;&#39;T, &#39;TK when &#39;TK: equality&gt; (f: &#39;T -&gt; &#39;TK) (flow: IFlow&lt;&#39;T&gt;) = flow.CountBy f
+  let connectTo&lt;&#39;T&gt; sink (flow: IFlow&lt;&#39;T&gt;) = flow.To sink
+  let run (r: Runnable) = r()
 </code></pre>
 <p>Then, we just need an implementation of <code>IFlow</code> and a factory method to create
 an initial instance of flow given a data source. </p>
@@ -639,62 +781,62 @@ to build a visual graph of processing stages, to be used for documentation and d
 purposes.</p>
 <p>We will have a look at more advanced implementations in the further articles, but
 for now here is a naive version:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-keyword">module</span> Runner =
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> mapTransform map = <span class="hljs-keyword">function</span>
+<pre><code class="lang-fsharp">module Runner =
+  let private mapTransform map = function
     | Bounded bs -&gt; bs &gt;&gt; Seq.map map |&gt; Bounded
     | Unbounded us -&gt;
-      <span class="hljs-keyword">fun</span> subscriber -&gt; map &gt;&gt; subscriber |&gt; us
+      fun subscriber -&gt; map &gt;&gt; subscriber |&gt; us
       |&gt; Unbounded
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> collectTransform mapToMany = <span class="hljs-keyword">function</span>
+  let private collectTransform mapToMany = function
     | Bounded bs -&gt; bs &gt;&gt; Seq.map mapToMany &gt;&gt; Seq.concat |&gt; Bounded
     | Unbounded us -&gt;
-      <span class="hljs-keyword">fun</span> subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
+      fun subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
       |&gt; Unbounded
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> countByTransform&lt;<span class="hljs-symbol">'a</span>, <span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt; (getKey: <span class="hljs-symbol">'a</span> -&gt; <span class="hljs-symbol">'b</span>) source =
-    <span class="hljs-keyword">let</span> state = <span class="hljs-keyword">new</span> Dictionary&lt;<span class="hljs-symbol">'b</span>, int&gt;()
-    <span class="hljs-keyword">let</span> addItem i = 
-      <span class="hljs-keyword">let</span> key = getKey i
-      <span class="hljs-keyword">let</span> value = <span class="hljs-keyword">if</span> state.ContainsKey key <span class="hljs-keyword">then</span> state.[key] <span class="hljs-keyword">else</span> <span class="hljs-number">0</span>
-      <span class="hljs-keyword">let</span> newValue = value + <span class="hljs-number">1</span>
+  let private countByTransform&lt;&#39;a, &#39;b when &#39;b: equality&gt; (getKey: &#39;a -&gt; &#39;b) source =
+    let state = new Dictionary&lt;&#39;b, int&gt;()
+    let addItem i = 
+      let key = getKey i
+      let value = if state.ContainsKey key then state.[key] else 0
+      let newValue = value + 1
       state.[key] &lt;- newValue
       (key, newValue)
 
-    <span class="hljs-keyword">match</span> source <span class="hljs-keyword">with</span>
+    match source with
     | Bounded bs -&gt; bs &gt;&gt; Seq.countBy getKey |&gt; Bounded
-    | Unbounded us -&gt; (<span class="hljs-keyword">fun</span> s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
+    | Unbounded us -&gt; (fun s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
 
-  <span class="hljs-keyword">let</span> <span class="hljs-keyword">private</span> stage source transform sink () =
-    <span class="hljs-keyword">match</span> transform source, sink <span class="hljs-keyword">with</span>
+  let private stage source transform sink () =
+    match transform source, sink with
     | Bounded bs, Action a -&gt; bs() |&gt; Seq.iter a
     | Unbounded us, Action a -&gt; us a
 
-  <span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">private</span> <span class="hljs-title">Flow</span>&lt;<span class="hljs-title">'a</span>&gt;</span>(source: Source&lt;<span class="hljs-symbol">'a</span>&gt;, connect: Sink&lt;<span class="hljs-symbol">'a</span>&gt; -&gt; Runnable) =
-    <span class="hljs-keyword">member</span> this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; t = <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-symbol">'b</span>&gt;(t source, stage source t) :&gt; IFlow&lt;<span class="hljs-symbol">'b</span>&gt;
+  type private Flow&lt;&#39;a&gt;(source: Source&lt;&#39;a&gt;, connect: Sink&lt;&#39;a&gt; -&gt; Runnable) =
+    member this.Apply&lt;&#39;b&gt; t = new Flow&lt;&#39;b&gt;(t source, stage source t) :&gt; IFlow&lt;&#39;b&gt;
 
-    <span class="hljs-keyword">interface</span> IFlow&lt;<span class="hljs-symbol">'a</span>&gt; <span class="hljs-keyword">with</span>
-      <span class="hljs-keyword">member</span> this.Map&lt;<span class="hljs-symbol">'b</span>&gt; map = this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; (mapTransform map)
+    interface IFlow&lt;&#39;a&gt; with
+      member this.Map&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (mapTransform map)
 
-      <span class="hljs-keyword">member</span> this.Collect&lt;<span class="hljs-symbol">'b</span>&gt; map = this.Apply&lt;<span class="hljs-symbol">'b</span>&gt; (collectTransform map)
+      member this.Collect&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (collectTransform map)
 
-      <span class="hljs-keyword">member</span> this.CountBy&lt;<span class="hljs-symbol">'b</span> <span class="hljs-keyword">when</span> <span class="hljs-symbol">'b</span>: equality&gt;(getKey) = 
-        this.Apply&lt;<span class="hljs-symbol">'b</span> * int&gt; (countByTransform&lt;<span class="hljs-symbol">'a</span>, <span class="hljs-symbol">'b</span>&gt; getKey)
+      member this.CountBy&lt;&#39;b when &#39;b: equality&gt;(getKey) = 
+        this.Apply&lt;&#39;b * int&gt; (countByTransform&lt;&#39;a, &#39;b&gt; getKey)
 
-      <span class="hljs-keyword">member</span> this.To(sink) = connect(sink)
+      member this.To(sink) = connect(sink)
 
-  <span class="hljs-keyword">let</span> from&lt;<span class="hljs-symbol">'a</span>&gt; source =
-    <span class="hljs-keyword">new</span> Flow&lt;<span class="hljs-symbol">'a</span>&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;<span class="hljs-symbol">'a</span>&gt;
+  let from&lt;&#39;a&gt; source =
+    new Flow&lt;&#39;a&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;&#39;a&gt;
 </code></pre>
 <p>The implementation details are not that important at the moment (even though it&#39;s
 just 37 lines of code), so I&#39;ll just proceed to the pipeline definition:</p>
-<pre class="highlight"><code class="hljs fs">unboundedSource                <span class="hljs-comment">// e.g. same console source as before</span>
-|&gt; Runner.from                 <span class="hljs-comment">// create Runner implementation of IFlow</span>
+<pre><code class="lang-fsharp">unboundedSource                // e.g. same console source as before
+|&gt; Runner.from                 // create Runner implementation of IFlow
 |&gt; Flow.collect tokenize
 |&gt; Flow.countBy id
 |&gt; Flow.map print
-|&gt; Flow.connectTo consoleSink  <span class="hljs-comment">// connect to the Sink</span>
-|&gt; Flow.run                    <span class="hljs-comment">// start listening for events</span>
+|&gt; Flow.connectTo consoleSink  // connect to the Sink
+|&gt; Flow.run                    // start listening for events
 </code></pre>
 <p>Here you can find 
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/streamprocessing/GiftCount.fs">the full code of the Gift Count example</a>.</p>
@@ -724,98 +866,6 @@ follow-ups:</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/stream-processing/'>Stream Processing</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-advent-calendar/'>F# Advent Calendar</a>, <a href='/tags/data-processing/'>Data Processing</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Nov 18th, 2016</div>
-    
-    <h1><a href='/2016/11/event-sourcing-and-io-complexity/'>Event Sourcing and IO Complexity</a></h1>
-    
-    <div class="post-content">
-        <p><strong>Event Sourcing</strong> is an approach, when an append-only store is used to record the full series of events that 
-describe actions taken on a particular domain entity. This event store becomes the main source of truth 
-to reconstruct the current state of the entity and its complete history.</p>
-<p>In essence, that means that we store the log of all business events that occurred in the system, and then
-we use them to make new decisions and produce new events. </p>
-<h2 id="how-event-souring-works">How Event Souring Works</h2>
-<p>Event Sourcing is usually used in combination with <strong>Command-Query Responsibility Segregation</strong>, when all writes 
-to the event store are initiated by commands. </p>
-<p>The following picture illustrates the storage and command handling:</p>
-<p><img src="/2016/11/event-sourcing-and-io-complexity//event-store.png" alt="Event Store Command Handler"></p>
-<p>Every time a new command comes in (1), the command handler understands 
-which entity is affected and retrieves all the previous events from the store (2).</p>
-<p>The handler aggregates the events and derives the current state of the entity (3). If command is valid given that 
-state, the command handler produces a new event or several events (4), and writes them back to the event store (5).</p>
-<h2 id="disk-space-usage">Disk Space Usage</h2>
-<p>It&#39;s quite obvious that Event Sourcing requires more storage space than traditional approach of only storing 
-the current state. The storage size is proportional to the total amount of events in the system, 
-i.e. it&#39;s <code>O(n)</code> or <code>O(e * l)</code> where <code>e</code> is the count of entities in the system and <code>l</code> is the average 
-amount of events per entity.</p>
-<p>Here is the chart of disk space usage in a simplified situation of events of equal size:</p>
-<p><img src="/2016/11/event-sourcing-and-io-complexity//disk-space.png" alt="Disk space simulation"></p>
-<p>We saved 1000 events and consumed 1000 storage units. The disk space is cheap, so we are willing to take 
-the trade-off of extra storage for the benefits that Event Sourcing provides.</p>
-<h2 id="disk-io-usage">Disk IO Usage</h2>
-<p>Let&#39;s look at how much IO operations we are going to perform over time. Let&#39;s say that reading or writing of
-one event consumes one unit of IO capacity.</p>
-<p>Every time a new event is received, we consume one write operation: it&#39;s still linear. The storage is append-only, 
-so it makes sense that disk space and writes are essentially the same thing.</p>
-<p>Reads are a different beast. Every time we receive a command, we need to perform <code>i</code> reads, where <code>i</code> 
-is the amount of events so far for the entity. Let&#39;s have a look at several examples, each one is a
-simulation of saving a thousand of new events.</p>
-<p>In the <strong>first scenario</strong> we have a steady flow of incoming events. Events belong to different entities (aggregates) 
-with <strong>10</strong> events per entity on average:</p>
-<p><img src="/2016/11/event-sourcing-and-io-complexity//reads-low.png" alt="Reads for low amount of events per entity"></p>
-<p>We can see that we do 5x more reads than writes. That is because for each event written we have to read 
-all the previous events for the same entity, and on average there are 5 of them.</p>
-<p>In the <strong>second scenario</strong> we receive the same amount of events in total. While most entities still have 
-10 events on average, there is just one outlier entity which received <strong>100</strong> events, all in this time period.</p>
-<p><img src="/2016/11/event-sourcing-and-io-complexity//reads-outlier.png" alt="Reads with an outlier entity"></p>
-<p>Hey, the amount of reads almost doubled! The line also doesn&#39;t look linear anymore...</p>
-<p>Let&#39;s look at the <strong>third extreme scenario</strong> when all 1000 events were generated by the <strong>same entity</strong>:</p>
-<p><img src="/2016/11/event-sourcing-and-io-complexity//reads-single.png" alt="Reads from single entity"></p>
-<p>The amount of reads skyrockets to <strong>100 times more</strong> compared to the first scenario. It&#39;s clearly quadratic!
-The amount of reads for a single entity is <code>O(l)</code> where <code>l</code> is the event count for that entity.</p>
-<h2 id="real-life-scenario">Real-Life Scenario</h2>
-<p>In many use cases it&#39;s unlikely that you get outlier entities which have orders of magnitude difference in amount 
-of events per entity. E.g. if your entity is an order in a webshop, there&#39;s just a few events that humans can 
-generate about it.</p>
-<p>However, if the events are generated from telemetry data or IoT devices, or if the entities tend to live for very 
-long time (like bank accounts), that&#39;s a good sign you should not ignore the potential problem. A handful of anomaly 
-devices can bring the whole storage to its knees, if protection is not carefully designed.</p>
-<p>If your domain has a chance to belong to the second group, you better get prepared.</p>
-<h2 id="capacity-planning-and-monitoring">Capacity Planning and Monitoring</h2>
-<p>It&#39;s not enough to know just the total number of events in your store, nor is the incoming rate of new events
-descriptive enough. </p>
-<p>Start with modeling your Event Store against real data. Put some monitoring in place to see the distribution of 
-event density per entity. Average number is not descriptive enough, so you need to build percentiles and 
-know the maximum too.</p>
-<p>Monitor the amount of reads on your data store. Set the baseline based on the real data
-pattern, not imaginary numbers.</p>
-<h2 id="throttling-sampling">Throttling / Sampling</h2>
-<p>In IoT scenarios the easiest way out could be to discard events if they arrive too frequently from the same device, 
-or use some sampling/aggregation at the ingress point. Only your business domain can define what kind of
-data loss is acceptable, if any.</p>
-<h2 id="snapshots">Snapshots</h2>
-<p>Event Sourcing concept provides the solution for the reads problem in form of Snapshots. Once in every <code>x</code> events, 
-you should produce a snapshot of the entity state. The next time an event comes in, you just read
-the snapshot and the events which happened after the latest snapshot time (amount is less than <code>x</code>).</p>
-<p>It might be tricky to come up with a good snapshot strategy in some cases, especially when the business domain
-requires multiple projections to be built. </p>
-<p>The snapshot size might also grow over time, if entity keeps some internal event-based lists. But snapshots 
-seem to be the only real solution when the amount of events gets out of control. Choose your Event Store 
-technology with this consideration in mind.</p>
-<p>Happy Event Sourcing!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/event-sourcing/'>Event Sourcing</a>, <a href='/tags/cqrs/'>CQRS</a>
     </div>
     
 </article>
@@ -855,7 +905,7 @@ technology with this consideration in mind.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

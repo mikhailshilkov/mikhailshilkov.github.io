@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -165,56 +160,56 @@ the re-scaling action on App Service Plan using Azure Management SDK.</p>
 Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</p>
 <h2 id="metric-collector">Metric Collector</h2>
 <p>First, let&#39;s define <code>MetricValue</code> class, which simply holds time and value:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MetricValue</span>
+<pre><code class="lang-csharp">public class MetricValue
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MetricValue</span>(<span class="hljs-params">DateTime time, <span class="hljs-keyword">int</span> <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Time = time;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
+    public MetricValue(DateTime time, int value)
+    {
+        this.Time = time;
+        this.Value = value;
     }
 
-    <span class="hljs-keyword">public</span> DateTime Time { <span class="hljs-keyword">get</span>; }
+    public DateTime Time { get; }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Value { <span class="hljs-keyword">get</span>; }
+    public int Value { get; }
 }
 </code></pre>
 <p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
 Plan name) and measured parameter name:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Metric</span>
+<pre><code class="lang-csharp">public class Metric
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Metric</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, <span class="hljs-keyword">string</span> name, MetricValue <span class="hljs-keyword">value</span></span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Name = name;
-        <span class="hljs-keyword">this</span>.Value = <span class="hljs-keyword">value</span>;
+    public Metric(string resourceName, string name, MetricValue value)
+    {
+        this.ResourceName = resourceName;
+        this.Name = name;
+        this.Value = value;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
+    public string ResourceName { get; }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; }
+    public string Name { get; }
 
-    <span class="hljs-keyword">public</span> MetricValue Value { <span class="hljs-keyword">get</span>; }
+    public MetricValue Value { get; }
 }
 </code></pre>
 <p>The function definition has two associated bindings: timer trigger (runs every
 minute) and return binding to the storage queue:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"MetricCollector"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Metrics"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Metric <span class="hljs-title">MetricCollector</span>(<span class="hljs-params">[TimerTrigger(<span class="hljs-string">"0 */1 * * * *"</span></span>)] TimerInfo myTimer, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> connectionString = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServiceBusConnection"</span>);
-    <span class="hljs-keyword">var</span> topic = Environment.GetEnvironmentVariable(<span class="hljs-string">"Topic"</span>);
-    <span class="hljs-keyword">var</span> subscription = Environment.GetEnvironmentVariable(<span class="hljs-string">"Subscription"</span>);
+<pre><code class="lang-csharp">[FunctionName(&quot;MetricCollector&quot;)]
+[return: Queue(&quot;Metrics&quot;)]
+public static Metric MetricCollector([TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo myTimer, TraceWriter log)
+{
+    var connectionString = Environment.GetEnvironmentVariable(&quot;ServiceBusConnection&quot;);
+    var topic = Environment.GetEnvironmentVariable(&quot;Topic&quot;);
+    var subscription = Environment.GetEnvironmentVariable(&quot;Subscription&quot;);
 
-    <span class="hljs-keyword">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
-    <span class="hljs-keyword">var</span> subscriptionClient = nsmgr.GetSubscription(topic, subscription);
-    <span class="hljs-keyword">var</span> backlog = subscriptionClient.MessageCountDetails.ActiveMessageCount;
+    var nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
+    var subscriptionClient = nsmgr.GetSubscription(topic, subscription);
+    var backlog = subscriptionClient.MessageCountDetails.ActiveMessageCount;
 
-    log.Info(<span class="hljs-string">$"Collector: Current metric value is <span class="hljs-subst">{backlog}</span>"</span>);
+    log.Info($&quot;Collector: Current metric value is {backlog}&quot;);
 
-    <span class="hljs-keyword">var</span> resource = Environment.GetEnvironmentVariable(<span class="hljs-string">"ResourceToScale"</span>);
-    <span class="hljs-keyword">var</span> <span class="hljs-keyword">value</span> = <span class="hljs-keyword">new</span> MetricValue(DateTime.Now, (<span class="hljs-keyword">int</span>)backlog);
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Metric(resource, <span class="hljs-string">$"<span class="hljs-subst">{topic}</span>-<span class="hljs-subst">{subscription}</span>-backlog"</span>, <span class="hljs-keyword">value</span>);
+    var resource = Environment.GetEnvironmentVariable(&quot;ResourceToScale&quot;);
+    var value = new MetricValue(DateTime.Now, (int)backlog);
+    return new Metric(resource, $&quot;{topic}-{subscription}-backlog&quot;, value);
 }
 </code></pre>
 <p>The function executes the following steps:</p>
@@ -237,121 +232,121 @@ keep the state in between function calls.</li>
 <p>The bindings are illustrated on the following picture:</p>
 <p><img src="/2017/07/custom-auto-scaling-in-azure//ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
 <p>And here is the corresponding Function signature:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"ScalingLogic"</span>)</span>]
-[<span class="hljs-meta">return: Queue(<span class="hljs-meta-string">"Actions"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ScaleAction <span class="hljs-title">ScalingLogic</span>(<span class="hljs-params">
-    [QueueTrigger(<span class="hljs-string">"Metrics"</span></span>)] Metric metric, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] ScalingStateEntity stateEntity, 
-    [<span class="hljs-title">Table</span>(<span class="hljs-params"><span class="hljs-string">"Scaling"</span>, <span class="hljs-string">"{ResourceName}"</span>, <span class="hljs-string">"{Name}"</span></span>)] <span class="hljs-keyword">out</span> ScalingStateEntity newStateEntity,
+<pre><code class="lang-csharp">[FunctionName(&quot;ScalingLogic&quot;)]
+[return: Queue(&quot;Actions&quot;)]
+public static ScaleAction ScalingLogic(
+    [QueueTrigger(&quot;Metrics&quot;)] Metric metric, 
+    [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] ScalingStateEntity stateEntity, 
+    [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] out ScalingStateEntity newStateEntity,
     TraceWriter log)
-</span></code></pre>
+</code></pre>
 <p>Table storage is partitioned per scalable resource, and state is stored per metric;
 thus multiple resources and metrics are supported out of the box.</p>
 <p>The function implementation is relatively complex, so I&#39;ll describe it in parts.</p>
 <p><code>ScaleAction</code> is a simple message class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">enum</span> ScaleActionType
+<pre><code class="lang-csharp">public enum ScaleActionType
 {
     Up,
     Down
 }
 
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScaleAction</span>
+public class ScaleAction
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ScaleAction</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> resourceName, ScaleActionType type</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.ResourceName = resourceName;
-        <span class="hljs-keyword">this</span>.Type = type;
+    public ScaleAction(string resourceName, ScaleActionType type)
+    {
+        this.ResourceName = resourceName;
+        this.Type = type;
     }
 
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> ResourceName { <span class="hljs-keyword">get</span>; }
+    public string ResourceName { get; }
 
-    <span class="hljs-keyword">public</span> ScaleActionType Type { <span class="hljs-keyword">get</span>; }
+    public ScaleActionType Type { get; }
 }
 </code></pre>
 <p>Table Storage only allows primitive types for its columns, like strings. 
 So I had to create a separate Table Storage entity class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingStateEntity</span> : <span class="hljs-title">TableEntity</span>
+<pre><code class="lang-csharp">public class ScalingStateEntity : TableEntity
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> SerializedState { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public string SerializedState { get; set; }
 }
 </code></pre>
 <p>which stores serialized state, from the state class itself:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">ScalingState</span>
+<pre><code class="lang-csharp">public class ScalingState
 {
-    <span class="hljs-keyword">public</span> List&lt;MetricValue&gt; History { <span class="hljs-keyword">get</span>; } = <span class="hljs-keyword">new</span> List&lt;MetricValue&gt;();
+    public List&lt;MetricValue&gt; History { get; } = new List&lt;MetricValue&gt;();
 
-    <span class="hljs-keyword">public</span> DateTime LastScalingActionTime { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; } = DateTime.MinValue;
+    public DateTime LastScalingActionTime { get; set; } = DateTime.MinValue;
 }
 </code></pre>
 <p>Now let&#39;s look at the function body. It consists of four blocks. </p>
 <p>The first block retrieves the previous values of the metric and logs it too:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 1. Deserialize state</span>
-<span class="hljs-keyword">var</span> state = stateEntity?.SerializedState != <span class="hljs-literal">null</span> 
+<pre><code class="lang-csharp">// 1. Deserialize state
+var state = stateEntity?.SerializedState != null 
     ? JsonConvert.DeserializeObject&lt;ScalingState&gt;(stateEntity.SerializedState) 
-    : <span class="hljs-keyword">new</span> ScalingState();
-<span class="hljs-keyword">var</span> history = state.History;
-log.Info(<span class="hljs-string">$"Scaling logic: Received <span class="hljs-subst">{metric.Name}</span>, previous state is <span class="hljs-subst">{<span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, history)}</span>"</span>);
+    : new ScalingState();
+var history = state.History;
+log.Info($&quot;Scaling logic: Received {metric.Name}, previous state is {string.Join(&quot;, &quot;, history)}&quot;);
 </code></pre>
 <p>The second block adds the current metric value and removes all metrics which are
 not in the target period of 10 minutes anymore:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 2. Add current metric value, remove old values</span>
+<pre><code class="lang-csharp">// 2. Add current metric value, remove old values
 history.Add(metric.Value);
 history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
 </code></pre>
 <p>Now, the actual logic finally kicks in and produces the scaling action if average
 or maximum value is above or below respective thresholds. For my implementation I also
 chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 3. Compare the aggregates to thresholds, produce scaling action if needed</span>
-ScaleAction action = <span class="hljs-literal">null</span>;
-<span class="hljs-keyword">if</span> (history.Count &gt;= <span class="hljs-number">5</span>
+<pre><code class="lang-csharp">// 3. Compare the aggregates to thresholds, produce scaling action if needed
+ScaleAction action = null;
+if (history.Count &gt;= 5
     &amp;&amp; DateTime.Now - state.LastScalingActionTime &gt; cooldownPeriod)
 {
-    <span class="hljs-keyword">var</span> average = (<span class="hljs-keyword">int</span>)history.Average(e =&gt; e.Value);
-    <span class="hljs-keyword">var</span> maximum = (<span class="hljs-keyword">int</span>)history.Max(e =&gt; e.Value);
-    <span class="hljs-keyword">if</span> (average &gt; thresholdUp)
+    var average = (int)history.Average(e =&gt; e.Value);
+    var maximum = (int)history.Max(e =&gt; e.Value);
+    if (average &gt; thresholdUp)
     {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{average}</span> is too high, scaling <span class="hljs-subst">{metric.ResourceName}</span> up..."</span>);
+        log.Info($&quot;Scaling logic: Value {average} is too high, scaling {metric.ResourceName} up...&quot;);
         state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Up);
+        action = new ScaleAction(metric.ResourceName, ScaleActionType.Up);
     }
-    <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (maximum &lt; thresholdDown)
+    else if (maximum &lt; thresholdDown)
     {
-        log.Info(<span class="hljs-string">$"Scaling logic: Value <span class="hljs-subst">{maximum}</span> is low, scaling <span class="hljs-subst">{metric.ResourceName}</span> down..."</span>);
+        log.Info($&quot;Scaling logic: Value {maximum} is low, scaling {metric.ResourceName} down...&quot;);
         state.LastScalingActionTime = DateTime.Now;
-        action = <span class="hljs-keyword">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Down);
+        action = new ScaleAction(metric.ResourceName, ScaleActionType.Down);
     }
 }
 </code></pre>
 <p>Finally, the state is serialized back to table entity and action is returned: </p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// 4. Serialize the state back and return the action</span>
-newStateEntity = stateEntity != <span class="hljs-literal">null</span> 
+<pre><code class="lang-csharp">// 4. Serialize the state back and return the action
+newStateEntity = stateEntity != null 
     ? stateEntity 
-    : <span class="hljs-keyword">new</span> ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
+    : new ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
 newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
-<span class="hljs-keyword">return</span> action;
+return action;
 </code></pre>
 <p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message 
 gets sent to the output queue.</p>
 <h2 id="scaler">Scaler</h2>
 <p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
 I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">FunctionName(<span class="hljs-meta-string">"Scaler"</span>)</span>]
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">Scaler</span>(<span class="hljs-params">[QueueTrigger(<span class="hljs-string">"Actions"</span></span>)] ScaleAction action, TraceWriter log)
-</span>{
-    <span class="hljs-keyword">var</span> secrets = Environment.GetEnvironmentVariable(<span class="hljs-string">"ServicePrincipal"</span>).Split(<span class="hljs-string">','</span>);
-    <span class="hljs-keyword">var</span> credentials = SdkContext.AzureCredentialsFactory
-        .FromServicePrincipal(secrets[<span class="hljs-number">0</span>], secrets[<span class="hljs-number">1</span>], secrets[<span class="hljs-number">2</span>], AzureEnvironment.AzureGlobalCloud);
-    <span class="hljs-keyword">var</span> azure = Azure.Configure()
+<pre><code class="lang-csharp">[FunctionName(&quot;Scaler&quot;)]
+public static void Scaler([QueueTrigger(&quot;Actions&quot;)] ScaleAction action, TraceWriter log)
+{
+    var secrets = Environment.GetEnvironmentVariable(&quot;ServicePrincipal&quot;).Split(&#39;,&#39;);
+    var credentials = SdkContext.AzureCredentialsFactory
+        .FromServicePrincipal(secrets[0], secrets[1], secrets[2], AzureEnvironment.AzureGlobalCloud);
+    var azure = Azure.Configure()
         .Authenticate(credentials)
         .WithDefaultSubscription();
 
-    <span class="hljs-keyword">var</span> plan = azure.AppServices
+    var plan = azure.AppServices
         .AppServicePlans
         .List()
         .First(p =&gt; p.Name.Contains(action.ResourceName));
 
-    <span class="hljs-keyword">var</span> newCapacity = action.Type == ScaleActionType.Down ? plan.Capacity - <span class="hljs-number">1</span> : plan.Capacity + <span class="hljs-number">1</span>;
-    log.Info(<span class="hljs-string">$"Scaler: Switching <span class="hljs-subst">{action.ResourceName}</span> from <span class="hljs-subst">{plan.Capacity}</span> <span class="hljs-subst">{action.Type}</span> to <span class="hljs-subst">{newCapacity}</span>"</span>);
+    var newCapacity = action.Type == ScaleActionType.Down ? plan.Capacity - 1 : plan.Capacity + 1;
+    log.Info($&quot;Scaler: Switching {action.ResourceName} from {plan.Capacity} {action.Type} to {newCapacity}&quot;);
 
     plan.Update()
         .WithCapacity(newCapacity)
@@ -448,7 +443,7 @@ the upcoming Orchestration framework for Function Apps.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

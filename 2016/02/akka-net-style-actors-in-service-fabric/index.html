@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -94,37 +89,37 @@ today I want to focus on API to define an actor and to communicate to it.</p>
 I&#39;m going to use a toy example based on weather reports. Our actor will be able to get whether reports
 and then return the maximum temperature for a given period. An instance of actor will be created
 for each city (geo partitioning). Here is our interface in Service Fabric:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IWeatherActor</span> : <span class="hljs-title">IActor</span>
+<pre><code class="lang-csharp">public interface IWeatherActor : IActor
 {
-    <span class="hljs-function">Task <span class="hljs-title">AddWeatherReport</span>(<span class="hljs-params">WeatherReport report</span>)</span>;
+    Task AddWeatherReport(WeatherReport report);
 
-    Task&lt;<span class="hljs-keyword">int</span>?&gt; GetMaxTemperature(Period period);
+    Task&lt;int?&gt; GetMaxTemperature(Period period);
 }
 </code></pre>
 <p>We have two operations: a command and a query. They are both async (return <code>Task</code>). The data classes
 are required to be mutable DTOs based on <code>DataContract</code>:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">DataContract</span>]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherReport</span>
+<pre><code class="lang-csharp">[DataContract]
+public class WeatherReport
 {
-    [<span class="hljs-meta">DataMember</span>]
-    <span class="hljs-keyword">public</span> DateTime Moment { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    [<span class="hljs-meta">DataMember</span>]
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Temperature { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    [<span class="hljs-meta">DataMember</span>]
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Humidity { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    public DateTime Moment { get; set; }
+    [DataMember]
+    public int Temperature { get; set; }
+    [DataMember]
+    public int Humidity { get; set; }
 }
 
-[<span class="hljs-meta">DataContract</span>]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Period</span>
+[DataContract]
+public class Period
 {
-    [<span class="hljs-meta">DataMember</span>]
-    <span class="hljs-keyword">public</span> DateTime From { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    [<span class="hljs-meta">DataMember</span>]
-    <span class="hljs-keyword">public</span> DateTime Until { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    [DataMember]
+    public DateTime From { get; set; }
+    [DataMember]
+    public DateTime Until { get; set; }
 }
 </code></pre>
 <p>And here is the implementation of the weather actor:</p>
-<pre class="highlight"><code class="hljs undefined">internal class WeatherActor : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
+<pre><code class="lang-csharp">internal class WeatherActor : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
 {
     public Task AddWeatherReport(WeatherReport report)
     {
@@ -145,67 +140,67 @@ are required to be mutable DTOs based on <code>DataContract</code>:</p>
 <p>Service Fabric provides reliable storage out of the box, so we are using it to
 store our reports. There&#39;s no code required to instantiate an actor. Here is the
 code to use it:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
-IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>));
+<pre><code class="lang-csharp">// Submit a new report
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(new ActorId(&quot;Amsterdam&quot;));
 actor.AddWeatherReport(
-    <span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> });
+    new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 });
 
-<span class="hljs-comment">// Make a query somewhere else</span>
-IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>));
-<span class="hljs-keyword">var</span> result = actor.GetMaxTemperature(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+// Make a query somewhere else
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(new ActorId(&quot;Amsterdam&quot;));
+var result = actor.GetMaxTemperature(new Period { From = monthAgo, Until = now });
 </code></pre>
 <h2 id="akka-net-actors">Akka.NET Actors</h2>
 <p>Actors in Akka.NET are message-based. The messages are immutable POCOs, which 
 is a great design decision. Here are the messages for our scenario:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherReport</span>
+<pre><code class="lang-csharp">public class WeatherReport
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WeatherReport</span>(<span class="hljs-params">DateTime moment, <span class="hljs-keyword">int</span> temperature, <span class="hljs-keyword">int</span> humidity</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Moment = moment;
-        <span class="hljs-keyword">this</span>.Temperature = temperature;
-        <span class="hljs-keyword">this</span>.Humidity = humidity;
+    public WeatherReport(DateTime moment, int temperature, int humidity)
+    {
+        this.Moment = moment;
+        this.Temperature = temperature;
+        this.Humidity = humidity;
     }
 
-    <span class="hljs-keyword">public</span> DateTime Moment { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Temperature { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> Humidity { <span class="hljs-keyword">get</span>; }
+    public DateTime Moment { get; }
+    public int Temperature { get; }
+    public int Humidity { get; }
 }
 
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Period</span>
+public class Period
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Period</span>(<span class="hljs-params">DateTime <span class="hljs-keyword">from</span>, DateTime until</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.From = <span class="hljs-keyword">from</span>;
-        <span class="hljs-keyword">this</span>.Until = until;
+    public Period(DateTime from, DateTime until)
+    {
+        this.From = from;
+        this.Until = until;
     }
 
-    <span class="hljs-keyword">public</span> DateTime From { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> DateTime Until { <span class="hljs-keyword">get</span>; }
+    public DateTime From { get; }
+    public DateTime Until { get; }
 }
 </code></pre>
 <p>There&#39;s no need to define any interfaces. The basic actor implementation derives from
 <code>ReceiveActor</code> and calls <code>Receive</code> generic method to setup a callback which is called
 when a message of specified type is received:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">WeatherActor</span> : <span class="hljs-title">ReceiveActor</span>
+<pre><code class="lang-csharp">public class WeatherActor : ReceiveActor
 {
-    <span class="hljs-keyword">private</span> List&lt;WeatherReport&gt; state = <span class="hljs-keyword">new</span> List&lt;WeatherReport&gt;();
+    private List&lt;WeatherReport&gt; state = new List&lt;WeatherReport&gt;();
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WeatherActor</span>(<span class="hljs-params"></span>)
-    </span>{
-        Receive&lt;WeatherReport&gt;(<span class="hljs-keyword">this</span>.AddWeatherReport);
-        Receive&lt;Period&gt;(<span class="hljs-keyword">this</span>.GetMaxTemperature);
+    public WeatherActor()
+    {
+        Receive&lt;WeatherReport&gt;(this.AddWeatherReport);
+        Receive&lt;Period&gt;(this.GetMaxTemperature);
     }
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">AddWeatherReport</span>(<span class="hljs-params">WeatherReport report</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.state.Add(report);
+    public void AddWeatherReport(WeatherReport report)
+    {
+        this.state.Add(report);
     }
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">GetMaxTemperature</span>(<span class="hljs-params">Period period</span>)
-    </span>{
-        <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">this</span>.state
+    public void GetMaxTemperature(Period period)
+    {
+        var response = this.state
             .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
-            .Max(r =&gt; (<span class="hljs-keyword">int</span>?)r.Temperature);
+            .Max(r =&gt; (int?)r.Temperature);
         Sender.Tell(response, Self);
     }
 }
@@ -228,16 +223,16 @@ Fabric&#39;s <code>ActorProxy</code>: it does not create an actor, but just gets
 based on the name. Note that Akka.NET actor needs to be explicitly created by
 another actor, but lifetime management is a separate discussion, so we&#39;ll skip 
 it for now. Here is the report sender:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
-<span class="hljs-keyword">var</span> msg = <span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> };
-Context.ActorSelection(<span class="hljs-string">"/user/weather/Amsterdam"</span>).Tell(msg);
+<pre><code class="lang-csharp">// Submit a new report
+var msg = new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 };
+Context.ActorSelection(&quot;/user/weather/Amsterdam&quot;).Tell(msg);
 </code></pre>
 <p>Asking <code>ActorSelection</code> is not directly possible, we would need to setup an
 inbox and receive callback messages. We&#39;ll pretend that we have an <code>ActorRef</code>
 for the sake of simplicity:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Make a query somewhere else</span>
-ActoRef actor = ... ; <span class="hljs-comment">// we have it</span>
-<span class="hljs-keyword">var</span> result = <span class="hljs-keyword">await</span> actor.Ask(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+<pre><code class="lang-csharp">// Make a query somewhere else
+ActoRef actor = ... ; // we have it
+var result = await actor.Ask(new Period { From = monthAgo, Until = now });
 </code></pre>
 <h2 id="the-best-of-two-worlds">The Best of Two Worlds</h2>
 <p>Now my goals is to come up with an implementation of Service Fabric actors with
@@ -252,7 +247,7 @@ cluster management and reliable state</li>
 </ul>
 <p>Here is the third implementation of our Weather Actor (the definitions of messages
 from Akka.NET example are intact):</p>
-<pre class="highlight"><code class="hljs undefined">[ActorService(Name = "WeatherActor")]
+<pre><code class="lang-csharp">[ActorService(Name = &quot;WeatherActor&quot;)]
 public class WeatherActor : StetefulReceiveActor&lt;List&lt;WeatherReport&gt;&gt;
 {
     public WeatherActor()
@@ -293,22 +288,22 @@ the same interface</li>
 </ul>
 <p>The client code uses our own <code>MessageActorProxy</code> class to create non-generic proxies which
 are capable to <code>Tell</code> (send a message one way) and <code>Ask</code> (do request and wait for response):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Submit a new report</span>
-<span class="hljs-keyword">var</span> actor = MessageActorProxy.Create(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>), <span class="hljs-string">"WeatherActor"</span>);
-actor.Tell(<span class="hljs-keyword">new</span> WeatherReport { Moment = DateTime.Now, Temperature = <span class="hljs-number">22</span>, Humidity = <span class="hljs-number">55</span> });
+<pre><code class="lang-csharp">// Submit a new report
+var actor = MessageActorProxy.Create(new ActorId(&quot;Amsterdam&quot;), &quot;WeatherActor&quot;);
+actor.Tell(new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 });
 
-<span class="hljs-comment">// Make a query somewhere else</span>
-<span class="hljs-keyword">var</span> actor = MessageActorProxy.Create(<span class="hljs-keyword">new</span> ActorId(<span class="hljs-string">"Amsterdam"</span>), <span class="hljs-string">"WeatherActor"</span>);
-<span class="hljs-keyword">var</span> result = actor.Ask(<span class="hljs-keyword">new</span> Period { From = monthAgo, Until = now });
+// Make a query somewhere else
+var actor = MessageActorProxy.Create(new ActorId(&quot;Amsterdam&quot;), &quot;WeatherActor&quot;);
+var result = actor.Ask(new Period { From = monthAgo, Until = now });
 </code></pre>
 <h2 id="implementation-of-receiveactor">Implementation of ReceiveActor</h2>
 <p>Let&#39;s start with the interface definition:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IReceiveActor</span> : <span class="hljs-title">IActor</span>
+<pre><code class="lang-csharp">public interface IReceiveActor : IActor
 {
-    <span class="hljs-function">Task <span class="hljs-title">Tell</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message</span>)</span>;
+    Task Tell(string typeName, byte[] message);
 
-    [<span class="hljs-meta">Readonly</span>]
-    Task&lt;<span class="hljs-keyword">byte</span>[]&gt; Ask(<span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message);
+    [Readonly]
+    Task&lt;byte[]&gt; Ask(string typeName, byte[] message);
 }
 </code></pre>
 <p>The two methods for <code>Tell</code> and <code>Ask</code> accept serializes data together with fully qualified
@@ -316,7 +311,7 @@ type name. This will allow passing any kind of objects which can be handled by a
 of choice (I used Newtonsoft JSON serializer).</p>
 <p>Actor implementation derives from <code>StatefulActor</code> and uses another type/bytes pair to store
 the serialized state:</p>
-<pre class="highlight"><code class="hljs undefined">    public abstract class StatefulReceiveActor : StatefulActor&lt;StateContainer&gt;, 
+<pre><code class="lang-csharp">    public abstract class StatefulReceiveActor : StatefulActor&lt;StateContainer&gt;, 
                                                  IReceiveActor
     {
         // ...
@@ -334,75 +329,75 @@ the serialized state:</p>
 </code></pre>
 <p>The simplistic implementation of <code>Receive</code> generic methods uses two dictionaries
 to store the handlers:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">private</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt; handlers;
-<span class="hljs-keyword">private</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt; askers;
+<pre><code class="lang-csharp">private Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt; handlers;
+private Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt; askers;
 
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ReceiveActor</span>(<span class="hljs-params"></span>)
-</span>{
-    <span class="hljs-keyword">this</span>.handlers = <span class="hljs-keyword">new</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt;();
-    <span class="hljs-keyword">this</span>.askers = <span class="hljs-keyword">new</span> Dictionary&lt;Type, Func&lt;<span class="hljs-keyword">object</span>, <span class="hljs-keyword">object</span>, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt;&gt;();
+public ReceiveActor()
+{
+    this.handlers = new Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt;();
+    this.askers = new Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt;();
 }
 
-<span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> Receive&lt;T&gt;(Func&lt;<span class="hljs-keyword">object</span>, T, Task&lt;<span class="hljs-keyword">object</span>&gt;&gt; handler)
-    =&gt; <span class="hljs-keyword">this</span>.handlers.Add(<span class="hljs-keyword">typeof</span>(T), <span class="hljs-keyword">async</span> (s, m) =&gt; <span class="hljs-keyword">await</span> handler(s, (T)m));
+protected void Receive&lt;T&gt;(Func&lt;object, T, Task&lt;object&gt;&gt; handler)
+    =&gt; this.handlers.Add(typeof(T), async (s, m) =&gt; await handler(s, (T)m));
 
-<span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> Receive&lt;TI, TO&gt;(Func&lt;<span class="hljs-keyword">object</span>, TI, Task&lt;TO&gt;&gt; asker)
-    =&gt; <span class="hljs-keyword">this</span>.askers.Add(<span class="hljs-keyword">typeof</span>(TI), <span class="hljs-keyword">async</span> (s, m) =&gt; <span class="hljs-keyword">await</span> asker(s, (TI)m));
+protected void Receive&lt;TI, TO&gt;(Func&lt;object, TI, Task&lt;TO&gt;&gt; asker)
+    =&gt; this.askers.Add(typeof(TI), async (s, m) =&gt; await asker(s, (TI)m));
 </code></pre>
 <p>The <code>Tell</code> method deserializes the message and state, then picks a handler based on
 the message type, executes it and serializes the produced state back:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">Tell</span>(<span class="hljs-params"><span class="hljs-keyword">string</span> typeName, <span class="hljs-keyword">byte</span>[] message</span>)
-</span>{
-    <span class="hljs-keyword">var</span> type = Type.GetType(typeName);
-    <span class="hljs-keyword">var</span> typedMessage = <span class="hljs-keyword">this</span>.serializer.Deserialize(message, type);
+<pre><code class="lang-csharp">public async Task Tell(string typeName, byte[] message)
+{
+    var type = Type.GetType(typeName);
+    var typedMessage = this.serializer.Deserialize(message, type);
 
-    <span class="hljs-keyword">var</span> typedState = <span class="hljs-keyword">this</span>.State != <span class="hljs-literal">null</span>
-        ? <span class="hljs-keyword">this</span>.serializer.Deserialize(<span class="hljs-keyword">this</span>.State.Data, Type.GetType(<span class="hljs-keyword">this</span>.State.TypeName))
-        : <span class="hljs-literal">null</span>;
-    <span class="hljs-keyword">var</span> handler = <span class="hljs-keyword">this</span>.handlers.FirstOrDefault(t =&gt; t.Key.IsAssignableFrom(type)).Value;
-    <span class="hljs-keyword">if</span> (handler != <span class="hljs-literal">null</span>)
+    var typedState = this.State != null
+        ? this.serializer.Deserialize(this.State.Data, Type.GetType(this.State.TypeName))
+        : null;
+    var handler = this.handlers.FirstOrDefault(t =&gt; t.Key.IsAssignableFrom(type)).Value;
+    if (handler != null)
     {
-        <span class="hljs-keyword">var</span> newState = <span class="hljs-keyword">await</span> handler(typedState, typedMessage);
-        <span class="hljs-keyword">this</span>.State =
-            newState != <span class="hljs-literal">null</span>
-            ? <span class="hljs-keyword">new</span> StateContainer 
+        var newState = await handler(typedState, typedMessage);
+        this.State =
+            newState != null
+            ? new StateContainer 
               { 
-                  Data = <span class="hljs-keyword">this</span>.serializer.Serialize(newState), 
+                  Data = this.serializer.Serialize(newState), 
                   TypeName = newState.GetType().AssemblyQualifiedName 
               }
-            : <span class="hljs-literal">null</span>;
+            : null;
     }
 }
 </code></pre>
 <p>The implementation of <code>Ask</code> is almost identical, so I&#39;ll skip it. <code>MessageActorProxy</code> 
 encapsulates the serialization around passing data to normal <code>ActorProxy</code> class:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MessageActorProxy</span>
+<pre><code class="lang-csharp">public class MessageActorProxy
 {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> IStatefulMessageActor proxy;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> ISerializer serializer = <span class="hljs-keyword">new</span> JsonByteSerializer();
+    private readonly IStatefulMessageActor proxy;
+    private readonly ISerializer serializer = new JsonByteSerializer();
 
-    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">MessageActorProxy</span>(<span class="hljs-params">ActorId actorId, <span class="hljs-keyword">string</span> serviceName</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.proxy = ActorProxy.Create&lt;IReceiveActor&gt;(actorId, serviceName: serviceName);
-    }
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task <span class="hljs-title">Tell</span>(<span class="hljs-params"><span class="hljs-keyword">object</span> message</span>)
-    </span>{
-        <span class="hljs-keyword">var</span> serialized = <span class="hljs-keyword">this</span>.serializer.Serialize(message);
-        <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.proxy.Send(message.GetType().AssemblyQualifiedName, serialized);
-    }
-
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">async</span> Task&lt;T&gt; Ask&lt;T&gt;(<span class="hljs-keyword">object</span> message)
+    private MessageActorProxy(ActorId actorId, string serviceName)
     {
-        <span class="hljs-keyword">var</span> serialized = <span class="hljs-keyword">this</span>.serializer.Serialize(message);
-        <span class="hljs-keyword">var</span> fullName = message.GetType().AssemblyQualifiedName;
-        <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> <span class="hljs-keyword">this</span>.proxy.Ask(fullName, serialized);
-        <span class="hljs-keyword">return</span> (T)<span class="hljs-keyword">this</span>.serializer.Deserialize(response, <span class="hljs-keyword">typeof</span>(T));
+        this.proxy = ActorProxy.Create&lt;IReceiveActor&gt;(actorId, serviceName: serviceName);
     }
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> MessageActorProxy <span class="hljs-title">Create</span>(<span class="hljs-params">ActorId actorId, <span class="hljs-keyword">string</span> serviceType</span>)
-    </span>{
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> MessageActorProxy(actorId, serviceType);
+    public async Task Tell(object message)
+    {
+        var serialized = this.serializer.Serialize(message);
+        await this.proxy.Send(message.GetType().AssemblyQualifiedName, serialized);
+    }
+
+    public async Task&lt;T&gt; Ask&lt;T&gt;(object message)
+    {
+        var serialized = this.serializer.Serialize(message);
+        var fullName = message.GetType().AssemblyQualifiedName;
+        var response = await this.proxy.Ask(fullName, serialized);
+        return (T)this.serializer.Deserialize(response, typeof(T));
+    }
+
+    public static MessageActorProxy Create(ActorId actorId, string serviceType)
+    {
+        return new MessageActorProxy(actorId, serviceType);
     }
 }
 </code></pre>
@@ -485,7 +480,7 @@ of Service Fabric.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -86,13 +81,14 @@
     <h1>Monads explained in C#</h1>
     
     <div class="post-content">
-        <p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
+        <p><em>The newer and much longer version of this article is now available:</em>
+<a href="https://mikhail.io/2018/07/monads-explained-in-csharp-again/">Monads explained in C# (again)</a></p>
+<p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
 what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
 developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
 loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
 it becomes kind of obvious once you read 3 or 5 explanations on the web. Here is my attempt, probably doomed
 to fail :)</p>
-<p><em>Revised on Apr 4th, 2017</em></p>
 <h2 id="monads-are-container-types">Monads are container types</h2>
 <p>Monads represent a class of types which behave in the common way.</p>
 <p>Monads are containers which encapsulate some kind of functionality. On top of
@@ -107,7 +103,7 @@ Quite often monads provide the way to avoid imperative code in favor of
 functional style.</p>
 <p>Monads are flexible, so in C# we could try to represent a monadic type as 
 a generic class:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+<pre><code class="lang-csharp">public class Monad&lt;T&gt;
 {
 }
 </code></pre>
@@ -116,7 +112,7 @@ a generic class:</p>
 be a way to create an object of this class out of an instance of type <code>T</code>. 
 In functional world this operation is known as <code>Return</code> function. In C# it 
 can be as simple as a constructor:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+<pre><code class="lang-csharp">public class Monad&lt;T&gt;
 {
     public Monad(T instance)
     {
@@ -125,16 +121,16 @@ can be as simple as a constructor:</p>
 </code></pre>
 <p>But usually it makes sense to define an extension method to enable fluent 
 syntax of monad creation:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MonadExtensions</span>
+<pre><code class="lang-csharp">public static class MonadExtensions
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Monad&lt;T&gt; Return&lt;T&gt;(<span class="hljs-keyword">this</span> T instance) =&gt; <span class="hljs-keyword">new</span> Monad&lt;T&gt;(instance);
+    public static Monad&lt;T&gt; Return&lt;T&gt;(this T instance) =&gt; new Monad&lt;T&gt;(instance);
 }
 </code></pre>
 <h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
 <p>This is the property which makes monads so useful, but also a bit confusing. 
 In functional world this operation is expressed with the <code>Bind</code> function 
 (or <code>&gt;&gt;=</code> operator). Here is the signature of <code>Bind</code> method in C#:</p>
-<pre class="highlight"><code class="hljs undefined">public class Monad&lt;T&gt;
+<pre><code class="lang-csharp">public class Monad&lt;T&gt;
 {
     public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
     {
@@ -147,12 +143,12 @@ where <code>TO</code> is another type. Now, our first instance of <code>Monad&lt
 how to bind itself to this function to produce another instance of monad 
 of the new type. The full power of monads comes when we compose several of 
 them in one chain:</p>
-<pre class="highlight"><code class="hljs cs">initialValue
+<pre><code class="lang-csharp">initialValue
     .Return()
     .Bind(v1 =&gt; produceV2OutOfV1(v1))
     .Bind(v2 =&gt; produceV3OutOfV2(v2))
     .Bind(v3 =&gt; produceV4OutOfV3(v3))
-    <span class="hljs-comment">//...</span>
+    //...
 </code></pre>
 <p>Let&#39;s have a look at some examples.</p>
 <p><a name="maybe" href="/2016/01/monads-explained-in-csharp/undefined"></a></p>
@@ -162,7 +158,7 @@ to dealing with &#39;no value&#39; value, alternative to the concept of <code>nu
 Basically your object should never be null, but it can either have <code>Some</code> 
 value or be <code>None</code>. F# has a maybe implementation built into the language: 
 it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
-<pre class="highlight"><code class="hljs undefined">public class Maybe&lt;T&gt; where T : class
+<pre><code class="lang-csharp">public class Maybe&lt;T&gt; where T : class
 {
     private readonly T value;
 
@@ -185,11 +181,11 @@ it&#39;s called <code>option</code> type. Here is a sample implementation in C#:
     public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;();
 }
 </code></pre>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title">MaybeExtensions</span>
+<pre><code class="lang-csharp">public static class MaybeExtensions
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Maybe&lt;T&gt; Return&lt;T&gt;(<span class="hljs-keyword">this</span> T <span class="hljs-keyword">value</span>) <span class="hljs-keyword">where</span> T : <span class="hljs-keyword">class</span>
+    public static Maybe&lt;T&gt; Return&lt;T&gt;(this T value) where T : class
     {
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">value</span> != <span class="hljs-literal">null</span> ? <span class="hljs-keyword">new</span> Maybe&lt;T&gt;(<span class="hljs-keyword">value</span>) : Maybe&lt;T&gt;.None();
+        return value != null ? new Maybe&lt;T&gt;(value) : Maybe&lt;T&gt;.None();
     }
 }
 </code></pre>
@@ -200,45 +196,45 @@ combines both of them in one call. </p>
 <p><code>Bind</code> function is implemented explicitly. </p>
 <p>Let&#39;s have a look at a use case. Imagine we have a traditional repository 
 which loads data from an external storage (no monads yet):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">ITraditionalRepository</span>
+<pre><code class="lang-csharp">public interface ITraditionalRepository
 {
-    <span class="hljs-function">Customer <span class="hljs-title">GetCustomer</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> id</span>)</span>;
-    <span class="hljs-function">Address <span class="hljs-title">GetAddress</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> id</span>)</span>;
-    <span class="hljs-function">Order <span class="hljs-title">GetOrder</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> id</span>)</span>;
+    Customer GetCustomer(int id);
+    Address GetAddress(int id);
+    Order GetOrder(int id);
 }
 </code></pre>
 <p>Now, we write a client class which loads data one by one and tries to find
 a shipper:</p>
-<pre class="highlight"><code class="hljs cs">Shipper shipperOfLastOrderOnCurrentAddress = <span class="hljs-literal">null</span>;
-<span class="hljs-keyword">var</span> customer = repo.GetCustomer(customerId);
-<span class="hljs-keyword">if</span> (customer?.Address != <span class="hljs-literal">null</span>)
+<pre><code class="lang-csharp">Shipper shipperOfLastOrderOnCurrentAddress = null;
+var customer = repo.GetCustomer(customerId);
+if (customer?.Address != null)
 {
-    <span class="hljs-keyword">var</span> address = repo.GetAddress(customer.Address.Id);
-    <span class="hljs-keyword">if</span> (address?.LastOrder != <span class="hljs-literal">null</span>)
+    var address = repo.GetAddress(customer.Address.Id);
+    if (address?.LastOrder != null)
     {
-        <span class="hljs-keyword">var</span> order = repo.GetOrder(address.LastOrder.Id);
+        var order = repo.GetOrder(address.LastOrder.Id);
         shipperOfLastOrderOnCurrentAddress = order?.Shipper;
     }
 }
-<span class="hljs-keyword">return</span> shipperOfLastOrderOnCurrentAddress;
+return shipperOfLastOrderOnCurrentAddress;
 </code></pre>
 <p>Note, that the code assumes that repository returns <code>null</code> if some entity
 is not found, although nothing in the type system shows that. Then, there
 is a number of <code>null</code> checks (facilitated with elvis operator). The code gets
 a bit cluttered and less linear.</p>
 <p>Here is an alternative repository which returns <code>Maybe</code> type:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title">IMonadicRepository</span>
+<pre><code class="lang-csharp">public interface IMonadicRepository
 {
-    <span class="hljs-function">Maybe&lt;Customer&gt; <span class="hljs-title">GetCustomer</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> id</span>)</span>;
-    <span class="hljs-function">Maybe&lt;Address&gt; <span class="hljs-title">GetAddress</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> id</span>)</span>;
-    <span class="hljs-function">Maybe&lt;Order&gt; <span class="hljs-title">GetOrder</span>(<span class="hljs-params"><span class="hljs-keyword">int</span> id</span>)</span>;
+    Maybe&lt;Customer&gt; GetCustomer(int id);
+    Maybe&lt;Address&gt; GetAddress(int id);
+    Maybe&lt;Order&gt; GetOrder(int id);
 }
 </code></pre>
 <p>The contract is more explicit: you see that <code>Maybe</code> type is used, so you
 will be forced to handle the case of absent value.</p>
 <p>And here is how the above example can be rewritten with <code>Bind</code> method 
 composition:</p>
-<pre class="highlight"><code class="hljs cs">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+<pre><code class="lang-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
     repo.GetCustomer(customerId)
         .Bind(c =&gt; c.Address)
         .Bind(a =&gt; repo.GetAddress(a.Id))
@@ -256,12 +252,12 @@ a more C#-idiomatic binding composition. Actually:</p>
 <p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
 <p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here 
 is its signature:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
-    <span class="hljs-keyword">this</span> IEnumerable&lt;A&gt; first, 
+<pre><code class="lang-csharp">public static IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
+    this IEnumerable&lt;A&gt; first, 
     Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
 </code></pre>
 <p>And here is an example of composition:</p>
-<pre class="highlight"><code class="hljs cs">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
+<pre><code class="lang-csharp">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
     customers
         .SelectMany(c =&gt; c.Addresses)
         .SelectMany(a =&gt; a.Orders)
@@ -275,21 +271,21 @@ containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produ
 that they produce a proper monad.</p>
 <p><strong>Identity law</strong> says that that <code>Return</code> is a neutral operation: you can safely
 run it before <code>Bind</code>, and it won&#39;t change the result of the function call:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Given</span>
-T <span class="hljs-keyword">value</span>;
+<pre><code class="lang-csharp">// Given
+T value;
 Func&lt;T, M&lt;U&gt;&gt; f;
 
-<span class="hljs-comment">// == means both parts are equivalent</span>
-<span class="hljs-keyword">value</span>.Return().Bind(f) == f(<span class="hljs-keyword">value</span>)
+// == means both parts are equivalent
+value.Return().Bind(f) == f(value)
 </code></pre>
 <p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
 are composed does not matter:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-comment">// Given</span>
+<pre><code class="lang-csharp">// Given
 M&lt;T&gt; m;
 Func&lt;T, M&lt;U&gt;&gt; f;
 Func&lt;U, M&lt;V&gt;&gt; g;
 
-<span class="hljs-comment">// == means both parts are equivalent</span>
+// == means both parts are equivalent
 m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))
 </code></pre>
 <p>The laws may look complicated, but in fact they are very natural 
@@ -373,7 +369,7 @@ languages.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

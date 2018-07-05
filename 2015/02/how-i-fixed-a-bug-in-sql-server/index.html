@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -90,65 +85,65 @@
 <p>Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, <a href="http://blogs.msdn.com/b/psssql/archive/2014/04/01/sql-server-2014-s-new-cardinality-estimator-part-1.aspx">the new cardinality estimator was introduced</a>. In two words, cardinality estimator is a piece of SQL functionality which estimates how many rows the engine might get for a specific query or a query part. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &quot;new&quot; also means &quot;less tested&quot;...</p>
 <p>Immediately after migration we found out that one of the stored procedures got much slower than before. That stored procedure was retrieving thousands of rows from a queue, and then did a series of transformations which took ages to complete. During the investigation we found that the query plan is far from being optimal, with massive scans of partitioned tables; and the reason was in ridiculously high estimations on one of the tables. That table was of moderate size (millions of rows), our query touched only some hundreds rows, while the estimate was... millions!</p>
 <p>Here is a repro to show this issue on any test database (database must be in SQL Server 2014 compatibility mode):</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> [dbo].[<span class="hljs-keyword">Store</span>](
-    <span class="hljs-keyword">Id</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">IDENTITY</span>(<span class="hljs-number">1</span>,<span class="hljs-number">1</span>) <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-    City <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-    <span class="hljs-keyword">Size</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>,
-    <span class="hljs-keyword">Name</span> <span class="hljs-built_in">varchar</span>(<span class="hljs-keyword">max</span>) <span class="hljs-literal">NULL</span>,
-    <span class="hljs-keyword">CONSTRAINT</span> [PK_Store] PRIMARY <span class="hljs-keyword">KEY</span> CLUSTERED ([<span class="hljs-keyword">Id</span>] <span class="hljs-keyword">ASC</span>)
+<pre><code>CREATE TABLE [dbo].[Store](
+    Id int IDENTITY(1,1) NOT NULL,
+    City int NOT NULL,
+    Size int NOT NULL,
+    Name varchar(max) NULL,
+    CONSTRAINT [PK_Store] PRIMARY KEY CLUSTERED ([Id] ASC)
  ) 
 
- <span class="hljs-keyword">GO</span>
+ GO
 
- <span class="hljs-keyword">CREATE</span> NONCLUSTERED <span class="hljs-keyword">INDEX</span> [IX_Store] <span class="hljs-keyword">ON</span> [dbo].[<span class="hljs-keyword">Store</span>]
+ CREATE NONCLUSTERED INDEX [IX_Store] ON [dbo].[Store]
 (
-    City <span class="hljs-keyword">ASC</span>,
-    <span class="hljs-keyword">Size</span> <span class="hljs-keyword">ASC</span>
+    City ASC,
+    Size ASC
 )
 
-<span class="hljs-keyword">GO</span>
- <span class="hljs-keyword">TRUNCATE</span> <span class="hljs-keyword">TABLE</span> <span class="hljs-keyword">Store</span>
-<span class="hljs-keyword">INSERT</span> <span class="hljs-keyword">Store</span> 
-<span class="hljs-keyword">SELECT</span> i % <span class="hljs-number">101</span>, i % <span class="hljs-number">11</span>, <span class="hljs-string">'Store '</span> + <span class="hljs-keyword">CAST</span>(i <span class="hljs-keyword">AS</span> <span class="hljs-built_in">VARCHAR</span>)
-  <span class="hljs-keyword">FROM</span> 
- (<span class="hljs-keyword">SELECT</span> TOP <span class="hljs-number">100000</span> ROW_NUMBER() <span class="hljs-keyword">OVER</span> (<span class="hljs-keyword">ORDER</span> <span class="hljs-keyword">BY</span> s1.[object_id]) <span class="hljs-keyword">AS</span> i
-  <span class="hljs-keyword">FROM</span> sys.all_objects  s1, sys.all_objects  s2) numbers
-<span class="hljs-keyword">GO</span>
+GO
+ TRUNCATE TABLE Store
+INSERT Store 
+SELECT i % 101, i % 11, &#39;Store &#39; + CAST(i AS VARCHAR)
+  FROM 
+ (SELECT TOP 100000 ROW_NUMBER() OVER (ORDER BY s1.[object_id]) AS i
+  FROM sys.all_objects  s1, sys.all_objects  s2) numbers
+GO
 
-<span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">TABLE</span> StoreRequest (City <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>, <span class="hljs-keyword">Size</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">NOT</span> <span class="hljs-literal">NULL</span>)
+CREATE TABLE StoreRequest (City int NOT NULL, Size int NOT NULL)
 
-<span class="hljs-keyword">GO</span>
-<span class="hljs-keyword">DELETE</span> StoreRequest
-<span class="hljs-keyword">INSERT</span> StoreRequest <span class="hljs-keyword">values</span> (<span class="hljs-number">55</span>, <span class="hljs-number">1</span>)
-<span class="hljs-keyword">INSERT</span> StoreRequest <span class="hljs-keyword">values</span> (<span class="hljs-number">66</span>, <span class="hljs-number">2</span>)
+GO
+DELETE StoreRequest
+INSERT StoreRequest values (55, 1)
+INSERT StoreRequest values (66, 2)
 
-<span class="hljs-keyword">GO</span>
+GO
 
- <span class="hljs-keyword">SELECT</span> s.City
-   <span class="hljs-keyword">FROM</span> StoreRequest <span class="hljs-keyword">AS</span> r
-        <span class="hljs-keyword">INNER</span> <span class="hljs-keyword">JOIN</span> <span class="hljs-keyword">Store</span> <span class="hljs-keyword">AS</span> s  <span class="hljs-keyword">WITH</span>(<span class="hljs-keyword">INDEX</span>(IX_Store), FORCESEEK) 
-                    <span class="hljs-keyword">ON</span> s.City = r.City <span class="hljs-keyword">AND</span> s.Size = r.Size
-  <span class="hljs-keyword">WHERE</span> r.Size &lt;&gt; <span class="hljs-number">1</span> <span class="hljs-keyword">OR</span> s.City &lt;&gt; <span class="hljs-number">55</span>
+ SELECT s.City
+   FROM StoreRequest AS r
+        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
+                    ON s.City = r.City AND s.Size = r.Size
+  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
 </code></pre><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
 <p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
 <p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
 <p>Good news: it&#39;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
-<pre class="highlight"><code class="hljs stylus"> SELECT s<span class="hljs-selector-class">.City</span>
+<pre><code> SELECT s.City
    FROM StoreRequest AS r
         INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
-                    ON s<span class="hljs-selector-class">.City</span> = r<span class="hljs-selector-class">.City</span> AND s<span class="hljs-selector-class">.Size</span> = r<span class="hljs-selector-class">.Size</span>
-  WHERE s<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">1</span> OR s<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">55</span>
+                    ON s.City = r.City AND s.Size = r.Size
+  WHERE s.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
 </code></pre><p>Estimator is able to handle this situation correctly:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
 <p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
 <p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
-<pre class="highlight"><code class="hljs sql"> <span class="hljs-keyword">SELECT</span> s.City
-   <span class="hljs-keyword">FROM</span> StoreRequest <span class="hljs-keyword">AS</span> r
-        <span class="hljs-keyword">INNER</span> <span class="hljs-keyword">JOIN</span> <span class="hljs-keyword">Store</span> <span class="hljs-keyword">AS</span> s  <span class="hljs-keyword">WITH</span>(<span class="hljs-keyword">INDEX</span>(IX_Store), FORCESEEK) 
-                    <span class="hljs-keyword">ON</span> s.City = r.City <span class="hljs-keyword">AND</span> s.Size = r.Size
-  <span class="hljs-keyword">WHERE</span> r.Size &lt;&gt; <span class="hljs-number">1</span> <span class="hljs-keyword">OR</span> s.City &lt;&gt; <span class="hljs-number">55</span>
- <span class="hljs-keyword">OPTION</span>(QUERYTRACEON <span class="hljs-number">9481</span>) 
+<pre><code> SELECT s.City
+   FROM StoreRequest AS r
+        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
+                    ON s.City = r.City AND s.Size = r.Size
+  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
+ OPTION(QUERYTRACEON 9481) 
 </code></pre><p>And then we get this:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
 <p>Which is as good as the best attempt of SQL Server 2014 and much-much better than the worst one.</p>
@@ -157,11 +152,11 @@
 <p>The estimate here is clearly incorrect. SQL Server knows the density of Size and City. It knows the cardinality of the temp table. The density information gives how many rows the join will produce. The WHERE clause will then remove a certain number of rows. With no statistics for the temp table, it does not know how many, but it will apply some standard guess.</p>
 <p>50000 is a completely bogus number, because the join cannot produce that many rows, and SQL Server is able to compute the join with out the WHERE clause decently. (Well, it estimates 90, when the number is 180.) No, this is obviously a case of the cardinality estimator giving up completely.</p>
 <p>It is worth noting that both these WHERE clauses gives reasonable estimates:</p>
-<pre class="highlight"><code class="hljs stylus">WHERE r<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR r<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
-WHERE s<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR s<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+<pre><code>WHERE r.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
+WHERE s.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
 </code></pre><p>Whereas these two gives the spooky 50000:</p>
-<pre class="highlight"><code class="hljs stylus">WHERE s<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR r<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
-WHERE r<span class="hljs-selector-class">.Size</span> &lt;&gt; <span class="hljs-number">11</span> OR s<span class="hljs-selector-class">.City</span> &lt;&gt; <span class="hljs-number">550</span>
+<pre><code>WHERE s.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
+WHERE r.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
 </code></pre><ul>
 <li>Erland Sommarskog</li>
 </ul>
@@ -246,7 +241,7 @@ Happy coding!</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

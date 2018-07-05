@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -99,10 +94,10 @@ for each Service Bus queue/topic in our application:</p>
 </ul>
 <p>The first two are easily retrieved from <code>QueueDescription</code> object (see 
 <a href="https://msdn.microsoft.com/library/azure/hh780773.aspx">MSDN</a>):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
-<span class="hljs-keyword">var</span> queue = nsmgr.GetQueue(name);
-<span class="hljs-keyword">var</span> backlog = queue.MessageCountDetails.ActiveMessageCount;
-<span class="hljs-keyword">var</span> dlq = q.MessageCountDetails.DeadLetterMessageCount;
+<pre><code class="lang-csharp">var nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
+var queue = nsmgr.GetQueue(name);
+var backlog = queue.MessageCountDetails.ActiveMessageCount;
+var dlq = q.MessageCountDetails.DeadLetterMessageCount;
 </code></pre>
 <p>The other two metrics are not readily available from the .NET SDK though.
 There are some extra metrics described in
@@ -129,34 +124,34 @@ to <a href="https://manage.windowsazure.com">&quot;Classic&quot; Azure portal</a
 management certificates are not supported by the the new portal. If you don&#39;t
 have access to the old portal, ask your system administrator to grant it.</p>
 <p>Finally, here is a code sample to load the certificate in C# code:</p>
-<pre class="highlight"><code class="hljs cs">X509Store store = <span class="hljs-keyword">new</span> X509Store(<span class="hljs-string">"My"</span>, StoreLocation.CurrentUser);
+<pre><code class="lang-csharp">X509Store store = new X509Store(&quot;My&quot;, StoreLocation.CurrentUser);
 store.Open(OpenFlags.ReadOnly);
-<span class="hljs-keyword">var</span> cert = store.Certificates.Find(
+var cert = store.Certificates.Find(
     X509FindType.FindBySubjectName, 
-    <span class="hljs-string">"&lt;certificate name of yours&gt;"</span>, 
-    <span class="hljs-literal">false</span>)[<span class="hljs-number">0</span>];
+    &quot;&lt;certificate name of yours&gt;&quot;, 
+    false)[0];
 </code></pre>
 <h2 id="request-headers">Request Headers</h2>
 <p>Here is a helper class which adds the specified certificate to each request 
 and sets the appropriate headers too:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">internal</span> <span class="hljs-keyword">class</span> <span class="hljs-title">AzureManagementClient</span> : <span class="hljs-title">WebClient</span>
+<pre><code class="lang-csharp">internal class AzureManagementClient : WebClient
 {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">readonly</span> X509Certificate2 certificate;
+    private readonly X509Certificate2 certificate;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">AzureManagementClient</span>(<span class="hljs-params">X509Certificate2 certificate</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.certificate = certificate;
+    public AzureManagementClient(X509Certificate2 certificate)
+    {
+        this.certificate = certificate;
     }
 
-    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">override</span> WebRequest <span class="hljs-title">GetWebRequest</span>(<span class="hljs-params">Uri address</span>)
-    </span>{
-        <span class="hljs-keyword">var</span> request = (HttpWebRequest)<span class="hljs-keyword">base</span>.GetWebRequest(address);
+    protected override WebRequest GetWebRequest(Uri address)
+    {
+        var request = (HttpWebRequest)base.GetWebRequest(address);
 
-        request.ClientCertificates.Add(<span class="hljs-keyword">this</span>.certificate);
-        request.Headers.Add(<span class="hljs-string">"x-ms-version: 2013-10-01"</span>);
-        request.Accept = <span class="hljs-string">"application/json"</span>;
+        request.ClientCertificates.Add(this.certificate);
+        request.Headers.Add(&quot;x-ms-version: 2013-10-01&quot;);
+        request.Accept = &quot;application/json&quot;;
 
-        <span class="hljs-keyword">return</span> request;
+        return request;
     }
 }
 </code></pre>
@@ -173,24 +168,24 @@ so thank you Brian.</p>
 <p>The following picture shows all of them on Azure Portal screen:</p>
 <p><img src="/2017/03/azure-service-bus-entity-metrics-dotnet-apis//servicebusparameters.png" alt="Service Bus Parameters"></p>
 <p>Now, format the following request URL and query it using our azure client:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> client = <span class="hljs-keyword">new</span> AzureManagementClient(cert);
-<span class="hljs-keyword">var</span> url = <span class="hljs-string">$"https://management.core.windows.net/<span class="hljs-subst">{subscriptionId}</span>"</span> +
-          <span class="hljs-string">$"/services/servicebus/namespaces/<span class="hljs-subst">{serviceBusNamespace}</span>"</span> +
-          <span class="hljs-string">$"/queues/<span class="hljs-subst">{queueName}</span>/Metrics"</span>;
-<span class="hljs-keyword">var</span> result = client.DownloadString(url);
+<pre><code class="lang-csharp">var client = new AzureManagementClient(cert);
+var url = $&quot;https://management.core.windows.net/{subscriptionId}&quot; +
+          $&quot;/services/servicebus/namespaces/{serviceBusNamespace}&quot; +
+          $&quot;/queues/{queueName}/Metrics&quot;;
+var result = client.DownloadString(url);
 </code></pre>
 <p>If you did everything correctly, you will get the list of supported metrics
 in JSON. Congratulations, that&#39;s a major accomplishment :)</p>
 <p>And here is a quick way to convert JSON to C# array:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Metric</span>
+<pre><code class="lang-csharp">public class Metric
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Unit { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> PrimaryAggregation { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> DisplayName { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public string Name { get; set; }
+    public string Unit { get; set; }
+    public string PrimaryAggregation { get; set; }
+    public string DisplayName { get; set; }
 }
 </code></pre>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> metrics = JsonConvert.DeserializeObject&lt;Metric[]&gt;(result);
+<pre><code class="lang-csharp">var metrics = JsonConvert.DeserializeObject&lt;Metric[]&gt;(result);
 </code></pre>
 <h2 id="getting-the-metric-values">Getting the Metric Values</h2>
 <p>Now, to get the metric values themselves, you will need some extra 
@@ -202,26 +197,26 @@ take the <code>Pxxx</code> code from <a href="https://docs.microsoft.com/en-us/r
 <li>Start date/time (UTC) of the data period to query</li>
 </ul>
 <p>Here is the sample code:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> time = DateTime.UtcNow.AddHours(<span class="hljs-number">-1</span>).ToString(<span class="hljs-string">"s"</span>);
+<pre><code class="lang-csharp">var time = DateTime.UtcNow.AddHours(-1).ToString(&quot;s&quot;);
 
-<span class="hljs-keyword">var</span> client = <span class="hljs-keyword">new</span> AzureManagementClient(cert);
-<span class="hljs-keyword">var</span> url = <span class="hljs-string">$"https://management.core.windows.net/<span class="hljs-subst">{subscriptionId}</span>"</span> +
-          <span class="hljs-string">$"/services/servicebus/namespaces/<span class="hljs-subst">{serviceBusNamespace}</span>"</span> +
-          <span class="hljs-string">$"/queues/<span class="hljs-subst">{queueName}</span>/Metrics/<span class="hljs-subst">{metric}</span>"</span> +
-          <span class="hljs-string">$"/Rollups/PT5M/Values?$filter=Timestamp%20ge%20datetime'<span class="hljs-subst">{time}</span>Z'"</span>;
+var client = new AzureManagementClient(cert);
+var url = $&quot;https://management.core.windows.net/{subscriptionId}&quot; +
+          $&quot;/services/servicebus/namespaces/{serviceBusNamespace}&quot; +
+          $&quot;/queues/{queueName}/Metrics/{metric}&quot; +
+          $&quot;/Rollups/PT5M/Values?$filter=Timestamp%20ge%20datetime&#39;{time}Z&#39;&quot;;
 
-<span class="hljs-keyword">var</span> result = client.DownloadString(url);
+var result = client.DownloadString(url);
 </code></pre>
 <p>I am using <code>incoming</code> metric to get the amount of enqueued messages per period
 and <code>outgoing</code> metric to get the amount of dequeued messages.</p>
 <p>The strongly typed version is simple:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">DataPoint</span>
+<pre><code class="lang-csharp">public class DataPoint
 {
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Timestamp { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">long</span> Total { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public string Timestamp { get; set; }
+    public long Total { get; set; }
 }
 </code></pre>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> data = JsonConvert.DeserializeObject&lt;DataPoint[]&gt;(result);
+<pre><code class="lang-csharp">var data = JsonConvert.DeserializeObject&lt;DataPoint[]&gt;(result);
 </code></pre>
 <h2 id="working-example">Working Example</h2>
 <p>I&#39;ve authored a small library which wraps the HTTP request into strongly
@@ -299,7 +294,7 @@ or grab it from <a href="https://www.nuget.org/packages/MikhailIo.ServiceBusEnti
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

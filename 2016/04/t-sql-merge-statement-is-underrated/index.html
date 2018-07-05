@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -94,11 +89,11 @@ implementation of &quot;INSERT or UPDATE&quot; command.</p>
 <h2 id="example">Example</h2>
 <p>Let&#39;s take a concrete example. You have a person object with just 3 fields, here is the
 type definition:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Person</span>
+<pre><code class="lang-csharp">public class Person
 {
-    <span class="hljs-keyword">public</span> Guid Id { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Name { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
-    <span class="hljs-keyword">public</span> <span class="hljs-keyword">string</span> Email { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    public Guid Id { get; set; }
+    public string Name { get; set; }
+    public string Email { get; set; }
 }
 </code></pre>
 <p>Persons are entities, so we chose a GUID for the primary key column. We always generate
@@ -107,16 +102,16 @@ the unique identifier at client side and just want to save the <code>Person</cod
 <p>The typical T-SQL developer&#39;s toolbox contains <code>SELECT</code>, <code>INSERT</code>,
 <code>UPDATE</code> and <code>DELETE</code> statements. <code>DELETE</code> is of no use here, but the combination of the other
 three can be employed to complete the task. The most straightforward option is</p>
-<pre class="highlight"><code class="hljs sql">IF NOT EXISTS(<span class="hljs-keyword">SELECT</span> <span class="hljs-number">1</span> <span class="hljs-keyword">FROM</span> Person <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>)
-  <span class="hljs-keyword">INSERT</span> Person (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (@<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email)
-<span class="hljs-keyword">ELSE</span>
-  <span class="hljs-keyword">UPDATE</span> Person <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = @<span class="hljs-keyword">Name</span> <span class="hljs-keyword">AND</span> Email = @Email <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>
+<pre><code class="lang-sql">IF NOT EXISTS(SELECT 1 FROM Person WHERE Id = @Id)
+  INSERT Person (Id, Name, Email) VALUES (@Id, @Name, @Email)
+ELSE
+  UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id
 </code></pre>
 <p>It&#39;s 4 lines of code instead of one, but it works. Being more fancy, we can reduce the code to
 3 lines of code:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">UPDATE</span> Person <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = @<span class="hljs-keyword">Name</span> <span class="hljs-keyword">AND</span> Email = @Email <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">Id</span> = @<span class="hljs-keyword">Id</span>
-<span class="hljs-keyword">IF</span> @@ROWCOUNT = <span class="hljs-number">0</span> <span class="hljs-keyword">THEN</span>
-  <span class="hljs-keyword">INSERT</span> Person (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (@<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email)
+<pre><code class="lang-sql">UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id
+IF @@ROWCOUNT = 0 THEN
+  INSERT Person (Id, Name, Email) VALUES (@Id, @Name, @Email)
 </code></pre>
 <p>It should also perform faster if you update more often then insert.</p>
 <p>Solved? Not completely...</p>
@@ -142,13 +137,13 @@ statement. Generally, it&#39;s quite powerful and can be used to save all the di
 table into a target table. But we can also use it for our simple task of saving a person.</p>
 <p><code>MERGE</code> is just one statement, so it&#39;s atomic and consistent. It performs very well. 
 But the syntax is... oh my god, it&#39;s horrible. Your eyes might bleed:</p>
-<pre class="highlight"><code class="hljs sql"><span class="hljs-keyword">MERGE</span> Person <span class="hljs-keyword">AS</span> target
-<span class="hljs-keyword">USING</span> (<span class="hljs-keyword">SELECT</span> @<span class="hljs-keyword">Id</span>, @<span class="hljs-keyword">Name</span>, @Email) <span class="hljs-keyword">AS</span> <span class="hljs-keyword">source</span> (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email)
-   <span class="hljs-keyword">ON</span> (target.Id = source.Id)
- <span class="hljs-keyword">WHEN</span> <span class="hljs-keyword">MATCHED</span> <span class="hljs-keyword">THEN</span> 
-      <span class="hljs-keyword">UPDATE</span> <span class="hljs-keyword">SET</span> <span class="hljs-keyword">Name</span> = source.Name, Email = source.Email
- <span class="hljs-keyword">WHEN</span> <span class="hljs-keyword">NOT</span> <span class="hljs-keyword">MATCHED</span> <span class="hljs-keyword">THEN</span>
-      <span class="hljs-keyword">INSERT</span> (<span class="hljs-keyword">Id</span>, <span class="hljs-keyword">Name</span>, Email) <span class="hljs-keyword">VALUES</span> (source.Id, source.Name, source.Email)
+<pre><code class="lang-sql">MERGE Person AS target
+USING (SELECT @Id, @Name, @Email) AS source (Id, Name, Email)
+   ON (target.Id = source.Id)
+ WHEN MATCHED THEN 
+      UPDATE SET Name = source.Name, Email = source.Email
+ WHEN NOT MATCHED THEN
+      INSERT (Id, Name, Email) VALUES (source.Id, source.Name, source.Email)
 </code></pre>
 <p>Yes, we repeat the name of each column 6 times. And we say <code>source</code> 7 times. And you can imagine
 how the <code>MERGE</code> of a table with 50 columns would look like. And how painful it is to add a new column
@@ -165,26 +160,26 @@ related to <a href="https://en.wikipedia.org/wiki/Object-relational_impedance_mi
 You do your work in your favourite 
 general-purpose language, but stay &quot;close to the metal&quot;, or rather to SQL engine statements.</p>
 <p>Here is how I invoke a <code>MERGE</code> statement for a Person object (given a connection from the pool):</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> person = <span class="hljs-keyword">new</span> Person(...);
+<pre><code class="lang-csharp">var person = new Person(...);
 DapperAdapter.Merge(connection, person);
 </code></pre>
 <p>Voila! The implementation of generic <code>Merge</code> method takes care of the syntax complications.
 Write once, use everywhere:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> Merge&lt;TEntity&gt;(IDbConnection dbConnection, TEntity entity) <span class="hljs-keyword">where</span> TEntity : <span class="hljs-keyword">class</span>
+<pre><code class="lang-csharp">public void Merge&lt;TEntity&gt;(IDbConnection dbConnection, TEntity entity) where TEntity : class
 {
-    <span class="hljs-keyword">var</span> props = entity.GetType().GetProperties().Select(p =&gt; p.Name).ToList();
-    <span class="hljs-keyword">var</span> names = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props);
-    <span class="hljs-keyword">var</span> values = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props.Select(n =&gt; <span class="hljs-string">"@"</span> + n));
-    <span class="hljs-keyword">var</span> updates = <span class="hljs-keyword">string</span>.Join(<span class="hljs-string">", "</span>, props.Select(n =&gt; <span class="hljs-string">$"<span class="hljs-subst">{n}</span> = @<span class="hljs-subst">{n}</span>"</span>));
+    var props = entity.GetType().GetProperties().Select(p =&gt; p.Name).ToList();
+    var names = string.Join(&quot;, &quot;, props);
+    var values = string.Join(&quot;, &quot;, props.Select(n =&gt; &quot;@&quot; + n));
+    var updates = string.Join(&quot;, &quot;, props.Select(n =&gt; $&quot;{n} = @{n}&quot;));
     dbConnection.Execute(
-        <span class="hljs-string">$@"MERGE <span class="hljs-subst">{entity.GetType().Name}</span> as target
-          USING (VALUES(<span class="hljs-subst">{values}</span>))
-          AS SOURCE (<span class="hljs-subst">{names}</span>)
+        $@&quot;MERGE {entity.GetType().Name} as target
+          USING (VALUES({values}))
+          AS SOURCE ({names})
           ON target.Id = @Id
           WHEN matched THEN
-            UPDATE SET <span class="hljs-subst">{updates}</span>
+            UPDATE SET {updates}
           WHEN not matched THEN
-            INSERT(<span class="hljs-subst">{names}</span>) VALUES(<span class="hljs-subst">{values}</span>);"</span>,
+            INSERT({names}) VALUES({values});&quot;,
         entity);
 }
 </code></pre>
@@ -266,7 +261,7 @@ toolbox, and use the tools wisely.</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -90,27 +85,27 @@
 <p>These delays are caused by the runtime which prepares and compiles the strongly typed classes for serialization in runtime. Not sure why it&#39;s SO slow, but probably things might go wrong.</p>
 <p>There is a simple solution for this problem: create those helper classes at build time, pack it into an assembly and ship it as part of your .NET application. The tool that does this is called Sgen.exe, and it is a part of .NET SDK. So, we just need to use it in our project.</p>
 <p>The easiest way is to add a post-build event in your CS project properties. The event would look like</p>
-<p>sgen.exe /force /assembly:&quot;$(TargetPath)&quot;
+<p><pre>sgen.exe /force /assembly:&quot;$(TargetPath)&quot;</pre>
 After re-compiling the project, you should see a new assembly in Bin directory, which has the name ending with XmlSerializers.dll. That&#39;s the new assembly which will save you several seconds on each application start-up. It will be automatically copied to Bin directory of the projects which reference the original assembly with your serializable classes, so no other actions needed.</p>
 <p>However, this command might fail. Sgen tool will try to prepare the helper classes for each class in your assembly, which might not be possible. Then you&#39;ll get some error messages in Visual Studio. In this case, you might want to add a &quot;/types&quot; parameter, explicitly listing the class names to precompile. But I have a better solution for you.</p>
 <p>It&#39;s quite possible that you use MSBuild for regular automated builds of your project. We do. In this case a post-build event in the project properties won&#39;t work during those build. Then, do not add any post-build events, but instead open your .csproj file in plain text editor, and search for the following commented section:</p>
-<pre class="highlight"><code class="hljs xml"><span class="hljs-comment">&lt;!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+<pre><code>&lt;!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
    Other similar extension points exist, see Microsoft.Common.targets.
-&lt;Target Name="BeforeBuild"&gt;
+&lt;Target Name=&quot;BeforeBuild&quot;&gt;
 &lt;/Target&gt;
-&lt;Target Name="AfterBuild"&gt;
+&lt;Target Name=&quot;AfterBuild&quot;&gt;
 &lt;/Target&gt;
---&gt;</span>
+--&gt;
 </code></pre><p>Uncomment the second XML node and substitute it with something like this:</p>
-<pre class="highlight"><code class="hljs nsis">&lt;Target <span class="hljs-keyword">Name</span>=<span class="hljs-string">"AfterBuild"</span> DependsOnTargets=<span class="hljs-string">"AssignTargetPaths;Compile;ResolveKeySource"</span> Inputs=<span class="hljs-string">"<span class="hljs-variable">$(MSBuildAllProjects)</span>;@(IntermediateAssembly)"</span> Outputs=<span class="hljs-string">"<span class="hljs-variable">$(OutputPath)</span><span class="hljs-variable">$(_SGenDllName)</span>"</span>&gt;
+<pre><code>&lt;Target Name=&quot;AfterBuild&quot; DependsOnTargets=&quot;AssignTargetPaths;Compile;ResolveKeySource&quot; Inputs=&quot;$(MSBuildAllProjects);@(IntermediateAssembly)&quot; Outputs=&quot;$(OutputPath)$(_SGenDllName)&quot;&gt;
     &lt;ItemGroup&gt;
-      &lt;SgenTypes Include=<span class="hljs-string">"MyNamespace.MySerializableClass1"</span> /&gt;
-      &lt;SgenTypes Include=<span class="hljs-string">"MyNamespace.MySerializableClass2"</span> /&gt;
-      &lt;SgenTypes Include=<span class="hljs-string">"MyNamespace.MySerializableClassN"</span> /&gt;
+      &lt;SgenTypes Include=&quot;MyNamespace.MySerializableClass1&quot; /&gt;
+      &lt;SgenTypes Include=&quot;MyNamespace.MySerializableClass2&quot; /&gt;
+      &lt;SgenTypes Include=&quot;MyNamespace.MySerializableClassN&quot; /&gt;
     &lt;/ItemGroup&gt;
-    &lt;<span class="hljs-keyword">Delete</span> Files=<span class="hljs-string">"<span class="hljs-variable">$(TargetDir)</span><span class="hljs-variable">$(TargetName)</span>.XmlSerializers.dll"</span> ContinueOnError=<span class="hljs-string">"true"</span> /&gt;
-    &lt;SGen BuildAssemblyName=<span class="hljs-string">"<span class="hljs-variable">$(TargetFileName)</span>"</span> BuildAssemblyPath=<span class="hljs-string">"<span class="hljs-variable">$(OutputPath)</span>"</span> References=<span class="hljs-string">"@(ReferencePath)"</span> ShouldGenerateSerializer=<span class="hljs-string">"true"</span> UseProxyTypes=<span class="hljs-string">"false"</span> KeyContainer=<span class="hljs-string">"<span class="hljs-variable">$(KeyContainerName)</span>"</span> KeyFile=<span class="hljs-string">"<span class="hljs-variable">$(KeyOriginatorFile)</span>"</span> DelaySign=<span class="hljs-string">"<span class="hljs-variable">$(DelaySign)</span>"</span> ToolPath=<span class="hljs-string">"<span class="hljs-variable">$(SGenToolPath)</span>"</span> Types=<span class="hljs-string">"@(SgenTypes)"</span>&gt;
-      &lt;Output TaskParameter=<span class="hljs-string">"SerializationAssembly"</span> ItemName=<span class="hljs-string">"SerializationAssembly"</span> /&gt;
+    &lt;Delete Files=&quot;$(TargetDir)$(TargetName).XmlSerializers.dll&quot; ContinueOnError=&quot;true&quot; /&gt;
+    &lt;SGen BuildAssemblyName=&quot;$(TargetFileName)&quot; BuildAssemblyPath=&quot;$(OutputPath)&quot; References=&quot;@(ReferencePath)&quot; ShouldGenerateSerializer=&quot;true&quot; UseProxyTypes=&quot;false&quot; KeyContainer=&quot;$(KeyContainerName)&quot; KeyFile=&quot;$(KeyOriginatorFile)&quot; DelaySign=&quot;$(DelaySign)&quot; ToolPath=&quot;$(SGenToolPath)&quot; Types=&quot;@(SgenTypes)&quot;&gt;
+      &lt;Output TaskParameter=&quot;SerializationAssembly&quot; ItemName=&quot;SerializationAssembly&quot; /&gt;
     &lt;/SGen&gt;
 &lt;/Target&gt;
 </code></pre><p>The ItemGroup lists all the classes that you need to precompile. You can omit this section and Types attribute of SGen node if you want to compile all classes in assembly.
@@ -186,7 +181,7 @@ Have a nice application start-up boost!</p>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>

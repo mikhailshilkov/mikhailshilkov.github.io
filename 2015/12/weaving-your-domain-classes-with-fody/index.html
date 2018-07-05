@@ -25,12 +25,7 @@
 
     <!-- Bootstrap -->
     <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-    <script src="/scripts/vendor/html5shiv.js"></script>
-    <script src="/scripts/vendor/respond.min.js"></script>
-    <![endif]-->
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.78.6" />
     
@@ -87,10 +82,10 @@
     
     <div class="post-content">
         <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive cruft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">var</span> trip = <span class="hljs-keyword">new</span> Trip(
-    origin: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Paris"</span>, geoParis), 
-    destination: <span class="hljs-keyword">new</span> Location(<span class="hljs-string">"Amsterdam"</span>, geoAmsterdam),
-    vehicle: <span class="hljs-keyword">new</span> Vehicle(<span class="hljs-string">"TBL-12-H"</span>, Type.HeavyTruck)
+<pre><code class="lang-csharp">var trip = new Trip(
+    origin: new Location(&quot;Paris&quot;, geoParis), 
+    destination: new Location(&quot;Amsterdam&quot;, geoAmsterdam),
+    vehicle: new Vehicle(&quot;TBL-12-H&quot;, Type.HeavyTruck)
 </code></pre>
 <p>Let&#39;s include these requirements as parts of our trip model:</p>
 <ul>
@@ -101,7 +96,7 @@
 </ul>
 <h2 id="initial-version">Initial version</h2>
 <p>First, let&#39;s implement these requirement in a usual way:</p>
-<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+<pre><code class="lang-csharp">public class Trip : IEquatable&lt;Trip&gt;
 {
     public Trip(Location origin, Location destination, Vehicle vehicle)
     {
@@ -174,31 +169,31 @@
 <li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
 </ul>
 <p>To install them just execute </p>
-<pre class="highlight"><code class="hljs ps">PM&gt; Install-Package NullGuard.Fody
+<pre><code class="lang-ps">PM&gt; Install-Package NullGuard.Fody
 PM&gt; Install-Package Equals.Fody
 </code></pre>
 <p>The root of your project will now contain the following configuration file:</p>
-<pre class="highlight"><code class="hljs xml"><span class="php"><span class="hljs-meta">&lt;?</span>xml version=<span class="hljs-string">"1.0"</span> encoding=<span class="hljs-string">"utf-8"</span><span class="hljs-meta">?&gt;</span></span>
-<span class="hljs-tag">&lt;<span class="hljs-name">Weavers</span>&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">NullGuard</span> <span class="hljs-attr">IncludeDebugAssert</span>=<span class="hljs-string">"false"</span> /&gt;</span>
-  <span class="hljs-tag">&lt;<span class="hljs-name">Equals</span> /&gt;</span>
-<span class="hljs-tag">&lt;/<span class="hljs-name">Weavers</span>&gt;</span>
+<pre><code class="lang-xml">&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;
+&lt;Weavers&gt;
+  &lt;NullGuard IncludeDebugAssert=&quot;false&quot; /&gt;
+  &lt;Equals /&gt;
+&lt;/Weavers&gt;
 </code></pre>
 <p>(I&#39;ve added <code>IncludeDebugAssert</code> attribute manually to disable assert statements in debug mode)</p>
 <p>Let&#39;s adjust our class to make use of the plugins:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">Equals</span>]
-<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Trip</span>
+<pre><code class="lang-csharp">[Equals]
+public class Trip
 {
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span>(<span class="hljs-params">Location origin, Location destination, Vehicle vehicle</span>)
-    </span>{
-        <span class="hljs-keyword">this</span>.Origin = origin;
-        <span class="hljs-keyword">this</span>.Destination = destination;
-        <span class="hljs-keyword">this</span>.Vehicle = vehicle;
+    public Trip(Location origin, Location destination, Vehicle vehicle)
+    {
+        this.Origin = origin;
+        this.Destination = destination;
+        this.Vehicle = vehicle;
     }
 
-    <span class="hljs-keyword">public</span> Location Origin { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Location Destination { <span class="hljs-keyword">get</span>; }
-    <span class="hljs-keyword">public</span> Vehicle Vehicle { <span class="hljs-keyword">get</span>; }
+    public Location Origin { get; }
+    public Location Destination { get; }
+    public Vehicle Vehicle { get; }
 }
 </code></pre>
 <p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
@@ -207,67 +202,67 @@ PM&gt; Install-Package Equals.Fody
 <li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
 </ul>
 <p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Trip</span>(<span class="hljs-params">Location origin, Location destination, Vehicle vehicle</span>)
-</span>{
-    <span class="hljs-keyword">bool</span> flag = origin == <span class="hljs-literal">null</span>;
-    <span class="hljs-keyword">if</span> (flag)
+<pre><code class="lang-csharp">public Trip(Location origin, Location destination, Vehicle vehicle)
+{
+    bool flag = origin == null;
+    if (flag)
     {
-        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> ArgumentNullException(<span class="hljs-string">"origin"</span>);
+        throw new ArgumentNullException(&quot;origin&quot;);
     }
-    <span class="hljs-keyword">bool</span> flag2 = destination == <span class="hljs-literal">null</span>;
-    <span class="hljs-keyword">if</span> (flag2)
+    bool flag2 = destination == null;
+    if (flag2)
     {
-        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> ArgumentNullException(<span class="hljs-string">"destination"</span>);
+        throw new ArgumentNullException(&quot;destination&quot;);
     }
-    <span class="hljs-keyword">bool</span> flag3 = vehicle == <span class="hljs-literal">null</span>;
-    <span class="hljs-keyword">if</span> (flag3)
+    bool flag3 = vehicle == null;
+    if (flag3)
     {
-        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> ArgumentNullException(<span class="hljs-string">"vehicle"</span>);
+        throw new ArgumentNullException(&quot;vehicle&quot;);
     }
-    <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField = origin;
-    <span class="hljs-keyword">this</span>.&lt;Destination&gt;k__BackingField = destination;
-    <span class="hljs-keyword">this</span>.&lt;Vehicle&gt;k__BackingField = vehicle;
+    this.&lt;Origin&gt;k__BackingField = origin;
+    this.&lt;Destination&gt;k__BackingField = destination;
+    this.&lt;Vehicle&gt;k__BackingField = vehicle;
 }
 </code></pre>
 <p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
-<pre class="highlight"><code class="hljs cs"><span class="hljs-keyword">public</span> Location Origin
+<pre><code class="lang-csharp">public Location Origin
 {
-    [<span class="hljs-meta">CompilerGenerated</span>]
-    <span class="hljs-keyword">get</span>
+    [CompilerGenerated]
+    get
     {
-        Location expr_06 = <span class="hljs-keyword">this</span>.&lt;Origin&gt;k__BackingField;
-        <span class="hljs-keyword">if</span> (expr_06 == <span class="hljs-literal">null</span>)
+        Location expr_06 = this.&lt;Origin&gt;k__BackingField;
+        if (expr_06 == null)
         {
-            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> InvalidOperationException(<span class="hljs-string">"[NullGuard] Return value of property 'ETA.Domain.Location ETA.Domain.Trip::Origin()' is null."</span>);
+            throw new InvalidOperationException(&quot;[NullGuard] Return value of property &#39;ETA.Domain.Location ETA.Domain.Trip::Origin()&#39; is null.&quot;);
         }
-        <span class="hljs-keyword">return</span> expr_06;
+        return expr_06;
     }
 }
 </code></pre>
 <p>It doesn&#39;t make much sense to me, so I configured Fody on assembly level to check only arguments and return values:</p>
-<pre class="highlight"><code class="hljs cs">[<span class="hljs-meta">assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)</span>]
+<pre><code class="lang-csharp">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]
 </code></pre>
 <p>Here is a set of operations related to equality (I&#39;ll skip the body in sake of brevity):</p>
-<pre class="highlight"><code class="hljs undefined">public class Trip : IEquatable&lt;Trip&gt;
+<pre><code class="lang-csharp">public class Trip : IEquatable&lt;Trip&gt;
 {
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     private static bool EqualsInternal(Trip left, Trip right) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     public override bool Equals(Trip other) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     public override bool Equals(object obj) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     public override int GetHashCode() { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     public static bool operator ==(Trip left, Trip right) { ... }
-    [GeneratedCode("Equals.Fody", "1.4.6.0"), DebuggerNonUserCode]
+    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     public static bool operator !=(Trip left, Trip right) { ... }
 }
 </code></pre>
 <p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
 <h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
 <p>Here is how you actually should define similar types:</p>
-<pre class="highlight"><code class="hljs fs"><span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">Trip</span> </span>= 
+<pre><code class="lang-fsharp">type Trip = 
   { Origin : Location
     Destination : Location
     Vehicle : Vehicle }
@@ -344,7 +339,7 @@ PM&gt; Install-Package Equals.Fody
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/highlight.pack.js"></script>
+<script src="/vendor/prism.js"></script>
 <script src="/site.js"></script>
 
 <script>
