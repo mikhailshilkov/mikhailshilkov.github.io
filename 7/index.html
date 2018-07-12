@@ -77,6 +77,426 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Nov 29th, 2016</div>
+    
+    <h1><a href='/2016/11/introducing-stream-processing-in-fsharp/'>Introducing Stream Processing in F#</a></h1>
+    
+    <div class="post-content">
+        <p><em>The post was published for 
+<a href="https://sergeytihon.wordpress.com/2016/10/23/f-advent-calendar-in-english-2016/">F# Advent Calendar 2016</a>,
+thus the examples are themed around the Christmas gifts.</em></p>
+<p>This post is opening a series of articles about data processing
+discipline called <strong>Stream Processing</strong>. </p>
+<p>I describe stream processing from the developer perspective, using the 
+following (rather unusual) angle:</p>
+<ul>
+<li>F# as the primary language</li>
+<li>Concepts and principles are more important than frameworks and tools</li>
+<li>Start with modeling the domain problem and then solve just the problems
+that your domain has</li>
+</ul>
+<p>We begin the journey by introducing what stream processing is all about.</p>
+<h2 id="what-s-and-why-s">What&#39;s and Why&#39;s</h2>
+<p>There are several techniques to process data that are flowing into your
+applications, and stream processing is one of them.</p>
+<p>Stream processing is focused on the real-time processing of data 
+continuously, concurrently, and in a record-by-record fashion. Stream 
+processing is designed to analyze and act on live data flow, using 
+&quot;continuous queries&quot; expressed in user code. Data is structured 
+as a continuous stream of events over time:</p>
+<p><img src="/2016/11/introducing-stream-processing-in-fsharp//eventflow.png" alt="Flow of events"></p>
+<p>In contrast to some other approaches to reason about application
+structure, stream processing concepts are drawn around the data structures,
+flows and transformations rather than services or remote calls.</p>
+<p>Although the approach is nothing new, it gained much more traction 
+during the last years, especially in big data community. Products 
+like <em>Storm</em>, <em>Kafka</em>, <em>Flink</em>, <em>Samza</em> (all under <em>Apache Foundation</em>), 
+<em>Google Cloud Dataflow</em>, <em>Akka Streams</em> are popularizing the programming 
+model and bringing the tools to make it reliable and scalable.</p>
+<p>These products are born from the need to run data processing in 
+massively distributed environments. They are all about scaling out
+and solving or mitigating the issues of distributed systems which
+are inherintly not reliable.</p>
+<p>While this is a noble and mission-critical goal for internet-scale companies, most 
+applications do not require such massive performances and scale.</p>
+<p>There is something to be said for the domain-driven approach, when
+an application is built around the main asset and burden of enterprise
+systems: the core business logic. It may happen that you don&#39;t need
+a general purpose framework with the lowest processing latency. Instead
+your choice of tools might lean towards the cleanest code possible, tailored 
+for your own needs, and maintainable over time.</p>
+<p>Knowing the landscape can help you do the right trade-off.</p>
+<p>The recent Stream Processing boom comes from <em>Apache</em> / <em>JVM</em> world. 
+Unfortunately, stream processing frameworks and underlying concepts 
+are mostly unfamiliar to <em>.NET</em> developers. </p>
+<p>While <em>Azure Cloud</em> provides a managed service called <em>Azure Stream Analytics</em>,
+the product is built around SQL-like language and is rather limited in
+extensibility.</p>
+<p>We will have a look at other options in .NET space in the further posts
+of the series.</p>
+<p>For now, I want to start filling the gap and introduce the basic concepts 
+with F#. As a bonus, we are not limited by particular tools and 
+implementations, but can start from the ground up.</p>
+<h2 id="elements-of-a-stream">Elements of a Stream</h2>
+<p>As I already mentioned above, people are doing stream processing for long 
+time. In fact, if you receive events and then apply the transformation 
+logic structured around a single event at a time - you are already 
+doing stream processing. </p>
+<p>Here is a simple picture which illustrates the elements of processing:</p>
+<p><img src="/2016/11/introducing-stream-processing-in-fsharp//stage.png" alt="Stream Processing Stage"></p>
+<p>The data <strong>Source</strong> is responsible for injection of events
+into the pipeline. They are the input intergration points, typically they can
+be persistent message queues, logs or subscription feeds.</p>
+<p>A sequence of events in the same Source is called <strong>Stream</strong> (thus Stream Processing).
+Streams have <strong>unbounded</strong> nature, which means that the amount 
+of data points is not limited in size or time. There is no &quot;end&quot; of data: events
+will potentially keep coming as long as the processing application is alive.</p>
+<p>The high-level purpose of the <strong>Transformation</strong> is to extract
+value from the events. That&#39;s where the business logic resides, and that&#39;s
+where development effort goes to. Transformations can also be refered as Stages,
+Flows, Tasks, Jobs and so on, depending on the context.</p>
+<p>The most simple transformation like format conversion can be stateless.
+However, other transformations will often use some kind of <strong>State Store</strong>,
+as a means to</p>
+<ul>
+<li>Aggregate data from multiple events of the same stream</li>
+<li>Correlate events from several streams</li>
+<li>Enrich event data with external lookup data</li>
+</ul>
+<p>Data <strong>Sink</strong> represents the output of the pipeline, the place where the transformed, 
+aggregated and enriched events end up at. </p>
+<p>A Sink can be a database of any kind, which stores the processed data, ready
+to be consumed by user queries and reports.</p>
+<p>Another Sink can become a Source for another stream of events. This way
+the series of transformations are sequenced together into <strong>Processing Pipelines</strong>
+(or <strong>Topologies</strong>).</p>
+<p>On the high-level, the pipelines can usually be represented as directed graphs,
+with data streams in nodes and transformations in edges:</p>
+<p><img src="/2016/11/introducing-stream-processing-in-fsharp//topology.png" alt="Stream Processing Pipeline"></p>
+<p>In real-world applications, the pipelines can have lots of interconnected
+elements and flow branches. We will start with a simplistic example.</p>
+<h2 id="gift-count-pipeline">Gift Count Pipeline</h2>
+<p>Word Count is the Hello World and TODO app of the data
+processing world. Here are the reference implementations for 
+<a href="https://cloud.google.com/dataflow/examples/wordcount-example">Dataflow</a>,
+<a href="https://github.com/apache/flink/blob/master/flink-examples/flink-examples-batch/src/main/java/org/apache/flink/examples/java/wordcount/WordCount.java">Flink</a> and
+<a href="https://github.com/nathanmarz/storm-starter/blob/master/src/jvm/storm/starter/WordCountTopology.java">Storm</a>.</p>
+<p>To make it a bit more fun, we&#39;ll make a Gift Count pipeline out of it. 
+The following image summarizes our Gift Count topology:</p>
+<p><img src="/2016/11/introducing-stream-processing-in-fsharp//giftcount.png" alt="Gift Count Pipeline"></p>
+<p>The pipeline consists of one source, one sink and two transformations. 
+The input of the pipeline is the source of gift lists (each list is a comma
+separated line of text).</p>
+<p>The purpose of the processing is to tokenize gift lists into separate gifts,
+and then count the occurances of each gift in the stream. The output
+is written into a database sink, e.g. a key value store with gifts as keys and
+amounts as values.</p>
+<p>Note that while Split stage is stateless, the Count stage needs to keep some 
+internal state to be able to aggregate data over multiple entries.</p>
+<p>Let&#39;s start thinking about the implementation. How do we model transformations
+and pipelines in code?</p>
+<h2 id="transformations">Transformations</h2>
+<p>Here&#39;s how a transformation is typically represented in <em>Apache Storm</em>, the grand
+daddy of Big Data Stream Processing systems (transformations are called 
+<em>Bolts</em> in Storm, and code is Java):</p>
+<pre><code class="lang-java">public class TokenizerBolt implements IRichBolt {
+    public void execute(Tuple input) {
+        String wishlist = input.getString(0);
+        for(String gift: wishlist.split(&quot;, &quot;)) {
+            collector.emit(new Values(gift));
+        }
+        collector.ack(input);
+    }
+    // Other code is omitted
+}
+</code></pre>
+<p>Tokenizer is a class which implements a predefined interface with <code>execute</code>
+method in it. The method accepts a container class <code>Tuple</code> from where
+we can extract real data using position-based indexing. Something like a
+<code>DataRow</code> from ADO.NET. The method does not return anything, but instead
+calls an effect-ful method <code>emit</code>, passing a tuple to the next transformation
+in the pipeline.</p>
+<p>Clearly, there is some room for improvement here. We don&#39;t want to put our important
+domain logic into amorphous functions of type <code>Collector -&gt; Tuple -&gt; unit</code>. Here
+is what we can do:</p>
+<ul>
+<li>Use strong typing to see what function does based on its signature</li>
+<li>Use pure functions to make them easy to test and reason about</li>
+<li>Use domain-specific types with F# records and ADTs</li>
+</ul>
+<p>Our domain is very simple in Gift Count example. Still, we could describe <code>Gift</code>
+type to restrict it to be lowercase, not empty etc. But for the sake of simplisity 
+I&#39;ll limit it to one liner:</p>
+<pre><code class="lang-fsharp">type Gift = string
+</code></pre>
+<p>Now, the type of the first transformation should be <code>string -&gt; Gift list</code>. So,
+our transformation is based on a function </p>
+<pre><code class="lang-fsharp">let tokenize (wishlist: string) =
+  wishlist.ToLowerInvariant().Split(&quot;, &quot;)
+  |&gt; List.ofArray
+  |&gt; List.map (fun x -&gt; x.Trim())
+  |&gt; List.filter (fun x -&gt; x.Length &gt; 0)
+</code></pre>
+<p>The counting transformation is modeled in a similar way. The base function
+is of type <code>Gift list -&gt; (Gift * int) list</code> and is actually implemented as </p>
+<pre><code class="lang-fsharp">let count xs = List.countBy id xs
+</code></pre>
+<p>Instead of using a real database, we will just print the counts to console.
+So the last optional step for our examples will be to print out the counts
+one by one. Here is a helper function:</p>
+<pre><code class="lang-fsharp">let print (gift, count) = sprintf &quot;%i %s&quot; count gift
+</code></pre>
+<p>Now, we can tokenize and count the gifts in a single list. But how do we
+aggregate data over time? Let&#39;s leave this to the pipelines.</p>
+<h2 id="pipelines">Pipelines</h2>
+<p>Let&#39;s have a look at a definition of a Storm pipeline (in Java):</p>
+<pre><code class="lang-java">TopologyBuilder builder = new TopologyBuilder();
+builder.setSpout(&quot;line-reader&quot;, new LineReaderSpout());
+builder.setBolt(&quot;gifts-spitter&quot;, new GiftSpitterBolt()).shuffleGrouping(&quot;line-reader&quot;);
+builder.setBolt(&quot;gift-counter&quot;, new GiftCounterBolt()).shuffleGrouping(&quot;gifts-spitter&quot;);
+</code></pre>
+<p>There is a <code>Builder</code> class, which is capable to add Sources (<code>Spouts</code>) and Transformations
+(<code>Bolts</code>) to the pipeline. But again, there&#39;s no type story here: the stages are linked
+by name, and the types are just implementations of predefined interfaces.</p>
+<p>Here is another example of the pipeline, now from <em>Google Dataflow SDK</em> (still Java):</p>
+<pre><code class="lang-java">Pipeline
+    .create(options)
+    .apply(TextIO.Read.from(&quot;...&quot;))
+    .apply(ParDo.named(&quot;ExtractGifts&quot;).of(new DoFn&lt;String, String&gt;() {
+         public void processElement(ProcessContext c) { /* Implements tokenizer */ }
+    }))    
+    .apply(Count.&lt;String&gt;perElement())
+    .apply(MapElements.via(new SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
+         public String apply(KV&lt;String, Long&gt; element) { /* Formats results */ }
+    }))
+    .apply(TextIO.Write.to(&quot;...&quot;));
+</code></pre>
+<p>I consider this to be more descriptive. There is a clear flow of operations chained
+together. The types are visible and checked at compile time.</p>
+<p>How would we like to see this pipeline in F#? Our motivation example is going to
+be the same processing applied to a normal F# list of wishlists (strings). The following
+code snippet counts the gifts in wishlists and prints the result:</p>
+<pre><code class="lang-fsharp">wishlists
+|&gt; List.collect tokenize
+|&gt; List.countBy id
+|&gt; List.map print
+|&gt; List.iter (Console.WriteLine)
+</code></pre>
+<p>My goal for the rest of the article will be to define a <code>Flow</code> module which would
+enable me to write a Stream Processing pipeline in the same fashion. Here is the
+target code:</p>
+<pre><code class="lang-fsharp">sourceOfWishlists
+|&gt; Flow.collect tokenize
+|&gt; Flow.countBy id
+|&gt; Flow.map print
+|&gt; Flow.connectTo sinkForCounts
+</code></pre>
+<p>So, how do we implement something like this? Let&#39;s start with clarifying how
+Source and Sink can be defined.</p>
+<h2 id="source-and-sink">Source and Sink</h2>
+<p>We declared the source of a stream to be unbounded, not limited in time
+or event count. </p>
+<p>However, the modern stream processing systems like <em>Flink</em> and <em>Dataflow</em> 
+(both with ideas from <em>Apache Beam</em>) are trying to sit on two chairs at the same time by declaring
+that bounded data sources are just sub-case of unbounded streams. If your
+goal is to process a fixed batch of data, you could represent it as
+one-by-one sequence of events.</p>
+<p>Big Data world has a well known approach when batch processing and real time
+stream processing are done in parallel, with separate tools and separate code base.
+The approach is called <em>Lambda Architecture</em>. Beam is declaring this approach outdated,
+offering a way to reuse streaming code and capacity also for bounded data workloads.</p>
+<p>To follow this modern path, we will declare our <code>Source</code> as following:</p>
+<pre><code class="lang-fsharp">type BoundedSource&lt;&#39;T&gt; = unit -&gt; &#39;T seq
+type UnboundedSource&lt;&#39;T&gt; = (&#39;T -&gt; unit) -&gt; unit
+
+type Source&lt;&#39;T&gt; = 
+  | Bounded of BoundedSource&lt;&#39;T&gt;
+  | Unbounded of UnboundedSource&lt;&#39;T&gt;
+</code></pre>
+<p><code>Source</code> is a generic discriminated union with two cases. <code>Bounded</code> case represents
+a side effect-ful function, which returns a sequence of elements when called.
+The argument of <code>unit</code> is there to delay the processing: we need to declare
+sources long before they start to emit values.</p>
+<p>The <code>Unbounded</code> case is a bit harder to understand. It accepts an action to be 
+executed as the argument and returns nothing meaningful (<code>unit</code> again). You will
+see a usage example later.</p>
+<p>The <code>Sink</code> represents an action to happen at the end of pipeline. I&#39;ve made it
+a discriminated union too, but with just one case:</p>
+<pre><code class="lang-fsharp">type Sink&lt;&#39;T&gt; = | Action of (&#39;T -&gt; unit)
+</code></pre>
+<p>Now, we should be able to simulate an empty processing pipeline: directly connect 
+a source to a sink. Let&#39;s start with bounded data:</p>
+<pre><code class="lang-fsharp">let copyPipeline source sink =
+  match source, sink with
+  | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
+  | _ -&gt; failwith &quot;Not supported yet&quot;
+
+let gifts = seq [&quot;Ball&quot;; &quot;Train&quot;; &quot;Doll&quot;]
+let giftBoundedSource = (fun() -&gt; gifts) |&gt; Bounded
+
+let consoleSink = (fun (s: string) -&gt; Console.WriteLine s) |&gt; Action
+
+copyPipeline giftBoundedSource consoleSink
+</code></pre>
+<p>This code will print out all the gift names from the sequence. Now, let&#39;s extend it to
+stream unbounded data. Before we can do that, let&#39;s introduce a helper class:</p>
+<pre><code class="lang-fsharp">type Triggered&lt;&#39;T&gt;() = 
+  let subscribers = new List&lt;&#39;T -&gt; unit&gt;()
+  member this.DoNext x =
+    subscribers.ForEach(fun s -&gt; s x)
+  member this.Subscribe = subscribers.Add
+</code></pre>
+<p>An instance of such class keeps a mutable list of subscribers. Subscribers are
+added by calling <code>Subscribe</code> method. Someone else can then call <code>DoNext</code> method,
+and each subscriber will get an item every time.</p>
+<p>Here&#39;s how we can use it for unbounded data processing:</p>
+<pre><code class="lang-fsharp">let copyPipeline source sink =
+  match source, sink with
+  | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
+  | Unbounded ub, Action a -&gt; ub a
+
+let consoleSource = new Triggered&lt;string&gt;()
+let unboundedSource = consoleSource.Subscribe |&gt; Unbounded
+copyPipeline unboundedSource consoleSink
+
+Seq.initInfinite (fun _ -&gt; Console.ReadLine())
+|&gt; Seq.takeWhile ((&lt;&gt;) &quot;q&quot;)
+|&gt; Seq.iter consoleSource.DoNext
+</code></pre>
+<p>This little program will echo whatever you enter into the console until you type 
+<code>q</code> to quit. That is an example of unbounded data: you can type as long as
+you want, there is no hard limit.</p>
+<p>Here&#39;s how it works:</p>
+<ol>
+<li><code>Triggered</code> source is created.</li>
+<li>Unbounded source is declared by subscribing to the trigger.</li>
+<li>Our dummy pipeline links the source to the action of writing to console.</li>
+<li>Every time a new line is entered, <code>DoNext</code> method of the trigger is called
+and the data flows to the sink.</li>
+</ol>
+<p>Stop here and make sure you understand the example before going further.</p>
+<h2 id="flow">Flow</h2>
+<p>Now it&#39;s time to implement the contracts for the flow that we defined
+in Gift Count example. The contract consists of two parts. The first part
+is a generic interface which defines all the operations that we need:</p>
+<pre><code class="lang-fsharp">type Runnable = unit -&gt; unit
+
+type IFlow&lt;&#39;a&gt; =
+  abstract member Map&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b&gt;
+  abstract member Collect&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b list) -&gt; IFlow&lt;&#39;b&gt;
+  abstract member CountBy&lt;&#39;b when &#39;b: equality&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b * int&gt;
+  abstract member To: Sink&lt;&#39;a&gt; -&gt; Runnable
+</code></pre>
+<p>Then we define a module which is just a wrapper around the interface to
+enable F#-style API:</p>
+<pre><code class="lang-fsharp">module Flow =
+  let map&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO) (flow: IFlow&lt;&#39;TI&gt;) = flow.Map f
+  let collect&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO list) (flow: IFlow&lt;&#39;TI&gt;) = flow.Collect f
+  let countBy&lt;&#39;T, &#39;TK when &#39;TK: equality&gt; (f: &#39;T -&gt; &#39;TK) (flow: IFlow&lt;&#39;T&gt;) = flow.CountBy f
+  let connectTo&lt;&#39;T&gt; sink (flow: IFlow&lt;&#39;T&gt;) = flow.To sink
+  let run (r: Runnable) = r()
+</code></pre>
+<p>Then, we just need an implementation of <code>IFlow</code> and a factory method to create
+an initial instance of flow given a data source. </p>
+<p>Now I&#39;d like to emphasize that there are multiple possible implementations 
+of <code>IFlow</code> depending on the required properties for the pipeline. They might make
+use of different libraries or frameworks, or be a naive simple implementation like
+the one below, suitable for modeling and testing. </p>
+<p>In fact, one of my implementations doesn&#39;t run the pipeline, but instead uses reflection
+to build a visual graph of processing stages, to be used for documentation and discussion
+purposes.</p>
+<p>We will have a look at more advanced implementations in the further articles, but
+for now here is a naive version:</p>
+<pre><code class="lang-fsharp">module Runner =
+  let private mapTransform map = function
+    | Bounded bs -&gt; bs &gt;&gt; Seq.map map |&gt; Bounded
+    | Unbounded us -&gt;
+      fun subscriber -&gt; map &gt;&gt; subscriber |&gt; us
+      |&gt; Unbounded
+
+  let private collectTransform mapToMany = function
+    | Bounded bs -&gt; bs &gt;&gt; Seq.map mapToMany &gt;&gt; Seq.concat |&gt; Bounded
+    | Unbounded us -&gt;
+      fun subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
+      |&gt; Unbounded
+
+  let private countByTransform&lt;&#39;a, &#39;b when &#39;b: equality&gt; (getKey: &#39;a -&gt; &#39;b) source =
+    let state = new Dictionary&lt;&#39;b, int&gt;()
+    let addItem i = 
+      let key = getKey i
+      let value = if state.ContainsKey key then state.[key] else 0
+      let newValue = value + 1
+      state.[key] &lt;- newValue
+      (key, newValue)
+
+    match source with
+    | Bounded bs -&gt; bs &gt;&gt; Seq.countBy getKey |&gt; Bounded
+    | Unbounded us -&gt; (fun s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
+
+  let private stage source transform sink () =
+    match transform source, sink with
+    | Bounded bs, Action a -&gt; bs() |&gt; Seq.iter a
+    | Unbounded us, Action a -&gt; us a
+
+  type private Flow&lt;&#39;a&gt;(source: Source&lt;&#39;a&gt;, connect: Sink&lt;&#39;a&gt; -&gt; Runnable) =
+    member this.Apply&lt;&#39;b&gt; t = new Flow&lt;&#39;b&gt;(t source, stage source t) :&gt; IFlow&lt;&#39;b&gt;
+
+    interface IFlow&lt;&#39;a&gt; with
+      member this.Map&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (mapTransform map)
+
+      member this.Collect&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (collectTransform map)
+
+      member this.CountBy&lt;&#39;b when &#39;b: equality&gt;(getKey) = 
+        this.Apply&lt;&#39;b * int&gt; (countByTransform&lt;&#39;a, &#39;b&gt; getKey)
+
+      member this.To(sink) = connect(sink)
+
+  let from&lt;&#39;a&gt; source =
+    new Flow&lt;&#39;a&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;&#39;a&gt;
+</code></pre>
+<p>The implementation details are not that important at the moment (even though it&#39;s
+just 37 lines of code), so I&#39;ll just proceed to the pipeline definition:</p>
+<pre><code class="lang-fsharp">unboundedSource                // e.g. same console source as before
+|&gt; Runner.from                 // create Runner implementation of IFlow
+|&gt; Flow.collect tokenize
+|&gt; Flow.countBy id
+|&gt; Flow.map print
+|&gt; Flow.connectTo consoleSink  // connect to the Sink
+|&gt; Flow.run                    // start listening for events
+</code></pre>
+<p>Here you can find 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/streamprocessing/GiftCount.fs">the full code of the Gift Count example</a>.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>In this article, we started reasoning about low-latency processing 
+pipelines from the domain logic point of view. We
+tried to reuse well known F# idioms like ADTs and HOFs
+to show how stream processing is not much different from other types
+of applications.</p>
+<p>Although this post is quite long by now, we just scratched the surface
+of the stream processing. Here are some focus areas for the 
+follow-ups:</p>
+<ul>
+<li>More complex pipeline topologies</li>
+<li>State management</li>
+<li>Concepts of time, windowing and out-of-order events</li>
+<li>Reliability, retries and guarantees</li>
+<li>Scaling out</li>
+<li>Using 3rd parties for all of that</li>
+<li>Documentation and formal analysis</li>
+</ul>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/stream-processing/'>Stream Processing</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-advent-calendar/'>F# Advent Calendar</a>, <a href='/tags/data-processing/'>Data Processing</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Nov 18th, 2016</div>
     
     <h1><a href='/2016/11/event-sourcing-and-io-complexity/'>Event Sourcing and IO Complexity</a></h1>
@@ -460,219 +880,6 @@ with Application Insights.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/application-insights/'>Application Insights</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/typescript/'>Typescript</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Aug 5th, 2016</div>
-    
-    <h1><a href='/2016/08/comparing-scala-to-fsharp/'>Comparing Scala to F#</a></h1>
-    
-    <div class="post-content">
-        <p>F# and Scala are quite similar languages from 10.000 feet view. Both are
-functional-first languages developed for the virtual machines where imperative
-languages dominate. C# for .NET and Java for JVM are still <em>lingua franca</em>, 
-but alternatives are getting stronger.</p>
-<p>My background is in .NET ecosystem, so F# was the first of the two that I started
-learning. At the same time, Scala seems to have more traction, largely due to
-successful products and frameworks like Spark, Akka and Play. That&#39;s why I decided
-to broaden my skill set and pick up some Scala knowledge. I&#39;ve started with 
-<a href="https://www.coursera.org/specializations/scala">Functional Programming in Scala Specialization</a> at Coursera.
-While following the coursera, I&#39;m doing some notes about which language features
-in Scala I find interesting, or vice versa - missing compared to F#.</p>
-<p>In no particular order, I want to share my notes of Scala vs F# in this blog post.</p>
-<p><em>Post updated based on comments by Mark Lewis and Giacomo Citi.</em></p>
-<h2 id="implicit-parameters">Implicit Parameters</h2>
-<p>A parameter of a function can be marked as implicit</p>
-<pre><code class="lang-scala">def work(implicit i:Int) = print(i)
-</code></pre>
-<p>and that means you can call the function without specifying the value for this parameter
-and the compiler will try to figure out that value you (according to
-the extensive set of rules), e.g.</p>
-<pre><code class="lang-scala">implicit val v = 2;
-// ... somewhere below
-work // prints &#39;2&#39;
-</code></pre>
-<p>I am not aware of any similar features in other language that I know, so I&#39;m pretty sure
-I don&#39;t understand it well enough yet :) At the same time, I think implicits are
-very characteristic for Scala: they are a powerful tool, which can be used in many
-valid scenarios, or can be abused to shoot in one&#39;s feet.</p>
-<h2 id="underscore-in-lambdas">Underscore In Lambdas</h2>
-<p>Underscores <code>_</code> can be used to represent parameters in lambda expressions
-without explicitly naming them:</p>
-<pre><code class="lang-scala">employees.sortBy(_.dateOfBirth)
-</code></pre>
-<p>I think that&#39;s brilliant - very short and readable. Tuple values are represented
-by <code>_1</code> and <code>_2</code>, so we can sort an array of tuples like</p>
-<pre><code class="lang-scala">profitByYear.sortBy(_._1)
-</code></pre>
-<p>This looks a bit hairy and should probably be used only when the meaning is obvious.
-(In the example above I&#39;m not sure if we sort by year or by profit...)</p>
-<p>In F# underscore is used in a different sense - as &quot;something to ignore&quot;. That makes
-sense, but I would love to have a shorter way of writing lambda in</p>
-<pre><code class="lang-fsharp">empoyees |&gt; List.sort (fun e -&gt; e.dateOfBirth)
-</code></pre>
-<p>Any hint how?</p>
-<h2 id="tail-recursion-mark">Tail-Recursion Mark</h2>
-<p>Any recursive function in Scala can be marked with <code>@tailrec</code> annotation,
-which would result in compilation error if the function is not tail-recursive.
-This guarantees that you won&#39;t get a nasty stack overflow exception. </p>
-<pre><code class="lang-scala">@tailrec 
-def boom(x: Int): Int = {
-  if (x == 0) 0
-  else boom(x-1) + 1
-}
-</code></pre>
-<p>The code above won&#39;t compile, as the recursion can&#39;t be optimized by the
-compiler.</p>
-<p>The feature sounds very reasonable, although I must admit that I have 
-never needed it in <em>my</em> F# code yet.</p>
-<h2 id="call-by-name">Call By Name</h2>
-<p>When you call a function in F#, the parameter values are evaluated before
-the function body. This style of function substitution model is known as
-Call by Value.</p>
-<p>Same is the default in Scala. But there is an alternative: you can defer the
-evaluation of parameters by marking them with an <code>=&gt;</code> symbol:</p>
-<pre><code class="lang-scala">def callByName(x: =&gt; Int) = {
-  println(&quot;x is &quot; + x)
-}
-</code></pre>
-<p>This style is known as Call by Name, and the evaluation is defered until the
-parameter is actually used. So, if parameter is never used, its value
-will never be evaluated. This code:</p>
-<pre><code class="lang-scala">val a:Option[Int] = Some(1)
-val b = a getOrElse (2/0)
-</code></pre>
-<p>will set <code>b</code> to <code>1</code>, and no error will be thrown, even though we are dividing by zero 
-in function parameter. This is because the parameter of <code>getOrElse</code> is passed
-by name.</p>
-<p>The F# alternative <code>defaultArg</code> doesn&#39;t work this way, so the following code
-will blow up:</p>
-<pre><code class="lang-fsharp">let a = Some(1)
-let b = defaultArg b (2/0) // boom
-</code></pre>
-<p>You can get deferred evaluation by passing a function:</p>
-<pre><code class="lang-fsharp">let defaultArgFunc o (f: unit -&gt; &#39;a) = 
-  match o with | Some v -&gt; v | None -&gt; f()
-
-let b2 = defaultArgFunc a (fun () -&gt; 2 / 0)
-</code></pre>
-<p>That&#39;s essentially what happens in Scala too, but the Scala syntax is 
-arguably cleaner.</p>
-<h2 id="lack-of-type-inference">Lack of Type Inference</h2>
-<p>Slowly moving towards language design flavours, I&#39;ll start with Type Inference.
-In Scala, type inference seems to be quite limited. Yes, you don&#39;t have to
-explicitly define the types of local values or (most of the time) function return
-types, but that&#39;s about it.</p>
-<pre><code class="lang-scala">def max (a: Int, b:Int) = if (a &gt; b) a else b
-</code></pre>
-<p>You have to specify the types of all input parameters, and that&#39;s quite a bummer
-for people who are used to short type-less code of F# (or Haskell, OCaml and others, 
-for that matter).</p>
-<p>Type inference in F# plays another significant role: automatic type generalization.
-F# compiler would make types as generic as possible, based on implementation.</p>
-<pre><code class="lang-fsharp">let max a b = if a &gt; b then a else b
-</code></pre>
-<p>The type of the function above is <code>&#39;a -&gt; &#39;a -&gt; &#39;a</code>. Most people wouldn&#39;t make
-it generic from get-go, but compiler helps in this case.</p>
-<h2 id="functional-vs-object-oriented-style">Functional vs Object-Oriented Style</h2>
-<p>Both F# and Scala are running on top of managed object-oriented virtual machines,
-and at the same time both languages enable developers to write functional code.
-Functional programming means operating immutable data structures in pure, free of
-side effects operations. Without questioning all this, I find pure functional 
-Scala code to be written in much more object-oriented <em>style</em> compared to F#.</p>
-<p>Classes and objects are ubiquitous in Scala: they are in each example given 
-in Martin Odersky&#39;s courses. Most F# examples refrain from classes unless needed.
-F# official guidance is to never expose non-abstract classes from F# API!</p>
-<p>Scala is really heavy about inheritance. They even introduced quasi-multiple inheritance:
-traits. <code>Stream</code> inherits from <code>List</code>, and <code>Nothing</code> is a subtype of every other type, 
-to be used for some covariance tricks.</p>
-<p>Operations are usually defined as class methods instead of separate functions. For
-example the following Scala code</p>
-<pre><code class="lang-scala">word filter (c =&gt; c.isLetter)
-</code></pre>
-<p>would filter a string to letters only. Why is <code>isLetter</code> defined as a method of 
-<code>Char</code>? I don&#39;t think it&#39;s essential for the type itself...</p>
-<h2 id="usage-of-operators">Usage of Operators</h2>
-<p>It looks like Scala culture inclines more towards the usage of different
-operators, not only for arithmetic operations but also for different classes
-from standard library and domain-specific code too. The basic ones are nice,
-e.g. list concatenation:</p>
-<pre><code class="lang-scala">List(1, 2) ++ List(3, 4)
-</code></pre>
-<p>but others look awkward to me, e.g. stream concatenation:</p>
-<pre><code class="lang-scala">Stream(1) #::: Stream(2)
-</code></pre>
-<p>Akka streams sweetness:</p>
-<pre><code class="lang-scala">in ~&gt; f1 ~&gt; bcast ~&gt; f2 ~&gt; merge ~&gt; f3 ~&gt; out
-            bcast ~&gt; f4 ~&gt; merge
-</code></pre>
-<p>This can go to quite an extreme, similar to what <code>scalaz</code> library does.</p>
-<p>My default would be not to use operators unless you are sure that every 
-reader is able to instantly understand what it means.</p>
-<h2 id="partial-application">Partial Application</h2>
-<p>Not a huge difference, but F# functions are curried by default, while Scala
-functions aren&#39;t. Thus, in F# partial application just works, all the time</p>
-<pre><code class="lang-fsharp">let add a b = a + b
-let add3 = add 3
-let sum = add3 5 // 8
-</code></pre>
-<p>Scala function </p>
-<pre><code class="lang-scala">def add (a: Int, b: Int) = a + b
-</code></pre>
-<p>is not curried, but Underscore comes to the rescue</p>
-<pre><code class="lang-scala">val add3: (Int) =&gt; Int = add(3, _)
-val sum = add3(5) // 8
-</code></pre>
-<p>Note how I miss the type inference again.</p>
-<p>The parameter order is very important in F#: the short syntax
-will partially apply parameters from left to right. In Scala, you can
-put <code>_</code> at any position, which gives you some flexibility.</p>
-<h2 id="single-direction-dependency">Single-Direction Dependency</h2>
-<p>F# compiler doesn&#39;t allow circular dependencies. You can&#39;t use a function 
-before you&#39;ve defined it. Here is what Expert F# book has to say about
-that:</p>
-<blockquote>
-<p>Managing dependencies and circularity is one of the most difficult 
-and fundamental problems in good software design. The files in 
-an F# project are presented to the F# compiler in a compilation 
-order: constructs in the earlier files can&#39;t refer to declarations 
-in the later files. This is a mechanism to enforce layered design, 
-where software is carefully organized into layers, and where one 
-layer doesn&#39;t refer to other layers in a cyclic way (...) to help you 
-write code that is reusable and organized 
-into components that are, where possible, independent and not 
-combined into a &quot;tangle&quot; of &quot;spaghetti code&quot;.</p>
-</blockquote>
-<p>I think this is huge. F# forces you to structure your code in a way that
-avoid mutual dependencies between different functions, types and modules.
-This reduces the complexity and coupling, makes the developers avoid some
-of the design pitfalls.</p>
-<p>There&#39;s nothing like that in Scala. You are on your own.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>Of course I did not cover all the distinctions, for instance active patterns, 
-type providers, computation expressions in F# and type classes, higher 
-kinded types, macros in Scala.</p>
-<p>Obviously, both Scala and F# are very capable languages, and I am still
-picking up the basics of them. While similar in many aspects, they made
-several different choices along the language design trade-offs.</p>
-<p>P.S. Overheard on Twitter:</p>
-<blockquote>
-<p>F# isn&#39;t a bad language, it&#39;s just attached to a bad platform... 
-The opposite of Scala actually.</p>
-</blockquote>
-<p>UPDATE: Thanks everyone for the great comments; please check out
-<a href="https://redd.it/4whxhj">this reddit</a> and <a href="https://lobste.rs/s/ewhrpt">lobste.rs</a>
-to see more of them.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/scala/'>Scala</a>, <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/coursera/'>Coursera</a>
     </div>
     
 </article>

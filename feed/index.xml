@@ -3,13 +3,221 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-07-11T13:24:09.586Z</updated>
+    <updated>2018-07-12T21:13:29.059Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>Getting Started with AWS Lambda in Pulumi</title>
+        <link href="https://mikhail.io/2018/07/getting-started-with-aws-lambda-in-pulumi/"/>
+        <updated>2018-07-12T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2018-07-12,/2018/07/getting-started-with-aws-lambda-in-pulumi/</id>
+        <content type="html"><![CDATA[<p>For a small research project of mine, I needed to create HTTP triggered
+AWS Lambda&#39;s in all supported programming languages.</p>
+<p>I&#39;m not a power AWS user, so I get easily confused about the configuration
+of things like IAM roles or API Gateway. Moreover, I wanted my environment to
+be reproducible, so manual AWS Console wasn&#39;t a good option.</p>
+<p>I decided it was a good job for Pulumi. They pay a lot of attention to
+serverless and especially AWS Lambda, and I love the power of 
+configuration as code.</p>
+<p>I created a Pulumi program which provisions Lambda&#39;s running on Javascript,
+.NET, Python, Java and Go. Pulumi program itself is written in Javascript.</p>
+<p>I&#39;m describing the resulting code below in case folks need to do the same thing.
+The code itself is on <a href="https://github.com/mikhailshilkov/pulumi-aws-serverless-examples">my github</a>.</p>
+<h2 id="javascript">Javascript</h2>
+<p>Probably, the vast majority of Pulumi + AWS Lambda users will be using
+Javascript as programming language for their serverless functions.</p>
+<p>No wonder that this scenario is the easiest to start with. There is a
+high-level package <code>@pulumi/cloud-aws</code> which hides all the AWS machinery from
+a developer. </p>
+<p>The simplest function will consist of just several lines:</p>
+<pre><code class="lang-js">const cloud = require(&quot;@pulumi/cloud-aws&quot;);
+
+const api = new cloud.API(&quot;aws-hellolambda-js&quot;);
+api.get(&quot;/js&quot;, (req, res) =&gt; {
+    res.status(200).json(&quot;Hi from Javascript lambda&quot;);
+});
+
+exports.endpointJs = api.publish().url;
+</code></pre>
+<p>Configure your Pulumi stack, run <code>pulumi update</code> and a Lambda 
+is up, running and accessible via HTTP.</p>
+<h2 id="-net-core">.NET Core</h2>
+<p>.NET is my default development environment and AWS Lambda supports .NET Core
+as execution runtime.</p>
+<p>Pulumi program is still Javascript, so it can&#39;t mix C# code in. Thus, the setup
+looks like this:</p>
+<ul>
+<li>There is a .NET Core 2.0 application written in C# and utilizing
+<code>Amazon.Lambda.*</code> NuGet packages</li>
+<li>I build and publish this application with <code>dotnet</code> CLI</li>
+<li>Pulumi then utilizes the published binaries to create deployment artifacts</li>
+</ul>
+<p>C# function looks like this:</p>
+<pre><code class="lang-csharp">public class Functions
+{
+    public async Task&lt;APIGatewayProxyResponse&gt; GetAsync(APIGatewayProxyRequest request, ILambdaContext context)
+    {
+        return new APIGatewayProxyResponse
+        {
+            StatusCode = (int)HttpStatusCode.OK,
+            Body = &quot;\&quot;Hi from C# Lambda\&quot;&quot;,
+            Headers = new Dictionary&lt;string, string&gt; { { &quot;Content-Type&quot;, &quot;application/json&quot; } }
+        };
+    }
+}
+</code></pre>
+<p>For non-Javascript lambdas I utilize <code>@pulumi/aws</code> package. It&#39;s of lower level
+than <code>@pulumi/cloud-aws</code>, so I had to setup IAM first:</p>
+<pre><code class="lang-js">const aws = require(&quot;@pulumi/aws&quot;);
+
+const policy = {
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Action&quot;: &quot;sts:AssumeRole&quot;,
+            &quot;Principal&quot;: {
+                &quot;Service&quot;: &quot;lambda.amazonaws.com&quot;,
+            },
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Sid&quot;: &quot;&quot;,
+        },
+    ],
+};
+const role = new aws.iam.Role(&quot;precompiled-lambda-role&quot;, {
+    assumeRolePolicy: JSON.stringify(policy),
+});
+</code></pre>
+<p>And then I did a raw definition of AWS Lambda:</p>
+<pre><code class="lang-js">const pulumi = require(&quot;@pulumi/pulumi&quot;);
+
+const csharpLambda = new aws.lambda.Function(&quot;aws-hellolambda-csharp&quot;, {
+    runtime: aws.lambda.DotnetCore2d0Runtime,
+    code: new pulumi.asset.AssetArchive({
+        &quot;.&quot;: new pulumi.asset.FileArchive(&quot;./csharp/bin/Debug/netcoreapp2.0/publish&quot;),
+    }),
+    timeout: 5,
+    handler: &quot;app::app.Functions::GetAsync&quot;,
+    role: role.arn
+});
+</code></pre>
+<p>Note the path to <code>publish</code> folder, which should match the path created by
+<code>dotnet publish</code>, and the handler name matching C# class/method.</p>
+<p>Finally, I used <code>@pulumi/aws-serverless</code> to define API Gateway endpoint for
+the lambda:</p>
+<pre><code class="lang-js">const serverless = require(&quot;@pulumi/aws-serverless&quot;);
+
+const precompiledApi = new serverless.apigateway.API(&quot;aws-hellolambda-precompiledapi&quot;, {
+    routes: [
+        { method: &quot;GET&quot;, path: &quot;/csharp&quot;, handler: csharpLambda },
+    ],
+});
+</code></pre>
+<p>That&#39;s definitely more ceremony compared to Javascript version. But hey, it&#39;s
+code, so if you find yourself repeating the same code, go ahead and make a
+higher order component out of it, incapsulating the repetitive logic.</p>
+<h2 id="python">Python</h2>
+<p>Pulumi supports Python as scripting language, but I&#39;m sticking to Javascript
+for uniform experience.</p>
+<p>In this case, the flow is similar to .NET but simpler: no compilation step
+is required. Just define a <code>handler.py</code>:</p>
+<pre><code class="lang-python">def handler(event, context): 
+    return {
+        &#39;statusCode&#39;: 200,
+        &#39;headers&#39;: {&#39;Content-Type&#39;: &#39;application/json&#39;},
+        &#39;body&#39;: &#39;&quot;Hi from Python lambda&quot;&#39;
+    }
+</code></pre>
+<p>and package it into zip in AWS lambda definition:</p>
+<pre><code class="lang-js">const pythonLambda = new aws.lambda.Function(&quot;aws-hellolambda-python&quot;, {
+    runtime: aws.lambda.Python3d6Runtime,
+    code: new pulumi.asset.AssetArchive({
+        &quot;.&quot;: new pulumi.asset.FileArchive(&quot;./python&quot;),
+    }),
+    timeout: 5,
+    handler: &quot;handler.handler&quot;,
+    role: role.arn
+});
+</code></pre>
+<p>I&#39;m reusing the <code>role</code> definition from above. The API definition will also
+be the same as for .NET.</p>
+<h2 id="go">Go</h2>
+<p>Golang is a compiled language, so the approach is similar to .NET: write code,
+build, reference the built artifact from Pulumi.</p>
+<p>My Go function looks like this:</p>
+<pre><code class="lang-go">func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+
+ return events.APIGatewayProxyResponse{
+  Body:       &quot;\&quot;Hi from Golang lambda\&quot;&quot;,
+  StatusCode: 200,
+ }, nil
+
+}
+</code></pre>
+<p>Because I&#39;m on Windows but AWS Lambda runs on Linux, I had to use 
+<a href="https://github.com/aws/aws-lambda-go"><code>build-lambda-zip</code></a> 
+tool to make the package compatible. Here is the PowerShell build script:</p>
+<pre><code class="lang-powershell">$env:GOOS = &quot;linux&quot;
+$env:GOARCH = &quot;amd64&quot;
+go build -o main main.go
+~\Go\bin\build-lambda-zip.exe -o main.zip main
+</code></pre>
+<p>and Pulumi function definition:</p>
+<pre><code class="lang-js">const golangLambda = new aws.lambda.Function(&quot;aws-hellolambda-golang&quot;, {
+    runtime: aws.lambda.Go1dxRuntime,
+    code: new pulumi.asset.FileArchive(&quot;./go/main.zip&quot;),
+    timeout: 5,
+    handler: &quot;main&quot;,
+    role: role.arn
+});
+</code></pre>
+<h2 id="java">Java</h2>
+<p>Java class implements an interface from AWS SDK:</p>
+<pre><code class="lang-java">public class Hello implements RequestStreamHandler {
+
+    public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context) throws IOException {
+
+        JSONObject responseJson = new JSONObject();
+
+        responseJson.put(&quot;isBase64Encoded&quot;, false);
+        responseJson.put(&quot;statusCode&quot;, &quot;200&quot;);
+        responseJson.put(&quot;body&quot;, &quot;\&quot;Hi from Java lambda\&quot;&quot;);  
+
+        OutputStreamWriter writer = new OutputStreamWriter(outputStream, &quot;UTF-8&quot;);
+        writer.write(responseJson.toJSONString());  
+        writer.close();
+    }
+}
+</code></pre>
+<p>I compiled this code with Maven (<code>mvn package</code>), which produced a <code>jar</code> file. AWS Lambda accepts
+<code>jar</code> directly, but Pulumi&#39;s <code>FileArchive</code> is unfortunately crashing on trying
+to read it.</p>
+<p>As a workaround, I had to define a <code>zip</code> file with <code>jar</code> placed inside <code>lib</code>
+folder:</p>
+<pre><code class="lang-js">const javaLambda = new aws.lambda.Function(&quot;aws-coldstart-java&quot;, {
+    code: new pulumi.asset.AssetArchive({
+        &quot;lib/lambda-java-example-1.0-SNAPSHOT.jar&quot;: new pulumi.asset.FileAsset(&quot;./java/target/lambda-java-example-1.0-SNAPSHOT.jar&quot;),
+    }),
+    runtime: aws.lambda.Java8Runtime,
+    timeout: 5,
+    handler: &quot;example.Hello&quot;,
+    role: role.arn
+});
+</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>The complete code for 5 lambda functions in 5 different programming languages
+can be found in <a href="https://github.com/mikhailshilkov/pulumi-aws-serverless-examples">my github repository</a>.</p>
+<p>Running <code>pulumi update</code> provisions 25 AWS resources in a matter of 1 minute,
+so I can start playing with my test lambdas in no time.</p>
+<p>And the best part: when I don&#39;t need them anymore, I run <code>pulumi destroy</code> and
+my AWS Console is clean again!</p>
+<p>Happy serverless moments!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Monads explained in C# (again)</title>
@@ -2218,335 +2426,6 @@ what exactly to expect from Consumption Plan auto scaling.</p>
 <p>I&#39;ll be running more scaling experiments with other types of workloads in the
 nearest future, so... more benchmarks are coming.</p>
 <p>Happy scaling!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Precompiled Azure Functions in F#</title>
-        <link href="https://mikhail.io/2017/12/precompiled-azure-functions-in-fsharp/"/>
-        <updated>2017-12-03T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-12-03,/2017/12/precompiled-azure-functions-in-fsharp/</id>
-        <content type="html"><![CDATA[<p><em>This post is giving a start to 
-<a href="https://sergeytihon.com/2017/10/22/f-advent-calendar-in-english-2017/">F# Advent Calendar in English 2017</a>. 
-Please follow the calendar for all the great posts to come.</em></p>
-<p>Azure Functions is a &quot;serverless&quot; cloud offering from Microsoft. It
-allows you to run your custom code as response to events in the cloud. 
-Functions are very easy to
-start with; and you only pay per execution - with free allowance sufficient
-for any proof-of-concept, hobby project or even low-usage production loads.
-And when you need more, Azure will scale your project up automatically.</p>
-<p>F# is one of the officially supported languages for Azure Functions.
-Originally, F# support started with F# Script files (authored directly
-in Azure portal or copied from local editor), so you can find many articles
-online to get started, e.g.
-<a href="http://brandewinder.com/2017/02/11/fsharp-azure-function-from-the-ground-up-part-1/">Creating an Azure Function in F# from the ground up</a> and
-<a href="http://brandewinder.com/2017/03/06/fsharp-azure-function-from-the-ground-up-part-2/">Part 2</a>
-by Mathias Brandewinder.</p>
-<p>However, I find script-based model a bit limited. In today&#39;s article I
-will focus on creating Azure Functions as precompiled .NET libraries.
-Along the way, I&#39;ll use cross-platform tools like .NET Core and VS Code,
-and I&#39;ll show how to integrate Functions with some popular tools
-like Suave and Paket.</p>
-<h2 id="create-a-project">Create a Project</h2>
-<p>You can follow this walkthrough on Windows or Mac, just make sure that
-you have <code>.NET Core 2</code> and <code>Node.js 8.x</code> with <code>npm</code> installed. My editor of
-choice is Visual Studio Code with Ionide plugin.</p>
-<p>I&#39;ll show you how to create a new F# Function App from scratch. If you want to
-jump to runnable project, you can get it from 
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/6-precompiled-timer">my github</a>.</p>
-<p>We start with creating a new F# library project for .NET Standard 2. Run
-in your command line:</p>
-<pre><code class="lang-sh">dotnet new classlib --language F# --name HelloFunctions
-</code></pre>
-<p>This command creates a folder with two files: <code>HelloFunctions.fsproj</code> project
-file and <code>Library.fs</code> source code file.</p>
-<p>Now, add a reference to Azure Functions NuGet package:</p>
-<pre><code class="lang-sh">dotnet add package Microsoft.NET.Sdk.Functions
-</code></pre>
-<h2 id="define-a-function">Define a Function</h2>
-<p>Open <code>Library.fs</code> code file and change it to the following code:</p>
-<pre><code class="lang-fsharp">namespace HelloFunctions
-
-open System
-open Microsoft.Azure.WebJobs
-open Microsoft.Azure.WebJobs.Host
-
-module Say =
-  let private daysUntil (d: DateTime) =
-    (d - DateTime.Now).TotalDays |&gt; int
-
-  let hello (timer: TimerInfo, log: TraceWriter) =
-    let christmas = new DateTime(2017, 12, 25)
-
-    daysUntil christmas
-    |&gt; sprintf &quot;%d days until Christmas&quot;
-    |&gt; log.Info
-</code></pre>
-<p>We defined a function <code>hello</code> which should be triggered by Functions runtime
-based on time intervals. Every time the function is called, we log how many
-days we still need to wait before Christmas 2017.</p>
-<p>To convert this simple F# function to an Azure Function, create a folder called
-<code>Hello</code> (or choose any other name) next to the project file and add 
-<code>function.json</code> file in there:</p>
-<pre><code class="lang-json">{
-  &quot;bindings&quot;: [
-    {
-      &quot;name&quot;: &quot;timer&quot;,
-      &quot;type&quot;: &quot;timerTrigger&quot;,
-      &quot;schedule&quot;: &quot;0 * * * * *&quot;
-    }
-  ],
-  &quot;scriptFile&quot;: &quot;../bin/HelloFunctions.dll&quot;,
-  &quot;entryPoint&quot;: &quot;HelloFunctions.Say.hello&quot;
-}
-</code></pre>
-<p>We defined that:</p>
-<ul>
-<li>Our function is triggered by timer</li>
-<li>It runs every minute at 0 seconds</li>
-<li>The entry point is our <code>hello</code> function in the compiled assembly</li>
-</ul>
-<h2 id="prepare-local-runtime">Prepare Local Runtime</h2>
-<p>There are a couple more configuration files needed to be able to
-run the Function App locally. <code>host.json</code> defines hosting parameters; empty
-file will do for now:</p>
-<pre><code class="lang-json">{
-}
-</code></pre>
-<p>Most triggers need to connect to a Storage Account. For examples, timer
-trigger uses it to hold leases to define which running instance will 
-actually execute the action every minute. Copy a connection string to your 
-Storage Account (local Storage emulator is fine too) and put it into 
-<code>local.settings.json</code> file:</p>
-<pre><code class="lang-json">{
-  &quot;IsEncrypted&quot;: false,
-  &quot;Values&quot;: {
-    &quot;AzureWebJobsStorage&quot;: &quot;...your connection string...&quot;
-  }
-}
-</code></pre>
-<p>Note that this file is only used for local development and is not published
-to Azure by default.</p>
-<p>Finally, we need to modify <code>fsproj</code> file to make the build tool copy those
-files into <code>bin</code> folder. Add the following section in there:</p>
-<pre><code class="lang-xml">&lt;ItemGroup&gt;
-  &lt;Content Include=&quot;Hello\function.json&quot;&gt;
-    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
-  &lt;/Content&gt;
-  &lt;Content Include=&quot;host.json&quot;&gt;
-    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
-  &lt;/Content&gt;
-  &lt;Content Include=&quot;local.settings.json&quot;&gt;
-    &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
-  &lt;/Content&gt;
-&lt;/ItemGroup&gt;
-</code></pre>
-<h2 id="run-app-locally">Run App Locally</h2>
-<p>The first step is to build and publish our Function App with <code>dotnet</code>
-commands:</p>
-<pre><code class="lang-sh">dotnet build
-dotnet publish
-</code></pre>
-<p>The first line produces the dll file and the second line copies it
-and all of its dependencies to <code>publish</code> folder.</p>
-<p>The nice thing about Azure Functions is that you can easily run them
-locally on a development machine. Execute the following command to 
-install the runtime and all the required libraries:</p>
-<pre><code class="lang-sh">npm install -g azure-functions-core-tools@core
-</code></pre>
-<p>This will add a <code>func</code> CLI to your system which is the tool to
-use for all Function related operations.</p>
-<p>Navigate to <code>bin\Debug\netstandard2.0\publish</code> folder and run <code>func start</code> 
-from there. You should see that your app is now running, and your timer
-function is scheduled for execution:</p>
-<p><img src="https://mikhail.io/2017/12/precompiled-azure-functions-in-fsharp/./funcstart.png" alt="Function App Start"></p>
-<p>Once the next minute comes, the timer will trigger and you will see
-messages in the log:</p>
-<p><img src="https://mikhail.io/2017/12/precompiled-azure-functions-in-fsharp/./funcran.png" alt="Timer Trigger Working"></p>
-<h2 id="integrate-into-vs-code-">Integrate into VS Code </h2>
-<p>You are free to use full Visual Studio or any editor to develop Function
-Apps in F#. I&#39;ve been mostly using VS Code for this purpose, and I believe
-it&#39;s quite popular among F# community.</p>
-<p>If you use VS Code, be sure to setup the tasks that you can use from within
-the editor. I usually have at least 3 tasks: &quot;build&quot; (<code>dotnet build</code>),
-&quot;publish&quot; (<code>dotnet publish</code>) and &quot;run&quot; (<code>func start --script-root bin\\debug\\netstandard2.0\\publish</code>),
-with shortcuts configured to all of them.</p>
-<p>You can find an example of <code>tasks.json</code> file
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/6-precompiled-timer/.vscode/tasks.json">here</a>.</p>
-<p>Also, check out <a href="https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions">Azure Functions Extension</a>.</p>
-<h2 id="deploy-to-azure">Deploy to Azure</h2>
-<p>You can deploy the exact same application binaries to Azure. Start by 
-creating an empty Function App in the portal, or via Azure CLI (<code>func</code> CLI
-does not support that).</p>
-<p>Then run the following command to deploy your precompiled function to
-this app:</p>
-<pre><code class="lang-sh">func azure functionapp publish &lt;FunctionAppName&gt;
-</code></pre>
-<p>At the first run, it will verify your Azure credentials.</p>
-<p>In real-life production scenarios your workflow is probably going to be
-similar to this:</p>
-<ul>
-<li>Change Function App code</li>
-<li>Run it locally to test the change</li>
-<li>Push the code changes to the source control repository</li>
-<li>Have your CI/CD pipeline build it, run the tests and then push
-the binaries to Azure Functions environment</li>
-</ul>
-<h2 id="http-trigger">HTTP Trigger</h2>
-<p>Timer-triggered functions are useful, but that&#39;s just one limited use case.
-Several other event types can trigger Azure Functions, and for all of them
-you can create precompiled functions and run them locally.</p>
-<p>The most ubiquotous trigger for any serverless app is probably HTTP. So,
-for the rest of the article I will focus on several approaches to 
-implement HTTP functions. Nonetheless, the same techique can be applied to
-other triggers too.</p>
-<p>F# code for the simplest HTTP Function can look like this:</p>
-<pre><code class="lang-fsharp">namespace PrecompiledApp
-
-open Microsoft.AspNetCore.Mvc
-open Microsoft.AspNetCore.Http
-open Microsoft.Azure.WebJobs.Host
-
-module PrecompiledHttp =
-
-  let run(req: HttpRequest, log: TraceWriter) =
-    log.Info(&quot;F# HTTP trigger function processed a request.&quot;)
-    ContentResult(Content = &quot;HO HO HO Merry Christmas&quot;, ContentType = &quot;text/html&quot;)
-</code></pre>
-<p>You can find a full example of HTTP Function App 
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/5-precompiled">here</a>.</p>
-<p>This code is using ASP.NET Core classes for request and response. It&#39;s still
-just an F# function, so we need to bind it to a trigger in <code>function.json</code>:</p>
-<pre><code class="lang-json">{
-  &quot;bindings&quot;: [
-    {
-      &quot;type&quot;: &quot;httpTrigger&quot;,
-      &quot;methods&quot;: [&quot;get&quot;],
-      &quot;authLevel&quot;: &quot;anonymous&quot;,
-      &quot;name&quot;: &quot;req&quot;,
-      &quot;route&quot;: &quot;hellosanta&quot;
-    }
-  ],
-  &quot;scriptFile&quot;: &quot;../bin/PrecompiledApp.dll&quot;,
-  &quot;entryPoint&quot;: &quot;PrecompiledApp.PrecompiledHttp.run&quot;
-}
-</code></pre>
-<p>If you run the app, the function will be hosted at localhost</p>
-<p><img src="https://mikhail.io/2017/12/precompiled-azure-functions-in-fsharp/./httpstart.png" alt="HTTP Trigger Working"></p>
-<p>And a request to <code>http://localhost:7071/api/hellosanta</code> will get responded
-with our &quot;HO HO HO&quot; message.</p>
-<p>This function is of &quot;Hello World&quot; level, but the fact that it&#39;s inside a
-normal F# library gives you lots of power.</p>
-<p>Let&#39;s see at some examples of how to use it.</p>
-<h2 id="suave-function">Suave Function</h2>
-<p>What can we do to enhance developer experience? We can use our 
-favourite F# libraries.</p>
-<p><a href="http://suave.io/">Suave</a> is one of the most popular libraries to 
-implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
-<p>Let&#39;s first make a small twist to HTTP trigger definition in <code>function.json</code>:</p>
-<pre><code class="lang-json">&quot;bindings&quot;: [
-  {
-    &quot;type&quot;: &quot;httpTrigger&quot;,
-    &quot;methods&quot;: [&quot;get&quot;],
-    &quot;authLevel&quot;: &quot;anonymous&quot;,
-    &quot;name&quot;: &quot;req&quot;,
-    &quot;route&quot;: &quot;{*anything}&quot;
-  }
-],
-</code></pre>
-<p>Binding now defines a wildcard route to redirect all requests 
-to this function. That&#39;s because we want Suave to take care of routing
-for us.</p>
-<p>The definition of such routing will look familiar to all Suave users:</p>
-<pre><code class="lang-fsharp">module App =
-  open Suave
-  open Suave.Successful
-  open Suave.Operators
-  open Suave.Filters
-
-  let app = 
-    GET &gt;=&gt; choose
-      [ path &quot;/api/what&quot; &gt;=&gt; OK &quot;Every time we love, every time we give, it&#39;s Christmas.&quot;
-        path &quot;/api/when&quot; &gt;=&gt; OK &quot;Christmas isn&#39;t a season. It&#39;s a feeling.&quot;
-        path &quot;/api/how&quot; &gt;=&gt; OK &quot;For it is in giving that we receive.&quot; ]
-</code></pre>
-<p>Azure Function is just a one-liner wiring Suave app into the pipeline:</p>
-<pre><code class="lang-fsharp">module Http =
-  open Suave.Azure.Functions.Context
-
-  let run req =
-    req |&gt; runWebPart App.app  |&gt; Async.StartAsTask
-</code></pre>
-<p>The heavy lifting is done by <code>runWebPart</code> function, which is a utility
-function defined in the same application. You can see the full code
-of this wiring in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/7-suave">my repo</a>.</p>
-<p>Run the application and request the URL <code>http://localhost:7071/api/what</code> 
-to see the function in action.</p>
-<p>This example is very simple, but you can do lots of powerful stuff with Suave!
-Most probably, you shouldn&#39;t go over the root and try to fit whole
-mulpti-resource REST API into a single Azure Function. But it might still
-make sense to keep related HTTP calls together, and Suave can help to keep
-it cleaner.</p>
-<h2 id="managing-dependencies-with-paket">Managing Dependencies with Paket</h2>
-<p>Once your Function App becomes bigger and you start using multiple F#
-projects, it makes sense to switch to <a href="https://fsprojects.github.io/Paket/">Paket</a>
-package manager.</p>
-<p>It is totally possible to use Paket with Azure Functions. There isn&#39;t much
-specific to Azure Functions, really. Here is an example of <code>paket.dependecies</code>
-file</p>
-<pre><code>source https://www.nuget.org/api/v2
-
-framework: &gt;= netstandard2.0
-nuget FSharp.Core
-nuget Microsoft.NET.Sdk.Functions
-nuget Microsoft.AspNetCore.Mvc.Core
-</code></pre><p>that I used in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/8-paket">example</a> 
-which demonstrates Paket + Functions combination.</p>
-<h2 id="attribute-based-functions">Attribute-Based Functions</h2>
-<p>Up until now, we were writing <code>function.json</code> files manually for each 
-function. This is not very tedious, but it is error prone. Microsoft offers an alternative 
-programming model where these files are auto-generated by Functions SDK.</p>
-<p>This programming model is based on attributes, which are similar to WebJobs 
-SDK attributes. With this approach, there&#39;s no <code>function.json</code> file in 
-the project. Instead, the function declaration is decorated with attributes:</p>
-<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;AttributeBased&quot;)&gt;]
-let run([&lt;HttpTrigger&gt;] req: HttpRequest, log: TraceWriter)
-</code></pre>
-<p>The same development flow still works. Once you run <code>dotnet build</code>, a new 
-<code>function.json</code> file will be generated and placed into <code>bin</code> folder. Functions 
-runtime will be able to use it to run the function as usual.</p>
-<p>Note that the generated file looks a bit different from the manual 
-equivalent:</p>
-<ol>
-<li><p>It manifests itself with</p>
-<pre><code class="lang-json"> &quot;generatedBy&quot;: &quot;Microsoft.NET.Sdk.Functions.Generator-1.0.6&quot;,
- &quot;configurationSource&quot;: &quot;attributes&quot;,
-</code></pre>
-</li>
-<li><p>In case you use input and output bindings, you won&#39;t be able to see them
-in the generated file. Only trigger will be visible in <code>json</code>. Don&#39;t worry,
-input and output bindings will still work.</p>
-</li>
-</ol>
-<p>You can find an example of HTTP function with attributes 
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/9-attributes">here</a>.</p>
-<p>There are pro&#39;s and con&#39;s in this model. Obviously, not having to write
-JSON files manually is beneficial. Some people find the binding attributes
-really ugly though, especially when you have 3 or 4 bindings and each has 
-multiple parameters. </p>
-<p>My preference is to use attributes, but don&#39;t mix attribute decoration
-with real code. I.e. keep the Function&#39;s body to a simple 1-liner, and
-delegate the call to a properly defined F# function with the actual
-domain logic.</p>
-<h2 id="wrapping-up">Wrapping Up</h2>
-<p>Lots of F# users value the language for how quickly one can be productive
-with it: based on concise syntax, powerful libraries and tools like FSI.</p>
-<p>In my opinion, Azure Functions fit nicely into the picture. It takes just
-several minutes before you can run your first Function App on developer
-machine, and then seamlessly transfer it into the cloud.</p>
-<p>I&#39;ve prepared a github repository where you can find more
-<a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples">Examples of Azure Functions implemented in F#</a>.</p>
-<p>Merry Serverless Functional Christmas!</p>
 ]]></content>
     </entry>
     

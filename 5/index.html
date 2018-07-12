@@ -77,6 +77,33 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jun 6th, 2017</div>
+    
+    <h1><a href='/2017/06/mikhail-io-upgraded-to-https-and-http2/'>Mikhail.io Upgraded to HTTPS and HTTP/2</a></h1>
+    
+    <div class="post-content">
+        <p>Starting today, this blog has switched to HTTPS secure protocol:</p>
+<p><img src="/2017/06/mikhail-io-upgraded-to-https-and-http2//mikhailio-https.png" alt="HTTPS"></p>
+<p>While there&#39;s not that much to secure on my blog, HTTPS is still considered
+to be a good practice for any site in 2017. One of the benefits that we can
+get from it is the usage of HTTP/2 protocol:</p>
+<p><img src="/2017/06/mikhail-io-upgraded-to-https-and-http2//mikhailio-http2.png" alt="HTTP/2"></p>
+<p>This should be beneficial to any reader which uses a modern browser!</p>
+<p>Thanks to <a href="https://cloudflare.com">CloudFlare</a> for providing me with free
+HTTPS and HTTP/2 support.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/https/'>HTTPS</a>, <a href='/tags/http/2/'>HTTP/2</a>, <a href='/tags/cloudflare/'>CloudFlare</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">May 29th, 2017</div>
     
     <h1><a href='/2017/05/reliable-consumer-of-azure-event-hubs/'>Reliable Consumer of Azure Event Hubs</a></h1>
@@ -897,166 +924,6 @@ they are free to run!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/metrics/'>Metrics</a>, <a href='/tags/monitoring/'>Monitoring</a>, <a href='/tags/prtg/'>PRTG</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Mar 2nd, 2017</div>
-    
-    <h1><a href='/2017/03/azure-service-bus-entity-metrics-dotnet-apis/'>Azure Service Bus Entity Metrics .NET APIs</a></h1>
-    
-    <div class="post-content">
-        <p>Azure Service Bus is a key component of many background processing applications
-hosted in Azure,
-so it definitely requires monitoring and alerting. My goal for our 
-monitoring solution was to provide an API to retrieve the following parameters
-for each Service Bus queue/topic in our application:</p>
-<ul>
-<li>Message count (backlog)</li>
-<li>Dead letter queue count</li>
-<li>Amount of Incoming messages per time period</li>
-<li>Amount of Processed messages per time period</li>
-</ul>
-<p>The first two are easily retrieved from <code>QueueDescription</code> object (see 
-<a href="https://msdn.microsoft.com/library/azure/hh780773.aspx">MSDN</a>):</p>
-<pre><code class="lang-csharp">var nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
-var queue = nsmgr.GetQueue(name);
-var backlog = queue.MessageCountDetails.ActiveMessageCount;
-var dlq = q.MessageCountDetails.DeadLetterMessageCount;
-</code></pre>
-<p>The other two metrics are not readily available from the .NET SDK though.
-There are some extra metrics described in
-<a href="https://docs.microsoft.com/en-us/rest/api/servicebus/service-bus-entity-metrics-rest-apis">Service Bus Entity Metrics REST APIs</a>
-but the docs are really brief, wague and lack any examples.</p>
-<p>So the rest of this post will be a walkthrough of how to consume those 
-REST API from your .NET code.</p>
-<h2 id="management-certificate">Management Certificate</h2>
-<p>The API authenticates the caller by its client certificate. This authentication
-approach seems to be deprecated for Azure services, but for this particular
-API it&#39;s still the way to go.</p>
-<p>First, you need to obtain a certificate itself, which means:</p>
-<ul>
-<li>It&#39;s installed in certificate store on the machine where API call is made</li>
-<li>You have a <code>.cer</code> file for it</li>
-</ul>
-<p>If you are calling API from your workstation, you may just 
-<a href="https://docs.microsoft.com/en-us/azure/cloud-services/cloud-services-certs-create">Create a new self-signed certificate</a>.</p>
-<p>I am calling API from Azure Function App, so I reused the certificate that we already
-uploaded to Azure for SSL support.</p>
-<p>Once you have the certificate, you have to 
-<a href="https://docs.microsoft.com/en-us/azure/azure-api-management-certs">Upload it as a management certificate</a>
-to <a href="https://manage.windowsazure.com">&quot;Classic&quot; Azure portal</a>. Yes, 
-management certificates are not supported by the the new portal. If you don&#39;t
-have access to the old portal, ask your system administrator to grant it.</p>
-<p>Finally, here is a code sample to load the certificate in C# code:</p>
-<pre><code class="lang-csharp">X509Store store = new X509Store(&quot;My&quot;, StoreLocation.CurrentUser);
-store.Open(OpenFlags.ReadOnly);
-var cert = store.Certificates.Find(
-    X509FindType.FindBySubjectName, 
-    &quot;&lt;certificate name of yours&gt;&quot;, 
-    false)[0];
-</code></pre>
-<h2 id="request-headers">Request Headers</h2>
-<p>Here is a helper class which adds the specified certificate to each request 
-and sets the appropriate headers too:</p>
-<pre><code class="lang-csharp">internal class AzureManagementClient : WebClient
-{
-    private readonly X509Certificate2 certificate;
-
-    public AzureManagementClient(X509Certificate2 certificate)
-    {
-        this.certificate = certificate;
-    }
-
-    protected override WebRequest GetWebRequest(Uri address)
-    {
-        var request = (HttpWebRequest)base.GetWebRequest(address);
-
-        request.ClientCertificates.Add(this.certificate);
-        request.Headers.Add(&quot;x-ms-version: 2013-10-01&quot;);
-        request.Accept = &quot;application/json&quot;;
-
-        return request;
-    }
-}
-</code></pre>
-<p>This code is mostly copied from the very useful 
-<a href="https://cincycoder.wordpress.com/2015/11/18/azure-service-bus-entity-metrics-api/">post of Brian Starr</a>,
-so thank you Brian.</p>
-<h2 id="getting-the-list-of-metrics">Getting the List of Metrics</h2>
-<p>To get the list of available metrics you will need 3 string parameters:</p>
-<ul>
-<li>Azure subscription ID</li>
-<li>Service Bus namespace</li>
-<li>Queue name</li>
-</ul>
-<p>The following picture shows all of them on Azure Portal screen:</p>
-<p><img src="/2017/03/azure-service-bus-entity-metrics-dotnet-apis//servicebusparameters.png" alt="Service Bus Parameters"></p>
-<p>Now, format the following request URL and query it using our azure client:</p>
-<pre><code class="lang-csharp">var client = new AzureManagementClient(cert);
-var url = $&quot;https://management.core.windows.net/{subscriptionId}&quot; +
-          $&quot;/services/servicebus/namespaces/{serviceBusNamespace}&quot; +
-          $&quot;/queues/{queueName}/Metrics&quot;;
-var result = client.DownloadString(url);
-</code></pre>
-<p>If you did everything correctly, you will get the list of supported metrics
-in JSON. Congratulations, that&#39;s a major accomplishment :)</p>
-<p>And here is a quick way to convert JSON to C# array:</p>
-<pre><code class="lang-csharp">public class Metric
-{
-    public string Name { get; set; }
-    public string Unit { get; set; }
-    public string PrimaryAggregation { get; set; }
-    public string DisplayName { get; set; }
-}
-</code></pre>
-<pre><code class="lang-csharp">var metrics = JsonConvert.DeserializeObject&lt;Metric[]&gt;(result);
-</code></pre>
-<h2 id="getting-the-metric-values">Getting the Metric Values</h2>
-<p>Now, to get the metric values themselves, you will need some extra 
-parameters:</p>
-<ul>
-<li>Metric name (take a value of <code>Name</code> properties from <code>Metric</code> class above)</li>
-<li>Rollup period, or aggregation period: 5 minute, 1 hour, 1 day, or 1 week,
-take the <code>Pxxx</code> code from <a href="https://docs.microsoft.com/en-us/rest/api/servicebus/supported-rollups">here</a></li>
-<li>Start date/time (UTC) of the data period to query</li>
-</ul>
-<p>Here is the sample code:</p>
-<pre><code class="lang-csharp">var time = DateTime.UtcNow.AddHours(-1).ToString(&quot;s&quot;);
-
-var client = new AzureManagementClient(cert);
-var url = $&quot;https://management.core.windows.net/{subscriptionId}&quot; +
-          $&quot;/services/servicebus/namespaces/{serviceBusNamespace}&quot; +
-          $&quot;/queues/{queueName}/Metrics/{metric}&quot; +
-          $&quot;/Rollups/PT5M/Values?$filter=Timestamp%20ge%20datetime&#39;{time}Z&#39;&quot;;
-
-var result = client.DownloadString(url);
-</code></pre>
-<p>I am using <code>incoming</code> metric to get the amount of enqueued messages per period
-and <code>outgoing</code> metric to get the amount of dequeued messages.</p>
-<p>The strongly typed version is simple:</p>
-<pre><code class="lang-csharp">public class DataPoint
-{
-    public string Timestamp { get; set; }
-    public long Total { get; set; }
-}
-</code></pre>
-<pre><code class="lang-csharp">var data = JsonConvert.DeserializeObject&lt;DataPoint[]&gt;(result);
-</code></pre>
-<h2 id="working-example">Working Example</h2>
-<p>I&#39;ve authored a small library which wraps the HTTP request into strongly
-typed .NET classes. You can see it in
-<a href="https://github.com/mikhailshilkov/ServiceBusEntityMetrics">my github repository</a>
-or grab it from <a href="https://www.nuget.org/packages/MikhailIo.ServiceBusEntityMetrics/">NuGet</a>.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>, <a href='/tags/metrics/'>Metrics</a>, <a href='/tags/monitoring/'>Monitoring</a>
     </div>
     
 </article>

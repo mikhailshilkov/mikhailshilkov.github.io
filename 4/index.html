@@ -77,6 +77,211 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jul 26th, 2017</div>
+    
+    <h1><a href='/2017/07/authoring-custom-binding-azure-functions/'>Authoring a Custom Binding for Azure Functions</a></h1>
+    
+    <div class="post-content">
+        <p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
+I described how I used Durable Functions extensions
+in Azure Function App. Durable Functions are using several binding types
+that are not part of the standard suite: <code>OrchestrationClient</code>,
+<code>OrchestrationTrigger</code>, <code>ActivityTrigger</code>. These custom bindings 
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">are installed</a>
+by copying the corresponding assemblies to a special Extensions folder.</p>
+<p>Although Bring-Your-Own-Binding (BYOB) feature hasn&#39;t been released yet, I
+decided to follow the path of Durable Functions and create my own 
+custom binding.</p>
+<h2 id="configuration-binding">Configuration Binding</h2>
+<p>I&#39;ve picked a really simple use case for my first experiments with custom
+bindings: reading configuration values.</p>
+<p>Azure Functions store their configuration values in App Settings (local
+runtime uses <code>local.settings.json</code> file for that).</p>
+<p>That means, when you need a configuration value inside your C# code,
+you normally do</p>
+<pre><code class="lang-csharp">string setting = ConfigurationManager.AppSettings[&quot;MySetting&quot;];
+</code></pre>
+<p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
+<p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a> 
+service bus subscription metrics, I wrote this kind of bulky code:</p>
+<pre><code class="lang-csharp">var resourceToScale = ConfigurationManager.AppSettings[&quot;ResourceToScale&quot;];
+
+var connectionString = ConfigurationManager.AppSettings[&quot;ServiceBusConnection&quot;];
+var topic = ConfigurationManager.AppSettings[&quot;Topic&quot;];
+var subscription = ConfigurationManager.AppSettings[&quot;Subscription&quot;];
+</code></pre>
+<p>The code is no rocket science, but it&#39;s tedious to write, so instead I came
+up with this idea to define Functions:</p>
+<pre><code class="lang-csharp">public static void MyFunction(
+    [TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo timer,
+    [Configuration(Key = &quot;ResourceToScale&quot;)] string resource,
+    [Configuration] ServiceBusSubscriptionConfig config)
+</code></pre>
+<p>Note two usages of <code>Configuration</code> attribute. The first one defines the 
+specific configuration key, and binds its value to a string parameter. The 
+other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
+the config class as</p>
+<pre><code class="lang-csharp">public class ServiceBusSubscriptionConfig
+{
+    public ServiceBusSubscriptionConfig(string serviceBusConnection, string topic, string subscription)
+    {
+        ServiceBusConnection = serviceBusConnection;
+        Topic = topic;
+        Subscription = subscription;
+    }
+
+    public string ServiceBusConnection { get; }
+    public string Topic { get; }
+    public string Subscription { get; }
+}
+</code></pre>
+<p>The immutable class is a bit verbose, but I still prefer it over get-set
+container in this scenario.</p>
+<p>The binding behavior is convention-based in this case: the binding engine
+should load configuration values based on the names of class properties.</p>
+<h2 id="motivation">Motivation</h2>
+<p>So, why do I need such binding?</p>
+<p>As I said, it&#39;s a simple use case to play with BYOB feature, and overall,
+<strong>understand</strong> the internals of Function Apps a bit better.</p>
+<p>But apart from that, I removed 4 lines of garbage from the function body
+(at the cost of two extra parameters). <strong>Less noise</strong> means more readable code,
+especially when I put this code on a webpage.</p>
+<p>As a bonus, the <strong>testability</strong> of the function immediately increased. It&#39;s so
+much easier for the test just to accept the configuration as input parameter,
+instead of fine-tuning the configuration files inside test projects, or
+hiding <code>ConfigurationManager</code> usage behind a mockable facade.</p>
+<p>Such approach does seem to be the strength of Azure Functions code in
+general. It&#39;s often possible to reduce imperative IO-related code to 
+attribute-decorated function parameters.</p>
+<h2 id="implementing-a-custom-binding">Implementing a Custom Binding</h2>
+<p>The actual implementation process of a custom non-trigger binding is quite
+simple:</p>
+<p><strong>Create a class library</strong> with the word &quot;Extension&quot; in its name. Import
+<code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
+packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
+<p><strong>Define</strong> a class for binding attribute:</p>
+<pre><code class="lang-csharp">[AttributeUsage(AttributeTargets.Parameter)]
+[Binding]
+public class ConfigurationAttribute : Attribute
+{
+    [AutoResolve]
+    public string Key { get; set; }
+}
+</code></pre>
+<p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
+resolvable from <code>function.json</code>.</p>
+<p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
+how to use your binding correctly.</p>
+<p>The interface has just one method to implement:</p>
+<pre><code class="lang-csharp">public class ConfigurationExtensionConfigProvider : IExtensionConfigProvider
+{
+    public void Initialize(ExtensionConfigContext context)
+    {
+        // ... see below
+    }
+}
+</code></pre>
+<p>The first step of the implementation is to define a rule for our new
+<code>ConfigurationAttribute</code> and tell this rule how to get a string value out
+of any attribute instance:</p>
+<pre><code class="lang-csharp">var rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
+rule.BindToInput&lt;string&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
+</code></pre>
+<p>That&#39;s really all that needs to happen to bind <code>string</code> parameters.</p>
+<p>To make our binding work with any POCO, we need a more elaborate construct:</p>
+<pre><code class="lang-csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; new Env());
+var cm = context.Config.GetService&lt;IConverterManager&gt;();
+cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(typeof(PocoConverter&lt;&gt;));
+</code></pre>
+<p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
+this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
+type argument) with a generic converter called <code>PocoConverter</code>.</p>
+<p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
+<pre><code class="lang-csharp">private class Env
+{
+    public string GetValue(string key) =&gt; ConfigurationManager.AppSettings[key];
+}
+</code></pre>
+<p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
+names and reads configuration values out of them. Then it calls a constructor
+which matches the property count:</p>
+<pre><code class="lang-csharp">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
+{
+    public T Convert(Env env)
+    {
+        var values = typeof(T)
+            .GetProperties()
+            .Select(p =&gt; p.Name)
+            .Select(env.GetValue)
+            .Cast&lt;object&gt;()
+            .ToArray();
+
+        var constructor = typeof(T).GetConstructor(values.Select(v =&gt; v.GetType()).ToArray());
+        if (constructor == null)
+        {
+            throw new Exception(&quot;We tried to bind to your C# class, but it looks like there&#39;s no constructor which accepts all property values&quot;);
+        }
+
+        return (T)constructor.Invoke(values);
+    }
+}
+</code></pre>
+<p>This piece of code is not particularly robust, but it is good enough to
+illustrate the concept.</p>
+<p>And that&#39;s it, the binding it ready! You can find the complete example in
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/custom-binding-azure-functions">my github repo</a>.</p>
+<h2 id="deploying-custom-bindings">Deploying Custom Bindings</h2>
+<p>Since BYOB feature is in early preview, there is no tooling for automated
+deployment, and we need to do everything manually. But the process is not
+too sophisticated:</p>
+<ol>
+<li><p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p>
+</li>
+<li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
+to that folder&#39;s path. For local development add a line to <code>local.settings.json</code>:</p>
+<pre><code class="lang-json"> &quot;AzureWebJobs_ExtensionsPath&quot;: &quot;D:\\BindingExtensions&quot;,
+</code></pre>
+</li>
+<li><p>Create a subfolder for your extension, e.g. 
+<code>D:\BindingExtensions\ConfigurationExtension</code>.</p>
+</li>
+<li><p>Copy the contents of <code>bin\Debug\</code> of your extension&#39;s class library
+to that folder.</p>
+</li>
+<li><p>Reference your extension library from your Function App.</p>
+</li>
+</ol>
+<p>You are good to go! Decorate your function parameters with the new attribute.</p>
+<p>Run the function app locally to try it out. In the console output you should
+be able to see something like</p>
+<pre><code>Loaded custom extension: ConfigurationExtensionConfigProvider from 
+&#39;D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll&#39;
+</code></pre><p>You will be able to debug your extension if needed.</p>
+<h2 id="useful-links">Useful Links</h2>
+<p>Use the following links to find out more about custom bindings, see more
+examples and walkthroughs, and get fresh updates:</p>
+<ul>
+<li><a href="https://github.com/Azure/azure-webjobs-sdk/wiki/Extensibility">Extensibility in Azure WebJobs SDK</a></li>
+<li><a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/SampleExtension">Sample Extension for Azure Functions</a>,
+<a href="https://github.com/Azure/WebJobsExtensionSamples/blob/master/FunctionApp/ReaderFunction.cs">Sample Usage in Precompiled App</a> and
+<a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/ScriptRuntimeSample/Reader">Sample Usage in Script Runtime</a></li>
+<li><a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/src/WebJobs.Extensions.DurableTask">Custom Bindings of Durable Functions</a></li>
+<li><a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">Installation Guide for Durable Functions</a></li>
+</ul>
+<p>Have a good binding!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jul 24th, 2017</div>
     
     <h1><a href='/2017/07/custom-autoscaling-with-durable-functions/'>Custom Autoscaling with Durable Functions</a></h1>
@@ -905,33 +1110,6 @@ confusing people and to show more useful charts?</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/application-insights/'>Application Insights</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jun 6th, 2017</div>
-    
-    <h1><a href='/2017/06/mikhail-io-upgraded-to-https-and-http2/'>Mikhail.io Upgraded to HTTPS and HTTP/2</a></h1>
-    
-    <div class="post-content">
-        <p>Starting today, this blog has switched to HTTPS secure protocol:</p>
-<p><img src="/2017/06/mikhail-io-upgraded-to-https-and-http2//mikhailio-https.png" alt="HTTPS"></p>
-<p>While there&#39;s not that much to secure on my blog, HTTPS is still considered
-to be a good practice for any site in 2017. One of the benefits that we can
-get from it is the usage of HTTP/2 protocol:</p>
-<p><img src="/2017/06/mikhail-io-upgraded-to-https-and-http2//mikhailio-http2.png" alt="HTTP/2"></p>
-<p>This should be beneficial to any reader which uses a modern browser!</p>
-<p>Thanks to <a href="https://cloudflare.com">CloudFlare</a> for providing me with free
-HTTPS and HTTP/2 support.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/https/'>HTTPS</a>, <a href='/tags/http/2/'>HTTP/2</a>, <a href='/tags/cloudflare/'>CloudFlare</a>
     </div>
     
 </article>

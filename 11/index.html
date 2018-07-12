@@ -77,6 +77,103 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jan 13th, 2016</div>
+    
+    <h1><a href='/2016/01/fire-and-forget-in-service-fabric-actors/'>Fire-and-forget in Service Fabric actors</a></h1>
+    
+    <div class="post-content">
+        <p>At the <a href="http://www.meetup.com/Webscale-Architecture-NL/events/225979118/">recent Webscale Architecture meetup</a> 
+we discussed two implementations of the Actor model in the .NET ecosystem: 
+<a href="http://akka.net">Akka.NET</a> and <a href="https://azure.microsoft.com/en-us/documentation/articles/service-fabric-reliable-actors-introduction/">Azure Service Fabric Actors</a>. 
+One important discussion was
+around <strong>Ask</strong> vs <strong>Tell</strong> call model. With <strong>Tell</strong> model, the Sender just sends the
+message to the Recepient without waiting for a result to come back. <strong>Ask</strong> model
+means the Sender will at some point get a response back from the Receiver, potencially
+blocking its own execution.</p>
+<p>The default model of Akka.NET is <strong>Tell</strong>:</p>
+<blockquote>
+<p><strong>Tell: Fire-forget</strong></p>
+<p>This is the preferred way of sending messages. No blocking waiting for 
+a message. This gives the best concurrency and scalability characteristics.</p>
+</blockquote>
+<p>On the contrary, the default model for Service Fabric Actors is RPC-like
+<strong>Ask</strong> model. Let&#39;s have a close look at this model, and then see how we can
+implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
+<p>Actor definition starts with an interface:</p>
+<pre><code>public interface IHardWorkingActor : IActor
+{
+    Task DoWork(string payload);
+}
+</code></pre><p>As you can see, the method does not return any useful data, which means
+the client code isn&#39;t really interested in waiting for the operation to
+complete. Here&#39;s how we implement this interface in the Actor class:</p>
+<pre><code>public class HardWorkingActor : Actor, IHardWorkingActor
+{
+    public async Task DoWork(string payload)
+    {
+        ActorEventSource.Current.ActorMessage(this, &quot;Doing Work&quot;);
+        await Task.Delay(500);
+    }
+}
+</code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
+<p>Now, let&#39;s look at the client code. Let&#39;s say, the client receives the payloads
+from a queue or a web front-end and needs to go as fast as possible. It gets a payload,
+creates an actor proxy to dispatch the payload to, then it just wants 
+to continue with the next payload. Here is the &quot;Ask&quot; implementation based on 
+the Service Fabric samples:</p>
+<pre><code>int i = 0;
+var timer = new Stopwatch();
+timer.Start();
+while (true)
+{
+    var proxy = ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), &quot;fabric:/Application1&quot;);
+    await proxy.DoWork($&quot;Work ${i++}&quot;);
+    Console.WriteLine($@&quot;Sent work to Actor {proxy.GetActorId()}, 
+                         rate is {i / timer.Elapsed.TotalSeconds}/sec&quot;);
+}
+</code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
+block until the actor work is complete. When we run the client, no surprise that
+we get the rate of about 2 messages per second:</p>
+<pre><code>Sent work to Actor 1647857287613311317, rate is 1,98643230380293/sec
+</code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
+work and immediately proceed to the next one. Here&#39;s how the client call should
+look like:</p>
+<pre><code>proxy.DoWork($&quot;Work ${i++}&quot;).FireAndForget();
+</code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
+extension method and proceed immediately. It appears that the implementation 
+of such extension method is trivial:</p>
+<pre><code>public static class TaskHelper
+{       
+    public static void FireAndForget(this Task task)
+    {
+        Task.Run(async() =&gt; await task).ConfigureAwait(false);
+    }
+} 
+</code></pre><p>The result looks quite different from what we had before:</p>
+<pre><code>Sent work to Actor -8450334792912439527, rate is 408,484162592517/sec
+</code></pre><p>400 messages per second, which is some 200x difference... </p>
+<p>The conclusions are simple:</p>
+<ul>
+<li><p>Service Fabric is a powerful platform and programming paradigm which doesn&#39;t
+limit your choice of communication patterns</p>
+</li>
+<li><p>Design the communication models carefully based on your use case, don&#39;t
+take the defaults for granted</p>
+</li>
+</ul>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/actor-model/'>Actor Model</a>, <a href='/tags/azure/'>Azure</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/service-fabric/'>Service Fabric</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jan 6th, 2016</div>
     
     <h1><a href='/2016/01/validation-with-either-data-type-in-csharp/'>Validation with Either data type in C#</a></h1>
@@ -499,192 +596,6 @@ and push them to <code>azure</code> remote. Now you should be able to browse to 
     
     <div class="post-tags">
         Posted In: <a href='/tags/pluralsight/'>Pluralsight</a>, <a href='/tags/course/'>Course</a>, <a href='/tags/learning/'>Learning</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/jspm/'>JSPM</a>, <a href='/tags/systemjs/'>SystemJS</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Aug 11th, 2015</div>
-    
-    <h1><a href='/2015/08/units-of-measurement-in-domain-design/'>Units of measurement in domain design</a></h1>
-    
-    <div class="post-content">
-        <p>If you have business application of any decent size, your most important code probably resides in domain logic.
-When working with 3rd party code, you can always find an answer on stack overflow or official documentation, but your domain is all yours. Try to make it as simple and readable as possible, and it will always pay you back.</p>
-<p>Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.</p>
-<h2 id="problem-statement">Problem statement</h2>
-<p>Our toy example will be about cars and fuel consumption. You receive some data about the trip of your car, e.g. an instance of</p>
-<pre><code class="lang-csharp">public interface ITrip
-{
-    double FuelUsed { get; }
-    double Distance { get; }
-}
-</code></pre>
-<p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
-<pre><code class="lang-csharp">var fuelRate = trip.FuelUsed / trip.Distance;
-</code></pre>
-<p>You get the value, but what is it? Let&#39;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
-<pre><code class="lang-csharp">public interface ITrip
-{
-    double FuelUsedInLiters { get; }
-    double DistanceInKilometers { get; }
-}
-
-var fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * 100.0 / trip.DistanceInKilometers;
-</code></pre>
-<p>Now it&#39;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
-<ol>
-<li><p>You will start measuring same things in different units. E.g. you will store the distance in meters in the database, so you&#39;ll have to multiply by 1000 somewhere in persistence layer.</p>
-</li>
-<li><p>If you need to convert metric to imperial and back, you will get lots of constants here and there.</p>
-</li>
-<li><p>String formatting will become a tedious task. Be sure to call a right formatter for each implicit unit.</p>
-</li>
-</ol>
-<p>This does not work well. The code smell is called <a href="http://blog.ploeh.dk/2011/05/25/DesignSmellPrimitiveObsession/">Primitive Obsession</a> and we should avoid this in production-grade code. Instead, we want the succinctness of first example in combination with strong compile-time checks and well-defined operations.</p>
-<h2 id="defining-the-units">Defining the units</h2>
-<p>I tried several options like generic classes for units, but I ended up having a struct per measurement. The code is very boring and repetitive, but it provides me with the strongest compile-time checks and nice readability. If you are too bored with typing, you can do some code generation or just use 3rd party that suits you.
-So, my end result looks like</p>
-<pre><code class="lang-csharp">public interface ITrip
-{
-    Volume FuelUsed { get; }
-    Distance Distance { get; }
-}
-</code></pre>
-<p>Let&#39;s see how Distance is defined (Volume will be almost exactly same):</p>
-<pre><code class="lang-csharp">public struct Distance
-{
-    private Distance(double kilometers)
-    {
-        this.Kilometers = kilometers;
-    }
-
-    public double Kilometers { get; }
-
-    public double Meters =&gt; this.Kilometers / 1000.0;
-
-    public static readonly Distance Zero = new Distance(0.0);
-
-    ...
-}
-</code></pre>
-<p>Several important things to notice here:</p>
-<ol>
-<li><p>It&#39;s a struct.</p>
-</li>
-<li><p>It&#39;s immutable. Once an instance is created, its properties can&#39;t be changed anymore.</p>
-</li>
-<li><p>Constructor is private. I don&#39;t actually want people to create instances directly: <code>new Distance(123)</code> reads pretty horribly, keep reading to see better options.
-Of course, default constructor is still public, but you can only create a zero value with it.</p>
-</li>
-<li><p>Better way of creating zero distance is to call Zero static field.</p>
-</li>
-</ol>
-<h2 id="instantiation">Instantiation</h2>
-<p>So, how do we create measurement objects?</p>
-<h3 id="factory-method">Factory method</h3>
-<p>The classic way is a set of static factory methods:</p>
-<pre><code class="lang-cs">public static Distance FromKilometers(double kilometers)
-{
-    return new Distance(kilometers);
-}
-
-public static Distance FromMeters(double meters)
-{
-    return new Distance(meters / 1000.0);
-}
-</code></pre>
-<p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
-<h3 id="extension-method">Extension method</h3>
-<p>Imagine you have the following code which converts an integer value of a database result into our units</p>
-<pre><code class="lang-cs">trip.Distance = Distance.FromMeters(database.ReadInt32(&quot;TotalDistance&quot;)
-                        .GetDefaultOrEmpty());
-</code></pre>
-<p>Such a long expression reads better with a fluent interface like</p>
-<pre><code class="lang-cs">trip.Distance = database.ReadInt32(&quot;TotalDistance&quot;)
-                        .GetDefaultOrEmpty()
-                        .MetersToDistance();
-</code></pre>
-<p><code>MetersToDistance</code> in this case is an extension method:</p>
-<pre><code class="lang-cs">public static class DistanceExtensions
-{
-    public static Distance MetersToDistance(this double meters)
-    {
-        return Distance.FromMeters(meters);
-    }
-}
-</code></pre>
-<h3 id="operator-with-static-class-using">Operator with static class using</h3>
-<p>C# 6 brings us a new language construct. Now we can import a static helper class</p>
-<pre><code class="lang-cs">using static Units.Constants;
-</code></pre>
-<p>And then we can write something like</p>
-<pre><code>var distance = 10.0 * km;
-</code></pre><p>where <code>km</code> is defined in that static class:</p>
-<pre><code class="lang-cs">public static class Constants
-{
-    public static readonly Distance km = Distance.FromKilometers(1.0);
-}
-</code></pre>
-<p>This may not look like idiomatic C#, but I think it&#39;s very good at least for writing unit tests:</p>
-<pre><code class="lang-cs">var target = new Trip
-{
-    DistanceOnFoot = 5 * km,
-    DistanceOnBicycle = 10 * km,
-    DistanceOnCar = 30 * km
-};
-target.TotalDistance.Should().Be((30 + 10 + 5) * km);
-</code></pre>
-<p>For this to compile you just need to define the operator overload:</p>
-<pre><code class="lang-cs">public static Distance operator*(int value, Distance distance)
-{
-    return Distance.FromKilometers(value * distance.Kilometers);
-}
-</code></pre>
-<h2 id="conversion-and-printing">Conversion and printing</h2>
-<p>More advanced unit conversions are easy with unit classes. A common use case would be to convert metric units to imperial system. All you need to do is to add another calculated property</p>
-<pre><code class="lang-cs">// Distance class
-private const double MilesInKilometer = 0.621371192;
-private const double FeetInMeter = = 3.2808399;
-
-public double Miles =&gt; this.Kilometers * MilesInKilometer;
-
-public double Feet =&gt; this.Meters * FeetInMeter;
-</code></pre>
-<p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
-<ul>
-<li>Format based on user preferences (metric/imperial)</li>
-<li>Pick units based on the value (e.g. 30 m but 1.2 km, not 1200 m)</li>
-<li>Localization to different languages</li>
-<li>Rounding to some closest value</li>
-</ul>
-<p>If you do all that in the unit class, it&#39;s going to violate the single responsibility principle. Just create a separate class for formatting and put all those rules there.</p>
-<h2 id="unit-derivation">Unit derivation</h2>
-<p>Once you write more unit classes, you will definitely want to derive the calculation result of two units into the third one. In our example, we want to divide <code>Volume</code> of fuel used by <code>Distance</code> to get fuel <code>ConsumptionRate</code>.</p>
-<p>There&#39;s no magic that you could do here. You will have to define <code>ConsumptionRate</code> class the same way you defined the other two, and then just overload the operation</p>
-<pre><code class="lang-cs">public static ConsumptionRate operator/(Volume volume, Distance distance)
-{
-    return ConsumptionRate
-        .FromLitersPer100Kilometers(volume.Liters * 100.0 / distance.Kilometers);
-}
-</code></pre>
-<p>Of course, you&#39;ll have to define all the required combinations explicitly.</p>
-<p>If you defined Constants as described above, you&#39;ll be able to instantiate values in your tests in the following way:</p>
-<pre><code class="lang-cs">var fuelRate = 7.5 * lit / (100 * km);
-</code></pre>
-<h2 id="should-i-use-3rd-party-libraries-for-that-">Should I use 3rd party libraries for that?</h2>
-<p>It depends. Of course, people implemented all this functionality about 1 million times before you, so there are numerous libraries on GitHub.</p>
-<p>I would say, if you start a new project and you don&#39;t have a strong opinion about the unit code, just go grab the library and try to use it.</p>
-<p>At the same time, for existing code base, it might be easier to introduce your own implementation which would resemble something that you already use.</p>
-<p>Also, I have another reason for my own implementation. I&#39;m using units all over the code base of domain logic, the very heart of the software, the exact place where I want full control. I find it a bit awkward to introduce a 3rd party dependency in domain layer.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/units-of-measurement/'>Units of Measurement</a>, <a href='/tags/domain-design/'>Domain Design</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/clean-code/'>Clean Code</a>
     </div>
     
 </article>
