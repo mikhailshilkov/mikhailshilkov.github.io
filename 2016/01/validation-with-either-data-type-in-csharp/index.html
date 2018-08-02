@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -88,22 +88,20 @@ code more expressive and easier to maintain.</p>
 request is actually valid. If it&#39;s not valid, we want to make a detailed description
 of the problems that we identified. If it is valid, we want to produce a response
 about the successful acceptance of the request. Let&#39;s define the classes:</p>
-<pre><code class="lang-csharp">public class Request { ... }
+<pre><code class="language-csharp">public class Request { ... }
 public class Response { ... }
-public class ValidationError { ... }
-</code></pre>
+public class ValidationError { ... }</code></pre>
 <p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
 or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
 <h2 id="throw-an-exception">Throw an exception</h2>
 <p>Validation <em>error</em> sounds like it could be an exception:</p>
-<pre><code class="lang-csharp">public Response Validate(Request r)
+<pre><code class="language-csharp">public Response Validate(Request r)
 {
    if (!Valid(r))
        throw new ValidationException(new ValidationError(...));
 
    return new Response(r);
-}
-</code></pre>
+}</code></pre>
 <p>This approach is really bad though. You have to declare a special exception
 class to hold the validation error. But even worse, exception handling is not
 explicit - you don&#39;t see the exception type when you look at method signature.
@@ -111,7 +109,7 @@ Client processing code is going to be messed up because of exception handling.
 Never use exceptions for your business logic flow.</p>
 <h2 id="output-parameter">Output parameter</h2>
 <p>We could make an output parameter of <code>ValidationError</code> type:</p>
-<pre><code class="lang-csharp">public Response Validate(Request r, out ValidationError error)
+<pre><code class="language-csharp">public Response Validate(Request r, out ValidationError error)
 {
     if (Valid(r))
     { 
@@ -121,8 +119,7 @@ Never use exceptions for your business logic flow.</p>
 
     error = null;
     return new Response(r);
-}
-</code></pre>
+}</code></pre>
 <p>Now the interface is more explicit: client won&#39;t be able to completely ignore
 the fact that an error is possible. But output parameters are not really
 easy to use in C#, especially in fluent-style client code. Moreover, we are
@@ -131,7 +128,7 @@ because nulls are not explicit. Never use nulls in your business logic.</p>
 <h2 id="return-the-combined-result">Return the combined result</h2>
 <p>We could declare a container class which would keep both <code>Response</code> and 
 <code>ValidationError</code>, and then return it from the method.</p>
-<pre><code class="lang-csharp">public class Both&lt;TData, TError&gt;
+<pre><code class="language-csharp">public class Both&lt;TData, TError&gt;
 {
     public TData Data { get; set; }
     public TErrro Error { get; set; }
@@ -142,8 +139,7 @@ public Both&lt;Response, ValidationError&gt; Validate(Request r)
     return Valid(r) 
         ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
         : new Both&lt;Response, ValidationError&gt; { Error = new ValidationError(...) };
-}
-</code></pre>
+}</code></pre>
 <p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
 and output parameters, but we still use null for result state representation.
 Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
@@ -151,7 +147,7 @@ Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</
 <p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
 with just one of them. When constructing an object, you can specify either
 a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
-<pre><code class="lang-csharp">public class Either&lt;TL, TR&gt;
+<pre><code class="language-csharp">public class Either&lt;TL, TR&gt;
 {
     private readonly TL left;
     private readonly TR right;
@@ -168,40 +164,35 @@ a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
         this.right = right;
         this.isLeft = false;
     }
-}
-</code></pre>
+}</code></pre>
 <p>Now, the main difference is in how the client uses it. There are no properties
 to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
-<pre><code class="lang-csharp">public T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
-    =&gt; this.isLeft ? leftFunc(this.left) : rightFunc(this.right);
-</code></pre>
+<pre><code class="language-csharp">public T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
+    =&gt; this.isLeft ? leftFunc(this.left) : rightFunc(this.right);</code></pre>
 <p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
 is specified, <code>Match</code> will return the result of the left function, otherwise the result
 of the right function.</p>
 <p>Another improvement would be to create explicit operators for easy conversions
 from left and right types:</p>
-<pre><code class="lang-csharp">public static implicit operator Either&lt;TL, TR&gt;(TL left) =&gt; new Either&lt;TL, TR&gt;(left);
+<pre><code class="language-csharp">public static implicit operator Either&lt;TL, TR&gt;(TL left) =&gt; new Either&lt;TL, TR&gt;(left);
 
-public static implicit operator Either&lt;TL, TR&gt;(TR right) =&gt; new Either&lt;TL, TR&gt;(right);
-</code></pre>
+public static implicit operator Either&lt;TL, TR&gt;(TR right) =&gt; new Either&lt;TL, TR&gt;(right);</code></pre>
 <p>Let&#39;s have a look at a complete example.</p>
 <h2 id="why-it-s-great">Why it&#39;s great</h2>
 <p>Here is the service code written with <code>Either</code>:</p>
-<pre><code class="lang-csharp">public Either&lt;Response, ValidationError&gt; Validate(Request r)
+<pre><code class="language-csharp">public Either&lt;Response, ValidationError&gt; Validate(Request r)
 {
     return Valid(r) 
         ? Data = new Response(r)
         : new ValidationError(...);
-}
-</code></pre>
+}</code></pre>
 <p>Clean and nice! Now a simplistic client:</p>
-<pre><code class="lang-csharp">var validated = service.Validate(request);
+<pre><code class="language-csharp">var validated = service.Validate(request);
 Console.WriteLine(
     validated.Match(
         result =&gt; $&quot;Success: {result}&quot;,
         error =&gt; $&quot;Error: {error}&quot;)
-    );
-</code></pre>
+    );</code></pre>
 <p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
 validation may fail.</p>
 <h2 id="show-me-the-code">Show me the code</h2>
@@ -252,7 +243,6 @@ validation may fail.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -266,7 +256,6 @@ validation may fail.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -94,11 +94,10 @@ for each Service Bus queue/topic in our application:</p>
 </ul>
 <p>The first two are easily retrieved from <code>QueueDescription</code> object (see 
 <a href="https://msdn.microsoft.com/library/azure/hh780773.aspx">MSDN</a>):</p>
-<pre><code class="lang-csharp">var nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
+<pre><code class="language-csharp">var nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
 var queue = nsmgr.GetQueue(name);
 var backlog = queue.MessageCountDetails.ActiveMessageCount;
-var dlq = q.MessageCountDetails.DeadLetterMessageCount;
-</code></pre>
+var dlq = q.MessageCountDetails.DeadLetterMessageCount;</code></pre>
 <p>The other two metrics are not readily available from the .NET SDK though.
 There are some extra metrics described in
 <a href="https://docs.microsoft.com/en-us/rest/api/servicebus/service-bus-entity-metrics-rest-apis">Service Bus Entity Metrics REST APIs</a>
@@ -124,17 +123,16 @@ to <a href="https://manage.windowsazure.com">&quot;Classic&quot; Azure portal</a
 management certificates are not supported by the the new portal. If you don&#39;t
 have access to the old portal, ask your system administrator to grant it.</p>
 <p>Finally, here is a code sample to load the certificate in C# code:</p>
-<pre><code class="lang-csharp">X509Store store = new X509Store(&quot;My&quot;, StoreLocation.CurrentUser);
+<pre><code class="language-csharp">X509Store store = new X509Store(&quot;My&quot;, StoreLocation.CurrentUser);
 store.Open(OpenFlags.ReadOnly);
 var cert = store.Certificates.Find(
     X509FindType.FindBySubjectName, 
     &quot;&lt;certificate name of yours&gt;&quot;, 
-    false)[0];
-</code></pre>
+    false)[0];</code></pre>
 <h2 id="request-headers">Request Headers</h2>
 <p>Here is a helper class which adds the specified certificate to each request 
 and sets the appropriate headers too:</p>
-<pre><code class="lang-csharp">internal class AzureManagementClient : WebClient
+<pre><code class="language-csharp">internal class AzureManagementClient : WebClient
 {
     private readonly X509Certificate2 certificate;
 
@@ -153,8 +151,7 @@ and sets the appropriate headers too:</p>
 
         return request;
     }
-}
-</code></pre>
+}</code></pre>
 <p>This code is mostly copied from the very useful 
 <a href="https://cincycoder.wordpress.com/2015/11/18/azure-service-bus-entity-metrics-api/">post of Brian Starr</a>,
 so thank you Brian.</p>
@@ -168,25 +165,22 @@ so thank you Brian.</p>
 <p>The following picture shows all of them on Azure Portal screen:</p>
 <p><img src="/2017/03/azure-service-bus-entity-metrics-dotnet-apis//servicebusparameters.png" alt="Service Bus Parameters"></p>
 <p>Now, format the following request URL and query it using our azure client:</p>
-<pre><code class="lang-csharp">var client = new AzureManagementClient(cert);
+<pre><code class="language-csharp">var client = new AzureManagementClient(cert);
 var url = $&quot;https://management.core.windows.net/{subscriptionId}&quot; +
           $&quot;/services/servicebus/namespaces/{serviceBusNamespace}&quot; +
           $&quot;/queues/{queueName}/Metrics&quot;;
-var result = client.DownloadString(url);
-</code></pre>
+var result = client.DownloadString(url);</code></pre>
 <p>If you did everything correctly, you will get the list of supported metrics
 in JSON. Congratulations, that&#39;s a major accomplishment :)</p>
 <p>And here is a quick way to convert JSON to C# array:</p>
-<pre><code class="lang-csharp">public class Metric
+<pre><code class="language-csharp">public class Metric
 {
     public string Name { get; set; }
     public string Unit { get; set; }
     public string PrimaryAggregation { get; set; }
     public string DisplayName { get; set; }
-}
-</code></pre>
-<pre><code class="lang-csharp">var metrics = JsonConvert.DeserializeObject&lt;Metric[]&gt;(result);
-</code></pre>
+}</code></pre>
+<pre><code class="language-csharp">var metrics = JsonConvert.DeserializeObject&lt;Metric[]&gt;(result);</code></pre>
 <h2 id="getting-the-metric-values">Getting the Metric Values</h2>
 <p>Now, to get the metric values themselves, you will need some extra 
 parameters:</p>
@@ -197,7 +191,7 @@ take the <code>Pxxx</code> code from <a href="https://docs.microsoft.com/en-us/r
 <li>Start date/time (UTC) of the data period to query</li>
 </ul>
 <p>Here is the sample code:</p>
-<pre><code class="lang-csharp">var time = DateTime.UtcNow.AddHours(-1).ToString(&quot;s&quot;);
+<pre><code class="language-csharp">var time = DateTime.UtcNow.AddHours(-1).ToString(&quot;s&quot;);
 
 var client = new AzureManagementClient(cert);
 var url = $&quot;https://management.core.windows.net/{subscriptionId}&quot; +
@@ -205,19 +199,16 @@ var url = $&quot;https://management.core.windows.net/{subscriptionId}&quot; +
           $&quot;/queues/{queueName}/Metrics/{metric}&quot; +
           $&quot;/Rollups/PT5M/Values?$filter=Timestamp%20ge%20datetime&#39;{time}Z&#39;&quot;;
 
-var result = client.DownloadString(url);
-</code></pre>
+var result = client.DownloadString(url);</code></pre>
 <p>I am using <code>incoming</code> metric to get the amount of enqueued messages per period
 and <code>outgoing</code> metric to get the amount of dequeued messages.</p>
 <p>The strongly typed version is simple:</p>
-<pre><code class="lang-csharp">public class DataPoint
+<pre><code class="language-csharp">public class DataPoint
 {
     public string Timestamp { get; set; }
     public long Total { get; set; }
-}
-</code></pre>
-<pre><code class="lang-csharp">var data = JsonConvert.DeserializeObject&lt;DataPoint[]&gt;(result);
-</code></pre>
+}</code></pre>
+<pre><code class="language-csharp">var data = JsonConvert.DeserializeObject&lt;DataPoint[]&gt;(result);</code></pre>
 <h2 id="working-example">Working Example</h2>
 <p>I&#39;ve authored a small library which wraps the HTTP request into strongly
 typed .NET classes. You can see it in
@@ -267,7 +258,6 @@ or grab it from <a href="https://www.nuget.org/packages/MikhailIo.ServiceBusEnti
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -281,7 +271,6 @@ or grab it from <a href="https://www.nuget.org/packages/MikhailIo.ServiceBusEnti
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

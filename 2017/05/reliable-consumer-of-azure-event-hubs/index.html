@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -165,14 +165,13 @@ implement our own checkpoints based on a SQL table. This way each
 checkpoint update can become part of a SQL transaction and be committed
 or rolled back with normal guarantees provided by SQL Server.</p>
 <p>Here is a table that I created to hold my checkpoints:</p>
-<pre><code class="lang-sql">CREATE TABLE EventHubCheckpoint (
+<pre><code class="language-sql">CREATE TABLE EventHubCheckpoint (
   Topic varchar(100) NOT NULL,
   PartitionID varchar(100) NOT NULL,
   SequenceNumber bigint NOT NULL,
   Offset varchar(20) NOT NULL,
   CONSTRAINT PK_EventHubCheckpoint PRIMARY KEY CLUSTERED (Topic, PartitionID)
-)
-</code></pre>
+)</code></pre>
 <p>For each topic and partition of Event Hubs, we store two values: sequence
 number and offset, which together uniquely identify the consumer position.</p>
 <p>Conveniently, Event Host Processor provides an extensibility point to
@@ -191,7 +190,7 @@ which makes proper lease manager redundand.</p>
 <p>Now, we want to be able to mark some messages as failed and to 
 re-process them later. To make Dead Letters transactional, we need another
 SQL table to hold the failed events:</p>
-<pre><code class="lang-sql">CREATE TABLE EventHubDeadLetter (
+<pre><code class="language-sql">CREATE TABLE EventHubDeadLetter (
   Topic varchar(100) NOT NULL,
   PartitionID varchar(100) NOT NULL,
   SequenceNumber bigint NOT NULL,
@@ -199,10 +198,9 @@ SQL table to hold the failed events:</p>
   FailedAt datetime NOT NULL,
   Error nvarchar(max) NOT NULL,
   CONSTRAINT PK_EventHubDeadLetter PRIMARY KEY CLUSTERED (Topic, PartitionID)
-)
-</code></pre>
-<p>This table looks very similar to <code>EventHubCheckpoint</code> that I</p>
-<p>defined above. That is because they are effectively storing pointers to
+)</code></pre>
+<p>This table looks very similar to <code>EventHubCheckpoint</code> that I
+defined above. That is because they are effectively storing pointers to
 events in a hub. Dead Letters have two additional columns to store error
 timestamp and text.</p>
 <p>There is no need to store the message content, because failed events still
@@ -210,7 +208,7 @@ sit in the event hub anyway. You could still log it for diagnostics purpose - ju
 <code>varbinary</code> column.</p>
 <p>There&#39;s no notion of dead letters in Event Hubs SDK, so I defined my own
 interface <code>IDeadLetterManager</code> with a single <code>AddFailedEvents</code> method:</p>
-<pre><code class="lang-csharp">public interface IDeadLetterManager
+<pre><code class="language-csharp">public interface IDeadLetterManager
 {
     Task AddFailedEvents(IEnumerable&lt;DeadLetter&lt;EventData&gt;&gt; deadLetters);
 }
@@ -220,8 +218,7 @@ public class DeadLetter&lt;T&gt;
     public T Data { get; set; }
     public DateTime FailureTime { get; set; }
     public Exception Exception { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>Dapper-based implementation is trivial again, you can find the code 
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLDeadLetterManager.cs">here</a>.</p>
 <h2 id="putting-it-together-event-host">Putting It Together: Event Host</h2>
@@ -239,7 +236,7 @@ into its constructor, and then I implement <code>IEventProcessor</code>&#39;s
 <li>Commit the transaction</li>
 </ol>
 <p>The code block that illustrates this workflow:</p>
-<pre><code class="lang-csharp">public async Task ProcessEventsAsync(
+<pre><code class="language-csharp">public async Task ProcessEventsAsync(
     PartitionContext context, 
     IEnumerable&lt;EventData&gt; eventDatas)
 {
@@ -277,8 +274,7 @@ into its constructor, and then I implement <code>IEventProcessor</code>&#39;s
         // 8. Commit the transaction
         scope.Complete();
     }
-}
-</code></pre>
+}</code></pre>
 <h2 id="conclusion">Conclusion</h2>
 <p>My implementation of Event Hubs consumer consists of 3 parts: checkpoint 
 manager that saves processing progress per partition into a SQL table;
@@ -331,7 +327,6 @@ sufficient for many real world scenarios.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -345,7 +340,6 @@ sufficient for many real world scenarios.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

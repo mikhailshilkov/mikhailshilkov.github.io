@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -77,6 +77,121 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Mar 1st, 2016</div>
+    
+    <h1><a href='/2016/03/building-a-poker-bot-mouse-movements/'>Building a Poker Bot: Mouse Movements</a></h1>
+    
+    <div class="post-content">
+        <p><em>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
+easy and very enjoyable. Here are the previous parts:</em></p>
+<ul>
+<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
+<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
+</ul>
+<p>In this short post I write about the last step of the poker bot flow: clicking
+the buttons. So, the screen is already recognized, the hand is understood,
+the decisions are made and now the bot needs to execute the actions. Except for
+the bet sizing, this simply means clicking the right button at the poker table.</p>
+<p>The stealthiness of such clicks is a valid concern here. Ideally, we want all
+the mouse movements to look as similar as possible to the movements produced
+by a human being. For this post, I will simplify the task to the following steps:</p>
+<ul>
+<li>Identify where the mouse cursor is right now</li>
+<li>Decide where the mouse should be moved to</li>
+<li>Gradually move the mouse cursor</li>
+<li>Click the button</li>
+</ul>
+<h2 id="cursor-position">Cursor Position</h2>
+<p>It&#39;s really easy to understand where the mouse cursor currently is: just
+use <code>Control.MousePosition</code> property from the standard library:</p>
+<pre><code class="language-fsharp">let currentPosition () = 
+  let mp = System.Windows.Forms.Control.MousePosition
+  (mp.X, mp.Y)</code></pre>
+<p>Note that your application doesn&#39;t have to be based on WinForms, just reference
+the required assembly.</p>
+<h2 id="move-the-cursor">Move the Cursor</h2>
+<p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
+library to control the mouse and the keyboard programmatically. It uses some
+weird coordinate system, so the function to move the mouse cursor looks like this:</p>
+<pre><code class="language-fsharp">let simulator = new InputSimulator()
+
+let moveTo x y =
+  let toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
+  let toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
+  simulator.Mouse.MoveMouseTo(toX, toY)</code></pre>
+<p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
+the top-left corner of the screen.</p>
+<h2 id="move-it-smoothly">Move It Smoothly</h2>
+<p>Now we want to simulate the human-like movements. It won&#39;t be perfect, but
+at least it should look decent. For this gradual movement function I used
+a nice F# feature called asynchronous workflows. Effectively, it looks like
+a loop with async sleep statements inside.</p>
+<pre><code class="language-fsharp">let moveToWorkflow step (toX, toY) = async {
+  let (fromX, fromY) = currentPosition()
+  let count = Math.Max(10, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / 20)
+  for i = 0 to count do
+    let x = step fromX toX count i |&gt; float
+    let y = step fromY toY count i |&gt; float
+    moveTo x y
+    do! Async.Sleep 3
+  }</code></pre>
+<p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
+Basically, it calculates a coordinate for n-th step of the movement. We can
+plug different implementations of this function to find the right balance of
+the movement style. Here is the simplest linear implementation:</p>
+<pre><code class="language-fsharp">let linearStep from until max i =
+  from + (until - from) * i / max</code></pre>
+<p>The sinus-based implementation is a bit more verbose because of float-int 
+conversions:</p>
+<pre><code class="language-fsharp">let sinStep (from:int) (until:int) (max:int) (index:int) =
+  let fromf = from |&gt; float
+  let untilf = until |&gt; float
+  let maxf = max |&gt; float
+  let indexf = index |&gt; float
+  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int</code></pre>
+<p>The following animation illustrates the concept: </p>
+<svg width="778" height="190" viewbox="0 0 500 190">
+  <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+  <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
+
+  <animate xlink:href="#mouse1" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" calcmode="discrete" id="img-anim1"></animate>
+  <animate xlink:href="#mouse2" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"></animate>
+  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate>  
+</svg>
+
+<p>The top mouse cursor just
+jumps from left to right and back (no animation). The middle cursor moves with
+linear speed (<code>linearStep</code> function above). The bottom cursor moves based on
+the <code>sinStep</code> function derived from sinus of time.</p>
+<h2 id="click-the-button">Click the Button</h2>
+<p>A button is a rectangle and we want to click a random point inside it. So, all
+we need is to pick random coordinates, move the mouse there and send a 
+click event via the simulator:</p>
+<pre><code class="language-fsharp">let clickButton (minX, minY, maxX, maxY) =
+  let r = new Random()
+  let p = (r.Next(minX, maxX), r.Next(minY, maxY))
+  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
+  simulator.Mouse.LeftButtonClick()</code></pre>
+<h2 id="demo-time">Demo Time</h2>
+<p>Here is the demo of the mouse movements:</p>
+<p><img src="/2016/03/building-a-poker-bot-mouse-movements//mouseclicking.gif" alt="Mouse clicking the button"></p>
+<p>It looks fun, doesn&#39;t it? The full code for the mouse movements can be found in 
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/human-like-behavior/'>Human-like Behavior</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 23rd, 2016</div>
     
     <h1><a href='/2016/02/unit-testing-dapper-repositories/'>Unit testing Dapper repositories</a></h1>
@@ -94,24 +209,22 @@ tests should be used instead. Let&#39;s have a look at another possibility.</p>
 <h2 id="an-example-of-a-repository">An Example of a Repository</h2>
 <p>Let&#39;s say we have a simple class and we want to populate instances of this class
 from the database:</p>
-<pre><code class="lang-csharp">public class Product
+<pre><code class="language-csharp">public class Product
 {
     public int Id { get; set; }
     public string Name { get; set; }
     public string Description { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>To be able to use Dapper for data access, we need an instance of <code>IDbConnection</code>.
 As we want to be able to mock the connection for unit tests, we need to create
 a factory interface to abstract it away:</p>
-<pre><code class="lang-csharp">public interface IDatabaseConnectionFactory
+<pre><code class="language-csharp">public interface IDatabaseConnectionFactory
 {
     IDbConnection GetConnection();
-}
-</code></pre>
+}</code></pre>
 <p>Now the repository would get a connection from this factory and execute 
 Dapper queries on it:</p>
-<pre><code class="lang-csharp">public class ProductRepository
+<pre><code class="language-csharp">public class ProductRepository
 {
     private readonly IDatabaseConnectionFactory connectionFactory;
 
@@ -125,8 +238,7 @@ Dapper queries on it:</p>
         return this.connectionFactory.GetConnection().QueryAsync&lt;Product&gt;(
             &quot;select * from Product&quot;);
     }
-}
-</code></pre>
+}</code></pre>
 <h2 id="testing-without-a-real-database">Testing Without a real Database</h2>
 <p>Here is my approach to testing the repository:</p>
 <ol>
@@ -137,7 +249,7 @@ Dapper queries on it:</p>
 </ol>
 <p>Here is a helper class which uses another micro-ORM library <a href="http://ormlite.com/">OrmLite</a> to talk
 to SQLite database:</p>
-<pre><code class="lang-csharp">public class InMemoryDatabase
+<pre><code class="language-csharp">public class InMemoryDatabase
 {
     private readonly OrmLiteConnectionFactory dbFactory = 
         new OrmLiteConnectionFactory(&quot;:memory:&quot;, SqliteOrmLiteDialectProvider.Instance);
@@ -155,10 +267,9 @@ to SQLite database:</p>
             }
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>And here is the test for our <code>ProductRepository</code> class:</p>
-<pre><code class="lang-csharp">[Test]
+<pre><code class="language-csharp">[Test]
 public async Task QueryTest()
 {
     // Arrange
@@ -176,8 +287,7 @@ public async Task QueryTest()
 
     // Assert
     result.ShouldBeEquivalentTo(products);
-}
-</code></pre>
+}</code></pre>
 <h2 id="is-it-a-unit-test-">Is It a Unit Test?</h2>
 <p>Well, not completely. This approach does not mock the database, but instead puts
 an in-memory database in place of the normal one. The problem is that we don&#39;t 
@@ -208,11 +318,11 @@ during TDD development.</p>
     <h1><a href='/2016/02/building-a-poker-bot-string-recognition/'>Building a Poker Bot: String and Number Recognition</a></h1>
     
     <div class="post-content">
-        <p><em>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+        <p><em>This is the second part of *</em>Building a Poker Bot** series where I describe my experience developing bot software 
 to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
 easy and very enjoyable. Here is the first part:
 <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a>
-</em></p>
+*</p>
 <h2 id="why-string-recognition">Why string recognition</h2>
 <p>Reading cards and other fixed images was the first step. The bot should also
 be able to read different text-based information from the screen, e.g.</p>
@@ -263,11 +373,10 @@ look how these steps are implemented.</p>
 <p>Because the padding is removed from all 4 sides of the region, I decided to use
 <code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
 with black or white points defined as a helper type:</p>
-<pre><code class="lang-fsharp">type BW = B | W
-</code></pre>
+<pre><code class="language-fsharp">type BW = B | W</code></pre>
 <p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
 like this:</p>
-<pre><code class="lang-fsharp">let removePadding pixels =
+<pre><code class="language-fsharp">let removePadding pixels =
   let allBlack s = Seq.exists ((=) W) s
   let maxWidth = Array2D.length1 pixels - 1
   let maxHeight = Array2D.length2 pixels - 1
@@ -282,21 +391,19 @@ like this:</p>
 
   match (firstX, lastX, firstY, lastY) with
   | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
-  | _ -&gt; Array2D.init 0 0 (fun _ _ -&gt; B)
-</code></pre>
+  | _ -&gt; Array2D.init 0 0 (fun _ _ -&gt; B)</code></pre>
 <p>The first part finds the amount of fully-black columns and rows in the array.
 Then, if white points are found, the second part returns a sub array based on
 the indices, otherwise empty array is returned.</p>
 <h2 id="split-the-text-into-characters">Split the text into characters</h2>
 <p>First, we convert our 2D array into the list of lists, where each item in the
 top-level list represents a single column of pixels:</p>
-<pre><code class="lang-fsharp">let pixelColumns =
+<pre><code class="language-fsharp">let pixelColumns =
   [0..Array2D.length1 pixels - 1] 
-  |&gt; Seq.map (fun x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)
-</code></pre>
+  |&gt; Seq.map (fun x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)</code></pre>
 <p>Then we can fold this list of columns into the symbols, where each symbol itself
 is the list of columns:</p>
-<pre><code class="lang-fsharp">let splitIntoSymbols (e : BW list) (state: BW list list list) = 
+<pre><code class="language-fsharp">let splitIntoSymbols (e : BW list) (state: BW list list list) = 
   match state with
   | cur::rest -&gt;
       if isSeparator e then
@@ -306,8 +413,7 @@ is the list of columns:</p>
       else (e::cur)::rest   // add e to current list
   | _ -&gt; [[e]]
 
-Seq.foldBack splitIntoSymbols pixelColumns []
-</code></pre>
+Seq.foldBack splitIntoSymbols pixelColumns []</code></pre>
 <p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
 by introducing some intermediate type with descriptive name, but I decided
 to leave that part for now. Read it as list of symbols, which are lists of
@@ -316,7 +422,7 @@ columns, which are lists of pixels.</p>
 <p>This part was already described in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
 Basically we compare the list of black or white points to the patterns of
 the known symbols:</p>
-<pre><code class="lang-fsharp">let getChar patterns bws =
+<pre><code class="language-fsharp">let getChar patterns bws =
   let samePatterns h p =
     Seq.zip h p
     |&gt; Seq.forall (fun (v1, v2) -&gt; v1 = v2)
@@ -325,15 +431,13 @@ the known symbols:</p>
       |&gt; Array.filter (fun p -&gt; List.length p.Pattern = List.length bws)
       |&gt; Array.filter (fun p -&gt; samePatterns bws p.Pattern)
       |&gt; Array.tryHead
-  defaultArg (Option.map (fun p -&gt; p.Char) matchingPattern) &#39;?&#39;
-</code></pre>
+  defaultArg (Option.map (fun p -&gt; p.Char) matchingPattern) &#39;?&#39;</code></pre>
 <h2 id="putting-it-all-together">Putting it all together</h2>
 <p>The <code>recognizeString</code> function accepts lower-order functions to match 
 symbols and get pixels together with width and height of the region:</p>
-<pre><code class="lang-fsharp">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
-</code></pre>
+<pre><code class="language-fsharp">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string</code></pre>
 <p>It builds an array of pixels, removes padding and folds with recognition.</p>
-<pre><code class="lang-fsharp">let recognizeString matchSymbol getPixel width height =
+<pre><code class="language-fsharp">let recognizeString matchSymbol getPixel width height =
 
   let pixels = 
     Array2D.init width height (fun x y -&gt; isWhite (getPixel x y))
@@ -346,13 +450,11 @@ symbols and get pixels together with width and height of the region:</p>
   Seq.foldBack splitIntoSymbols pixelColumns []
   |&gt; List.map matchSymbol
   |&gt; Array.ofSeq
-  |&gt; String.Concat
-</code></pre>
+  |&gt; String.Concat</code></pre>
 <p>Then we use it with a specific recognition patterns, e.g. known digits in case
 of numbers recognition:</p>
-<pre><code class="lang-fsharp">let recognizeNumber x =
-  recognizeString (getChar numberPatterns) x
-</code></pre>
+<pre><code class="language-fsharp">let recognizeNumber x =
+  recognizeString (getChar numberPatterns) x</code></pre>
 <p>A way to produce these patterns is discussed in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>String recognition takes a bit more steps to execute comparing to the recognition
@@ -385,16 +487,15 @@ today I want to focus on API to define an actor and to communicate to it.</p>
 I&#39;m going to use a toy example based on weather reports. Our actor will be able to get whether reports
 and then return the maximum temperature for a given period. An instance of actor will be created
 for each city (geo partitioning). Here is our interface in Service Fabric:</p>
-<pre><code class="lang-csharp">public interface IWeatherActor : IActor
+<pre><code class="language-csharp">public interface IWeatherActor : IActor
 {
     Task AddWeatherReport(WeatherReport report);
 
     Task&lt;int?&gt; GetMaxTemperature(Period period);
-}
-</code></pre>
+}</code></pre>
 <p>We have two operations: a command and a query. They are both async (return <code>Task</code>). The data classes
 are required to be mutable DTOs based on <code>DataContract</code>:</p>
-<pre><code class="lang-csharp">[DataContract]
+<pre><code class="language-csharp">[DataContract]
 public class WeatherReport
 {
     [DataMember]
@@ -412,10 +513,9 @@ public class Period
     public DateTime From { get; set; }
     [DataMember]
     public DateTime Until { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>And here is the implementation of the weather actor:</p>
-<pre><code class="lang-csharp">internal class WeatherActor : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
+<pre><code class="language-csharp">internal class WeatherActor : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
 {
     public Task AddWeatherReport(WeatherReport report)
     {
@@ -431,24 +531,22 @@ public class Period
             .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
             .Max(r =&gt; (int?)r.Temperature));
     }
-}
-</code></pre>
+}</code></pre>
 <p>Service Fabric provides reliable storage out of the box, so we are using it to
 store our reports. There&#39;s no code required to instantiate an actor. Here is the
 code to use it:</p>
-<pre><code class="lang-csharp">// Submit a new report
+<pre><code class="language-csharp">// Submit a new report
 IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(new ActorId(&quot;Amsterdam&quot;));
 actor.AddWeatherReport(
     new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 });
 
 // Make a query somewhere else
 IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(new ActorId(&quot;Amsterdam&quot;));
-var result = actor.GetMaxTemperature(new Period { From = monthAgo, Until = now });
-</code></pre>
+var result = actor.GetMaxTemperature(new Period { From = monthAgo, Until = now });</code></pre>
 <h2 id="akka-net-actors">Akka.NET Actors</h2>
 <p>Actors in Akka.NET are message-based. The messages are immutable POCOs, which 
 is a great design decision. Here are the messages for our scenario:</p>
-<pre><code class="lang-csharp">public class WeatherReport
+<pre><code class="language-csharp">public class WeatherReport
 {
     public WeatherReport(DateTime moment, int temperature, int humidity)
     {
@@ -477,7 +575,7 @@ public class Period
 <p>There&#39;s no need to define any interfaces. The basic actor implementation derives from
 <code>ReceiveActor</code> and calls <code>Receive</code> generic method to setup a callback which is called
 when a message of specified type is received:</p>
-<pre><code class="lang-csharp">public class WeatherActor : ReceiveActor
+<pre><code class="language-csharp">public class WeatherActor : ReceiveActor
 {
     private List&lt;WeatherReport&gt; state = new List&lt;WeatherReport&gt;();
 
@@ -499,8 +597,7 @@ when a message of specified type is received:</p>
             .Max(r =&gt; (int?)r.Temperature);
         Sender.Tell(response, Self);
     }
-}
-</code></pre>
+}</code></pre>
 <p>Note a couple more differences in this implementation comparing to Fabric style:</p>
 <ul>
 <li><p>State is stored in a normal class field and is not persistent or replicated
@@ -519,17 +616,15 @@ Fabric&#39;s <code>ActorProxy</code>: it does not create an actor, but just gets
 based on the name. Note that Akka.NET actor needs to be explicitly created by
 another actor, but lifetime management is a separate discussion, so we&#39;ll skip 
 it for now. Here is the report sender:</p>
-<pre><code class="lang-csharp">// Submit a new report
+<pre><code class="language-csharp">// Submit a new report
 var msg = new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 };
-Context.ActorSelection(&quot;/user/weather/Amsterdam&quot;).Tell(msg);
-</code></pre>
+Context.ActorSelection(&quot;/user/weather/Amsterdam&quot;).Tell(msg);</code></pre>
 <p>Asking <code>ActorSelection</code> is not directly possible, we would need to setup an
 inbox and receive callback messages. We&#39;ll pretend that we have an <code>ActorRef</code>
 for the sake of simplicity:</p>
-<pre><code class="lang-csharp">// Make a query somewhere else
+<pre><code class="language-csharp">// Make a query somewhere else
 ActoRef actor = ... ; // we have it
-var result = await actor.Ask(new Period { From = monthAgo, Until = now });
-</code></pre>
+var result = await actor.Ask(new Period { From = monthAgo, Until = now });</code></pre>
 <h2 id="the-best-of-two-worlds">The Best of Two Worlds</h2>
 <p>Now my goals is to come up with an implementation of Service Fabric actors with
 the properties that combine the good parts of both frameworks (without explicitly
@@ -543,7 +638,7 @@ cluster management and reliable state</li>
 </ul>
 <p>Here is the third implementation of our Weather Actor (the definitions of messages
 from Akka.NET example are intact):</p>
-<pre><code class="lang-csharp">[ActorService(Name = &quot;WeatherActor&quot;)]
+<pre><code class="language-csharp">[ActorService(Name = &quot;WeatherActor&quot;)]
 public class WeatherActor : StetefulReceiveActor&lt;List&lt;WeatherReport&gt;&gt;
 {
     public WeatherActor()
@@ -567,8 +662,7 @@ public class WeatherActor : StetefulReceiveActor&lt;List&lt;WeatherReport&gt;&gt
             .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
             .Max(r =&gt; (int?)r.Temperature));
     }
-}
-</code></pre>
+}</code></pre>
 <p>The base <code>ReceiveActor</code> class is not defined yet, we&#39;ll do it in the next section. Here is
 how it&#39;s being used:</p>
 <ul>
@@ -584,30 +678,28 @@ the same interface</li>
 </ul>
 <p>The client code uses our own <code>MessageActorProxy</code> class to create non-generic proxies which
 are capable to <code>Tell</code> (send a message one way) and <code>Ask</code> (do request and wait for response):</p>
-<pre><code class="lang-csharp">// Submit a new report
+<pre><code class="language-csharp">// Submit a new report
 var actor = MessageActorProxy.Create(new ActorId(&quot;Amsterdam&quot;), &quot;WeatherActor&quot;);
 actor.Tell(new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 });
 
 // Make a query somewhere else
 var actor = MessageActorProxy.Create(new ActorId(&quot;Amsterdam&quot;), &quot;WeatherActor&quot;);
-var result = actor.Ask(new Period { From = monthAgo, Until = now });
-</code></pre>
+var result = actor.Ask(new Period { From = monthAgo, Until = now });</code></pre>
 <h2 id="implementation-of-receiveactor">Implementation of ReceiveActor</h2>
 <p>Let&#39;s start with the interface definition:</p>
-<pre><code class="lang-csharp">public interface IReceiveActor : IActor
+<pre><code class="language-csharp">public interface IReceiveActor : IActor
 {
     Task Tell(string typeName, byte[] message);
 
     [Readonly]
     Task&lt;byte[]&gt; Ask(string typeName, byte[] message);
-}
-</code></pre>
+}</code></pre>
 <p>The two methods for <code>Tell</code> and <code>Ask</code> accept serializes data together with fully qualified
 type name. This will allow passing any kind of objects which can be handled by a serializer
 of choice (I used Newtonsoft JSON serializer).</p>
 <p>Actor implementation derives from <code>StatefulActor</code> and uses another type/bytes pair to store
 the serialized state:</p>
-<pre><code class="lang-csharp">    public abstract class StatefulReceiveActor : StatefulActor&lt;StateContainer&gt;, 
+<pre><code class="language-csharp">    public abstract class StatefulReceiveActor : StatefulActor&lt;StateContainer&gt;, 
                                                  IReceiveActor
     {
         // ...
@@ -621,11 +713,10 @@ the serialized state:</p>
 
         [DataMember]
         public byte[] Data { get; set; }
-    }
-</code></pre>
+    }</code></pre>
 <p>The simplistic implementation of <code>Receive</code> generic methods uses two dictionaries
 to store the handlers:</p>
-<pre><code class="lang-csharp">private Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt; handlers;
+<pre><code class="language-csharp">private Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt; handlers;
 private Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt; askers;
 
 public ReceiveActor()
@@ -642,7 +733,7 @@ protected void Receive&lt;TI, TO&gt;(Func&lt;object, TI, Task&lt;TO&gt;&gt; aske
 </code></pre>
 <p>The <code>Tell</code> method deserializes the message and state, then picks a handler based on
 the message type, executes it and serializes the produced state back:</p>
-<pre><code class="lang-csharp">public async Task Tell(string typeName, byte[] message)
+<pre><code class="language-csharp">public async Task Tell(string typeName, byte[] message)
 {
     var type = Type.GetType(typeName);
     var typedMessage = this.serializer.Deserialize(message, type);
@@ -663,11 +754,10 @@ the message type, executes it and serializes the produced state back:</p>
               }
             : null;
     }
-}
-</code></pre>
+}</code></pre>
 <p>The implementation of <code>Ask</code> is almost identical, so I&#39;ll skip it. <code>MessageActorProxy</code> 
 encapsulates the serialization around passing data to normal <code>ActorProxy</code> class:</p>
-<pre><code class="lang-csharp">public class MessageActorProxy
+<pre><code class="language-csharp">public class MessageActorProxy
 {
     private readonly IStatefulMessageActor proxy;
     private readonly ISerializer serializer = new JsonByteSerializer();
@@ -695,8 +785,7 @@ encapsulates the serialization around passing data to normal <code>ActorProxy</c
     {
         return new MessageActorProxy(actorId, serviceType);
     }
-}
-</code></pre>
+}</code></pre>
 <p>Let&#39;s briefly wrap it up.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>At this stage Azure Service Fabric lacks support of some actor model best practices
@@ -762,94 +851,85 @@ The one with the biggest amount of matches wins.</p>
 <p>Let&#39;s put some code at the table. We start with suit recognition. <code>getSuit</code> function has type 
 <code>Color -&gt; string option</code> and converts the color of a pixel into the suit name, if possible. Hearts (&quot;h&quot;)
 are red, Diamonds (&quot;d&quot;) are blue, Clubs (&quot;c&quot;) are green and Spades (&quot;s&quot;) are black:</p>
-<pre><code class="lang-fsharp">let getSuit (c : Color) =
+<pre><code class="language-fsharp">let getSuit (c : Color) =
   match c with
   | _ when c.B &lt; 127uy &amp;&amp; c.G &lt; 127uy &amp;&amp; c.R &gt; 127uy -&gt; Some &quot;h&quot;
   | _ when c.B &gt; 127uy &amp;&amp; c.G &lt; 127uy &amp;&amp; c.R &lt; 127uy -&gt; Some &quot;d&quot;
   | _ when c.B &lt; 127uy &amp;&amp; c.G &gt; 127uy &amp;&amp; c.R &lt; 127uy -&gt; Some &quot;c&quot;
   | _ when c.B &lt; 127uy &amp;&amp; c.G &lt; 127uy &amp;&amp; c.R &lt; 127uy -&gt; Some &quot;s&quot;
-  | _ -&gt; None
-</code></pre>
+  | _ -&gt; None</code></pre>
 <p>This function is used by <code>getCardSuit</code> function of type <code>(int -&gt; int -&gt; Color) -&gt; int -&gt; int -&gt; string</code>.
 Its first argument is a function which returns the color of a pixel based on <code>(x, y)</code>
 relative coordinates (starting with 0). The next two arguments are width and height of the cards. Result is
 the same suit name that we described above. The function loops through all the pixels, gets a suit per
 pixel and then returns the suit which is the most popular among them. Alternatively, we could just return
 the first suit found, but my implementation looks more resilient:</p>
-<pre><code class="lang-fsharp">let getCardSuit getPixel width height =    
+<pre><code class="language-fsharp">let getCardSuit getPixel width height =    
   seq { for x in 0 .. width - 1 do
           for y in 0 .. height - 1 do
             yield getSuit (getPixel x y) }
   |&gt; Seq.choose id
   |&gt; Seq.countBy id
   |&gt; Seq.maxBy (fun (v, c) -&gt; c)
-  |&gt; fst
-</code></pre>
+  |&gt; fst</code></pre>
 <h2 id="producing-the-black-white-pattern">Producing the black &amp; white pattern</h2>
 <p><code>getCardPattern</code> accepts the same parameters as <code>getSuits</code> but returns <code>seq&lt;BW&gt;</code> instead. This is
 a sequence of black or white pixels with a helper union type:</p>
-<pre><code class="lang-fsharp">type BW = B | W
-</code></pre>
+<pre><code class="language-fsharp">type BW = B | W</code></pre>
 <p>The function body enumerates the pixels and return black or white result as a flat sequence:</p>
-<pre><code class="lang-fsharp">let getCardPattern getPixel width height =
+<pre><code class="language-fsharp">let getCardPattern getPixel width height =
   let isWhite (c : Color) =
     if c.B &gt; 127uy &amp;&amp; c.G &gt; 127uy &amp;&amp; c.R &gt; 127uy then W
     else B
 
   seq { for x in 0 .. width - 1 do
           for y in 0 .. height - 1 do
-            yield isWhite (getPixel x y) }
-</code></pre>
+            yield isWhite (getPixel x y) } </code></pre>
 <h2 id="card-face-recognition">Card face recognition</h2>
 <p>Having a black and white pattern, we can compare it with the predefined patterns and pick the
 most similar one. A pattern is defined with a helper type</p>
-<pre><code class="lang-fsharp">type CardPattern = {
+<pre><code class="language-fsharp">type CardPattern = {
   Card: string
   Pattern: BW array
-}
-</code></pre>
+}</code></pre>
 <p><code>Pattern</code> is a sequence which is equivalent to the sequence we got on the previous step. 
 <code>Card</code> is a string of hand face value 2, 3, 4 .. A. <code>getCardFace</code> has the type 
 <code>CardPattern[] -&gt; seq&lt;BW&gt; -&gt; string</code>, it accepts an array of known patterns and a pattern
 of the card to be recognized. It compares patterns pixel by pixel and returns the card
 which has the biggest amount of matches:</p>
-<pre><code class="lang-fsharp">let getCardFace patterns bws =
+<pre><code class="language-fsharp">let getCardFace patterns bws =
   let matchCount h p =
     Seq.zip h p
     |&gt; Seq.map (fun (v1, v2) -&gt; if v1 = v2 then 1 else 0)
     |&gt; Seq.sum
     |&gt; decimal
   let maxPattern = patterns |&gt; Array.maxBy (fun p -&gt; matchCount bws p.Pattern)
-  maxPattern.Card
-</code></pre>
+  maxPattern.Card</code></pre>
 <h2 id="getting-the-known-patterns">Getting the known patterns</h2>
 <p>So how do we create an array of known patterns? It&#39;s tedious to do manually, so
 we use a bit of code generation.
 Basically we just take several screenshots of poker tables and feed them to the following 
 helper function:</p>
-<pre><code class="lang-fsharp">let parsePattern getPixel width height =
+<pre><code class="language-fsharp">let parsePattern getPixel width height =
   getCardPattern getPixel width height
   |&gt; Seq.map (fun x -&gt; if x = B then &quot;B&quot; else &quot;W&quot;) 
-  |&gt; String.concat &quot;;&quot;
-</code></pre>
+  |&gt; String.concat &quot;;&quot;</code></pre>
 <p>The function creates a string which can be copy-pasted into F# array of <code>BW</code>.</p>
 <h2 id="putting-it-all-together">Putting it all together</h2>
 <p>Here is the facade function that will be called from the outside:</p>
-<pre><code class="lang-fsharp">let recognizeCard getPixel width height = 
+<pre><code class="language-fsharp">let recognizeCard getPixel width height = 
   let value = 
     getCardPattern getPixel width height 
     |&gt; getCardValue patterns
   let suit = getCardSuit getPixel width height
-  value + suit
-</code></pre>
+  value + suit</code></pre>
 <p>The calling code looks like this:</p>
-<pre><code class="lang-fsharp">let image = new Bitmap(&quot;...&quot;);
+<pre><code class="language-fsharp">let image = new Bitmap(&quot;...&quot;);
 
 let getPixel offsetX offsetY x y = 
   image.GetPixel(offsetX + x, offsetY + y)
 
-let hand = (recognizeCard (getPixel leftX top) width height) + (recognizeCard (getPixel rightX top) width height)
-</code></pre>
+let hand = (recognizeCard (getPixel leftX top) width height) + (recognizeCard (getPixel rightX top) width height)</code></pre>
 <p><code>leftX</code>, <code>rightX</code>, <code>top</code>, <code>width</code> and <code>height</code> are well-known parameters of cards locations within a screenshot, 
 which are hard coded for a given table size.</p>
 <h2 id="conclusion">Conclusion</h2>
@@ -866,241 +946,6 @@ series I will show how to recognize non-fixed parts: text and numbers.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/image-recognition/'>Image Recognition</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Jan 25th, 2016</div>
-    
-    <h1><a href='/2016/01/monads-explained-in-csharp/'>Monads explained in C#</a></h1>
-    
-    <div class="post-content">
-        <p><em>The newer and much longer version of this article is now available:</em>
-<a href="https://mikhail.io/2018/07/monads-explained-in-csharp-again/">Monads explained in C# (again)</a></p>
-<p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
-what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
-developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
-loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
-it becomes kind of obvious once you read 3 or 5 explanations on the web. Here is my attempt, probably doomed
-to fail :)</p>
-<h2 id="monads-are-container-types">Monads are container types</h2>
-<p>Monads represent a class of types which behave in the common way.</p>
-<p>Monads are containers which encapsulate some kind of functionality. On top of
-that, they provide a way to combine two containers into one. And that&#39;s about it. </p>
-<p>The goals of monads are similar to generic goals of any encapsulation in 
-software development practices: hide the implementation details from the client, 
-but provide a proper way to use the hidden functionality. </p>
-<p>It&#39;s not because we 
-want to be able to change the implementation, it&#39;s because we want to make the 
-client as simple as possible and to enforce the best way of code structure. 
-Quite often monads provide the way to avoid imperative code in favor of 
-functional style.</p>
-<p>Monads are flexible, so in C# we could try to represent a monadic type as 
-a generic class:</p>
-<pre><code class="lang-csharp">public class Monad&lt;T&gt;
-{
-}
-</code></pre>
-<h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
-<p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should 
-be a way to create an object of this class out of an instance of type <code>T</code>. 
-In functional world this operation is known as <code>Return</code> function. In C# it 
-can be as simple as a constructor:</p>
-<pre><code class="lang-csharp">public class Monad&lt;T&gt;
-{
-    public Monad(T instance)
-    {
-    }
-}
-</code></pre>
-<p>But usually it makes sense to define an extension method to enable fluent 
-syntax of monad creation:</p>
-<pre><code class="lang-csharp">public static class MonadExtensions
-{
-    public static Monad&lt;T&gt; Return&lt;T&gt;(this T instance) =&gt; new Monad&lt;T&gt;(instance);
-}
-</code></pre>
-<h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
-<p>This is the property which makes monads so useful, but also a bit confusing. 
-In functional world this operation is expressed with the <code>Bind</code> function 
-(or <code>&gt;&gt;=</code> operator). Here is the signature of <code>Bind</code> method in C#:</p>
-<pre><code class="lang-csharp">public class Monad&lt;T&gt;
-{
-    public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
-    {
-    }
-}
-</code></pre>
-<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an 
-argument of type <code>T</code> (not a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> 
-where <code>TO</code> is another type. Now, our first instance of <code>Monad&lt;T&gt;</code> knows 
-how to bind itself to this function to produce another instance of monad 
-of the new type. The full power of monads comes when we compose several of 
-them in one chain:</p>
-<pre><code class="lang-csharp">initialValue
-    .Return()
-    .Bind(v1 =&gt; produceV2OutOfV1(v1))
-    .Bind(v2 =&gt; produceV3OutOfV2(v2))
-    .Bind(v3 =&gt; produceV4OutOfV3(v3))
-    //...
-</code></pre>
-<p>Let&#39;s have a look at some examples.</p>
-<p><a name="maybe" href="/2016/01/monads-explained-in-csharp/undefined"></a></p>
-<h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
-<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach 
-to dealing with &#39;no value&#39; value, alternative to the concept of <code>null</code>. 
-Basically your object should never be null, but it can either have <code>Some</code> 
-value or be <code>None</code>. F# has a maybe implementation built into the language: 
-it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
-<pre><code class="lang-csharp">public class Maybe&lt;T&gt; where T : class
-{
-    private readonly T value;
-
-    public Maybe(T someValue)
-    {
-        if (someValue == null)
-            throw new ArgumentNullException(nameof(someValue));
-        this.value = someValue;
-    }
-
-    private Maybe()
-    {
-    }
-
-    public Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func) where TO : class
-    {
-        return value != null ? func(value) : Maybe&lt;TO&gt;.None();
-    }
-
-    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;();
-}
-</code></pre>
-<pre><code class="lang-csharp">public static class MaybeExtensions
-{
-    public static Maybe&lt;T&gt; Return&lt;T&gt;(this T value) where T : class
-    {
-        return value != null ? new Maybe&lt;T&gt;(value) : Maybe&lt;T&gt;.None();
-    }
-}
-</code></pre>
-<p>Return function is implemented with a combination of a public constructor 
-which accepts <code>Some</code> value (notice that <code>null</code> is not allowed) and a static 
-<code>None</code> method returning an object of &#39;no value&#39;. <code>Return</code> extension method
-combines both of them in one call. </p>
-<p><code>Bind</code> function is implemented explicitly. </p>
-<p>Let&#39;s have a look at a use case. Imagine we have a traditional repository 
-which loads data from an external storage (no monads yet):</p>
-<pre><code class="lang-csharp">public interface ITraditionalRepository
-{
-    Customer GetCustomer(int id);
-    Address GetAddress(int id);
-    Order GetOrder(int id);
-}
-</code></pre>
-<p>Now, we write a client class which loads data one by one and tries to find
-a shipper:</p>
-<pre><code class="lang-csharp">Shipper shipperOfLastOrderOnCurrentAddress = null;
-var customer = repo.GetCustomer(customerId);
-if (customer?.Address != null)
-{
-    var address = repo.GetAddress(customer.Address.Id);
-    if (address?.LastOrder != null)
-    {
-        var order = repo.GetOrder(address.LastOrder.Id);
-        shipperOfLastOrderOnCurrentAddress = order?.Shipper;
-    }
-}
-return shipperOfLastOrderOnCurrentAddress;
-</code></pre>
-<p>Note, that the code assumes that repository returns <code>null</code> if some entity
-is not found, although nothing in the type system shows that. Then, there
-is a number of <code>null</code> checks (facilitated with elvis operator). The code gets
-a bit cluttered and less linear.</p>
-<p>Here is an alternative repository which returns <code>Maybe</code> type:</p>
-<pre><code class="lang-csharp">public interface IMonadicRepository
-{
-    Maybe&lt;Customer&gt; GetCustomer(int id);
-    Maybe&lt;Address&gt; GetAddress(int id);
-    Maybe&lt;Order&gt; GetOrder(int id);
-}
-</code></pre>
-<p>The contract is more explicit: you see that <code>Maybe</code> type is used, so you
-will be forced to handle the case of absent value.</p>
-<p>And here is how the above example can be rewritten with <code>Bind</code> method 
-composition:</p>
-<pre><code class="lang-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
-    repo.GetCustomer(customerId)
-        .Bind(c =&gt; c.Address)
-        .Bind(a =&gt; repo.GetAddress(a.Id))
-        .Bind(a =&gt; a.LastOrder)
-        .Bind(lo =&gt; repo.GetOrder(lo.Id))
-        .Bind(o =&gt; o.Shipper);
-</code></pre>
-<p>There&#39;s no branching anymore, the code is fluent and linear.</p>
-<p>If you think that the syntax looks very much like a LINQ query with a bunch 
-of <code>Select</code> statements, you are not the only one ;) One of the common 
-implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface which allows 
-a more C#-idiomatic binding composition. Actually:</p>
-<h2 id="ienumerable-selectmany-is-a-monad-">IEnumerable + SelectMany is a monad </h2>
-<p><code>IEnumerable</code> is an interface for enumerable containers.</p>
-<p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
-<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here 
-is its signature:</p>
-<pre><code class="lang-csharp">public static IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
-    this IEnumerable&lt;A&gt; first, 
-    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
-</code></pre>
-<p>And here is an example of composition:</p>
-<pre><code class="lang-csharp">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
-    customers
-        .SelectMany(c =&gt; c.Addresses)
-        .SelectMany(a =&gt; a.Orders)
-        .SelectMany(o =&gt; o.Shippers);
-</code></pre>
-<p>The query has no idea about how the collections are stored (encapsulated in
-containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
-(<code>Bind</code> operation).</p>
-<h2 id="monad-laws">Monad laws</h2>
-<p>There are a couple of laws that <code>Return</code> and <code>Bind</code> need to adhere to, so
-that they produce a proper monad.</p>
-<p><strong>Identity law</strong> says that that <code>Return</code> is a neutral operation: you can safely
-run it before <code>Bind</code>, and it won&#39;t change the result of the function call:</p>
-<pre><code class="lang-csharp">// Given
-T value;
-Func&lt;T, M&lt;U&gt;&gt; f;
-
-// == means both parts are equivalent
-value.Return().Bind(f) == f(value)
-</code></pre>
-<p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
-are composed does not matter:</p>
-<pre><code class="lang-csharp">// Given
-M&lt;T&gt; m;
-Func&lt;T, M&lt;U&gt;&gt; f;
-Func&lt;U, M&lt;V&gt;&gt; g;
-
-// == means both parts are equivalent
-m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))
-</code></pre>
-<p>The laws may look complicated, but in fact they are very natural 
-expectations that any developer has when working with monads, so don&#39;t
-spend too much mental effort on memorizing them.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>You should not be afraid of the &quot;M-word&quot; just because you are a C# programmer. 
-C# does not have a notion of monads as predefined language constructs, but 
-it doesn&#39;t mean we can&#39;t borrow some ideas from the functional world. Having 
-said that, it&#39;s also true that C# is lacking some powerful ways to combine 
-and generalize monads which are possible in Haskell and other functional 
-languages.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/monads/'>Monads</a>, <a href='/tags/maybe/'>Maybe</a>, <a href='/tags/linq/'>LINQ</a>
     </div>
     
 </article>
@@ -1127,7 +972,6 @@ languages.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

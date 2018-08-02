@@ -31,7 +31,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -131,12 +131,11 @@ to be different in subtle ways</li>
 <p>Azure comes with a powerful set of tools to manage resources with code.</p>
 <p>You can use PowerShell, CLI scripts or custom code like C# to do with code
 whatever is possible to do via portal.</p>
-<pre><code class="lang-csharp">var webApp = azure.WebApps.Define(appName)
+<pre><code class="language-csharp">var webApp = azure.WebApps.Define(appName)
     .WithRegion(Region.WestEurope)
     .WithNewResourceGroup(rgName)
     .WithNewFreeAppServicePlan()
-    .Create();
-</code></pre>
+    .Create();</code></pre>
 <p><em>Fluent C# code creating an App Service</em></p>
 <p>However, those commands are usually expressed in imperative style of 
 CRUD operations. You can run the commands once, but it&#39;s hard to modify
@@ -186,26 +185,24 @@ requested</li>
 <p>I&#39;m using TypeScript to define my Azure resources in Pulumi. So, the program
 is a normal Node.js application with <code>index.ts</code> file, package references in 
 <code>package.json</code> and one extra file <code>Pulumi.yaml</code> to define the program:</p>
-<pre><code class="lang-yaml">name: azure-appservice
-runtime: nodejs
-</code></pre>
+<pre><code class="language-yaml">name: azure-appservice
+runtime: nodejs</code></pre>
 <p>Our <code>index.js</code> is as simple as a bunch of <code>import</code> statements followed by
 creating TypeScript objects per desired resource. The simplest program can
 look like this:</p>
-<pre><code class="lang-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
+<pre><code class="language-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
 import * as azure from &quot;@pulumi/azure&quot;;
 
 const resourceGroup = new azure.core.ResourceGroup(&quot;myrg&quot;, {
     location: &quot;West Europe&quot;
-});
-</code></pre>
+});</code></pre>
 <p>When executed by <code>pulumi update</code> command, this program will create a new
 Resource Group in your Azure subscription.</p>
 <h2 id="chaining-resources">Chaining Resources</h2>
 <p>When multiple resources are created, the properties of one resource will
 depend on properties of the others. E.g. I&#39;ve defined the Resource Group
 above, and now I want to create an App Service Plan under this Group:</p>
-<pre><code class="lang-ts">const resourceGroupArgs = {
+<pre><code class="language-ts">const resourceGroupArgs = {
     resourceGroupName: resourceGroup.name,
     location: resourceGroup.location
 };
@@ -219,8 +216,7 @@ const appServicePlan = new azure.appservice.Plan(&quot;myplan&quot;, {
         tier: &quot;Basic&quot;,
         size: &quot;B1&quot;,
     },
-});
-</code></pre>
+});</code></pre>
 <p>I&#39;ve assigned <code>resourceGroupName</code> and <code>location</code> of App Service Plan to
 values from the Resource Group. It looks like a simple assignment of
 strings but in fact it&#39;s more complicated.</p>
@@ -234,43 +230,37 @@ so the actually provisioned group will be named e.g. <code>&quot;myrg65fb103e&qu
 and then it will get propagated to <code>Input</code> by Pulumi.</p>
 <p>There is also a nice way to return the end values of <code>Output</code>&#39;s from Pulumi
 program. Let&#39;s say we define an App Service:</p>
-<pre><code class="lang-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
+<pre><code class="language-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
     ...resourceGroupArgs,
 
     appServicePlanId: appServicePlan.id
-});
-</code></pre>
+});</code></pre>
 <p>First, notice how we used TypeScript spread operator to reuse
 properties from <code>resourceGroupArgs</code>.</p>
 <p>Second, <code>Output</code>-<code>Input</code> assignment got used again to propagate App Service
 Plan ID.</p>
 <p>Lastly, we can now export App Service host name from our program, e.g.
 for the user to be able to go to the web site immediately after deployment:</p>
-<pre><code class="lang-ts">exports.hostname = app.defaultSiteHostname;
-</code></pre>
+<pre><code class="language-ts">exports.hostname = app.defaultSiteHostname;</code></pre>
 <p><code>Output</code> can also be transformed with <code>apply</code> function. Here is the code to
 format output URL:</p>
-<pre><code class="lang-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);
-</code></pre>
+<pre><code class="language-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);</code></pre>
 <p>Running <code>pulumi update</code> from CLI will then print the endpoint for us:</p>
-<pre><code class="lang-sh">---outputs:---
-endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;
-</code></pre>
+<pre><code class="language-sh">---outputs:---
+endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;</code></pre>
 <p>Multiple outputs can be combined with <code>pulumi.all</code>, e.g. given SQL Server
 and Database, we could make a connection string:</p>
-<pre><code class="lang-ts">const connectionString = 
+<pre><code class="language-ts">const connectionString = 
     pulumi.all([sqlServer, database]).apply(([server, db]) =&gt; 
-        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)
-</code></pre>
+        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)</code></pre>
 <h2 id="using-the-power-of-npm">Using the Power of NPM</h2>
 <p>Since our program is just a TypeScript application, we are free to use any
 3rd party package which exists out there in NPM.</p>
 <p>For instance, we can install Azure Storage SDK. Just</p>
-<pre><code class="lang-sh">npm install azure-storage@2.9.0-preview
-</code></pre>
+<pre><code class="language-sh">npm install azure-storage@2.9.0-preview</code></pre>
 <p>and then we can write a function to produce SAS token for a Blob in Azure
 Storage:</p>
-<pre><code class="lang-ts">import * as azurestorage from &quot;azure-storage&quot;;
+<pre><code class="language-ts">import * as azurestorage from &quot;azure-storage&quot;;
 
 // Given an Azure blob, create a SAS URL that can read it.
 export function signedBlobReadUrl(
@@ -299,8 +289,7 @@ export function signedBlobReadUrl(
 
         return blobService.getUrl(containerName, blobName, signature);
     });
-}
-</code></pre>
+}</code></pre>
 <p>I took this function from <a href="https://github.com/pulumi/examples/tree/master/azure-ts-functions">Azure Functions</a>
 example, and it will probably move to Pulumi libraries at some point, but until
 then you are free to leverage the package ecosystem.</p>
@@ -311,7 +300,7 @@ files as part of the same workflow.</p>
 feature of App Service:</p>
 <ol>
 <li><p>Define Storage Account and Container</p>
-<pre><code class="lang-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
+<pre><code class="language-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
      ...resourceGroupArgs,
 
      accountKind: &quot;StorageV2&quot;,
@@ -323,25 +312,23 @@ feature of App Service:</p>
      resourceGroupName: resourceGroup.name,
      storageAccountName: storageAccount.name,
      containerAccessType: &quot;private&quot;,
- });
-</code></pre>
+ });</code></pre>
 </li>
 <li><p>Create a folder with application files, e.g. <code>wwwroot</code>. It may contain
 some test HTML, ASP.NET application, or anything supported by App Service.</p>
 </li>
 <li><p>Produce a zip file from that folder in Pulumi program:</p>
-<pre><code class="lang-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
+<pre><code class="language-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
      resourceGroupName: resourceGroup.name,
      storageAccountName: storageAccount.name,
      storageContainerName: storageContainer.name,
      type: &quot;block&quot;,
 
      content: new pulumi.asset.FileArchive(&quot;wwwroot&quot;)
- });
-</code></pre>
+ });</code></pre>
 </li>
 <li><p>Produce SAS Blob URL and assign it to App Service Run-as-Zip setting:</p>
-<pre><code class="lang-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
+<pre><code class="language-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
 
  const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
      ...resourceGroupArgs,
@@ -351,8 +338,7 @@ some test HTML, ASP.NET application, or anything supported by App Service.</p>
      appSettings: {
          &quot;WEBSITE_RUN_FROM_ZIP&quot;: codeBlobUrl
      }
- });
-</code></pre>
+ });</code></pre>
 </li>
 </ol>
 <p>Run the program, and your Application will start as soon as <code>pulumi update</code>
@@ -424,7 +410,6 @@ components on their own.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -438,7 +423,6 @@ components on their own.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

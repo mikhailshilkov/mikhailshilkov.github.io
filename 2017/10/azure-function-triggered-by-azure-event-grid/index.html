@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -96,7 +96,7 @@ I decided to use Generic Webhook trigger (which is essentially an
 HTTP trigger).</p>
 <p>I used the Azure Portal to generate a function, so here is the 
 <code>function.json</code> that I got:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
   &quot;bindings&quot;: [
     {
       &quot;type&quot;: &quot;httpTrigger&quot;,
@@ -111,17 +111,15 @@ HTTP trigger).</p>
     }
   ],
   &quot;disabled&quot;: false
-}
-</code></pre>
+}</code></pre>
 <p>For precompiled functions, just decorate it with <code>HttpTriggerAttribute</code> with
 POST method:</p>
-<pre><code class="lang-csharp">public static Task&lt;HttpResponseMessage&gt; Run(
-    [HttpTrigger(AuthorizationLevel.Function, &quot;post&quot;)] HttpRequestMessage req)
-</code></pre>
+<pre><code class="language-csharp">public static Task&lt;HttpResponseMessage&gt; Run(
+    [HttpTrigger(AuthorizationLevel.Function, &quot;post&quot;)] HttpRequestMessage req)</code></pre>
 <h2 id="parse-the-payload">Parse the Payload</h2>
 <p>Events from Event Grid will arrive in a specific predefined JSON format.
 Here is an example of events to expect:</p>
-<pre><code class="lang-json">[{
+<pre><code class="language-json">[{
   &quot;id&quot;: &quot;0001&quot;,
   &quot;eventType&quot;: &quot;MyHelloWorld&quot;,
   &quot;subject&quot;: &quot;Hello World!&quot;,
@@ -130,11 +128,10 @@ Here is an example of events to expect:</p>
     &quot;hello&quot;: &quot;world&quot;
   },
   &quot;topic&quot;: &quot;/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1&quot;
-}]
-</code></pre>
+}]</code></pre>
 <p>To be able to parse those data more easily, I defined a C# class to deserialize
 JSON to:</p>
-<pre><code class="lang-csharp">public class GridEvent
+<pre><code class="language-csharp">public class GridEvent
 {
     public string Id { get; set; }
     public string EventType { get; set; }
@@ -142,11 +139,10 @@ JSON to:</p>
     public DateTime EventTime { get; set; }
     public Dictionary&lt;string, string&gt; Data { get; set; }
     public string Topic { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>Now, the function can read the events (note, that they are sent in arrays)
 from the body of POST request:</p>
-<pre><code class="lang-csharp">public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req, TraceWriter log)
+<pre><code class="language-csharp">public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req, TraceWriter log)
 {
     string jsonContent = await req.Content.ReadAsStringAsync();
     var events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
@@ -154,8 +150,7 @@ from the body of POST request:</p>
     // do something with events
 
     return req.CreateResponse(HttpStatusCode.OK);
-}
-</code></pre>
+}</code></pre>
 <h2 id="validate-the-endpoint">Validate the Endpoint</h2>
 <p>To prevent you from sending events to endpoints that you don&#39;t own, Event
 Grid requires each subsriber to validate itself. For this purpose, Event
@@ -163,13 +158,12 @@ Grid will send events of the special type <code>SubscriptionValidation</code>. <
 <p>The validation request will contain a code, which we need to echo back in
 200-OK HTTP response. </p>
 <p>Here is a small piece of code to do just that:</p>
-<pre><code class="lang-csharp">if (req.Headers.GetValues(&quot;Aeg-Event-Type&quot;).FirstOrDefault() == &quot;SubscriptionValidation&quot;)
+<pre><code class="language-csharp">if (req.Headers.GetValues(&quot;Aeg-Event-Type&quot;).FirstOrDefault() == &quot;SubscriptionValidation&quot;)
 {
     var code = events[0].Data[&quot;validationCode&quot;];
     return req.CreateResponse(HttpStatusCode.OK,
         new { validationResponse = code });
-}
-</code></pre>
+}</code></pre>
 <p>The function is ready!</p>
 <h2 id="create-a-custom-event-grid-topic">Create a Custom Event Grid Topic</h2>
 <p>To test it out, go to the portal and create a custom Event Grid topic.
@@ -182,7 +176,7 @@ your function, so you should see one invocation in the logs.</p>
 <h2 id="send-custom-events">Send Custom Events</h2>
 <p>Now, go to your favorite HTTP client (curl, Postman, etc) and send a sample
 event to check how the whole setup works:</p>
-<pre><code class="lang-http">POST /api/events HTTP/1.1
+<pre><code class="language-http">POST /api/events HTTP/1.1
 Host: &lt;your-eventgrid-topic&gt;.westus2-1.eventgrid.azure.net
 aeg-sas-key: &lt;key&gt;
 Content-Type: application/json
@@ -195,8 +189,7 @@ Content-Type: application/json
   &quot;data&quot;: {
     &quot;hello&quot;: &quot;world&quot;
   }
-}]
-</code></pre>
+}]</code></pre>
 <p>Obviously, adjust the endpoint and key based on the data from the portal.</p>
 <p>You should get a 200-OK back and then see your event in Azure Function 
 invocation logs.</p>
@@ -245,7 +238,6 @@ invocation logs.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -259,7 +251,6 @@ invocation logs.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

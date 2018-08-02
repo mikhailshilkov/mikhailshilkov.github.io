@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -77,6 +77,123 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Aug 21st, 2016</div>
+    
+    <h1><a href='/2016/08/getting-started-with-azure-application-insights-in-aurelia/'>Getting started with Azure Application Insights in Aurelia</a></h1>
+    
+    <div class="post-content">
+        <p><a href="https://azure.microsoft.com/en-us/documentation/articles/app-insights-overview/">Azure Application Insights</a>
+is an analytics service to monitor live web applications,
+diagnose performance issues, and understand what users actually do with the app. 
+<a href="http://aurelia.io">Aurelia</a> is a modern and slick single-page application framework.
+Unfortunately, there&#39;s not much guidance on the web about how to use AppInsights and
+Aurelia together in a proper manner. The task gets even more challenging in case you are
+using TypeScript and want to stay in type-safe land. This post will set you up and
+running in no time.</p>
+<h2 id="get-your-appinsights-instrumentation-key">Get Your AppInsights Instrumentation Key</h2>
+<p>If not done yet, go register in Azure Application Insights portal. To start sending
+telemetry data from your application you would need a unique identifier of 
+your web application, which is called an Instrumentation Key (it&#39;s just a guid). 
+See <a href="https://azure.microsoft.com/en-us/documentation/articles/app-insights-javascript/">Application Insights for web pages</a>
+walk-through.</p>
+<h2 id="install-a-jspm-package">Install a JSPM Package</h2>
+<p>I&#39;m using JSPM as a front-end package manager for Aurelia applications. If you use it
+as well, run the following command to install AppInsights package:</p>
+<pre><code>jspm install github:Microsoft/ApplicationInsights-js</code></pre><p>it will add a line to <code>config.js</code> file:</p>
+<pre><code>map: {
+  &quot;Microsoft/ApplicationInsights-js&quot;: &quot;github:Microsoft/ApplicationInsights-js@1.0.0&quot;,
+...</code></pre><p>To keep the names simple, change the line to </p>
+<pre><code>  &quot;ApplicationInsights&quot;: &quot;github:Microsoft/ApplicationInsights-js@1.0.0&quot;,</code></pre><p>Do exactly the same change in <code>project.json</code> file, <code>jspm</code> -&gt; <code>dependencies</code> section.</p>
+<h2 id="create-an-aurelia-plugin">Create an Aurelia Plugin</h2>
+<p>In order to track Aurelia page views, we are going to plug into the routing pipeline
+with a custom plugin. Here is how my plugin looks like in JavaScript (see TypeScript
+version below):</p>
+<pre><code class="language-js">// app-insights.js
+export class AppInsights {
+  client;
+
+  constructor() {
+    let snippet = {
+      config: {
+        instrumentationKey: &#39;YOUR INSTRUMENTATION KEY GUID&#39;
+      }
+    };
+    let init = new Microsoft.ApplicationInsights.Initialization(snippet);
+    this.client = init.loadAppInsights();
+  }
+
+  run(routingContext, next) {
+    this.client.trackPageView(routingContext.fragment, window.location.href);
+    return next();
+  }
+}</code></pre>
+<p>The constructor instantiates an AppInsights client. It is used inside a <code>run</code> method,
+which would be called by Aurelia pipeline during page navigation.</p>
+<h2 id="add-the-plugin-to-aurelia-pipeline">Add the Plugin to Aurelia Pipeline</h2>
+<p>Go the the <code>App</code> class of your Aurelia application. Import the new plugin</p>
+<pre><code class="language-js">// app.js
+import {AppInsights} from &#39;./app-insights&#39;;</code></pre>
+<p>and change the <code>configureRouter</code> method to register a new pipeline step:</p>
+<pre><code class="language-js">configureRouter(config, router): void {
+  config.addPipelineStep(&#39;modelbind&#39;, AppInsights);
+  config.map(/*routes are initialized here*/);
+}</code></pre>
+<p>After re-building the application, you should be all set to go. Navigate several pages
+and wait for events to appear in Application Insights portal.</p>
+<h2 id="typescript-obtain-the-definition-file">TypeScript: Obtain the Definition File</h2>
+<p>If you are using TypeScript, you are not done yet. In order to compile the <code>AppInsights</code>
+plugin you need the type definitions for <code>ApplicationInsights</code> package. Unfortunately,
+at the time of writing there is no canonical definition in <code>typings</code> registry, so
+you will have to provide a custom <code>.d.ts</code> file. You can download mine from
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/aurelia-app-insights/applicationinsights.d.ts">my github</a>. 
+I created it based on a file from 
+<a href="https://www.nuget.org/packages/Microsoft.ApplicationInsights.TypeScript">this NuGet repository</a>.</p>
+<p>I&#39;ve put it into the <code>custom_typings</code> folder and then made the following adjustment
+to <code>build/paths.js</code> file of Aurelia setup:</p>
+<pre><code>  dtsSrc: [
+    &#39;typings/**/*.d.ts&#39;,
+    &#39;custom_typings/**/*.d.ts&#39;
+  ],</code></pre><p>For the reference, here is my TypeScript version of the <code>AppInsights</code> plugin:</p>
+<pre><code class="language-ts">import {NavigationInstruction, Next} from &#39;aurelia-router&#39;;
+import {Microsoft} from &#39;ApplicationInsights&#39;;
+
+export class AppInsights {
+  private client: Microsoft.ApplicationInsights.AppInsights;
+
+  constructor() {
+    let snippet = {
+      config: {
+        instrumentationKey: &#39;YOUR INSTRUMENTATION KEY GUID&#39;
+      },
+      queue: []
+    };
+    let init = new Microsoft.ApplicationInsights.Initialization(snippet);
+    this.client = init.loadAppInsights();
+  }
+
+  run(routingContext: NavigationInstruction, next: Next): Promise&lt;any&gt; {
+    this.client.trackPageView(routingContext.fragment, window.location.href);
+    return next();
+  }
+}</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>This walk-through should get you started with Azure Application Insights in your
+Aurelia application. Once you have page view metrics coming into the dashboard,
+spend more time to discover all the exciting ways to improve your application
+with Application Insights.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/application-insights/'>Application Insights</a>, <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/typescript/'>Typescript</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Aug 5th, 2016</div>
     
     <h1><a href='/2016/08/comparing-scala-to-fsharp/'>Comparing Scala to F#</a></h1>
@@ -97,15 +214,13 @@ in Scala I find interesting, or vice versa - missing compared to F#.</p>
 <p><em>Post updated based on comments by Mark Lewis and Giacomo Citi.</em></p>
 <h2 id="implicit-parameters">Implicit Parameters</h2>
 <p>A parameter of a function can be marked as implicit</p>
-<pre><code class="lang-scala">def work(implicit i:Int) = print(i)
-</code></pre>
+<pre><code class="language-scala">def work(implicit i:Int) = print(i)</code></pre>
 <p>and that means you can call the function without specifying the value for this parameter
 and the compiler will try to figure out that value you (according to
 the extensive set of rules), e.g.</p>
-<pre><code class="lang-scala">implicit val v = 2;
+<pre><code class="language-scala">implicit val v = 2;
 // ... somewhere below
-work // prints &#39;2&#39;
-</code></pre>
+work // prints &#39;2&#39;</code></pre>
 <p>I am not aware of any similar features in other language that I know, so I&#39;m pretty sure
 I don&#39;t understand it well enough yet :) At the same time, I think implicits are
 very characteristic for Scala: they are a powerful tool, which can be used in many
@@ -113,29 +228,25 @@ valid scenarios, or can be abused to shoot in one&#39;s feet.</p>
 <h2 id="underscore-in-lambdas">Underscore In Lambdas</h2>
 <p>Underscores <code>_</code> can be used to represent parameters in lambda expressions
 without explicitly naming them:</p>
-<pre><code class="lang-scala">employees.sortBy(_.dateOfBirth)
-</code></pre>
+<pre><code class="language-scala">employees.sortBy(_.dateOfBirth)</code></pre>
 <p>I think that&#39;s brilliant - very short and readable. Tuple values are represented
 by <code>_1</code> and <code>_2</code>, so we can sort an array of tuples like</p>
-<pre><code class="lang-scala">profitByYear.sortBy(_._1)
-</code></pre>
+<pre><code class="language-scala">profitByYear.sortBy(_._1)</code></pre>
 <p>This looks a bit hairy and should probably be used only when the meaning is obvious.
 (In the example above I&#39;m not sure if we sort by year or by profit...)</p>
 <p>In F# underscore is used in a different sense - as &quot;something to ignore&quot;. That makes
 sense, but I would love to have a shorter way of writing lambda in</p>
-<pre><code class="lang-fsharp">empoyees |&gt; List.sort (fun e -&gt; e.dateOfBirth)
-</code></pre>
+<pre><code class="language-fsharp">empoyees |&gt; List.sort (fun e -&gt; e.dateOfBirth)</code></pre>
 <p>Any hint how?</p>
 <h2 id="tail-recursion-mark">Tail-Recursion Mark</h2>
 <p>Any recursive function in Scala can be marked with <code>@tailrec</code> annotation,
 which would result in compilation error if the function is not tail-recursive.
 This guarantees that you won&#39;t get a nasty stack overflow exception. </p>
-<pre><code class="lang-scala">@tailrec 
+<pre><code class="language-scala">@tailrec 
 def boom(x: Int): Int = {
   if (x == 0) 0
   else boom(x-1) + 1
-}
-</code></pre>
+}</code></pre>
 <p>The code above won&#39;t compile, as the recursion can&#39;t be optimized by the
 compiler.</p>
 <p>The feature sounds very reasonable, although I must admit that I have 
@@ -146,30 +257,26 @@ the function body. This style of function substitution model is known as
 Call by Value.</p>
 <p>Same is the default in Scala. But there is an alternative: you can defer the
 evaluation of parameters by marking them with an <code>=&gt;</code> symbol:</p>
-<pre><code class="lang-scala">def callByName(x: =&gt; Int) = {
+<pre><code class="language-scala">def callByName(x: =&gt; Int) = {
   println(&quot;x is &quot; + x)
-}
-</code></pre>
+}</code></pre>
 <p>This style is known as Call by Name, and the evaluation is defered until the
 parameter is actually used. So, if parameter is never used, its value
 will never be evaluated. This code:</p>
-<pre><code class="lang-scala">val a:Option[Int] = Some(1)
-val b = a getOrElse (2/0)
-</code></pre>
+<pre><code class="language-scala">val a:Option[Int] = Some(1)
+val b = a getOrElse (2/0)</code></pre>
 <p>will set <code>b</code> to <code>1</code>, and no error will be thrown, even though we are dividing by zero 
 in function parameter. This is because the parameter of <code>getOrElse</code> is passed
 by name.</p>
 <p>The F# alternative <code>defaultArg</code> doesn&#39;t work this way, so the following code
 will blow up:</p>
-<pre><code class="lang-fsharp">let a = Some(1)
-let b = defaultArg b (2/0) // boom
-</code></pre>
+<pre><code class="language-fsharp">let a = Some(1)
+let b = defaultArg b (2/0) // boom</code></pre>
 <p>You can get deferred evaluation by passing a function:</p>
-<pre><code class="lang-fsharp">let defaultArgFunc o (f: unit -&gt; &#39;a) = 
+<pre><code class="language-fsharp">let defaultArgFunc o (f: unit -&gt; &#39;a) = 
   match o with | Some v -&gt; v | None -&gt; f()
 
-let b2 = defaultArgFunc a (fun () -&gt; 2 / 0)
-</code></pre>
+let b2 = defaultArgFunc a (fun () -&gt; 2 / 0)</code></pre>
 <p>That&#39;s essentially what happens in Scala too, but the Scala syntax is 
 arguably cleaner.</p>
 <h2 id="lack-of-type-inference">Lack of Type Inference</h2>
@@ -177,15 +284,13 @@ arguably cleaner.</p>
 In Scala, type inference seems to be quite limited. Yes, you don&#39;t have to
 explicitly define the types of local values or (most of the time) function return
 types, but that&#39;s about it.</p>
-<pre><code class="lang-scala">def max (a: Int, b:Int) = if (a &gt; b) a else b
-</code></pre>
+<pre><code class="language-scala">def max (a: Int, b:Int) = if (a &gt; b) a else b</code></pre>
 <p>You have to specify the types of all input parameters, and that&#39;s quite a bummer
 for people who are used to short type-less code of F# (or Haskell, OCaml and others, 
 for that matter).</p>
 <p>Type inference in F# plays another significant role: automatic type generalization.
 F# compiler would make types as generic as possible, based on implementation.</p>
-<pre><code class="lang-fsharp">let max a b = if a &gt; b then a else b
-</code></pre>
+<pre><code class="language-fsharp">let max a b = if a &gt; b then a else b</code></pre>
 <p>The type of the function above is <code>&#39;a -&gt; &#39;a -&gt; &#39;a</code>. Most people wouldn&#39;t make
 it generic from get-go, but compiler helps in this case.</p>
 <h2 id="functional-vs-object-oriented-style">Functional vs Object-Oriented Style</h2>
@@ -202,8 +307,7 @@ traits. <code>Stream</code> inherits from <code>List</code>, and <code>Nothing</
 to be used for some covariance tricks.</p>
 <p>Operations are usually defined as class methods instead of separate functions. For
 example the following Scala code</p>
-<pre><code class="lang-scala">word filter (c =&gt; c.isLetter)
-</code></pre>
+<pre><code class="language-scala">word filter (c =&gt; c.isLetter)</code></pre>
 <p>would filter a string to letters only. Why is <code>isLetter</code> defined as a method of 
 <code>Char</code>? I don&#39;t think it&#39;s essential for the type itself...</p>
 <h2 id="usage-of-operators">Usage of Operators</h2>
@@ -211,32 +315,26 @@ example the following Scala code</p>
 operators, not only for arithmetic operations but also for different classes
 from standard library and domain-specific code too. The basic ones are nice,
 e.g. list concatenation:</p>
-<pre><code class="lang-scala">List(1, 2) ++ List(3, 4)
-</code></pre>
+<pre><code class="language-scala">List(1, 2) ++ List(3, 4)</code></pre>
 <p>but others look awkward to me, e.g. stream concatenation:</p>
-<pre><code class="lang-scala">Stream(1) #::: Stream(2)
-</code></pre>
+<pre><code class="language-scala">Stream(1) #::: Stream(2)</code></pre>
 <p>Akka streams sweetness:</p>
-<pre><code class="lang-scala">in ~&gt; f1 ~&gt; bcast ~&gt; f2 ~&gt; merge ~&gt; f3 ~&gt; out
-            bcast ~&gt; f4 ~&gt; merge
-</code></pre>
+<pre><code class="language-scala">in ~&gt; f1 ~&gt; bcast ~&gt; f2 ~&gt; merge ~&gt; f3 ~&gt; out
+            bcast ~&gt; f4 ~&gt; merge</code></pre>
 <p>This can go to quite an extreme, similar to what <code>scalaz</code> library does.</p>
 <p>My default would be not to use operators unless you are sure that every 
 reader is able to instantly understand what it means.</p>
 <h2 id="partial-application">Partial Application</h2>
 <p>Not a huge difference, but F# functions are curried by default, while Scala
 functions aren&#39;t. Thus, in F# partial application just works, all the time</p>
-<pre><code class="lang-fsharp">let add a b = a + b
+<pre><code class="language-fsharp">let add a b = a + b
 let add3 = add 3
-let sum = add3 5 // 8
-</code></pre>
+let sum = add3 5 // 8</code></pre>
 <p>Scala function </p>
-<pre><code class="lang-scala">def add (a: Int, b: Int) = a + b
-</code></pre>
+<pre><code class="language-scala">def add (a: Int, b: Int) = a + b</code></pre>
 <p>is not curried, but Underscore comes to the rescue</p>
-<pre><code class="lang-scala">val add3: (Int) =&gt; Int = add(3, _)
-val sum = add3(5) // 8
-</code></pre>
+<pre><code class="language-scala">val add3: (Int) =&gt; Int = add(3, _)
+val sum = add3(5) // 8</code></pre>
 <p>Note how I miss the type inference again.</p>
 <p>The parameter order is very important in F#: the short syntax
 will partially apply parameters from left to right. In Scala, you can
@@ -315,29 +413,25 @@ development task.</p>
 say you do the following requests from the application:</p>
 <pre><code>GET /api/products
 GET /api/products/{id}
-POST /api/products
-</code></pre><h2 id="put-your-mock-data-into-files">Put your mock data into files</h2>
+POST /api/products</code></pre><h2 id="put-your-mock-data-into-files">Put your mock data into files</h2>
 <p>Go to the root folder of your Aurelia app and create an <code>/api</code> folder. </p>
 <p>Create a <code>/api/products</code> subfolder and put a new file called <code>GET.json</code>. This
 file should contain the JSON of the product list, e.g.</p>
-<pre><code class="lang-json">[ { &quot;id&quot;: 1, &quot;name&quot;: &quot;Keyboard&quot;, &quot;price&quot;: &quot;60$&quot; },
+<pre><code class="language-json">[ { &quot;id&quot;: 1, &quot;name&quot;: &quot;Keyboard&quot;, &quot;price&quot;: &quot;60$&quot; },
   { &quot;id&quot;: 2, &quot;name&quot;: &quot;Mouse&quot;, &quot;price&quot;: &quot;20$&quot; },
   { &quot;id&quot;: 3, &quot;name&quot;: &quot;Headphones&quot;, &quot;price&quot;: &quot;80$&quot; }
-]
-</code></pre>
+]</code></pre>
 <p>Create a new file called <code>POST.json</code> in the same folder. POST response won&#39;t 
 return any data, so the file can be as simple as</p>
-<pre><code class="lang-json">{}
-</code></pre>
+<pre><code class="language-json">{}</code></pre>
 <p>Create subfolders <code>1</code>, <code>2</code> and <code>3</code> under <code>products</code> and create a <code>GET.json</code> 
 file in each of them. Every file contains the data for a specific product, e.g.</p>
-<pre><code class="lang-json">{ &quot;id&quot;: 1, 
+<pre><code class="language-json">{ &quot;id&quot;: 1, 
   &quot;name&quot;: &quot;Keyboard&quot;, 
   &quot;price&quot;: &quot;60$&quot;,
   &quot;category&quot;: &quot;Computer Accessories&quot;,
   &quot;brand&quot;: &quot;Mousytech&quot;
-}
-</code></pre>
+}</code></pre>
 <h2 id="configure-browsersync-to-mock-your-api-calls">Configure BrowserSync to mock your API calls</h2>
 <p>For the purpose of this post, I assume you are using 
 <a href="https://github.com/aurelia/skeleton-navigation">Aurelia Skeleton Navigation</a>
@@ -346,9 +440,9 @@ starter kit, specifically
 If so, you should be familiar with <code>gulp serve</code> command, which serves your 
 application at <code>http://localhost:9000</code>. We will extend this command to host
 your API mock too.</p>
-<p>Navigate to <code>/build/tasks</code> folder and edit the <code>serve.js</code> file. Change the </p>
-<p>definition of <code>serve</code> task to the following code:</p>
-<pre><code class="lang-js">gulp.task(&#39;serve&#39;, [&#39;build&#39;], function(done) {
+<p>Navigate to <code>/build/tasks</code> folder and edit the <code>serve.js</code> file. Change the 
+definition of <code>serve</code> task to the following code:</p>
+<pre><code class="language-js">gulp.task(&#39;serve&#39;, [&#39;build&#39;], function(done) {
   browserSync({
     online: false,
     open: false,
@@ -377,18 +471,15 @@ your API mock too.</p>
       }
     }
   }, done);
-});
-</code></pre>
+});</code></pre>
 <h2 id="run-it">Run it</h2>
 <p>Now just run <code>gulp serve</code> (or <code>gulp watch</code>, which does <code>serve</code> and then watches
 files for changes). Every time your app makes an API call, you will see
 a line in the gulp console:</p>
-<pre><code>[serve] responding GET /api/products
-</code></pre><p>If you happen to make an invalid request with no mock defined, you will
+<pre><code>[serve] responding GET /api/products</code></pre><p>If you happen to make an invalid request with no mock defined, you will
 get an error:</p>
 <pre><code>[serve] responding GET /api/notproducts
-Error: Cannot find module &#39;../../api/notproducts/GET.json&#39;
-</code></pre><p>A complete example can be found in 
+Error: Cannot find module &#39;../../api/notproducts/GET.json&#39;</code></pre><p>A complete example can be found in 
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/aurelia-api-mocks">my github repository</a>.</p>
 
     </div>
@@ -473,22 +564,20 @@ as the decision produced from the graph.</p>
 <h2 id="code-sample">Code sample</h2>
 <p>We define a number of functions, each one of which represents one piece of decision 
 logic. Then we put them all into the list:</p>
-<pre><code class="lang-fsharp">let rules = [
+<pre><code class="language-fsharp">let rules = [
   overtakeLimpedPot overtakyHand snapshot value history;
   increaseTurnBetEQvsAI snapshot;
   allInTurnAfterCheckRaiseInLimpedPot snapshot history;
   checkCallPairedTurnAfterCallWithSecondPairOnFlop snapshot value.Made history;
   bluffyCheckRaiseFlopInLimpedPotFlop bluffyCheckRaiseFlopsLimp snapshot value history;
   bluffyOvertakingRiver bluffyOvertaking snapshot history
-]
-</code></pre>
+]</code></pre>
 <p>The type of this list is <code>(Decision option -&gt; Decision option) list</code>.</p>
 <p>Note how each individual function accepts different set of parameters. Current hand&#39;s
 <code>snapshot</code> is used by all of them, while calculated hand <code>value</code> and previous
 action <code>history</code> are used only by some of the functions. </p>
 <p>Now, here is the definition of the facade decision making function:</p>
-<pre><code class="lang-fsharp">rules |&gt; List.fold (fun opt rule -&gt; rule opt) None
-</code></pre>
+<pre><code class="language-fsharp">rules |&gt; List.fold (fun opt rule -&gt; rule opt) None</code></pre>
 <p>It calculates the decision by folding the list of rules and passing current decision
 between them. <code>None</code> is the initial seed of the fold.</p>
 <h2 id="conclusion">Conclusion</h2>
@@ -541,7 +630,7 @@ low-level code talks to a service which knows how to calculate the time
 required for a vehicle to go from A to B:</p>
 <p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion-violated.png" alt="UML: dependency inversion violated"></p>
 <p>So the following code <strong>violates</strong> the first part of the Dependency Inversion:</p>
-<pre><code class="lang-csharp">namespace Mapping
+<pre><code class="language-csharp">namespace Mapping
 {
     public class RouteCalculator
     {
@@ -568,8 +657,7 @@ namespace Planning
             return trip.Start.Add(duration);
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>It&#39;s not compliant to the principle because the high-level code (<code>TripPlanner</code>)
 explicitly depends on low-level service (<code>RouteCalculator</code>). Note that I&#39;ve put
 them to distinct namespaces to emphasize the required separation.</p>
@@ -578,7 +666,7 @@ implementations:</p>
 <p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion-with-dependency-injection.png" alt="UML: dependency inversion with dependency injection"></p>
 <p>In Trip Planner we accept the interface as constructor parameter, and we&#39;ll get the 
 specific implementation at run time:</p>
-<pre><code class="lang-csharp">namespace Mapping
+<pre><code class="language-csharp">namespace Mapping
 {
     public class IRouteCalculator
     {
@@ -613,8 +701,7 @@ namespace Planning
             return trip.Start.Add(duration);
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>This technique is called <em>dependency 
 injection</em> or, more specifically, <em>constructor injection</em>. This way 
 we can easily substitute the implementation later or inject a test 
@@ -654,7 +741,7 @@ level:</p>
 <p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion.png" alt="UML: dependency inversion"></p>
 <p>As you can see, I also renamed the interface. The name should reflect the way
 how the domain experts would think of this abstraction. Here is the result:</p>
-<pre><code class="lang-csharp">namespace Planning
+<pre><code class="language-csharp">namespace Planning
 {
     public class IDurationCalculator
     {
@@ -689,8 +776,7 @@ namespace Mapping
             // Call a 3rd party web service
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>Now, the interface is defined in <code>Planning</code> namespace, close to its <em>Client</em>,
 not its <em>Implementation</em>. That&#39;s the dependency inversion in action. Even
 more importantly, it&#39;s defined in terms of our domain - notice the use of
@@ -733,8 +819,12 @@ context mapping etc.</p>
 <blockquote>
 <p>High-level modules should not depend on low-level modules. 
 Both should depend on abstractions.</p>
+</blockquote>
+<blockquote>
 <p>Abstractions should not depend upon details. 
 Details should depend upon abstractions.</p>
+</blockquote>
+<blockquote>
 <p>Abstractions should be owned by higher-level modules and implemented by
 lower-level modules.</p>
 </blockquote>
@@ -746,185 +836,6 @@ lower-level modules.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/solid/'>SOLID</a>, <a href='/tags/dependency-inversion/'>Dependency Inversion</a>, <a href='/tags/dependency-injection/'>Dependency Injection</a>, <a href='/tags/clean-code/'>Clean Code</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">May 13th, 2016</div>
-    
-    <h1><a href='/2016/05/tweaking-immutable-objects-with-csharp-and-fody/'>Tweaking immutable objects with C# and Fody</a></h1>
-    
-    <div class="post-content">
-        <p>Immutable data structures provide a lot of benefits
-to programmers, especially when representing domain 
-<a href="https://lostechies.com/joeocampo/2007/04/23/a-discussion-on-domain-driven-design-value-objects/">value objects</a>. 
-Immutability is an essential part of functional programming paradigm.
-The concept is useful in object-oriented languages too, but you have
-to pay some price to get this advantage.</p>
-<p>In C# immutable classes are usually implemented with read-only
-properties which are populated from constructor parameters. One of the 
-disadvantages of this approach is the verbosity of creating a copy of an object
-with one property value modified.</p>
-<h2 id="example">Example</h2>
-<p>Let&#39;s have a look at an illustration of this problem. Let&#39;s say we have a value
-type representing poker player statistics:</p>
-<pre><code class="lang-csharp">public class PlayerStats
-{
-    public PlayerStats(
-        int hands, 
-        int daysOnline,
-        Money won, 
-        Money expectedValue)
-    {
-        this.Hands = hands;
-        this.DaysOnline = daysOnline;
-        this.Won = won;
-        this.ExpectedValue = expectedValue;
-    }
-
-    public int Hands { get; }
-    public int DaysOnline { get; }
-    public Money Won { get; }
-    public Money ExpectedValue { get; }
-}
-</code></pre>
-<p>We already see that it&#39;s quite verbose: basically we repeat each property name
-five times. But the issue I&#39;m discussing today is related to how we create 
-a new object based on another object. Let&#39;s say we need to make a copy of 
-a given statistics, but with <code>Hands</code> property increased by 1:</p>
-<pre><code class="lang-csharp">var increasedHands = new PlayerStats(
-    existing.Hands + 1,
-    existing.DaysOnline,
-    existing.Won,
-    existing.ExpectedValue);
-</code></pre>
-<p>Not as simple as we could hope. Also, there is some room for mistakes here. For 
-instance, we could swap <code>Won</code> and <code>ExpectedValue</code> property calls
-and compiler won&#39;t let us know because the types are the same. So we probably
-want to use explicit constructor parameter names:</p>
-<pre><code class="lang-csharp">var increasedHands = new PlayerStats(
-    hands: existing.Hands + 1,
-    daysOnline: existing.DaysOnline,
-    won: existing.Won,
-    expectedValue: existing.ExpectedValue);
-</code></pre>
-<p>But that leads to even more typing and repetition...</p>
-<h2 id="inspiration">Inspiration</h2>
-<p>F# is a functional-first language with immutability as first-class concept.
-In F# value objects are usually modelled with Records, here is our example
-reimplemented:</p>
-<pre><code class="lang-fsharp">type PlayerStats = {
-    Hands: int
-    DaysOnline: int
-    Won: Money
-    ExpectedValue: Money
-}
-</code></pre>
-<p>Creation of new objects based on other objects is also solved properly in F#,
-thanks to the <strong><code>with</code></strong> keyword :</p>
-<pre><code class="lang-fsharp">let increasedHands = { existing with Hands = existing.Hands + 1 }
-</code></pre>
-<p>All the properties are copied from the source record except for the ones
-explicitly mentioned in the expression.</p>
-<h2 id="defining-with-in-c-">Defining With in C#</h2>
-<p>There&#39;s no <strong><code>with</code></strong> operator in C#, but we can try to come up with an
-alternative. We can define some fluent methods which would change
-property values one by one (they don&#39;t change the original object, but
-return a copy with changed value):</p>
-<pre><code class="lang-csharp">public PlayerStats WithHands(int hands) 
-{
-    return new PlayerStats(
-        hands: hands,
-        daysOnline: existing.DaysOnline,
-        won: existing.Won,
-        expectedValue: existing.ExpectedValue);
-}
-
-public PlayerStats WithDaysOnline(int daysOnline) { ... }
-public PlayerStats WithWon(Money won) { ... }
-public PlayerStats WithExpectedValue (Money expectedValue) { ... }
-</code></pre>
-<p>The method implementation is very tedious but the usage gets much cleaner:</p>
-<pre><code class="lang-csharp">var increasedHands = existing.WithHands(existing.Hands + 1);
-</code></pre>
-<p>One way to avoid repetitive code is to generate it.</p>
-<h2 id="with-fody-plugin">With.Fody Plugin</h2>
-<p>In <a href="https://mikhail.io/2015/12/weaving-your-domain-classes-with-fody/">one of my previous posts</a>
-I described how C# value objects can be made less painful with 
-<a href="https://github.com/Fody/Fody">Fody</a> - a tool which changes your assembly at
-compilation time to provide some desired properties in automated and reliable
-fashion.</p>
-<p>Please welcome the new Fody plugin <a href="https://github.com/mikhailshilkov/With.Fody"><strong>With.Fody</strong></a> 
-which auto-implements <code>With</code> method bodies for C# immutable classes.</p>
-<p>Here is how to use this plugin for our imaginary example.</p>
-<p>First, add a reference to NuGet pakages <code>Fody</code> and <code>With.Fody</code>.</p>
-<p>Then, keep the <code>PlayerStats</code> class definition, but get rid of the bodies
-of <code>WithXyz</code> methods. Keep the signature but return something trivial like
-<code>null</code> or <code>this</code>:</p>
-<pre><code class="lang-csharp">public PlayerStats WithHands(int hands) =&gt; this;
-public PlayerStats WithDaysOnline(int daysOnline) =&gt; this;
-public PlayerStats WithWon(Money won) =&gt; this;
-public PlayerStats WithExpectedValue (Money expectedValue) =&gt; this;
-</code></pre>
-<p>Compile the project and you will see the following line in Build Output:</p>
-<pre><code>&gt;      Fody/With:   Added method &#39;With&#39; to type &#39;PlayerStats&#39;.
-</code></pre><p>It means that the method bodies were re-implemented with calls to 
-class constructor with proper parameter values.</p>
-<p>The method stubs are needed to satisfy code completion tools like 
-IntelliSense and Resharper, otherwise we could skip them altogether.</p>
-<h2 id="single-with-for-multiple-properties">Single With() for Multiple Properties</h2>
-<p>In case you avoid <a href="https://mikhail.io/2015/08/units-of-measurement-in-domain-design/">Primitive Obsession</a>
-antipattern, you will often end up with classes which have unique types of 
-properties, e.g.</p>
-<pre><code class="lang-csharp">public class TripProfile
-{
-    public TripProfile(
-        Distance totalDistance,
-        Speed averageSpeed,
-        Volume fuelConsumed)
-    {
-        this.TotalDistance = totalDistance;
-        this.AverageSpeed = averageSpeed;
-        this.FuelConsumed = fuelConsumed;
-    }
-
-    public Distance TotalDistance { get; }
-    public Speed AverageSpeed { get; }
-    public Volume FuelConsumed { get; }
-}
-</code></pre>
-<p>In this case, the plugin can be smart enough to figure out which property
-you want to modify just by looking at the type of the argument. The single stub
-method can look like this:</p>
-<pre><code class="lang-csharp">public TripProfile With&lt;T&gt;(T value) =&gt; this;
-</code></pre>
-<p>This would get compiled into 3 strongly typed <code>With</code> methods with <code>Distance</code>,
-<code>Speed</code> and <code>Volume</code> arguments respectively. Resharper is still happy. And
-if you make a mistake and try to call the generic <code>With</code> method with an
-argument of wrong type (say <code>int</code>), the compiler will give you an error.</p>
-<p>It is safe to call <code>With</code> methods in the same assembly where the class is defined:
-the calls get adapted to the real implementation automatically.</p>
-<h2 id="how-to-get-started-with-your-classes">How to Get Started with Your Classes</h2>
-<p>Here are the requirements for the classes to be picked up by <strong><code>Fody.With</code></strong>:</p>
-<ol>
-<li>Have a single constructor.</li>
-<li>The constructor should have more than one argument.</li>
-<li>For each constructor agrument, there must be a gettable property with
-same name (case insensitive).</li>
-<li>At least one <code>With</code> stub must be defined as described above.</li>
-</ol>
-<p>You can check out more examples, look at the source code or raise an issue in
-<a href="https://github.com/mikhailshilkov/With.Fody">With.Fody github repository</a>.</p>
-<p>Give it a try and let me know what your think!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/immutability/'>Immutability</a>, <a href='/tags/code-generation/'>Code Generation</a>
     </div>
     
 </article>
@@ -951,7 +862,6 @@ same name (case insensitive).</li>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

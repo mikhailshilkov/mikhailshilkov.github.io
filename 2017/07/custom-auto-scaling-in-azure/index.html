@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -160,7 +160,7 @@ the re-scaling action on App Service Plan using Azure Management SDK.</p>
 Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</p>
 <h2 id="metric-collector">Metric Collector</h2>
 <p>First, let&#39;s define <code>MetricValue</code> class, which simply holds time and value:</p>
-<pre><code class="lang-csharp">public class MetricValue
+<pre><code class="language-csharp">public class MetricValue
 {
     public MetricValue(DateTime time, int value)
     {
@@ -171,11 +171,10 @@ Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</
     public DateTime Time { get; }
 
     public int Value { get; }
-}
-</code></pre>
+}</code></pre>
 <p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
 Plan name) and measured parameter name:</p>
-<pre><code class="lang-csharp">public class Metric
+<pre><code class="language-csharp">public class Metric
 {
     public Metric(string resourceName, string name, MetricValue value)
     {
@@ -189,11 +188,10 @@ Plan name) and measured parameter name:</p>
     public string Name { get; }
 
     public MetricValue Value { get; }
-}
-</code></pre>
+}</code></pre>
 <p>The function definition has two associated bindings: timer trigger (runs every
 minute) and return binding to the storage queue:</p>
-<pre><code class="lang-csharp">[FunctionName(&quot;MetricCollector&quot;)]
+<pre><code class="language-csharp">[FunctionName(&quot;MetricCollector&quot;)]
 [return: Queue(&quot;Metrics&quot;)]
 public static Metric MetricCollector([TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo myTimer, TraceWriter log)
 {
@@ -210,8 +208,7 @@ public static Metric MetricCollector([TimerTrigger(&quot;0 */1 * * * *&quot;)] T
     var resource = Environment.GetEnvironmentVariable(&quot;ResourceToScale&quot;);
     var value = new MetricValue(DateTime.Now, (int)backlog);
     return new Metric(resource, $&quot;{topic}-{subscription}-backlog&quot;, value);
-}
-</code></pre>
+}</code></pre>
 <p>The function executes the following steps:</p>
 <ul>
 <li>Reads configuration value for Service Bus parameters;</li>
@@ -232,19 +229,18 @@ keep the state in between function calls.</li>
 <p>The bindings are illustrated on the following picture:</p>
 <p><img src="/2017/07/custom-auto-scaling-in-azure//ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
 <p>And here is the corresponding Function signature:</p>
-<pre><code class="lang-csharp">[FunctionName(&quot;ScalingLogic&quot;)]
+<pre><code class="language-csharp">[FunctionName(&quot;ScalingLogic&quot;)]
 [return: Queue(&quot;Actions&quot;)]
 public static ScaleAction ScalingLogic(
     [QueueTrigger(&quot;Metrics&quot;)] Metric metric, 
     [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] ScalingStateEntity stateEntity, 
     [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] out ScalingStateEntity newStateEntity,
-    TraceWriter log)
-</code></pre>
+    TraceWriter log)</code></pre>
 <p>Table storage is partitioned per scalable resource, and state is stored per metric;
 thus multiple resources and metrics are supported out of the box.</p>
 <p>The function implementation is relatively complex, so I&#39;ll describe it in parts.</p>
 <p><code>ScaleAction</code> is a simple message class:</p>
-<pre><code class="lang-csharp">public enum ScaleActionType
+<pre><code class="language-csharp">public enum ScaleActionType
 {
     Up,
     Down
@@ -261,42 +257,37 @@ public class ScaleAction
     public string ResourceName { get; }
 
     public ScaleActionType Type { get; }
-}
-</code></pre>
+}</code></pre>
 <p>Table Storage only allows primitive types for its columns, like strings. 
 So I had to create a separate Table Storage entity class:</p>
-<pre><code class="lang-csharp">public class ScalingStateEntity : TableEntity
+<pre><code class="language-csharp">public class ScalingStateEntity : TableEntity
 {
     public string SerializedState { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>which stores serialized state, from the state class itself:</p>
-<pre><code class="lang-csharp">public class ScalingState
+<pre><code class="language-csharp">public class ScalingState
 {
     public List&lt;MetricValue&gt; History { get; } = new List&lt;MetricValue&gt;();
 
     public DateTime LastScalingActionTime { get; set; } = DateTime.MinValue;
-}
-</code></pre>
+}</code></pre>
 <p>Now let&#39;s look at the function body. It consists of four blocks. </p>
 <p>The first block retrieves the previous values of the metric and logs it too:</p>
-<pre><code class="lang-csharp">// 1. Deserialize state
+<pre><code class="language-csharp">// 1. Deserialize state
 var state = stateEntity?.SerializedState != null 
     ? JsonConvert.DeserializeObject&lt;ScalingState&gt;(stateEntity.SerializedState) 
     : new ScalingState();
 var history = state.History;
-log.Info($&quot;Scaling logic: Received {metric.Name}, previous state is {string.Join(&quot;, &quot;, history)}&quot;);
-</code></pre>
+log.Info($&quot;Scaling logic: Received {metric.Name}, previous state is {string.Join(&quot;, &quot;, history)}&quot;);</code></pre>
 <p>The second block adds the current metric value and removes all metrics which are
 not in the target period of 10 minutes anymore:</p>
-<pre><code class="lang-csharp">// 2. Add current metric value, remove old values
+<pre><code class="language-csharp">// 2. Add current metric value, remove old values
 history.Add(metric.Value);
-history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
-</code></pre>
+history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));</code></pre>
 <p>Now, the actual logic finally kicks in and produces the scaling action if average
 or maximum value is above or below respective thresholds. For my implementation I also
 chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
-<pre><code class="lang-csharp">// 3. Compare the aggregates to thresholds, produce scaling action if needed
+<pre><code class="language-csharp">// 3. Compare the aggregates to thresholds, produce scaling action if needed
 ScaleAction action = null;
 if (history.Count &gt;= 5
     &amp;&amp; DateTime.Now - state.LastScalingActionTime &gt; cooldownPeriod)
@@ -315,22 +306,20 @@ if (history.Count &gt;= 5
         state.LastScalingActionTime = DateTime.Now;
         action = new ScaleAction(metric.ResourceName, ScaleActionType.Down);
     }
-}
-</code></pre>
+}</code></pre>
 <p>Finally, the state is serialized back to table entity and action is returned: </p>
-<pre><code class="lang-csharp">// 4. Serialize the state back and return the action
+<pre><code class="language-csharp">// 4. Serialize the state back and return the action
 newStateEntity = stateEntity != null 
     ? stateEntity 
     : new ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
 newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
-return action;
-</code></pre>
+return action;</code></pre>
 <p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message 
 gets sent to the output queue.</p>
 <h2 id="scaler">Scaler</h2>
 <p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
 I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
-<pre><code class="lang-csharp">[FunctionName(&quot;Scaler&quot;)]
+<pre><code class="language-csharp">[FunctionName(&quot;Scaler&quot;)]
 public static void Scaler([QueueTrigger(&quot;Actions&quot;)] ScaleAction action, TraceWriter log)
 {
     var secrets = Environment.GetEnvironmentVariable(&quot;ServicePrincipal&quot;).Split(&#39;,&#39;);
@@ -351,8 +340,7 @@ public static void Scaler([QueueTrigger(&quot;Actions&quot;)] ScaleAction action
     plan.Update()
         .WithCapacity(newCapacity)
         .Apply();
-}
-</code></pre>
+}</code></pre>
 <p>The functionality is pretty straightforward. Here are some links where you can read more about 
 <a href="https://docs.microsoft.com/en-us/dotnet/azure/dotnet-sdk-azure-authenticate?view=azure-dotnet#a-namemgmt-authaazure-management-libraries-for-net-authentication">Authentication in Azure Management libraries</a> 
 and <a href="https://github.com/Azure-Samples/app-service-dotnet-scale-web-apps">Managing Web App with Fluent SDK</a>.</p>
@@ -416,7 +404,6 @@ the upcoming Orchestration framework for Function Apps.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -430,7 +417,6 @@ the upcoming Orchestration framework for Function Apps.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

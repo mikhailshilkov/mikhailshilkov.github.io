@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -81,11 +81,11 @@
     <h1>Building a Poker Bot: String and Number Recognition</h1>
     
     <div class="post-content">
-        <p><em>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
+        <p><em>This is the second part of *</em>Building a Poker Bot** series where I describe my experience developing bot software 
 to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
 easy and very enjoyable. Here is the first part:
 <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a>
-</em></p>
+*</p>
 <h2 id="why-string-recognition">Why string recognition</h2>
 <p>Reading cards and other fixed images was the first step. The bot should also
 be able to read different text-based information from the screen, e.g.</p>
@@ -136,11 +136,10 @@ look how these steps are implemented.</p>
 <p>Because the padding is removed from all 4 sides of the region, I decided to use
 <code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
 with black or white points defined as a helper type:</p>
-<pre><code class="lang-fsharp">type BW = B | W
-</code></pre>
+<pre><code class="language-fsharp">type BW = B | W</code></pre>
 <p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
 like this:</p>
-<pre><code class="lang-fsharp">let removePadding pixels =
+<pre><code class="language-fsharp">let removePadding pixels =
   let allBlack s = Seq.exists ((=) W) s
   let maxWidth = Array2D.length1 pixels - 1
   let maxHeight = Array2D.length2 pixels - 1
@@ -155,21 +154,19 @@ like this:</p>
 
   match (firstX, lastX, firstY, lastY) with
   | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
-  | _ -&gt; Array2D.init 0 0 (fun _ _ -&gt; B)
-</code></pre>
+  | _ -&gt; Array2D.init 0 0 (fun _ _ -&gt; B)</code></pre>
 <p>The first part finds the amount of fully-black columns and rows in the array.
 Then, if white points are found, the second part returns a sub array based on
 the indices, otherwise empty array is returned.</p>
 <h2 id="split-the-text-into-characters">Split the text into characters</h2>
 <p>First, we convert our 2D array into the list of lists, where each item in the
 top-level list represents a single column of pixels:</p>
-<pre><code class="lang-fsharp">let pixelColumns =
+<pre><code class="language-fsharp">let pixelColumns =
   [0..Array2D.length1 pixels - 1] 
-  |&gt; Seq.map (fun x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)
-</code></pre>
+  |&gt; Seq.map (fun x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)</code></pre>
 <p>Then we can fold this list of columns into the symbols, where each symbol itself
 is the list of columns:</p>
-<pre><code class="lang-fsharp">let splitIntoSymbols (e : BW list) (state: BW list list list) = 
+<pre><code class="language-fsharp">let splitIntoSymbols (e : BW list) (state: BW list list list) = 
   match state with
   | cur::rest -&gt;
       if isSeparator e then
@@ -179,8 +176,7 @@ is the list of columns:</p>
       else (e::cur)::rest   // add e to current list
   | _ -&gt; [[e]]
 
-Seq.foldBack splitIntoSymbols pixelColumns []
-</code></pre>
+Seq.foldBack splitIntoSymbols pixelColumns []</code></pre>
 <p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
 by introducing some intermediate type with descriptive name, but I decided
 to leave that part for now. Read it as list of symbols, which are lists of
@@ -189,7 +185,7 @@ columns, which are lists of pixels.</p>
 <p>This part was already described in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
 Basically we compare the list of black or white points to the patterns of
 the known symbols:</p>
-<pre><code class="lang-fsharp">let getChar patterns bws =
+<pre><code class="language-fsharp">let getChar patterns bws =
   let samePatterns h p =
     Seq.zip h p
     |&gt; Seq.forall (fun (v1, v2) -&gt; v1 = v2)
@@ -198,15 +194,13 @@ the known symbols:</p>
       |&gt; Array.filter (fun p -&gt; List.length p.Pattern = List.length bws)
       |&gt; Array.filter (fun p -&gt; samePatterns bws p.Pattern)
       |&gt; Array.tryHead
-  defaultArg (Option.map (fun p -&gt; p.Char) matchingPattern) &#39;?&#39;
-</code></pre>
+  defaultArg (Option.map (fun p -&gt; p.Char) matchingPattern) &#39;?&#39;</code></pre>
 <h2 id="putting-it-all-together">Putting it all together</h2>
 <p>The <code>recognizeString</code> function accepts lower-order functions to match 
 symbols and get pixels together with width and height of the region:</p>
-<pre><code class="lang-fsharp">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string
-</code></pre>
+<pre><code class="language-fsharp">recognizeString: (BW list list -&gt; char) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; string</code></pre>
 <p>It builds an array of pixels, removes padding and folds with recognition.</p>
-<pre><code class="lang-fsharp">let recognizeString matchSymbol getPixel width height =
+<pre><code class="language-fsharp">let recognizeString matchSymbol getPixel width height =
 
   let pixels = 
     Array2D.init width height (fun x y -&gt; isWhite (getPixel x y))
@@ -219,13 +213,11 @@ symbols and get pixels together with width and height of the region:</p>
   Seq.foldBack splitIntoSymbols pixelColumns []
   |&gt; List.map matchSymbol
   |&gt; Array.ofSeq
-  |&gt; String.Concat
-</code></pre>
+  |&gt; String.Concat</code></pre>
 <p>Then we use it with a specific recognition patterns, e.g. known digits in case
 of numbers recognition:</p>
-<pre><code class="lang-fsharp">let recognizeNumber x =
-  recognizeString (getChar numberPatterns) x
-</code></pre>
+<pre><code class="language-fsharp">let recognizeNumber x =
+  recognizeString (getChar numberPatterns) x</code></pre>
 <p>A way to produce these patterns is discussed in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>String recognition takes a bit more steps to execute comparing to the recognition
@@ -276,7 +268,6 @@ for card recognition can be found in <a href="https://github.com/mikhailshilkov/
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -290,7 +281,6 @@ for card recognition can be found in <a href="https://github.com/mikhailshilkov/
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

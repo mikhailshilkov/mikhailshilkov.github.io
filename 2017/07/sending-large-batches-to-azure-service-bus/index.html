@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -92,8 +92,7 @@ of this article will try to answer this seemingly simple question.</p>
 Bus in batches. The amount of batches should be close to minimal, but
 obviously each one of them must satisfy the restriction of 256k max size.</p>
 <p>So, we want to implement a method with the following signature:</p>
-<pre><code class="lang-csharp">public Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
-</code></pre>
+<pre><code class="language-csharp">public Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);</code></pre>
 <p>which would work for collections of any size.</p>
 <p>To limit the scope, I will restrict the article to the following assumptions:</p>
 <ul>
@@ -114,7 +113,7 @@ of sending the big batch, we might end up with partially sent batch.</p>
 It&#39;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a 
 helpful extension method that will split an arbitrary collection based on
 a metric function and maximum chunk size:</p>
-<pre><code class="lang-csharp">public static List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(this IEnumerable&lt;T&gt; source, Func&lt;T, long&gt; metric, long maxChunkSize)
+<pre><code class="language-csharp">public static List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(this IEnumerable&lt;T&gt; source, Func&lt;T, long&gt; metric, long maxChunkSize)
 {
     return source
         .Aggregate(
@@ -138,10 +137,9 @@ a metric function and maximum chunk size:</p>
                 return new { Sum = agg.Sum + value, agg.Current, agg.Result };
             })
         .Result;
-}
-</code></pre>
+}</code></pre>
 <p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
-<pre><code class="lang-csharp">public async Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, long&gt; getSize)
+<pre><code class="language-csharp">public async Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, long&gt; getSize)
 {
     var chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
     foreach (var chunk in chunks)
@@ -152,8 +150,7 @@ a metric function and maximum chunk size:</p>
 }
 
 private const long MaxServiceBusMessage = 256000;
-private readonly QueueClient client;
-</code></pre>
+private readonly QueueClient client;</code></pre>
 <p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
 Another thing to notice is that we lost all-or-nothing guarantee: we might
 be able to send the first chunk, and then get an exception from subsequent
@@ -163,7 +160,7 @@ parts. Some sort of retry mechanism is probably needed.</p>
 <code>getSize</code> function? </p>
 <p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
 rewrite our method the following way:</p>
-<pre><code class="lang-csharp">public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+<pre><code class="language-csharp">public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
 {
     var brokeredMessages = messages.Select(m =&gt; new BrokeredMessage(m));
     var chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
@@ -171,8 +168,7 @@ rewrite our method the following way:</p>
     {
         await client.SendBatchAsync(chunk);
     }
-}
-</code></pre>
+}</code></pre>
 <p>Unfortunately, this won&#39;t work properly. A quote from documentation:</p>
 <blockquote>
 <p>The value of Size is only accurate after the BrokeredMessage 
@@ -191,15 +187,13 @@ or set no custom headers at all. </p>
 <p>In this case, you might just measure this size once, and then put this
 fixed value inside a configuration file.</p>
 <p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
-<pre><code class="lang-csharp">var sizeBefore = message.Size;
+<pre><code class="language-csharp">var sizeBefore = message.Size;
 client.Send(message);
 var sizeAfter = message.Size;
-var headerSize = sizeAfter - sizeBefore;
-</code></pre>
+var headerSize = sizeAfter - sizeBefore;</code></pre>
 <p>Now you just need to adjust one line from the previous version of 
 <code>SendBigBatchAsync</code> method</p>
-<pre><code class="lang-csharp">var chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
-</code></pre>
+<pre><code class="language-csharp">var chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);</code></pre>
 <p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
 per application.</p>
 <h2 id="measuring-of-header-size-per-message">Measuring of Header Size per Message</h2>
@@ -220,7 +214,7 @@ the send operation and adjust future calculations based on actual measured size
 of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
 operation failed, so we can use this information.</p>
 <p>Here is a sketch of how to do that in code:</p>
-<pre><code class="lang-csharp">// Sender is reused across requests
+<pre><code class="language-csharp">// Sender is reused across requests
 public class BatchSender
 {
     private readonly QueueClient queueClient;
@@ -265,8 +259,7 @@ public class BatchSender
 
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>The code example is quite involved, here is what actually happens:</p>
 <ol>
 <li><p>Create a brokered message for each message object, but also save the
@@ -353,7 +346,6 @@ for status updates.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -367,7 +359,6 @@ for status updates.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

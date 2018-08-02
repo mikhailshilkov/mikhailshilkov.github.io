@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -99,8 +99,7 @@
         this.somethingElse.DoSomethingElse();
         return ...;
     }
-}
-</code></pre><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
+}</code></pre><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
 <pre><code>[TestFixture]
 public class VeryUsefulClassTests
 {
@@ -127,8 +126,7 @@ public class VeryUsefulClassTests
     }
 
     ...
-}
-</code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
+}</code></pre><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &quot;noise&quot;: too much service code around real code under test. </p>
 <h2 id="make-it-better">Make it better</h2>
 <p>Now let&#39;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
 <pre><code>public VeryUsefulClass(ISomething something, 
@@ -136,8 +134,7 @@ public class VeryUsefulClassTests
     ISomethingNew somethingNew)
 {
     ...
-}
-</code></pre><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&#39;s refactor the tests. First, let&#39;s declare all mocks as private fields and create them in set-up method:</p>
+}</code></pre><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&#39;s refactor the tests. First, let&#39;s declare all mocks as private fields and create them in set-up method:</p>
 <pre><code>[TestFixture]
 public class VeryUsefulClassTests
 {
@@ -150,13 +147,11 @@ public class VeryUsefulClassTests
         this.something = new Mock&lt;ISomething&gt;();
         this.somethingElse = new Mock&lt;ISomethingElse&gt;();
     }
-...
-</code></pre><p>This way the same clean mocks will be available for each and every test. To make use of them, let&#39;s create GetTarget method which will create an instance of class under test</p>
+...</code></pre><p>This way the same clean mocks will be available for each and every test. To make use of them, let&#39;s create GetTarget method which will create an instance of class under test</p>
 <pre><code>private VeryUsefulClass GetTarget()
 {
     return new VeryUsefulClass(this.something.Object, this.somethingElse.Object);
-}
-</code></pre><p>Now we are ready to rewrite our test methods with less duplication</p>
+}</code></pre><p>Now we are ready to rewrite our test methods with less duplication</p>
 <pre><code>[Test]
 public void WhenSomethingIsNullConstructorThrowsNullException()
 {
@@ -176,13 +171,12 @@ public void ImportantRequestProducesAwesomeResponse()
 {
     var target = this.GetTarget();
     ...
-}
-</code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
+}</code></pre><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
 <p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
 <h2 id="make-it-shine">Make it shine</h2>
 <p>I&#39;m still not quite satisfied with the amount of code we have to write for such a simple thing as the validation of ArgumentNullException being thrown from constructors. Imagine this: we have hundreds or thousands of classes which follow this same pattern, and we end up writing thousands tests which look almost exactly the same... </p>
 <p>I solved it with a simple helper method:</p>
-<pre><code class="lang-csharp">public void ConstructorMustThrowArgumentNullException(Type type)
+<pre><code class="language-csharp">public void ConstructorMustThrowArgumentNullException(Type type)
 {
     foreach (var constructor in type.GetConstructors())
     {
@@ -216,8 +210,7 @@ public void ImportantRequestProducesAwesomeResponse()
             }
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>It accepts a type as its only input parameter (obviously, it&#39;s easy to make it generic or an extension method). Then, using the reflection, it iterates through the input parameters of a constructor, and passes one null value and mocks all other parameters. It expects ArgumentNullException to be thrown on each call.</p>
 <p>You could write one test for all classes in a namespace or in assembly, if the pattern is applied consistently there! And it will let you know when one of your new classes violates the common rule, with zero extra effort.</p>
 <p>Does anyone know the library which would do that without me inventing the bicycle myself?</p>
@@ -266,7 +259,6 @@ public void ImportantRequestProducesAwesomeResponse()
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -280,7 +272,6 @@ public void ImportantRequestProducesAwesomeResponse()
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

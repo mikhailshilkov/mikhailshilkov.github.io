@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -77,6 +77,117 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Dec 13th, 2017</div>
+    
+    <h1><a href='/2017/12/azure-functions-get-more-scalable-and-elastic/'>Azure Functions Get More Scalable and Elastic</a></h1>
+    
+    <div class="post-content">
+        <p>Back in August this year, I&#39;ve posted 
+<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">Azure Functions: Are They Really Infinitely Scalable and Elastic?</a>
+with two experiments about Azure Function App auto scaling. I ran a simple
+CPU-bound function based on Bcrypt hashing, and measured how well Azure
+was running my Function under load.</p>
+<p>The results were rather pessimistic. Functions were scaling up to many 
+instances, but there were significant delays in doing so, so the processing
+slowed down up to 40 minutes.</p>
+<p>Azure Functions team notified me that they rolled out an updated version of
+the service, which should significantly improve my results.</p>
+<p>So I ran the exact same tests again, and got the new results. I will show
+these results below.</p>
+<p><em>TL;DR. Scaling responsiveness improved significantly. The max delay reduced
+from 40 to 6 minutes. There are some improvements still to be desired: 
+sub-minute latency is not yet reachable for similar scenarios.</em></p>
+<h2 id="setup">Setup</h2>
+<p>See the Function code and the description of the two experiments in
+<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">my previous article</a>.</p>
+<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
+<p>In &quot;Steady Load&quot; scenario 100,000 messages were sent to the queue at
+constant pace, evenly spread over 2 hours.</p>
+<p>Here are the <strong>old</strong> metrics of Queue Backlog and Instance Count over time:</p>
+<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppScaling.png" alt="Function App Scaling (Old)"></p>
+<p><em>Old charts are shown in gray background</em></p>
+<p>You can see a huge delay of almost one hour before the function caught up 
+to speed of incoming messages and half-an-hour more before the backlog
+got cleared.</p>
+<p>The <strong>new</strong> results on the same chart after the runtime update:</p>
+<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppScalingNew.png" alt="Function App Scaling (New)"></p>
+<p>This looks much better. The maximum backlog is 7 times lower; there&#39;s almost
+no initial delay before the auto scaling kicks in; and overall instance 
+allocation is much more stable.</p>
+<hr>
+<p>One more chart is from the same experiment, but it shows slightly different 
+metrics. The <strong>old</strong> results of Delay (Age) in seconds and Processing Rate 
+in messages per minute:</p>
+<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppDelay.png" alt="Function App Delay"></p>
+<p>The <strong>new</strong> chart after the runtime update:</p>
+<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppDelayNew.png" alt="Function App Delay"></p>
+<p>Again, much less delay overall, and processing rate more-or-less stabilizes 
+after the first 15 minutes.</p>
+<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
+<p>The second experiment spanned over 5 hours. The messages were sent mostly
+at low-ish fixed rate, except for 5 periods of sudden spikes. The
+green line on the charts below shows these spikes very well.</p>
+<p>At the first run 4 months ago, Functions runtime had troubles keeping up
+to speed even between those bursts of messages.</p>
+<p>Here is the chart of the <strong>old</strong> spiky load processing:</p>
+<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//SpikyLoadProcessing.png" alt="Spicky Load Processing (Old)"></p>
+<p>You can see that the backlog after each spike goes down really slow. The
+blue line of processing rate doesn&#39;t match the green line almost nowhere,
+which reveals the struggle to adapt.</p>
+<p>The <strong>new</strong> results of the same chart after the runtime update are quite
+different:</p>
+<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//SpikyLoadProcessingNew.png" alt="Spicky Load Processing (New)"></p>
+<p>Notice how the backlog is empty and the blue processing rate matches exactly
+the incoming rate during all time except after traffic bursts. The queue goes 
+up during each spike, but the processing rate immediately accelerates too,
+and the crisis is gone within 15 minutes.</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>Azure Functions team is clearly working on improvements. While the results in
+August were puzzling or even embarrassing, the December benchmark makes much
+more sense.</p>
+<p>Looks like Azure Functions are now suitable for CPU-intensive data processing
+scenarios with flexible load, targeting the maximum delay at about several
+minutes.</p>
+<p>Obviously, the results are not perfect just yet. Here&#39;s what still can be
+done better:</p>
+<ul>
+<li><p><strong>Scale faster initially</strong>. In the first experiment, the biggest delay
+appeared right after the start, when the backlog was growing linearly for 
+10 minutes. &quot;0 to 100&quot; might not be a very realistic scenario, but probably
+that&#39;s how many folks will test Functions against their workloads.</p>
+</li>
+<li><p><strong>Do not scale down that fast after backlog goes to 0</strong>. Every time the
+queue backlog goes to 0, the runtime kills the biggest part of instances
+almost immediately. During my runs, this caused the queue to grow again without
+a good reason from user&#39;s perspective.</p>
+</li>
+<li><p><strong>Do not allow the backlog to grow without message spikes</strong>. Related to
+the previous item, but slightly different focus. When the load is stable,
+I would expect the runtime to keep my queue as close to empty as possible.
+I guess Azure tries to minimize the resources that it consumes behind
+the scenes, but this should be balanced in favor of user experience.</p>
+</li>
+<li><p><strong>Make scaling algorithms more open</strong>. It&#39;s a black box right now. I
+would love to see some documentation, if not code, to be published about
+what exactly to expect from Consumption Plan auto scaling.</p>
+</li>
+</ul>
+<p>I&#39;ll be running more scaling experiments with other types of workloads in the
+nearest future, so... more benchmarks are coming.</p>
+<p>Happy scaling!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Dec 3rd, 2017</div>
     
     <h1><a href='/2017/12/precompiled-azure-functions-in-fsharp/'>Precompiled Azure Functions in F#</a></h1>
@@ -112,16 +223,14 @@ jump to runnable project, you can get it from
 <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/6-precompiled-timer">my github</a>.</p>
 <p>We start with creating a new F# library project for .NET Standard 2. Run
 in your command line:</p>
-<pre><code class="lang-sh">dotnet new classlib --language F# --name HelloFunctions
-</code></pre>
+<pre><code class="language-sh">dotnet new classlib --language F# --name HelloFunctions</code></pre>
 <p>This command creates a folder with two files: <code>HelloFunctions.fsproj</code> project
 file and <code>Library.fs</code> source code file.</p>
 <p>Now, add a reference to Azure Functions NuGet package:</p>
-<pre><code class="lang-sh">dotnet add package Microsoft.NET.Sdk.Functions
-</code></pre>
+<pre><code class="language-sh">dotnet add package Microsoft.NET.Sdk.Functions</code></pre>
 <h2 id="define-a-function">Define a Function</h2>
 <p>Open <code>Library.fs</code> code file and change it to the following code:</p>
-<pre><code class="lang-fsharp">namespace HelloFunctions
+<pre><code class="language-fsharp">namespace HelloFunctions
 
 open System
 open Microsoft.Azure.WebJobs
@@ -136,15 +245,14 @@ module Say =
 
     daysUntil christmas
     |&gt; sprintf &quot;%d days until Christmas&quot;
-    |&gt; log.Info
-</code></pre>
+    |&gt; log.Info</code></pre>
 <p>We defined a function <code>hello</code> which should be triggered by Functions runtime
 based on time intervals. Every time the function is called, we log how many
 days we still need to wait before Christmas 2017.</p>
 <p>To convert this simple F# function to an Azure Function, create a folder called
 <code>Hello</code> (or choose any other name) next to the project file and add 
 <code>function.json</code> file in there:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
   &quot;bindings&quot;: [
     {
       &quot;name&quot;: &quot;timer&quot;,
@@ -154,8 +262,7 @@ days we still need to wait before Christmas 2017.</p>
   ],
   &quot;scriptFile&quot;: &quot;../bin/HelloFunctions.dll&quot;,
   &quot;entryPoint&quot;: &quot;HelloFunctions.Say.hello&quot;
-}
-</code></pre>
+}</code></pre>
 <p>We defined that:</p>
 <ul>
 <li>Our function is triggered by timer</li>
@@ -166,26 +273,24 @@ days we still need to wait before Christmas 2017.</p>
 <p>There are a couple more configuration files needed to be able to
 run the Function App locally. <code>host.json</code> defines hosting parameters; empty
 file will do for now:</p>
-<pre><code class="lang-json">{
-}
-</code></pre>
+<pre><code class="language-json">{
+}</code></pre>
 <p>Most triggers need to connect to a Storage Account. For examples, timer
 trigger uses it to hold leases to define which running instance will 
 actually execute the action every minute. Copy a connection string to your 
 Storage Account (local Storage emulator is fine too) and put it into 
 <code>local.settings.json</code> file:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
   &quot;IsEncrypted&quot;: false,
   &quot;Values&quot;: {
     &quot;AzureWebJobsStorage&quot;: &quot;...your connection string...&quot;
   }
-}
-</code></pre>
+}</code></pre>
 <p>Note that this file is only used for local development and is not published
 to Azure by default.</p>
 <p>Finally, we need to modify <code>fsproj</code> file to make the build tool copy those
 files into <code>bin</code> folder. Add the following section in there:</p>
-<pre><code class="lang-xml">&lt;ItemGroup&gt;
+<pre><code class="language-xml">&lt;ItemGroup&gt;
   &lt;Content Include=&quot;Hello\function.json&quot;&gt;
     &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
   &lt;/Content&gt;
@@ -195,21 +300,18 @@ files into <code>bin</code> folder. Add the following section in there:</p>
   &lt;Content Include=&quot;local.settings.json&quot;&gt;
     &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
   &lt;/Content&gt;
-&lt;/ItemGroup&gt;
-</code></pre>
+&lt;/ItemGroup&gt; </code></pre>
 <h2 id="run-app-locally">Run App Locally</h2>
 <p>The first step is to build and publish our Function App with <code>dotnet</code>
 commands:</p>
-<pre><code class="lang-sh">dotnet build
-dotnet publish
-</code></pre>
+<pre><code class="language-sh">dotnet build
+dotnet publish</code></pre>
 <p>The first line produces the dll file and the second line copies it
 and all of its dependencies to <code>publish</code> folder.</p>
 <p>The nice thing about Azure Functions is that you can easily run them
 locally on a development machine. Execute the following command to 
 install the runtime and all the required libraries:</p>
-<pre><code class="lang-sh">npm install -g azure-functions-core-tools@core
-</code></pre>
+<pre><code class="language-sh">npm install -g azure-functions-core-tools@core</code></pre>
 <p>This will add a <code>func</code> CLI to your system which is the tool to
 use for all Function related operations.</p>
 <p>Navigate to <code>bin\Debug\netstandard2.0\publish</code> folder and run <code>func start</code> 
@@ -236,8 +338,7 @@ creating an empty Function App in the portal, or via Azure CLI (<code>func</code
 does not support that).</p>
 <p>Then run the following command to deploy your precompiled function to
 this app:</p>
-<pre><code class="lang-sh">func azure functionapp publish &lt;FunctionAppName&gt;
-</code></pre>
+<pre><code class="language-sh">func azure functionapp publish &lt;FunctionAppName&gt;</code></pre>
 <p>At the first run, it will verify your Azure credentials.</p>
 <p>In real-life production scenarios your workflow is probably going to be
 similar to this:</p>
@@ -257,7 +358,7 @@ for the rest of the article I will focus on several approaches to
 implement HTTP functions. Nonetheless, the same techique can be applied to
 other triggers too.</p>
 <p>F# code for the simplest HTTP Function can look like this:</p>
-<pre><code class="lang-fsharp">namespace PrecompiledApp
+<pre><code class="language-fsharp">namespace PrecompiledApp
 
 open Microsoft.AspNetCore.Mvc
 open Microsoft.AspNetCore.Http
@@ -267,13 +368,12 @@ module PrecompiledHttp =
 
   let run(req: HttpRequest, log: TraceWriter) =
     log.Info(&quot;F# HTTP trigger function processed a request.&quot;)
-    ContentResult(Content = &quot;HO HO HO Merry Christmas&quot;, ContentType = &quot;text/html&quot;)
-</code></pre>
+    ContentResult(Content = &quot;HO HO HO Merry Christmas&quot;, ContentType = &quot;text/html&quot;)</code></pre>
 <p>You can find a full example of HTTP Function App 
 <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/5-precompiled">here</a>.</p>
 <p>This code is using ASP.NET Core classes for request and response. It&#39;s still
 just an F# function, so we need to bind it to a trigger in <code>function.json</code>:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
   &quot;bindings&quot;: [
     {
       &quot;type&quot;: &quot;httpTrigger&quot;,
@@ -285,8 +385,7 @@ just an F# function, so we need to bind it to a trigger in <code>function.json</
   ],
   &quot;scriptFile&quot;: &quot;../bin/PrecompiledApp.dll&quot;,
   &quot;entryPoint&quot;: &quot;PrecompiledApp.PrecompiledHttp.run&quot;
-}
-</code></pre>
+}</code></pre>
 <p>If you run the app, the function will be hosted at localhost</p>
 <p><img src="/2017/12/precompiled-azure-functions-in-fsharp/./httpstart.png" alt="HTTP Trigger Working"></p>
 <p>And a request to <code>http://localhost:7071/api/hellosanta</code> will get responded
@@ -300,7 +399,7 @@ favourite F# libraries.</p>
 <p><a href="http://suave.io/">Suave</a> is one of the most popular libraries to 
 implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
 <p>Let&#39;s first make a small twist to HTTP trigger definition in <code>function.json</code>:</p>
-<pre><code class="lang-json">&quot;bindings&quot;: [
+<pre><code class="language-json">&quot;bindings&quot;: [
   {
     &quot;type&quot;: &quot;httpTrigger&quot;,
     &quot;methods&quot;: [&quot;get&quot;],
@@ -308,13 +407,12 @@ implement Web API&#39;s with. And we can use it in Azure Functions too!</p>
     &quot;name&quot;: &quot;req&quot;,
     &quot;route&quot;: &quot;{*anything}&quot;
   }
-],
-</code></pre>
+],</code></pre>
 <p>Binding now defines a wildcard route to redirect all requests 
 to this function. That&#39;s because we want Suave to take care of routing
 for us.</p>
 <p>The definition of such routing will look familiar to all Suave users:</p>
-<pre><code class="lang-fsharp">module App =
+<pre><code class="language-fsharp">module App =
   open Suave
   open Suave.Successful
   open Suave.Operators
@@ -324,15 +422,13 @@ for us.</p>
     GET &gt;=&gt; choose
       [ path &quot;/api/what&quot; &gt;=&gt; OK &quot;Every time we love, every time we give, it&#39;s Christmas.&quot;
         path &quot;/api/when&quot; &gt;=&gt; OK &quot;Christmas isn&#39;t a season. It&#39;s a feeling.&quot;
-        path &quot;/api/how&quot; &gt;=&gt; OK &quot;For it is in giving that we receive.&quot; ]
-</code></pre>
+        path &quot;/api/how&quot; &gt;=&gt; OK &quot;For it is in giving that we receive.&quot; ]</code></pre>
 <p>Azure Function is just a one-liner wiring Suave app into the pipeline:</p>
-<pre><code class="lang-fsharp">module Http =
+<pre><code class="language-fsharp">module Http =
   open Suave.Azure.Functions.Context
 
   let run req =
-    req |&gt; runWebPart App.app  |&gt; Async.StartAsTask
-</code></pre>
+    req |&gt; runWebPart App.app  |&gt; Async.StartAsTask</code></pre>
 <p>The heavy lifting is done by <code>runWebPart</code> function, which is a utility
 function defined in the same application. You can see the full code
 of this wiring in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/7-suave">my repo</a>.</p>
@@ -355,8 +451,7 @@ file</p>
 framework: &gt;= netstandard2.0
 nuget FSharp.Core
 nuget Microsoft.NET.Sdk.Functions
-nuget Microsoft.AspNetCore.Mvc.Core
-</code></pre><p>that I used in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/8-paket">example</a> 
+nuget Microsoft.AspNetCore.Mvc.Core</code></pre><p>that I used in <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/tree/master/8-paket">example</a> 
 which demonstrates Paket + Functions combination.</p>
 <h2 id="attribute-based-functions">Attribute-Based Functions</h2>
 <p>Up until now, we were writing <code>function.json</code> files manually for each 
@@ -365,9 +460,8 @@ programming model where these files are auto-generated by Functions SDK.</p>
 <p>This programming model is based on attributes, which are similar to WebJobs 
 SDK attributes. With this approach, there&#39;s no <code>function.json</code> file in 
 the project. Instead, the function declaration is decorated with attributes:</p>
-<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;AttributeBased&quot;)&gt;]
-let run([&lt;HttpTrigger&gt;] req: HttpRequest, log: TraceWriter)
-</code></pre>
+<pre><code class="language-fsharp">[&lt;FunctionName(&quot;AttributeBased&quot;)&gt;]
+let run([&lt;HttpTrigger&gt;] req: HttpRequest, log: TraceWriter)</code></pre>
 <p>The same development flow still works. Once you run <code>dotnet build</code>, a new 
 <code>function.json</code> file will be generated and placed into <code>bin</code> folder. Functions 
 runtime will be able to use it to run the function as usual.</p>
@@ -375,9 +469,8 @@ runtime will be able to use it to run the function as usual.</p>
 equivalent:</p>
 <ol>
 <li><p>It manifests itself with</p>
-<pre><code class="lang-json"> &quot;generatedBy&quot;: &quot;Microsoft.NET.Sdk.Functions.Generator-1.0.6&quot;,
- &quot;configurationSource&quot;: &quot;attributes&quot;,
-</code></pre>
+<pre><code class="language-json"> &quot;generatedBy&quot;: &quot;Microsoft.NET.Sdk.Functions.Generator-1.0.6&quot;,
+ &quot;configurationSource&quot;: &quot;attributes&quot;,</code></pre>
 </li>
 <li><p>In case you use input and output bindings, you won&#39;t be able to see them
 in the generated file. Only trigger will be visible in <code>json</code>. Don&#39;t worry,
@@ -472,7 +565,7 @@ I decided to use Generic Webhook trigger (which is essentially an
 HTTP trigger).</p>
 <p>I used the Azure Portal to generate a function, so here is the 
 <code>function.json</code> that I got:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
   &quot;bindings&quot;: [
     {
       &quot;type&quot;: &quot;httpTrigger&quot;,
@@ -487,17 +580,15 @@ HTTP trigger).</p>
     }
   ],
   &quot;disabled&quot;: false
-}
-</code></pre>
+}</code></pre>
 <p>For precompiled functions, just decorate it with <code>HttpTriggerAttribute</code> with
 POST method:</p>
-<pre><code class="lang-csharp">public static Task&lt;HttpResponseMessage&gt; Run(
-    [HttpTrigger(AuthorizationLevel.Function, &quot;post&quot;)] HttpRequestMessage req)
-</code></pre>
+<pre><code class="language-csharp">public static Task&lt;HttpResponseMessage&gt; Run(
+    [HttpTrigger(AuthorizationLevel.Function, &quot;post&quot;)] HttpRequestMessage req)</code></pre>
 <h2 id="parse-the-payload">Parse the Payload</h2>
 <p>Events from Event Grid will arrive in a specific predefined JSON format.
 Here is an example of events to expect:</p>
-<pre><code class="lang-json">[{
+<pre><code class="language-json">[{
   &quot;id&quot;: &quot;0001&quot;,
   &quot;eventType&quot;: &quot;MyHelloWorld&quot;,
   &quot;subject&quot;: &quot;Hello World!&quot;,
@@ -506,11 +597,10 @@ Here is an example of events to expect:</p>
     &quot;hello&quot;: &quot;world&quot;
   },
   &quot;topic&quot;: &quot;/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1&quot;
-}]
-</code></pre>
+}]</code></pre>
 <p>To be able to parse those data more easily, I defined a C# class to deserialize
 JSON to:</p>
-<pre><code class="lang-csharp">public class GridEvent
+<pre><code class="language-csharp">public class GridEvent
 {
     public string Id { get; set; }
     public string EventType { get; set; }
@@ -518,11 +608,10 @@ JSON to:</p>
     public DateTime EventTime { get; set; }
     public Dictionary&lt;string, string&gt; Data { get; set; }
     public string Topic { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>Now, the function can read the events (note, that they are sent in arrays)
 from the body of POST request:</p>
-<pre><code class="lang-csharp">public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req, TraceWriter log)
+<pre><code class="language-csharp">public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req, TraceWriter log)
 {
     string jsonContent = await req.Content.ReadAsStringAsync();
     var events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
@@ -530,8 +619,7 @@ from the body of POST request:</p>
     // do something with events
 
     return req.CreateResponse(HttpStatusCode.OK);
-}
-</code></pre>
+}</code></pre>
 <h2 id="validate-the-endpoint">Validate the Endpoint</h2>
 <p>To prevent you from sending events to endpoints that you don&#39;t own, Event
 Grid requires each subsriber to validate itself. For this purpose, Event
@@ -539,13 +627,12 @@ Grid will send events of the special type <code>SubscriptionValidation</code>. <
 <p>The validation request will contain a code, which we need to echo back in
 200-OK HTTP response. </p>
 <p>Here is a small piece of code to do just that:</p>
-<pre><code class="lang-csharp">if (req.Headers.GetValues(&quot;Aeg-Event-Type&quot;).FirstOrDefault() == &quot;SubscriptionValidation&quot;)
+<pre><code class="language-csharp">if (req.Headers.GetValues(&quot;Aeg-Event-Type&quot;).FirstOrDefault() == &quot;SubscriptionValidation&quot;)
 {
     var code = events[0].Data[&quot;validationCode&quot;];
     return req.CreateResponse(HttpStatusCode.OK,
         new { validationResponse = code });
-}
-</code></pre>
+}</code></pre>
 <p>The function is ready!</p>
 <h2 id="create-a-custom-event-grid-topic">Create a Custom Event Grid Topic</h2>
 <p>To test it out, go to the portal and create a custom Event Grid topic.
@@ -558,7 +645,7 @@ your function, so you should see one invocation in the logs.</p>
 <h2 id="send-custom-events">Send Custom Events</h2>
 <p>Now, go to your favorite HTTP client (curl, Postman, etc) and send a sample
 event to check how the whole setup works:</p>
-<pre><code class="lang-http">POST /api/events HTTP/1.1
+<pre><code class="language-http">POST /api/events HTTP/1.1
 Host: &lt;your-eventgrid-topic&gt;.westus2-1.eventgrid.azure.net
 aeg-sas-key: &lt;key&gt;
 Content-Type: application/json
@@ -571,8 +658,7 @@ Content-Type: application/json
   &quot;data&quot;: {
     &quot;hello&quot;: &quot;world&quot;
   }
-}]
-</code></pre>
+}]</code></pre>
 <p>Obviously, adjust the endpoint and key based on the data from the portal.</p>
 <p>You should get a 200-OK back and then see your event in Azure Function 
 invocation logs.</p>
@@ -605,33 +691,30 @@ to be hosted in Azure, preferably on PaaS-level of service?</p>
 <p>Let&#39;s say we are making a TODO app. There is a constant flow of requests
 to create a TODO in the system. Each request contains just two fields:
 a title and a project ID which TODO should belong to. Here is the definition:</p>
-<pre><code class="lang-fsharp">type TodoRequest = {
+<pre><code class="language-fsharp">type TodoRequest = {
   ProjectId: int
   Title: string
-}
-</code></pre>
+}</code></pre>
 <p>Now, we want to process the request and assign each TODO an identifier,
 which should be an auto-incremented integer. Numeration is unique per project,
 so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
-<pre><code class="lang-fsharp">type Todo = {
+<pre><code class="language-fsharp">type Todo = {
   ProjectId: int
   Id: int
   Title: string
-}
-</code></pre>
+}</code></pre>
 <p>Now, instead of relying on some database sequences, I want to describe this
 transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
 (Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
 state (last generated ID) to a tuple of a TODO and post-processing state:</p>
-<pre><code class="lang-fsharp">let create (request: TodoRequest, state: int) =
+<pre><code class="language-fsharp">let create (request: TodoRequest, state: int) =
   let nextId = state + 1
   let todo = {
     ProjectId = request.ProjectId
     Id = nextId
     Title = request.Title
   }
-  todo, nextId
-</code></pre>
+  todo, nextId</code></pre>
 <p>This is an extremely simple function, and I can use it to great success to
 process local, non-durable data.</p>
 <p>But if I need to make a reliable distributed application out of it, I need
@@ -723,170 +806,6 @@ expensive ZooKeeper-managed clusters?</p>
     
 </article>
 
-    <article class="post">
-    <div class="post-date">Aug 31st, 2017</div>
-    
-    <h1><a href='/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/'>Azure Functions: Are They Really Infinitely Scalable and Elastic?</a></h1>
-    
-    <div class="post-content">
-        <p><em>Updated results are available at 
-<a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">Azure Functions Get More Scalable and Elastic</a>.</em></p>
-<p>Automatic elastic scaling is a built-in feature of Serverless computing
-paradigm. One doesn&#39;t have to provision servers anymore, they just need to
-write code that will be provisioned on as many servers as needed based on the
-actual load. That&#39;s the theory.</p>
-<p>In particular, Azure Functions can be hosted on the Consumption plan:</p>
-<blockquote>
-<p>The Consumption plan automatically allocates compute power when your 
-code is running, scales out as necessary to handle load, and then scales 
-down when code is not running.</p>
-</blockquote>
-<p>In this post I will run a simple stress test to get a feel of how such
-automatic allocation works in practice and what kind of characteristics 
-we can rely on.</p>
-<h2 id="setup">Setup</h2>
-<p>Here are the parameters that I chose for my test of today:</p>
-<ul>
-<li>Azure Function written in C# and hosted on Consumption plan</li>
-<li>Triggered by Azure Storage Queue binding</li>
-<li>Workload is strictly CPU-bound, no I/O is executed</li>
-</ul>
-<p>Specifically, each queue item represents one password that I need to hash.
-Each function call performs 12-round <a href="https://en.wikipedia.org/wiki/Bcrypt">Bcrypt</a>
-hashing. Bcrypt is a slow algorithm recommended for
-password hashing, because it makes potential hash collision attacks really 
-hard and costly.</p>
-<p>My function is based on <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.Net</a>
-implementation, and it&#39;s extremely simple:</p>
-<pre><code class="lang-csharp">public static void Run([QueueTrigger(&quot;bcrypt-password&quot;)] string password)
-{
-    BCrypt.Net.BCrypt.HashPassword(password, 12);
-}
-</code></pre>
-<p>It turns out that a single execution of this function takes approximately
-1 second on an instance of Consumption plan, and consumes 100% CPU during
-that second.</p>
-<p>Now, the challenge is simple. I send 100,000 passwords
-to the queue and see how long it will take to hash them, and also how the
-autoscaling will behave. I will run it two times, with different pace of
-sending messages to the queue.</p>
-<p>That sounds like a perfect job for a Function App on Consumption plan:</p>
-<ul>
-<li>Needs to scale based on load</li>
-<li>CPU intensive - easy to see how busy each server is</li>
-<li>Queue-based - easy to see the incoming vs outgoing rate</li>
-</ul>
-<p>Let&#39;s see how it went.</p>
-<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
-<p>In my first run, I was sending messages at constant rate. 100,000 messages
-were sent within 2 hours, without spikes or drops in the pace.</p>
-<p>Sounds like an easy job for autoscaling facilities. But here is the actual 
-chart of data processing:</p>
-<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppScaling.png" alt="Function App Scaling"></p>
-<p>The horizontal axis is time in minutes since the first message came in.</p>
-<p>The orange line shows the queue backlog - the amount of messages sitting in
-the queue at a given moment.</p>
-<p>The blue area represents the amount of instances (virtual servers) allocated
-to the function by Azure runtime (see the numbers at the right side).</p>
-<p>We can divide the whole process into 3 logical segments, approximately 
-40 minutes each:</p>
-<p><strong>Laging behind</strong>. Runtime starts with 0 instances, and immediately switches
-to 1 when the first message comes in. However it&#39;s reluctant to add any more
-servers for the next 20 (!) minutes. The scaling heuristic is probably based
-on the past history for this queue/function, and it wasn&#39;t busy at all during
-the hours before.</p>
-<p>After 20 minutes, the runtime starts adding more instances: it goes up to 2, 
-then jumps to 4, then reaches 5 at minute 40. The CPU is constantly at 
-100% and the queue backlog grows linearly.</p>
-<p><strong>Rapid scale up</strong>. After minute 40, it looks like the runtime realizes 
-that it needs more power. Much more power! The growth speeds up real quick
-and by minute 54 the backlog stops growing, even though the messages are still
-coming in. But there are now 21 instances working, which is enough to
-finally match and beat the rate of incoming messages.</p>
-<p>The runtime doesn&#39;t stop growing though. CPU&#39;s are still at 100%, and the backlog
-is still very high, so the scaling goes up and up. The amount of instances
-reaches astonishing 55, at which point all the backlog is processed and
-there are no messages in the queue.</p>
-<p><strong>Searching for balance</strong>. When queue is almost empty and CPU drops below
-100% for the first time, the runtime decides to scale down. It does that quickly
-and aggressively, switching from 55 to 21 instances in just 2 minutes.</p>
-<p>From there it keeps slowly reducing the number of instances until the backlog 
-starts growing again. The runtime allows the backlog to grow a bit, but
-then figures out a balanced number of servers (17) to keep the backlog flat 
-at around 2,000 messages. </p>
-<p>It stays at 17 until the producer stops sending new messages. The backlog 
-goes to 0, and the amount of instances gradually drops to 0 within 10 minutes.</p>
-<p>The second chart from the same experiment looks very similar, but it shows
-different metrics:</p>
-<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppDelay.png" alt="Function App Delay"></p>
-<p>The gray line is the delay in minutes since the currently processed message
-got enqueued (message &quot;age&quot;, in-queue latency). The blue line is the 
-total processing rate, measured in messages per minute.</p>
-<p>Due to perfect scalability and stability of my function, both charts are almost
-exactly the same. I&#39;ve put it here so that you could see that the slowest
-message spent more than 40 minutes sitting inside the queue.</p>
-<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
-<p>With the second run, I tried to emulate a spiky load profile. I was sending
-my 100,000 messages throughout 6 hours at lower pace than during the first
-run. But sometimes the producer switched to fast mode and sent a bigger bunch
-of messages in just several minutes. Here is the actual chart of incoming
-message rate:</p>
-<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoad.png" alt="Spiky Load"></p>
-<p>It&#39;s easy to imagine some service which has a usage pattern like that, when
-spikes of the events happen from time to time, or in rush hours.</p>
-<p>This is how the Function App managed to process the messages:</p>
-<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoadProcessing.png" alt="Spiky Load Processing Result"></p>
-<p>The green line still shows the amount of incoming messages per minute. The 
-blue line denotes how many messages were actually processed at that minute.
-And the orange bars are queue backlogs - the amount of messages pending.</p>
-<p>Here are several observations:</p>
-<ul>
-<li><p>Obviously, processing latency is way too far from real time. There is
-constantly quite a significant backlog in the queue, and processing delay
-reaches 20 minutes at peak.</p>
-</li>
-<li><p>It took the runtime 2 hours to clean the backlog for the first time. Even
-without any spikes during the first hour, the autoscaling algorithm needs
-time to get up to speed.</p>
-</li>
-<li><p>Function App runtime is able to scale up quite fast (look at the reaction
-on the fourth spike), but it&#39;s not really willing to do that most of the time.</p>
-</li>
-<li><p>The growth of the backlog after minute 280 is purely caused by wrong
-decision of runtime. While the load is completely steady, the runtime
-decided to shut down most workers after 20 minutes of empty backlog, and could
-not recover for the next hour.</p>
-</li>
-</ul>
-<h2 id="conclusions">Conclusions</h2>
-<p>I tried to get a feeling about the ability of Azure Functions to scale
-on demand, adapting to the workload. The function under test was purely CPU-bound,
-and for that I can give two main conclusions:</p>
-<ul>
-<li><p>Function Apps are able to scale to high amount of instances running at the
-same time, and to eventually process large parallel jobs (at least up to 55
-instances).</p>
-</li>
-<li><p>Significant processing delays are to be expected for heavy loads. Function
-App runtime has quite some inertia, and the resulting processing latency can
-easily go up to tens of minutes.</p>
-</li>
-</ul>
-<p>If you know how these results can be improved, or why they are less than 
-optimal, please leave a comment or contact me directly.</p>
-<p>I look forward to conducting more tests in the future!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
@@ -909,7 +828,6 @@ optimal, please leave a comment or contact me directly.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

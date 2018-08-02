@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -77,6 +77,97 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Feb 5th, 2012</div>
+    
+    <h1><a href='/2012/02/05/hunting-memory-leaks-in-silverlight/'>Hunting memory leaks in Silverlight</a></h1>
+    
+    <div class="post-content">
+        <p>Recently, I&#39;ve spent a couple of days seeking and fixing memory leaks in our Silverlight application. It might be tough sometimes, but it&#39;s a good &#39;brain-teasing&#39; practice and it&#39;s a good way to learn how inner things work.</p>
+<p>Memory leaks in Silverlight applications may be found with WinDbg tool. Have a look here for a quick introduction:
+<a href="http://davybrion.com/blog/2009/08/finding-memory-leaks-in-silverlight-with-windbg/">http://davybrion.com/blog/2009/08/finding-memory-leaks-in-silverlight-with-windbg/</a></p>
+<p>Basically, I only use 4 commands in WinDbg. First, I enable debugging Silverlight 5 applications:</p>
+<pre><code>!load C:\Program Files (x86)\Microsoft Silverlight\5.0.61118.0\sos.dll</code></pre><p>Then, I get the amount of instances for class names matching the search pattern:</p>
+<pre><code>!dumpheap -stat -type &lt;type name&gt;</code></pre><p>Next, I use the result to locate class instances&#39; addresses:</p>
+<pre><code>!dumpheap -MT &lt;MT from previous&gt;</code></pre><p>Finally, I get the reference chain for each of address found:</p>
+<pre><code>!gcroot &lt;address&gt;</code></pre><p>Having done this, you&#39;ll have to turn your brain on and try to figure out whether you found a memory leak and why if yes, why it takes place. Here are several examples of memory leaks that I found during last session:</p>
+<ol>
+<li>HtmlPage.Document.AttachEvent() call, which was never detached. We were using some browser-level API to subscribe on HTML document events, and never cared about unsubscribing. I got it refactored to native Silverlight event handlers, and this solved the issue.</li>
+<li>Deriving from MultiScaleTileSource. We used to have several classes for map layer rendering, inherited from MultiScaleTileSource. If an instance of such class is never used for map rendering (no assignment to MultiScaleImage.Source), then the GC never collects it (together with everything it references, of course). Another portion of refactoring helped: do not derive from MultiScaleTileSource whenever it&#39;s not needed for MultiScaleImage population. Sounds trivial, right? But it helps a lot.</li>
+<li>Improper usage of CompositionTarget.Rendering event. For our custom animated Progress control, we used to subscribe to CompositionTarget.Rendering in control constructor, and then animated the progress in event handler. As the Progress control used to be a part of control tree (in Expanded/Collapsed state), the event was never unsubsribed, which means... ta-dam... a memory leak. Now I use CompositionTarget.Rendering more carefully: subscribe to it at the point when Progress control is shown, and unsubscribe immediately after it gets collapsed.</li>
+<li>One of our major controls used to fail to unsubscribe itself from global error handler. There were a couple other similar event-related leaks. All fixed.</li>
+<li><p>A weird Telerik-related leak. We actively use RadGridView control throughout our application, and we dynamically set HeaderCellStyle for some of the columns depending on grid configuration. Unexpectedly enough, this led to a memory leak with the following reference stack:</p>
+<p> HandleTable:</p>
+<pre><code> 02f311f4 (pinned handle)
+ -&gt; 11ee6210 System.Object[]
+ -&gt; 10f21690 OurNamespace.Utilities.AppletHelper
+ -&gt; 10f21670 System.EventHandler`1[[OurNamespace.Utilities.EventArgs`1[[System.Exception, mscorlib]], OurNamespace.Utilities]]
+ -&gt; 10f2103c QFVClient.App
+ -&gt; 1111a9bc QFVClient.PageContainer
+ -&gt; 11122138 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11122184 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 1188ba6c System.Windows.Controls.Grid
+ -&gt; 1188bad4 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 118912d8 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11122dc8 System.Windows.Controls.Border
+ -&gt; 11122e30 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11122e7c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11128ea4 System.Windows.Controls.Grid
+ -&gt; 11128f0c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11128f58 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11128fa4 System.Windows.Controls.Border
+ -&gt; 1112900c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11129058 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11132e00 System.Windows.Controls.Grid
+ -&gt; 11132e68 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11135bc4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11133758 QFVClient.Controls.SearchBox
+ -&gt; 11133ca8 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11133cf4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11133c40 System.Windows.ResourceDictionary
+ -&gt; 11133d30 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11133d7c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11133e18 System.Windows.Style
+ -&gt; 11133e68 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 11133eb4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 11133ef0 System.Collections.Generic.Dictionary`2[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]]
+ -&gt; 11133f3c System.Collections.Generic.Dictionary`2+Entry[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]][]
+ -&gt; 110dced0 System.Windows.Style
+ -&gt; 110dcf20 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 110dcf6c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 110dce6c System.Windows.SetterBaseCollection
+ -&gt; 110dcfa8 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 110dcff4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 110dcd0c System.Windows.Setter
+ -&gt; 110dcd5c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 110dcda8 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 110dcde4 System.Collections.Generic.Dictionary`2[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]]
+ -&gt; 110dce30 System.Collections.Generic.Dictionary`2+Entry[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]][]
+ -&gt; 110dcad0 System.Windows.Controls.ControlTemplate
+ -&gt; 110dcb34 System.Windows.ResourceDictionary
+ -&gt; 110dd0d8 MS.Internal.ResourceDictionaryCollection
+ -&gt; 110dd21c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 1111609c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 110df418 System.Windows.ResourceDictionary
+ -&gt; 110df470 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+ -&gt; 110eb8b4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+ -&gt; 110ecde0 System.Windows.Style
+ -&gt; 116d1cd4 OurNamespace.Controls.TextColumn</code></pre></li>
+</ol>
+<p>PageContainer is the application container which always exists, while TextColumn is a custom column class for a Telerik grid, which is already removed from application tree at the time point. Our TextColumn gets bound with root controls through ResourceDictionary/Style chain; and I can&#39;t explain the reason of such a leak. Though, clearing HeaderCellStyle when grid is not needed anymore does fix the problem. Weird enough.</p>
+<p>As you can see, there are numerous reasons for memory leaks in a Silverlight application. Some are obvious (e.g. global event handlers never unsubscribed), other ones are hard to understand intuitively and sometimes depend on runtime or third party internals. In any case, a way to fix or workaround always exists. Good luck with bug hunting!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/c#/'>C#</a>, <a href='/tags/fixing-memory-leaks/'>fixing memory leaks</a>, <a href='/tags/memory-leaks/'>Memory leaks</a>, <a href='/tags/silverlight/'>Silverlight</a>, <a href='/tags/windbg/'>WinDbg</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 1st, 2012</div>
     
     <h1><a href='/2012/02/01/machine-learning-class-at-stanford-online/'>Machine Learning class at Stanford online</a></h1>
@@ -125,8 +216,7 @@ Here is a brief review of the code.</p>
     {
         this.DefaultStyleKey = typeof(Bubble);
     }
-}
-</code></pre><p>Then, we go to Themes/Generic.xaml resource dictionary to declare the (default) control template. Here&#39;s how it looks:</p>
+}</code></pre><p>Then, we go to Themes/Generic.xaml resource dictionary to declare the (default) control template. Here&#39;s how it looks:</p>
 <pre><code>&lt;Setter Property=&quot;Template&quot;&gt;
     &lt;Setter.Value&gt;
         &lt;ControlTemplate TargetType=&quot;localcontrols:Bubble&quot;&gt;
@@ -143,8 +233,7 @@ Here is a brief review of the code.</p>
             &lt;/Grid&gt;
         &lt;/ControlTemplate&gt;
     &lt;/Setter.Value&gt;
-&lt;/Setter&gt;
-</code></pre><p>The three elements are placed into ControlTemplate:</p>
+&lt;/Setter&gt;</code></pre><p>The three elements are placed into ControlTemplate:</p>
 <ul>
 <li>OuterPath is a Path control to render background and shadow. I didn&#39;t manage to get the exact required look with a single Path control with DropShadowEffect, so I decided to use two controls instead. We apply Fill, Opacity and BlurEffect to this control.</li>
 <li>InnerPath is a Path control to render the border. We apply Stroke and StrokeThickness to this control.</li>
@@ -168,8 +257,7 @@ public override void OnApplyTemplate()
 private void OnSizeChanged(object sender, SizeChangedEventArgs e)
 {
     Render();
-}
-</code></pre><p>We&#39;ll need several properties to customize the look of Bubble control: Corner radius and Leader size &amp; position.</p>
+}</code></pre><p>We&#39;ll need several properties to customize the look of Bubble control: Corner radius and Leader size &amp; position.</p>
 <pre><code>/// &lt;summary&gt;
 /// Corner radius
 /// &lt;/summary&gt;
@@ -239,8 +327,7 @@ public enum BubbleLeaderPosition
     None,
     Left,
     Right
-}
-</code></pre><p>Now we only need to implement Render() method - quite a lot of routine work: calculating coordinates of &quot;leader&quot;, adding Path segments into both OuterPath and InnerPath, setting margins etc.</p>
+}</code></pre><p>Now we only need to implement Render() method - quite a lot of routine work: calculating coordinates of &quot;leader&quot;, adding Path segments into both OuterPath and InnerPath, setting margins etc.</p>
 <pre><code>protected void Render()
 {
     if (_ContentContainer == null &#39;&#39; _OuterPath == null)
@@ -318,8 +405,7 @@ private void RenderPath(Path path, double left, double top, double right, double
     }
 
     path.Data = geometry;
-}
-</code></pre><p>You can download the Bubble control test application <a href="https://skydrive.live.com/redir.aspx?cid=c010011792a4b538&amp;resid=C010011792A4B538!126&amp;parid=root">here</a>. It will show you something like this :)
+}</code></pre><p>You can download the Bubble control test application <a href="https://skydrive.live.com/redir.aspx?cid=c010011792a4b538&amp;resid=C010011792A4B538!126&amp;parid=root">here</a>. It will show you something like this :)
 <img src="/2012/01/26/speech-bubble-control-in-sl//bubblegirls.png" alt="Bubble girls" title="Bubble girls"></p>
 
     </div>
@@ -353,7 +439,6 @@ private void RenderPath(Path path, double left, double top, double right, double
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

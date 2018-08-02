@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -83,8 +83,7 @@
     <div class="post-content">
         <p>Are you getting enormous amount of </p>
 <pre><code>The activated proc &#39;...&#39; running on queue &#39;...&#39; output the following:
-&#39;The service queue &quot;...&quot; is currently disabled.
-</code></pre><p>errors from SQL Server? Keep on reading!</p>
+&#39;The service queue &quot;...&quot; is currently disabled.</code></pre><p>errors from SQL Server? Keep on reading!</p>
 <p>Yesterday, when I came back from my lunch, I got a heads-up from Windows:
 <img src="/2014/10/16/nice-way-to-kill-your-sql-server//low-disk-space.gif" alt="Low disk space"></p>
 <p>And it was literally out of space: 0 (zero) bytes available on C: drive. Wow...</p>
@@ -92,24 +91,20 @@
 <p>It appeared that the SQL Server error log files grew up to 53 GB and were still growing. Here is the default folder where you can find them:</p>
 <p><img src="/2014/10/16/nice-way-to-kill-your-sql-server//errorlog.png" alt="SQL Server error log"></p>
 <p>To gain more time, I executed the command</p>
-<pre><code>exec sp_cycle_error
-</code></pre><p>is Management Studio. It renames current ERRORLOG file to ERRORLOG.1 and starts the new current. So now it was safe to delete all .1/.2/etc files and get those 53 GB back. Huh...</p>
+<pre><code>exec sp_cycle_error</code></pre><p>is Management Studio. It renames current ERRORLOG file to ERRORLOG.1 and starts the new current. So now it was safe to delete all .1/.2/etc files and get those 53 GB back. Huh...</p>
 <p>Now it&#39;s time to figure out the actual issue. Go to Management Studio -&gt; your server -&gt; Management -&gt; SQL Server Logs -&gt; Current -&gt; (right click) -&gt; View SQL Server Log</p>
 <p>I saw millions of the following messages there (let&#39;s say my queue is named XQueue for simplicity):</p>
 <pre><code>The activated proc &#39;[dbo].[XQueueProcessor]&#39; running 
 on queue &#39;dbo.XQueue&#39; output the following:
-&#39;The service queue &quot;XQueue&quot; is currently disabled.
-</code></pre><p>So, it looks like there is a problem with SQL Server Service Broker, which is constantly trying to read something from disabled queue. Isn&#39;t it supposed to stop after 5 attempts (a.k.a. poison messages)? Ok, keep on troubleshooting.</p>
+&#39;The service queue &quot;XQueue&quot; is currently disabled.</code></pre><p>So, it looks like there is a problem with SQL Server Service Broker, which is constantly trying to read something from disabled queue. Isn&#39;t it supposed to stop after 5 attempts (a.k.a. poison messages)? Ok, keep on troubleshooting.</p>
 <p>First, let check if the queue is actually disabled</p>
 <pre><code>SELECT Name, is_receive_enabled, is_enqueue_enabled
   FROM sys.service_queues 
- WHERE Name = &#39;XQueue&#39;  
-</code></pre><p>Yep, it&#39;s disabled:
+ WHERE Name = &#39;XQueue&#39;  </code></pre><p>Yep, it&#39;s disabled:
 <img src="/2014/10/16/nice-way-to-kill-your-sql-server//qdisabled.png" alt="XQueue disabled"></p>
 <p>Do we have anything queued?</p>
 <pre><code>SELECT TOP 1000 *
-  FROM [XQueue] WITH(NOLOCK) 
-</code></pre><p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
+  FROM [XQueue] WITH(NOLOCK) </code></pre><p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
 <p>So, let&#39;s have a look at the processor. We had something like that:</p>
 <pre><code>CREATE PROCEDURE [dbo].[XQueueProcessor]
 AS
@@ -149,16 +144,14 @@ BEGIN
             ROLLBACK TRANSACTION
         END CATCH        
     END
-END
-</code></pre><p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back... But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &quot;The service queue is currently disabled&quot; and voila, CPU is busy and error logs are floating the disk.</p>
+END</code></pre><p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back... But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &quot;The service queue is currently disabled&quot; and voila, CPU is busy and error logs are floating the disk.</p>
 <p>The fix is pretty trivial, just change the CATCH block to</p>
 <pre><code>BEGIN CATCH            
     DECLARE @Error varchar(4000) = ERROR_MESSAGE()
     PRINT @Error
     ROLLBACK TRANSACTION
     RETURN
-END CATCH        
-</code></pre><p>Be careful!</p>
+END CATCH        </code></pre><p>Be careful!</p>
 
     </div>
 
@@ -203,7 +196,6 @@ END CATCH
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -217,7 +209,6 @@ END CATCH
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

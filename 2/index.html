@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -76,6 +76,108 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Apr 24th, 2018</div>
+    
+    <h1><a href='/2018/04/azure-functions-cold-starts-in-numbers/'>Azure Functions: Cold Starts in Numbers</a></h1>
+    
+    <div class="post-content">
+        <p>Auto-provisioning and auto-scalability are the killer features of Function-as-a-Service
+cloud offerings, and Azure Functions in particular.</p>
+<p>One drawback of such dynamic provisioning is a phenomenon called &quot;Cold Start&quot;. Basically,
+applications that haven&#39;t been used for a while take longer to startup and to handle the
+first request.</p>
+<p>The problem is nicely described in 
+<a href="https://blogs.msdn.microsoft.com/appserviceteam/2018/02/07/understanding-serverless-cold-start/">Understanding Serverless Cold Start</a>,
+so I won&#39;t repeat it here. I&#39;ll just copy a picture from that article:</p>
+<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstart.jpg" alt="Cold Start"></p>
+<p>Based on the 4 actions which happen during a cold start, we may guess that the following factors
+might affect the cold start duration:</p>
+<ul>
+<li>Language / execution runtime</li>
+<li>Azure Functions runtime version</li>
+<li>Application size including dependencies</li>
+</ul>
+<p>I ran several sample functions and tried to analyze the impact of these factors on cold start time.</p>
+<h2 id="methodology">Methodology</h2>
+<p>All tests were run against HTTP Functions, because that&#39;s where cold start matters the most.</p>
+<p>All the functions were just returning &quot;Hello, World&quot; taking the &quot;World&quot; value from the query string.
+Some functions were also loading extra dependencies, see below.</p>
+<p>I did not rely on execution time reported by Azure. Instead, I measured end-to-end duration from
+client perspective. All calls were made from within the same Azure region, so network latency should 
+have minimal impact:</p>
+<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//test-setup.png" alt="Test Setup"></p>
+<h2 id="when-does-cold-start-happen-">When Does Cold Start Happen?</h2>
+<p>Obviously, cold start happens when the very first request comes in. After that request is processed,
+the instance is kept alive in case subsequent requests arrive. But for how long?</p>
+<p>The following chart gives the answer. It shows values of normalized request durations across
+different languages and runtime versions (Y axis) depending on the time since the previous
+request in minutes (X axis):</p>
+<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstart-threshold.png" alt="Cold Start Threshold"></p>
+<p>Clearly, an idle instance lives for 20 minutes and then gets recycled. All requests after 20 minutes
+threshold hit another cold start.</p>
+<h2 id="how-do-languages-compare-">How Do Languages Compare?</h2>
+<p>I&#39;ll start with version 1 of Functions runtime, which is the production-ready GA version as of today.</p>
+<p>I&#39;ve written Hello World HTTP function in all GA languages: C#, F# and Javascript, and I added Python
+for comparison. C#/F# were executed both in the form of script, and as a precompiled .NET assembly.</p>
+<p>The following chart shows some intuition about the cold start duration per language. The languages
+are ordered based on mean response time, from lowest to highest. 65% of request
+durations are inside the vertical bar (1-sigma interval) and 95% are inside the vertical line (2-sigma):</p>
+<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v1.png" alt="Cold Start V1 per Language"></p>
+<p>Somewhat surprisingly, precompiled .NET is exactly on par with Javascript. Javascript &quot;Hello World&quot; 
+is really lightweight, so I expected it to win, but I was wrong.</p>
+<p>C# Script is slower but somewhat comparable. F# Script presented a really negative surprise though: it&#39;s much
+slower. It&#39;s even slower than experimental Python support where no performance optimization would
+be expected at all!</p>
+<h2 id="functions-runtime-v1-vs-v2">Functions Runtime: V1 vs V2</h2>
+<p>Version 2 of Functions runtime is currently in preview and not suitable for production load. That
+probably means they haven&#39;t done too much performance optimization, especially from cold start
+standpoint.</p>
+<p>Can we see this on the chart? We sure can:</p>
+<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v2.png" alt="Cold Start V1 vs V2"></p>
+<p>V2 is massively slower. The fastest cold starts are around 6 seconds, but the slowest can come
+up to 40-50 seconds.</p>
+<p>Javascript is again on-par with precompiled .NET. </p>
+<p>Java is noticeably slower, even though the
+deployment package is just 33kB, so I assume I didn&#39;t overblow it.</p>
+<h2 id="does-size-matter-">Does Size Matter?</h2>
+<p>OK, enough of Hello World. A real-life function might be more heavy, mainly because it would
+depend on other third-party libraries.</p>
+<p>To simulate such scenario, I&#39;ve measured cold starts for a .NET function with references to 
+Entity Framework, Automapper, Polly and Serilog.</p>
+<p>For Javascript I did the same, but referenced Bluebird, lodash and AWS SDK.</p>
+<p>Here are the results:</p>
+<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-dependencies.png" alt="Cold Start Dependencies"></p>
+<p>As expected, the dependencies slow the loading down. You should keep your Functions lean,
+otherwise you will pay in seconds for every cold start.</p>
+<p>An important note for Javascript developers: the above numbers are for Functions deployed
+after <a href="https://github.com/Azure/azure-functions-pack"><code>Funcpack</code></a> preprocessor. The package
+contained the single <code>js</code> file with Webpack-ed dependency tree. Without that, the mean
+cold start time of the same function is 20 seconds!</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>Here are some lessons learned from all the experiments above:</p>
+<ul>
+<li>Be prepared for 1-3 seconds cold starts even for the smallest Functions</li>
+<li>Stay on V1 of runtime until V2 goes GA unless you don&#39;t care about perf</li>
+<li>.NET precompiled and Javascript Functions have roughly same cold start time</li>
+<li>Minimize the amount of dependencies, only bring what&#39;s needed</li>
+</ul>
+<p>Do you see anything weird or unexpected in my results? Do you need me to dig deeper on other aspects?
+Please leave a comment below or ping me on twitter, and let&#39;s sort it all out.</p>
+<p>There is a follow-up post available: 
+<a href="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load/">Cold Starts Beyond First Request in Azure Functions</a></p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/cold-start/'>Cold Start</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Apr 7th, 2018</div>
     
@@ -181,7 +283,7 @@ runtime.</p>
 <p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
 Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
 Here is a simple example of orchestrator in C#:</p>
-<pre><code class="lang-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
+<pre><code class="language-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
 {
     var outputs = new List&lt;string&gt;();
 
@@ -191,17 +293,15 @@ Here is a simple example of orchestrator in C#:</p>
 
     // returns [&quot;Hello Tokyo!&quot;, &quot;Hello Seattle!&quot;, &quot;Hello London!&quot;]
     return outputs;
-}
-</code></pre>
+}</code></pre>
 <p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
 computation expression. The direct refactoring could look something like</p>
-<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
+<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
   let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)   |&gt; Async.AwaitTask
   let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;) |&gt; Async.AwaitTask
   let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)  |&gt; Async.AwaitTask
   return [hello1; hello2; hello3]
-} |&gt; Async.StartAsTask
-</code></pre>
+} |&gt; Async.StartAsTask   </code></pre>
 <p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
 trigger because multi-threading operations are not allowed:</p>
 <blockquote>
@@ -214,20 +314,18 @@ any other threads that could be scheduled by other async APIs.</p>
 not very handy with standard F# libraries. So, I pulled an extra NuGet
 package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
 <p>The above function now looks very simple:</p>
-<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
+<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
   let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)
   let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;)
   let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)
   return [hello1; hello2; hello3]
-}
-</code></pre>
+}       </code></pre>
 <p>And the best part is that it works just fine.</p>
 <p><code>SayHello</code> function is Activity trigger based, and no special effort is required
 to implement it in F#:</p>
-<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
+<pre><code class="language-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
 let SayHello([&lt;ActivityTrigger&gt;] name) =
-  sprintf &quot;Hello %s!&quot; name
-</code></pre>
+  sprintf &quot;Hello %s!&quot; name</code></pre>
 <h2 id="more-examples">More Examples</h2>
 <p>Durable Functions repository comes with 
 <a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/precompiled">a set of 4 samples</a>
@@ -241,16 +339,14 @@ is using this persistence mechanism to run
 a potentially slow workflow of copying all files from a given directory to
 a backup location. It shows how multiple activities can be executed in
 parallel:</p>
-<pre><code class="lang-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
-let! results = Task.WhenAll tasks
-</code></pre>
+<pre><code class="language-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
+let! results = Task.WhenAll tasks</code></pre>
 <p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
 demos a potentially infinite actor-like workflow, where state can exist and
 evolve for indefinite period of time. The key API calls are based on
 <code>OrchestrationContext</code>:</p>
-<pre><code class="lang-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
-let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)
-</code></pre>
+<pre><code class="language-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
+let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)</code></pre>
 <p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
 has several twists, like output binding for activity (<code>ICollector</code> is required
 instead of C#&#39;s <code>out</code> parameter), third-party integration (Twilio to send SMSs),
@@ -414,7 +510,7 @@ version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work wi
 versions.</p>
 <p>Now we can implement our trace server as a console application. The main
 method looks like this:</p>
-<pre><code class="lang-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
+<pre><code class="language-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
 {
     // 1. Run trace server
     var connectionInfo = new SqlConnectionInfo(args[0])
@@ -435,19 +531,17 @@ method looks like this:</p>
     Console.ReadKey();
     tokenSource.Cancel();
     Task.WaitAll(readerTask, senderTask);
-}
-</code></pre>
+}</code></pre>
 <p>The first block initializes SQL connection using command line arguments and integrated
 security, and then starts the Trace Server.</p>
 <p>Because of the large volume, I made trace reader and event sender to work on separate
 threads. They talk to each other via a concurrent queue:</p>
-<pre><code class="lang-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();
-</code></pre>
+<pre><code class="language-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();</code></pre>
 <p>Finally, when operator presses any key, the cancellation is requested and the reader and
 sender get shut down.</p>
 <p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
 (with some exclusions) to the concurrent in-memory queue:</p>
-<pre><code class="lang-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
+<pre><code class="language-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
 { 
     while (trace.Read() &amp;&amp; !token.IsCancellationRequested)
     {
@@ -466,11 +560,10 @@ sender get shut down.</p>
 
     trace.Stop();
     trace.Close();
-}
-</code></pre>
+}</code></pre>
 <p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
 events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
-<pre><code class="lang-csharp">private static void SendToEventHubs(CancellationToken token)
+<pre><code class="language-csharp">private static void SendToEventHubs(CancellationToken token)
 {
     var client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
     var batch = client.CreateBatch();
@@ -491,17 +584,15 @@ events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
             batch.TryAdd(eventData);
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>If your trace doesn&#39;t produce so many messages, you will probably want to periodically send out the batches
 even before they get full, just to keep that process closer to real time.</p>
 <p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
 callback to print it to console:</p>
-<pre><code class="lang-csharp">private static void OnMyAsyncMethodFailed(Task task)
+<pre><code class="language-csharp">private static void OnMyAsyncMethodFailed(Task task)
 {
     Console.WriteLine(task.Exception?.ToString() ?? &quot;null error&quot;);
-}
-</code></pre>
+}</code></pre>
 <p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
 up by Trace Replay.</p>
 <h2 id="trace-replay-function-app">Trace Replay Function App</h2>
@@ -519,7 +610,7 @@ expand until it catches up with the workload.</p>
 <p>But as long as you don&#39;t run the trace server, it won&#39;t consume any servers and won&#39;t cost you
 a dime. </p>
 <p>Here is the implementation of Trace Replay Azure Function:</p>
-<pre><code class="lang-csharp">public static class Replay
+<pre><code class="language-csharp">public static class Replay
 {
     [FunctionName(&quot;Replay&quot;)]
     public static void Run(
@@ -564,8 +655,7 @@ a dime. </p>
             throw;
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>It&#39;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
 logs the result with timing and returned row count. And that&#39;s everything required to start
 bombarding my Azure SQL Database.</p>
@@ -626,13 +716,11 @@ you the most:
 <p>I start with a domain model. The model is composed of immutable F# types (records and discriminated
 unions) and pure functions.</p>
 <p>We have two players, so we need a type for them:</p>
-<pre><code class="lang-fsharp">type Player = X | O
-</code></pre>
+<pre><code class="language-fsharp">type Player = X | O</code></pre>
 <p>In addition, there is a useful function to return the other player based on the given one.
 Simple pattern-matching will do:</p>
-<pre><code class="lang-fsharp">module Player =
-  let other = function | X -&gt; O | O -&gt; X
-</code></pre>
+<pre><code class="language-fsharp">module Player =
+  let other = function | X -&gt; O | O -&gt; X</code></pre>
 <p>The domain code is the most important part of the application, so I want it to be covered
 by unit tests. Of course, the above function doesn&#39;t really warrant testing, but it&#39;s a nice
 and simple way to try out <a href="https://fsharpforfunandprofit.com/posts/property-based-testing/">Property-Based Testing</a>. 
@@ -643,33 +731,29 @@ That is, instead of defining specific tests, we define properties which hold for
 <li>Other player of other player is the player itself</li>
 </ul>
 <p>Here is the code with <a href="https://github.com/haf/expecto">Expecto</a> and <a href="https://github.com/fscheck/FsCheck">FsCheck</a>:</p>
-<pre><code class="lang-fsharp">testProperty &quot;Other player is not equal to player&quot; &lt;| fun x -&gt;
+<pre><code class="language-fsharp">testProperty &quot;Other player is not equal to player&quot; &lt;| fun x -&gt;
   Expect.notEqual x (Player.other x) &quot;Other should be different from original&quot;
 
 testProperty &quot;Other player of other player is the player itself&quot; &lt;| fun x -&gt;
-  Expect.equal x (Player.other (Player.other x)) &quot;Other other should be equal to original&quot;
-</code></pre>
+  Expect.equal x (Player.other (Player.other x)) &quot;Other other should be equal to original&quot;</code></pre>
 <p>Let&#39;s move on to modelling the game. I decided to define a union type to be used for
 horizontal and vertical positions of the cells:</p>
-<pre><code class="lang-fsharp">type Position = One | Two | Three
-</code></pre>
+<pre><code class="language-fsharp">type Position = One | Two | Three</code></pre>
 <p>I could use the normal integers instead, but I don&#39;t want to be worried about validating
 the ranges all the time.</p>
 <p>My first record type models the move, or action done by a player: it has <code>X</code> and <code>Y</code>
 positions of the chosen cell, plus the player information:</p>
-<pre><code class="lang-fsharp">type Move = {
+<pre><code class="language-fsharp">type Move = {
   X: Position
   Y: Position
   By: Player
-}
-</code></pre>
+}</code></pre>
 <p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
 design of the whole application:</p>
-<pre><code class="lang-fsharp">type RunningGame = {
+<pre><code class="language-fsharp">type RunningGame = {
   MovesDone: Move list
   PossibleMoves: Move list
-}
-</code></pre>
+}</code></pre>
 <p>This type models any state of the game which is not finished yet. </p>
 <p><code>MovesDone</code> represents the ordered log of all moves, so we have the complete history 
 of actions at any time. Event Sourcing in small.</p>
@@ -689,26 +773,24 @@ most trivial bot is a one-liner: it picks a random move from the collection</li>
 correspond to possible moves, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">REST API</a> below</li>
 </ul>
 <p>Now, we can model a game which is already finished:</p>
-<pre><code class="lang-fsharp">type GameOutcome = Won of Player | Tie
+<pre><code class="language-fsharp">type GameOutcome = Won of Player | Tie
 
 type FinishedGame = {
   MovesDone: Move list
   Outcome: GameOutcome
-}
-</code></pre>
+}</code></pre>
 <p>Each finished game has a list of moves and the outcome: either one player won, or there
 was a tie.</p>
 <p>Each state of a game can be described by the union of the previous two states:</p>
-<pre><code class="lang-fsharp">type GameState = 
+<pre><code class="language-fsharp">type GameState = 
   | Finished of FinishedGame
-  | InProgress of RunningGame
-</code></pre>
+  | InProgress of RunningGame</code></pre>
 <h2 id="modeling-game-flow">Modeling Game Flow</h2>
 <p>Now, when all the types are in place, we can model the game flow. The flow is a sequence
 of transitions between game states, implemented with pure functions.</p>
 <p>First, each game starts at the same state, which is an empty field, and X turn. Here
 is the value which represents this initial state:</p>
-<pre><code class="lang-fsharp">module Game =
+<pre><code class="language-fsharp">module Game =
   let initialState = 
     let positions = [One; Two; Three]
     let cells = seq { 
@@ -716,12 +798,10 @@ is the value which represents this initial state:</p>
          for y in positions do
             yield { X = x; Y = y; By = X }
       }
-    { MovesDone = []; PossibleMoves = List.ofSeq cells }
-</code></pre>
+    { MovesDone = []; PossibleMoves = List.ofSeq cells }</code></pre>
 <p>After each move is made, we need a function to evaluate move outcome: whether current
 game is finished or is still in progress. I defined a function <code>evaluate</code> for that:</p>
-<pre><code class="lang-fsharp">let private evaluate (history: Move list): GameOutcome option = ...
-</code></pre>
+<pre><code class="language-fsharp">let private evaluate (history: Move list): GameOutcome option = ...</code></pre>
 <p>I don&#39;t show the full body here, since it&#39;s quite boring in evaluating rows, columns
 and diagonals for three-in-a-row. See the <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe/Game.fs#L42-L56">full code</a> 
 if you want to.</p>
@@ -735,7 +815,7 @@ doesn&#39;t make sense</li>
 <li>The result <em>can</em> be a finished game</li>
 </ul>
 <p>Here is the function implementation:</p>
-<pre><code class="lang-fsharp">let makeMove (game: RunningGame) (move: Move): GameState =
+<pre><code class="language-fsharp">let makeMove (game: RunningGame) (move: Move): GameState =
   let movesDone = move :: game.MovesDone
   match evaluate movesDone with
   | Some result -&gt; Finished { MovesDone = movesDone; Outcome = result }
@@ -743,8 +823,7 @@ doesn&#39;t make sense</li>
     let possibleMoves = 
       List.except [move] game.PossibleMoves
       |&gt; List.map (fun m -&gt; { m with By = Player.other m.By })
-    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }
-</code></pre>
+    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }</code></pre>
 <p>It works like this:</p>
 <ul>
 <li>Prepend the new move to moves done</li>
@@ -756,12 +835,11 @@ moves same as before, but excluding the move and assigned to the other player</l
 <p>Tic-Tic-Toe is two-player game, so I defined another function which runs
 a turn of 2 moves by 2 players, given the decision making functions of both
 players (so it&#39;s a higher-order function):</p>
-<pre><code class="lang-fsharp">let makeRound player1 player2 gameState =
+<pre><code class="language-fsharp">let makeRound player1 player2 gameState =
   let newGameState = player1 gameState |&gt; makeMove gameState
   match newGameState with
   | Finished _ -&gt; newGameState
-  | InProgress p -&gt; player2 p |&gt; makeMove p
-</code></pre>
+  | InProgress p -&gt; player2 p |&gt; makeMove p  </code></pre>
 <p>Looks almost like monadic <code>bind</code> operation...</p>
 <p><a name="PropertyBasedTesting" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
 <h2 id="property-based-testing">Property-Based Testing</h2>
@@ -798,18 +876,16 @@ all kinds of input lists to try to break our property. If it succeeds, it will
 print the exact input which causes the test to fail.</p>
 <p>Here is how one such test is implemented.</p>
 <p>A helper function plays a sequence of indexes as moves:</p>
-<pre><code class="lang-fsharp">let playSequence moves = 
+<pre><code class="language-fsharp">let playSequence moves = 
   let playOne s i =
     match s with
     | InProgress p -&gt; Game.makeMove p (p.PossibleMoves.[i % p.PossibleMoves.Length])
     | _ -&gt; s
-  List.fold playOne (InProgress Game.initialState) moves
-</code></pre>
+  List.fold playOne (InProgress Game.initialState) moves</code></pre>
 <p>Then the property &quot;The game is always finished after 9 moves&quot; is simply:</p>
-<pre><code class="lang-fsharp">testProp &quot;The game is always finished after 9 moves&quot; &lt;| fun (Gen.ListOf9 xs) -&gt;
+<pre><code class="language-fsharp">testProp &quot;The game is always finished after 9 moves&quot; &lt;| fun (Gen.ListOf9 xs) -&gt;
   let result = playSequence xs
-  Expect.isTrue (Game.isFinished result) &quot;Game should be finished&quot;
-</code></pre>
+  Expect.isTrue (Game.isFinished result) &quot;Game should be finished&quot;</code></pre>
 <p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&#39;s a
 generator that I <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/Gen.fs#L31-L32">defined</a>, 
 so that the list always contains exactly 9 elements.</p>
@@ -824,9 +900,8 @@ service will expose to the clients. I define my API in REST model.</p>
 <pre><code>POST /game
 Content-Type: application/json
 
-{ &quot;name&quot;: &quot;Mikhail&quot; }
-</code></pre><p>And the response body is JSON which denotes a new game created:</p>
-<pre><code class="lang-json">{
+{ &quot;name&quot;: &quot;Mikhail&quot; }</code></pre><p>And the response body is JSON which denotes a new game created:</p>
+<pre><code class="language-json">{
     &quot;id&quot;: &quot;5d7b2261&quot;,
     &quot;busyCells&quot;: [],
     &quot;links&quot;: [
@@ -840,16 +915,14 @@ Content-Type: application/json
         },
         // ... 7 more links follow
     ]
-}
-</code></pre>
+}</code></pre>
 <p>The response contains a game ID and the list of occupied cells, empty for now,
 because no moves have been made.</p>
 <p>More importantly, it contains a list of links, each one of which has a <code>rel</code>
 field representing a cell, and a link. The client should <code>POST</code> to this link
 if it wants to make a move on the corresponding cell:</p>
-<pre><code>POST /game/5d7b2261/move/1
-</code></pre><p>And the response is:</p>
-<pre><code class="lang-json">{
+<pre><code>POST /game/5d7b2261/move/1</code></pre><p>And the response is:</p>
+<pre><code class="language-json">{
     &quot;id&quot;: &quot;5d7b2261&quot;,
     &quot;result&quot;: null,
     &quot;busyCells&quot;: [
@@ -873,12 +946,11 @@ if it wants to make a move on the corresponding cell:</p>
         },
         // ... 5 more links follow
     ]
-}
-</code></pre>
+}</code></pre>
 <p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
 list of links now has only 7 links, based on the count of free cells.</p>
 <p>The client keeps navigating the links until it gets non-empty <code>result</code> field:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
     &quot;id&quot;: &quot;5d7b2261&quot;,
     &quot;result&quot;: &quot;You Win!&quot;,
     &quot;busyCells&quot;: [
@@ -894,8 +966,7 @@ list of links now has only 7 links, based on the count of free cells.</p>
     ],
     &quot;links&quot;: [],
     &quot;score&quot;: 401
-}
-</code></pre>
+}</code></pre>
 <p>This denotes the end of the game. There&#39;s no more links to navigate, so the client knows it
 has to stop playing.</p>
 <p>This API is designed in HATEOAS-style (Hypermedia as the Engine of Application State). The
@@ -906,7 +977,7 @@ previous responses. It resembles the way a human navigates websites.</p>
 <p>I implemented the above API with Azure Functions. I used .NET Standard based v2 runtime
 with precompiled F# functions.</p>
 <p>The initial <code>POST /game</code> request is handled by <code>Start</code> function:</p>
-<pre><code class="lang-fsharp">type GameRequest = { Name: string }
+<pre><code class="language-fsharp">type GameRequest = { Name: string }
 
 type Cell = { Name: string; Value: string }
 type Link = { Rel:  string; Href:  string }
@@ -926,8 +997,7 @@ let start([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route
   let state = InProgress Game.initialState
   let serializedState = JsonConvert.SerializeObject state
   store.Add(GameEntity(PartitionKey = &quot;default&quot;, RowKey = gameid, Name = req.Name, State = serializedState))
-  ObjectResult(Api.serialize gameid state 0)
-</code></pre>
+  ObjectResult(Api.serialize gameid state 0)</code></pre>
 <p>The outline of this function:</p>
 <ul>
 <li>It&#39;s triggered by HTTP POST request, as configured for <code>req</code> parameter</li>
@@ -939,7 +1009,7 @@ let start([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route
 <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Functions/Api.fs#L30-L51">serialized</a> game response of type <code>GameDTO</code></li>
 </ul>
 <p>The second Function <code>Play</code> handles the moves:</p>
-<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;Play&quot;)&gt;]
+<pre><code class="language-fsharp">[&lt;FunctionName(&quot;Play&quot;)&gt;]
 let play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game/{gameid}/move/{index}&quot;)&gt;] 
          req: HttpRequest, gameid: string, index: int,
          [&lt;Table(&quot;TicTacToe&quot;, &quot;default&quot;, &quot;{gameid}&quot;)&gt;] entity: GameEntity) =
@@ -951,8 +1021,7 @@ let play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route 
     let result = Game.makeRound (fun _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
     entity.State &lt;- JsonConvert.SerializeObject result
     entity.Score &lt;- Scoring.calculateScore (DateTime.UtcNow - entity.StartedAt).TotalMilliseconds result
-    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult
-</code></pre>
+    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult</code></pre>
 <p>The outline is very similar:</p>
 <ul>
 <li>It&#39;s triggered by a <code>POST</code> request with a URL template containing game ID and move index</li>
@@ -972,14 +1041,13 @@ function. Its goal is to pick the <code>O</code> move for any given game-in-prog
 <p>Obviously, 3x3 Tic-Tac-Toe is a very simple game and it&#39;s quite easy to make a perfectly
 playing bot. This wasn&#39;t the goal though: it&#39;s more fun for a human to win.</p>
 <p>So, actually, the only property test that I ended up implementing is the following:</p>
-<pre><code class="lang-fsharp">testProp &quot;Bot is able to play O at any possible position&quot; &lt;| fun (Gen.ListOfNonNegative xs) -&gt;
+<pre><code class="language-fsharp">testProp &quot;Bot is able to play O at any possible position&quot; &lt;| fun (Gen.ListOfNonNegative xs) -&gt;
   let human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
   let round s i =
     match s with
     | InProgress p -&gt; Game.makeRound (human i p) Bot.pickMove p
     | _ -&gt; s
-  List.fold round (InProgress Game.initialState) xs |&gt; ignore
-</code></pre>
+  List.fold round (InProgress Game.initialState) xs |&gt; ignore     </code></pre>
 <p>It makes sure that for any possible sequence of human moves, bot is actually able to make
 <em>any</em> move of its own. Bot just shouldn&#39;t crash :)</p>
 <p>My very first implementation of the bot was just picking a random move. Such bot is fine,
@@ -993,16 +1061,15 @@ but it&#39;s too boring to play against.</p>
 <p>I implemented the bot using the approach described in my 
 <a href="https://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Functional Fold as Decision Tree Pattern</a>
 post:</p>
-<pre><code class="lang-fsharp">let pickMove (game: RunningGame) = 
+<pre><code class="language-fsharp">let pickMove (game: RunningGame) = 
   [winNow O; notLoseNow; pickRandom]
   |&gt; Seq.ofList
   |&gt; Seq.choose (fun x -&gt; x game)
-  |&gt; Seq.head
-</code></pre>
+  |&gt; Seq.head</code></pre>
 <p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
 decision will be promoted to final decision.</p>
 <p>And here are those functions:</p>
-<pre><code class="lang-fsharp">let winNow player (game: RunningGame) =
+<pre><code class="language-fsharp">let winNow player (game: RunningGame) =
   let isWin = function | Finished { Outcome = Won x } when x = player -&gt; true | _ -&gt; false
   game.PossibleMoves
   |&gt; List.tryFind (fun move -&gt; Game.makeMove game move |&gt; isWin)
@@ -1018,8 +1085,7 @@ let notLoseNow (game: RunningGame) =
   else Some (notLosingMoves.[random.Next notLosingMoves.Length])
 
 let pickRandom (game: RunningGame) = 
-  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])
-</code></pre>
+  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])</code></pre>
 <p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
 <h2 id="score-calculation">Score Calculation</h2>
 <p>Last twist to the application is the scoring system. If a human player wins or gets a tie,
@@ -1028,7 +1094,7 @@ of all players.</p>
 <p>The score is calculated based on two principles: the less moves you make, and the faster
 you play, the higher the score is. Move count is more important than timing.</p>
 <p>These principles are nicely expressed as property tests:</p>
-<pre><code class="lang-fsharp">testProp &quot;The score of faster game is not lower than slower game&quot; 
+<pre><code class="language-fsharp">testProp &quot;The score of faster game is not lower than slower game&quot; 
   &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
   let (slower, faster) = maxmin id duration1 duration2
   let scoreFaster = Scoring.calculateScore faster game
@@ -1044,30 +1110,27 @@ testProp &quot;The score of won game in less moves is greater than game with mor
   if moreMoves.Length = lessMoves.Length then
     Expect.isGreaterThanOrEqual score1 score2 &quot;Bigger duration has lower score (or same)&quot;
   else
-    Expect.isGreaterThan score1 score2 &quot;More moves have lower score&quot;
-</code></pre>
+    Expect.isGreaterThan score1 score2 &quot;More moves have lower score&quot;</code></pre>
 <p>Note that tests are parameterized for durations and game states. We don&#39;t have to come up with specific
 scenarios: the framework should take care of those.</p>
 <p>One of the possible implementations for scoring is:</p>
-<pre><code class="lang-fsharp">let calculateScore duration (state: GameState) =
+<pre><code class="language-fsharp">let calculateScore duration (state: GameState) =
   let durationScore = (100.0 * (1.0 - duration / (duration + 10000.0))) |&gt; int
   match state with
   | Finished { Outcome = Won X; MovesDone = ms } -&gt; (11 - ms.Length) * 100 + durationScore
   | Finished { Outcome = Tie } -&gt; durationScore
-  | _ -&gt; 0
-</code></pre>
+  | _ -&gt; 0</code></pre>
 <p>Now, the leaderboard piece. You&#39;ve already seen the bits of this functionality in Azure Functions: 
 they store the game state into Azure Table Storage.</p>
 <p>There is another Azure Function which handles <code>GET</code> requests to <code>/leaderboard</code> resource. It
 loads all the past games from Table Storage, and then passes them to leaderboard calculation
 function below:</p>
-<pre><code class="lang-fsharp">let calculateLeaderboard top ns =
+<pre><code class="language-fsharp">let calculateLeaderboard top ns =
   ns
   |&gt; Seq.filter (fun entity -&gt; snd entity &gt; 0 &amp;&amp; not (String.IsNullOrEmpty (fst entity)))
   |&gt; Seq.sortByDescending snd
   |&gt; Seq.truncate top
-  |&gt; Seq.mapi (fun index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })
-</code></pre>
+  |&gt; Seq.mapi (fun index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })</code></pre>
 <h2 id="wrapping-up">Wrapping Up</h2>
 <p>Ok, the application is simple, but the blog post ended up being quite long. Thank you if you
 made it so far.</p>
@@ -1085,117 +1148,6 @@ inspirational or boring.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/hateoas/'>HATEOAS</a>, <a href='/tags/property-based-testing/'>Property-Based Testing</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Dec 13th, 2017</div>
-    
-    <h1><a href='/2017/12/azure-functions-get-more-scalable-and-elastic/'>Azure Functions Get More Scalable and Elastic</a></h1>
-    
-    <div class="post-content">
-        <p>Back in August this year, I&#39;ve posted 
-<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">Azure Functions: Are They Really Infinitely Scalable and Elastic?</a>
-with two experiments about Azure Function App auto scaling. I ran a simple
-CPU-bound function based on Bcrypt hashing, and measured how well Azure
-was running my Function under load.</p>
-<p>The results were rather pessimistic. Functions were scaling up to many 
-instances, but there were significant delays in doing so, so the processing
-slowed down up to 40 minutes.</p>
-<p>Azure Functions team notified me that they rolled out an updated version of
-the service, which should significantly improve my results.</p>
-<p>So I ran the exact same tests again, and got the new results. I will show
-these results below.</p>
-<p><em>TL;DR. Scaling responsiveness improved significantly. The max delay reduced
-from 40 to 6 minutes. There are some improvements still to be desired: 
-sub-minute latency is not yet reachable for similar scenarios.</em></p>
-<h2 id="setup">Setup</h2>
-<p>See the Function code and the description of the two experiments in
-<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">my previous article</a>.</p>
-<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
-<p>In &quot;Steady Load&quot; scenario 100,000 messages were sent to the queue at
-constant pace, evenly spread over 2 hours.</p>
-<p>Here are the <strong>old</strong> metrics of Queue Backlog and Instance Count over time:</p>
-<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppScaling.png" alt="Function App Scaling (Old)"></p>
-<p><em>Old charts are shown in gray background</em></p>
-<p>You can see a huge delay of almost one hour before the function caught up 
-to speed of incoming messages and half-an-hour more before the backlog
-got cleared.</p>
-<p>The <strong>new</strong> results on the same chart after the runtime update:</p>
-<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppScalingNew.png" alt="Function App Scaling (New)"></p>
-<p>This looks much better. The maximum backlog is 7 times lower; there&#39;s almost
-no initial delay before the auto scaling kicks in; and overall instance 
-allocation is much more stable.</p>
-<hr>
-<p>One more chart is from the same experiment, but it shows slightly different 
-metrics. The <strong>old</strong> results of Delay (Age) in seconds and Processing Rate 
-in messages per minute:</p>
-<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppDelay.png" alt="Function App Delay"></p>
-<p>The <strong>new</strong> chart after the runtime update:</p>
-<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppDelayNew.png" alt="Function App Delay"></p>
-<p>Again, much less delay overall, and processing rate more-or-less stabilizes 
-after the first 15 minutes.</p>
-<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
-<p>The second experiment spanned over 5 hours. The messages were sent mostly
-at low-ish fixed rate, except for 5 periods of sudden spikes. The
-green line on the charts below shows these spikes very well.</p>
-<p>At the first run 4 months ago, Functions runtime had troubles keeping up
-to speed even between those bursts of messages.</p>
-<p>Here is the chart of the <strong>old</strong> spiky load processing:</p>
-<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//SpikyLoadProcessing.png" alt="Spicky Load Processing (Old)"></p>
-<p>You can see that the backlog after each spike goes down really slow. The
-blue line of processing rate doesn&#39;t match the green line almost nowhere,
-which reveals the struggle to adapt.</p>
-<p>The <strong>new</strong> results of the same chart after the runtime update are quite
-different:</p>
-<p><img src="/2017/12/azure-functions-get-more-scalable-and-elastic//SpikyLoadProcessingNew.png" alt="Spicky Load Processing (New)"></p>
-<p>Notice how the backlog is empty and the blue processing rate matches exactly
-the incoming rate during all time except after traffic bursts. The queue goes 
-up during each spike, but the processing rate immediately accelerates too,
-and the crisis is gone within 15 minutes.</p>
-<h2 id="conclusions">Conclusions</h2>
-<p>Azure Functions team is clearly working on improvements. While the results in
-August were puzzling or even embarrassing, the December benchmark makes much
-more sense.</p>
-<p>Looks like Azure Functions are now suitable for CPU-intensive data processing
-scenarios with flexible load, targeting the maximum delay at about several
-minutes.</p>
-<p>Obviously, the results are not perfect just yet. Here&#39;s what still can be
-done better:</p>
-<ul>
-<li><p><strong>Scale faster initially</strong>. In the first experiment, the biggest delay
-appeared right after the start, when the backlog was growing linearly for 
-10 minutes. &quot;0 to 100&quot; might not be a very realistic scenario, but probably
-that&#39;s how many folks will test Functions against their workloads.</p>
-</li>
-<li><p><strong>Do not scale down that fast after backlog goes to 0</strong>. Every time the
-queue backlog goes to 0, the runtime kills the biggest part of instances
-almost immediately. During my runs, this caused the queue to grow again without
-a good reason from user&#39;s perspective.</p>
-</li>
-<li><p><strong>Do not allow the backlog to grow without message spikes</strong>. Related to
-the previous item, but slightly different focus. When the load is stable,
-I would expect the runtime to keep my queue as close to empty as possible.
-I guess Azure tries to minimize the resources that it consumes behind
-the scenes, but this should be balanced in favor of user experience.</p>
-</li>
-<li><p><strong>Make scaling algorithms more open</strong>. It&#39;s a black box right now. I
-would love to see some documentation, if not code, to be published about
-what exactly to expect from Consumption Plan auto scaling.</p>
-</li>
-</ul>
-<p>I&#39;ll be running more scaling experiments with other types of workloads in the
-nearest future, so... more benchmarks are coming.</p>
-<p>Happy scaling!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>
     </div>
     
 </article>
@@ -1222,7 +1174,6 @@ nearest future, so... more benchmarks are coming.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

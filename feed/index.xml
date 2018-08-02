@@ -3,13 +3,148 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-07-12T21:13:29.059Z</updated>
+    <updated>2018-08-02T17:50:44.641Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>AWS Lambda Warmer as Pulumi Component</title>
+        <link href="https://mikhail.io/2018/08/aws-lambda-warmer-as-pulumi-component/"/>
+        <updated>2018-08-02T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2018-08-02,/2018/08/aws-lambda-warmer-as-pulumi-component/</id>
+        <content type="html"><![CDATA[<p>Out of curiosity, I&#39;m currently investigating cold starts of Function-as-a-Service platforms of major cloud providers. Basically,
+if a function is not called for several minutes, the cloud instance behind it might be recycled, and then the next request will
+take longer because a new instance will need to be provisioned.</p>
+<p>Recently, Jeremy Daly <a href="https://www.jeremydaly.com/lambda-warmer-optimize-aws-lambda-function-cold-starts/">posted</a> a nice
+article about the proper way to keep AWS Lambda instances &quot;warm&quot; to (mostly) prevent cold starts with minimal overhead.
+Chris Munns <a href="https://twitter.com/chrismunns/status/1017777028274294784">endorsed</a> the article, so we know it&#39;s the right way.</p>
+<p>The amount of actions to be taken is quite significant:</p>
+<ul>
+<li>Define a CloudWatch event which would fire every 5 minutes</li>
+<li>Bind this event as another trigger for your Lambda</li>
+<li>Inside the Lambda, detect whether current invocation is triggered by our CloudWatch event</li>
+<li>If so, short-circuit the execution and return immediately; otherwise, run the normal workload</li>
+<li>(Bonus point) If you want to keep multiple instances alive, do some extra dancing with calling itself N times in parallel,
+provided by an extra permission to do so.</li>
+</ul>
+<h2 id="pursuing-reusability">Pursuing Reusability</h2>
+<p>To simplify this for his readers, Jeremy was so kind to</p>
+<ul>
+<li>Create an NPM package which you can install and then call from a function-to-be-warmed</li>
+<li>Provide SAM and Serverless Framework templates to automate Cloud Watch integration</li>
+</ul>
+<p>Those are still two distinct steps: writing the code (JS + NPM) and provisioning the cloud resources (YAML + CLI). There are some
+drawbacks to that:</p>
+<ul>
+<li>You need to change two parts, which don&#39;t look like each other</li>
+<li>They have to work in sync, e.g. Cloud Watch event must provide the right payload for the handler</li>
+<li>There&#39;s still some boilerplate for every new Lambda</li>
+</ul>
+<h2 id="pulumi-components">Pulumi Components</h2>
+<p>Pulumi takes a different approach. You can blend the application code and infrastructure management code
+into one cohesive cloud application.</p>
+<p>Related resources can be combined together into reusable components, which hide repetitive stuff behind code abstractions.</p>
+<p>One way to define an AWS Lambda with Typescript in Pulumi is the following:</p>
+<pre><code class="language-typescript">const handler = (event: any, context: any, callback: (error: any, result: any) =&gt; void) =&gt; {
+    const response = {
+        statusCode: 200,
+        body: &quot;Cheers, how are things?&quot;
+      };
+
+    callback(null, response);
+};
+
+const lambda = new aws.serverless.Function(&quot;my-function&quot;, { /* options */ }, handler);</code></pre>
+<p>The processing code <code>handler</code> is just passed to infrastructure code as a parameter.</p>
+<p>So, if I wanted to make reusable API for an &quot;always warm&quot; function, how would it look like?</p>
+<p>From the client code perspective, I just want to be able to do the same thing:</p>
+<pre><code class="language-typescript">const lambda = new mylibrary.WarmLambda(&quot;my-warm-function&quot;, { /* options */ }, handler);</code></pre>
+<p>CloudWatch? Event subscription? Short-circuiting? They are implementation details!</p>
+<h2 id="warm-lambda">Warm Lambda</h2>
+<p>Here is how to implement such component. The declaration starts with a Typescript class:</p>
+<pre><code class="language-typescript">export class WarmLambda extends pulumi.ComponentResource {
+    public lambda: aws.lambda.Function;
+
+    // Implementation goes here...
+}</code></pre>
+<p>We expose the raw Lambda Function object, so that it could be used for further bindings and retrieving outputs.</p>
+<p>The constructor accepts the same parameters as <code>aws.serverless.Function</code> provided by Pulumi:</p>
+<pre><code class="language-typescript">constructor(name: string,
+        options: aws.serverless.FunctionOptions,
+        handler: aws.serverless.Handler,
+        opts?: pulumi.ResourceOptions) {
+
+    // Subresources are created here...
+}</code></pre>
+<p>We start resource provisioning by creating the CloudWatch rule to be triggered every 5 minutes:</p>
+<pre><code class="language-typescript">const eventRule = new aws.cloudwatch.EventRule(`${name}-warming-rule`, 
+    { scheduleExpression: &quot;rate(5 minutes)&quot; },
+    { parent: this, ...opts }
+);</code></pre>
+<p>Then goes the cool trick. We substitute the user-provided handler with our own &quot;outer&quot; handler. This handler closes
+over <code>eventRule</code>, so it can use the rule to identify the warm-up event coming from CloudWatch. If such is identified,
+the handler short-circuits to the callback. Otherwise, it passes the event over to the original handler:</p>
+<pre><code class="language-typescript">const outerHandler = (event: any, context: aws.serverless.Context, callback: (error: any, result: any) =&gt; void) =&gt;
+{
+    if (event.resources &amp;&amp; event.resources[0] &amp;&amp; event.resources[0].includes(eventRule.name.get())) {
+        console.log(&#39;Warming...&#39;);
+        callback(null, &quot;warmed!&quot;);
+    } else {
+        console.log(&#39;Running the real handler...&#39;);
+        handler(event, context, callback);
+    }
+};</code></pre>
+<p>That&#39;s a great example of synergy enabled by doing both application code and application infrastructure in a
+single program. I&#39;m free to mix and match objects from both worlds.</p>
+<p>It&#39;s time to bind both <code>eventRule</code> and <code>outerHandler</code> to a new serverless function:</p>
+<pre><code class="language-typescript">const func = new aws.serverless.Function(
+    `${name}-warmed`, 
+    options, 
+    outerHandler, 
+    { parent: this, ...opts });
+this.lambda = func.lambda;            </code></pre>
+<p>Finally, I create an event subscription from CloudWatch schedule to Lambda:</p>
+<pre><code class="language-typescript">this.subscription = new serverless.cloudwatch.CloudwatchEventSubscription(
+    `${name}-warming-subscription`, 
+    eventRule,
+    this.lambda,
+    { },
+    { parent: this, ...opts });</code></pre>
+<p>And that&#39;s all we need for now! See the full code 
+<a href="https://github.com/mikhailshilkov/pulumi-serverless-examples/blob/master/WarmedLambda-TypeScript/warmLambda.ts">here</a>.</p>
+<p>Here is the output of <code>pulumi update</code> command for my sample &quot;warm&quot; lambda application:</p>
+<pre><code>     Type                                                      Name                            Plan
+ +   pulumi:pulumi:Stack                                       WarmLambda-WarmLambda-dev       create
+ +    samples:WarmLambda                                       i-am-warm                       create
+ +      aws-serverless:cloudwatch:CloudwatchEventSubscription  i-am-warm-warming-subscription  create
+ +        aws:lambda:Permission                                i-am-warm-warming-subscription  create
+ +        aws:cloudwatch:EventTarget                           i-am-warm-warming-subscription  create
+ +      aws:cloudwatch:EventRule                               i-am-warm-warming-rule          create
+ +      aws:serverless:Function                                i-am-warm-warmed                create
+ +         aws:lambda:Function                                 i-am-warm-warmed                create</code></pre><p>7 Pulumi components and 4 AWS cloud resources are provisioned by one <code>new WarmLambda()</code> line.</p>
+<h2 id="multi-instance-warming">Multi-Instance Warming</h2>
+<p>Jeremy&#39;s library supports warming several instances of Lambda by issuing parallel self-calls.</p>
+<p>Reproducing the same with Pulumi component should be fairly straightforward:</p>
+<ul>
+<li>Add an extra constructor option to accept the number of instances to keep warm</li>
+<li>Add a permission to call Lambda from itself</li>
+<li>Fire N calls when warming event is triggered</li>
+<li>Short-circuit those calls in each instance</li>
+</ul>
+<p>Note that only the first item would be visible to the client code. That&#39;s the power of componentization
+and code reuse.</p>
+<p>I didn&#39;t need multi-instance warming, so I&#39;ll leave the implementation as exercise for the reader.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Obligatory note: most probably, you don&#39;t need to add warming to your AWS Lambdas.</p>
+<p>But whatever advanced scenario you might have, it&#39;s likely that it is easier to express the scenario
+in terms of general-purpose reusable component, rather than a set of guidelines or templates.</p>
+<p>Happy hacking!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Getting Started with AWS Lambda in Pulumi</title>
@@ -35,15 +170,14 @@ Javascript as programming language for their serverless functions.</p>
 high-level package <code>@pulumi/cloud-aws</code> which hides all the AWS machinery from
 a developer. </p>
 <p>The simplest function will consist of just several lines:</p>
-<pre><code class="lang-js">const cloud = require(&quot;@pulumi/cloud-aws&quot;);
+<pre><code class="language-js">const cloud = require(&quot;@pulumi/cloud-aws&quot;);
 
 const api = new cloud.API(&quot;aws-hellolambda-js&quot;);
 api.get(&quot;/js&quot;, (req, res) =&gt; {
     res.status(200).json(&quot;Hi from Javascript lambda&quot;);
 });
 
-exports.endpointJs = api.publish().url;
-</code></pre>
+exports.endpointJs = api.publish().url;</code></pre>
 <p>Configure your Pulumi stack, run <code>pulumi update</code> and a Lambda 
 is up, running and accessible via HTTP.</p>
 <h2 id="-net-core">.NET Core</h2>
@@ -58,7 +192,7 @@ looks like this:</p>
 <li>Pulumi then utilizes the published binaries to create deployment artifacts</li>
 </ul>
 <p>C# function looks like this:</p>
-<pre><code class="lang-csharp">public class Functions
+<pre><code class="language-csharp">public class Functions
 {
     public async Task&lt;APIGatewayProxyResponse&gt; GetAsync(APIGatewayProxyRequest request, ILambdaContext context)
     {
@@ -69,11 +203,10 @@ looks like this:</p>
             Headers = new Dictionary&lt;string, string&gt; { { &quot;Content-Type&quot;, &quot;application/json&quot; } }
         };
     }
-}
-</code></pre>
+}</code></pre>
 <p>For non-Javascript lambdas I utilize <code>@pulumi/aws</code> package. It&#39;s of lower level
 than <code>@pulumi/cloud-aws</code>, so I had to setup IAM first:</p>
-<pre><code class="lang-js">const aws = require(&quot;@pulumi/aws&quot;);
+<pre><code class="language-js">const aws = require(&quot;@pulumi/aws&quot;);
 
 const policy = {
     &quot;Version&quot;: &quot;2012-10-17&quot;,
@@ -90,10 +223,9 @@ const policy = {
 };
 const role = new aws.iam.Role(&quot;precompiled-lambda-role&quot;, {
     assumeRolePolicy: JSON.stringify(policy),
-});
-</code></pre>
+});</code></pre>
 <p>And then I did a raw definition of AWS Lambda:</p>
-<pre><code class="lang-js">const pulumi = require(&quot;@pulumi/pulumi&quot;);
+<pre><code class="language-js">const pulumi = require(&quot;@pulumi/pulumi&quot;);
 
 const csharpLambda = new aws.lambda.Function(&quot;aws-hellolambda-csharp&quot;, {
     runtime: aws.lambda.DotnetCore2d0Runtime,
@@ -103,20 +235,18 @@ const csharpLambda = new aws.lambda.Function(&quot;aws-hellolambda-csharp&quot;,
     timeout: 5,
     handler: &quot;app::app.Functions::GetAsync&quot;,
     role: role.arn
-});
-</code></pre>
+});</code></pre>
 <p>Note the path to <code>publish</code> folder, which should match the path created by
 <code>dotnet publish</code>, and the handler name matching C# class/method.</p>
 <p>Finally, I used <code>@pulumi/aws-serverless</code> to define API Gateway endpoint for
 the lambda:</p>
-<pre><code class="lang-js">const serverless = require(&quot;@pulumi/aws-serverless&quot;);
+<pre><code class="language-js">const serverless = require(&quot;@pulumi/aws-serverless&quot;);
 
 const precompiledApi = new serverless.apigateway.API(&quot;aws-hellolambda-precompiledapi&quot;, {
     routes: [
         { method: &quot;GET&quot;, path: &quot;/csharp&quot;, handler: csharpLambda },
     ],
-});
-</code></pre>
+});</code></pre>
 <p>That&#39;s definitely more ceremony compared to Javascript version. But hey, it&#39;s
 code, so if you find yourself repeating the same code, go ahead and make a
 higher order component out of it, incapsulating the repetitive logic.</p>
@@ -125,15 +255,14 @@ higher order component out of it, incapsulating the repetitive logic.</p>
 for uniform experience.</p>
 <p>In this case, the flow is similar to .NET but simpler: no compilation step
 is required. Just define a <code>handler.py</code>:</p>
-<pre><code class="lang-python">def handler(event, context): 
+<pre><code class="language-python">def handler(event, context): 
     return {
         &#39;statusCode&#39;: 200,
         &#39;headers&#39;: {&#39;Content-Type&#39;: &#39;application/json&#39;},
         &#39;body&#39;: &#39;&quot;Hi from Python lambda&quot;&#39;
-    }
-</code></pre>
+    }</code></pre>
 <p>and package it into zip in AWS lambda definition:</p>
-<pre><code class="lang-js">const pythonLambda = new aws.lambda.Function(&quot;aws-hellolambda-python&quot;, {
+<pre><code class="language-js">const pythonLambda = new aws.lambda.Function(&quot;aws-hellolambda-python&quot;, {
     runtime: aws.lambda.Python3d6Runtime,
     code: new pulumi.asset.AssetArchive({
         &quot;.&quot;: new pulumi.asset.FileArchive(&quot;./python&quot;),
@@ -141,43 +270,39 @@ is required. Just define a <code>handler.py</code>:</p>
     timeout: 5,
     handler: &quot;handler.handler&quot;,
     role: role.arn
-});
-</code></pre>
+});</code></pre>
 <p>I&#39;m reusing the <code>role</code> definition from above. The API definition will also
 be the same as for .NET.</p>
 <h2 id="go">Go</h2>
 <p>Golang is a compiled language, so the approach is similar to .NET: write code,
 build, reference the built artifact from Pulumi.</p>
 <p>My Go function looks like this:</p>
-<pre><code class="lang-go">func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+<pre><code class="language-go">func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 
  return events.APIGatewayProxyResponse{
   Body:       &quot;\&quot;Hi from Golang lambda\&quot;&quot;,
   StatusCode: 200,
  }, nil
 
-}
-</code></pre>
+}</code></pre>
 <p>Because I&#39;m on Windows but AWS Lambda runs on Linux, I had to use 
 <a href="https://github.com/aws/aws-lambda-go"><code>build-lambda-zip</code></a> 
 tool to make the package compatible. Here is the PowerShell build script:</p>
-<pre><code class="lang-powershell">$env:GOOS = &quot;linux&quot;
+<pre><code class="language-powershell">$env:GOOS = &quot;linux&quot;
 $env:GOARCH = &quot;amd64&quot;
 go build -o main main.go
-~\Go\bin\build-lambda-zip.exe -o main.zip main
-</code></pre>
+~\Go\bin\build-lambda-zip.exe -o main.zip main</code></pre>
 <p>and Pulumi function definition:</p>
-<pre><code class="lang-js">const golangLambda = new aws.lambda.Function(&quot;aws-hellolambda-golang&quot;, {
+<pre><code class="language-js">const golangLambda = new aws.lambda.Function(&quot;aws-hellolambda-golang&quot;, {
     runtime: aws.lambda.Go1dxRuntime,
     code: new pulumi.asset.FileArchive(&quot;./go/main.zip&quot;),
     timeout: 5,
     handler: &quot;main&quot;,
     role: role.arn
-});
-</code></pre>
+});</code></pre>
 <h2 id="java">Java</h2>
 <p>Java class implements an interface from AWS SDK:</p>
-<pre><code class="lang-java">public class Hello implements RequestStreamHandler {
+<pre><code class="language-java">public class Hello implements RequestStreamHandler {
 
     public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context) throws IOException {
 
@@ -191,14 +316,13 @@ go build -o main main.go
         writer.write(responseJson.toJSONString());  
         writer.close();
     }
-}
-</code></pre>
+}</code></pre>
 <p>I compiled this code with Maven (<code>mvn package</code>), which produced a <code>jar</code> file. AWS Lambda accepts
 <code>jar</code> directly, but Pulumi&#39;s <code>FileArchive</code> is unfortunately crashing on trying
 to read it.</p>
 <p>As a workaround, I had to define a <code>zip</code> file with <code>jar</code> placed inside <code>lib</code>
 folder:</p>
-<pre><code class="lang-js">const javaLambda = new aws.lambda.Function(&quot;aws-coldstart-java&quot;, {
+<pre><code class="language-js">const javaLambda = new aws.lambda.Function(&quot;aws-coldstart-java&quot;, {
     code: new pulumi.asset.AssetArchive({
         &quot;lib/lambda-java-example-1.0-SNAPSHOT.jar&quot;: new pulumi.asset.FileAsset(&quot;./java/target/lambda-java-example-1.0-SNAPSHOT.jar&quot;),
     }),
@@ -206,8 +330,7 @@ folder:</p>
     timeout: 5,
     handler: &quot;example.Hello&quot;,
     role: role.arn
-});
-</code></pre>
+});</code></pre>
 <h2 id="conclusion">Conclusion</h2>
 <p>The complete code for 5 lambda functions in 5 different programming languages
 can be found in <a href="https://github.com/mikhailshilkov/pulumi-aws-serverless-examples">my github repository</a>.</p>
@@ -265,18 +388,16 @@ is just a mapping between the type of its input parameter and output parameter.
 Such type can be annotated as <code>func: TypeA -&gt; TypeB</code>.</p>
 <p>C# is object-oriented language, so we use methods to declare functions. There are two ways 
 to define a method comparable to <code>func</code> function above. I can use static method:</p>
-<pre><code class="lang-csharp">static class Mapper 
+<pre><code class="language-csharp">static class Mapper 
 {
     static ClassB func(ClassA a) { ... }
-}
-</code></pre>
+}</code></pre>
 <p>... or instance method:</p>
-<pre><code class="lang-csharp">class ClassA 
+<pre><code class="language-csharp">class ClassA 
 {
     // Instance method
     ClassB func() { ... }
-}
-</code></pre>
+}</code></pre>
 <p>Static form looks closer to the function annotation, but both ways are actually equivalent
 for the purpose of our discussion. I will use instance methods in my examples, however all of
 them could be written as static extension methods too.</p>
@@ -286,7 +407,7 @@ And monads are one of the answers.</p>
 <p>My sample code is going to be about conferences and speakers. The method implementations 
 aren&#39;t really important, just watch the types carefully. There are 4 classes (types) and 
 3 methods (functions):</p>
-<pre><code class="lang-csharp">class Speaker 
+<pre><code class="language-csharp">class Speaker 
 {
     Talk NextTalk() { ... }
 }
@@ -301,28 +422,25 @@ class Conference
     City GetCity() { ... }
 }
 
-class City { ... }
-</code></pre>
+class City { ... }</code></pre>
 <p>These methods are currently very easy to compose into a workflow:</p>
-<pre><code class="lang-csharp">static City NextTalkCity(Speaker speaker) 
+<pre><code class="language-csharp">static City NextTalkCity(Speaker speaker) 
 {
     Talk talk = speaker.NextTalk();
     Conference conf = talk.GetConference();
     City city = conf.GetCity();
     return city;
-}
-</code></pre>
+}</code></pre>
 <p>Because the return type of the previous step always matches the input type of the next step, we can
 write it even shorter:</p>
-<pre><code class="lang-csharp">static City NextTalkCity(Speaker speaker) 
+<pre><code class="language-csharp">static City NextTalkCity(Speaker speaker) 
 {
     return 
         speaker
         .NextTalk()
         .GetConference()
         .GetCity();
-}
-</code></pre>
+}</code></pre>
 <p>This code looks quite readable. It&#39;s concise and it flows from top to bottom, from left to right, 
 similar to how we are used to read any text. There is not much noise too.</p>
 <p>That&#39;s not what real codebases look like though, because there are multiple complications
@@ -332,7 +450,7 @@ along the happy composition path. Let&#39;s look at some of them.</p>
 one of the methods ever returns <code>null</code> back.</p>
 <p>Typed functional programming always tries to be explicit about types, so I&#39;ll re-write the signatures
 of my methods to annotate the return types as nullables:</p>
-<pre><code class="lang-csharp">class Speaker 
+<pre><code class="language-csharp">class Speaker 
 {
     Nullable&lt;Talk&gt; NextTalk() { ... }
 }
@@ -347,13 +465,12 @@ class Conference
     Nullable&lt;City&gt; GetCity() { ... }
 }
 
-class City { ... }
-</code></pre>
+class City { ... }</code></pre>
 <p>This is actually invalid syntax in current C# version, because <code>Nullable&lt;T&gt;</code> and its short form
 <code>T?</code> are not applicable to reference types. This <a href="https://blogs.msdn.microsoft.com/dotnet/2017/11/15/nullable-reference-types-in-csharp/">might change in C# 8</a>
 though, so bear with me.</p>
 <p>Now, when composing our workflow, we need to take care of <code>null</code> results:</p>
-<pre><code class="lang-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
+<pre><code class="language-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
 {
     Nullable&lt;Talk&gt; talk = speaker.NextTalk();
     if (talk == null) return null;
@@ -363,20 +480,18 @@ though, so bear with me.</p>
 
     Nullable&lt;City&gt; city = conf.GetCity();
     return city;
-}
-</code></pre>
+}</code></pre>
 <p>It&#39;s still the same method, but it got more noise now. Even though I used short-circuit returns
 and one-liners, it still got harder to read.</p>
 <p>To fight that problem, smart language designers came up with the Null Propagation Operator:</p>
-<pre><code class="lang-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
+<pre><code class="language-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
 {
     return 
         speaker
         ?.NextTalk()
         ?.GetConference()
         ?.GetCity();
-}
-</code></pre>
+}</code></pre>
 <p>Now we are almost back to our original workflow code: it&#39;s clean and concise, we just got
 3 extra <code>?</code> symbols around.</p>
 <p>Let&#39;s take another leap.</p>
@@ -385,7 +500,7 @@ and one-liners, it still got harder to read.</p>
 that&#39;s a generalization of <code>null</code> case: with <code>Nullable&lt;T&gt;</code> we might get 0 or 1 results back,
 while with a collection we can get <code>0</code> to any <code>n</code> results.</p>
 <p>Our sample API could look like this:</p>
-<pre><code class="lang-csharp">class Speaker 
+<pre><code class="language-csharp">class Speaker 
 {
     List&lt;Talk&gt; GetTalks() { ... }
 }
@@ -398,11 +513,10 @@ class Talk
 class Conference 
 {
     List&lt;City&gt; GetCities() { ... }
-}
-</code></pre>
+}</code></pre>
 <p>I used <code>List&lt;T&gt;</code> but it could be any class or plain <code>IEnumerable&lt;T&gt;</code> interface.</p>
 <p>How would we combine the methods into one workflow? Traditional version would look like this:</p>
-<pre><code class="lang-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
+<pre><code class="language-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
 {
     var result = new List&lt;City&gt;();
 
@@ -412,12 +526,11 @@ class Conference
                 result.Add(city);
 
     return result;
-}
-</code></pre>
+}</code></pre>
 <p>It reads ok-ish still. But the combination of nested loops and mutation with some conditionals sprinkled 
 on them can get unreadable pretty soon. The exact workflow might be lost in the mechanics.</p>
 <p>As an alternative, C# language designers invented LINQ extension methods. We can write code like this:</p>
-<pre><code class="lang-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
+<pre><code class="language-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
 {
     return 
         speaker
@@ -425,25 +538,23 @@ on them can get unreadable pretty soon. The exact workflow might be lost in the 
         .SelectMany(talk =&gt; talk.GetConferences())
         .SelectMany(conf =&gt; conf.GetCities())
         .ToList();
-}
-</code></pre>
+}</code></pre>
 <p>Let me do one further trick and format the same code in an unusual way:</p>
-<pre><code class="lang-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
+<pre><code class="language-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
 {
     return 
         speaker
         .GetTalks()           .SelectMany(x =&gt; x
         .GetConferences()    ).SelectMany(x =&gt; x
         .GetCities()         ).ToList();
-}
-</code></pre>
+}</code></pre>
 <p>Now you can see the same original code on the left, combined with just a bit of technical repeatable
 clutter on the right. Hold on, I&#39;ll show you where I&#39;m going.</p>
 <p>Let&#39;s discuss another possible complication.</p>
 <h2 id="asynchronous-calls">Asynchronous Calls</h2>
 <p>What if our methods need to access some remote database or service to produce the results? This
 should be shown in type signature, and C# has <code>Task&lt;T&gt;</code> for that:</p>
-<pre><code class="lang-csharp">class Speaker 
+<pre><code class="language-csharp">class Speaker 
 {
     Task&lt;Talk&gt; NextTalk() { ... }
 }
@@ -456,12 +567,11 @@ class Talk
 class Conference 
 {
     Task&lt;City&gt; GetCity() { ... }
-}
-</code></pre>
+}</code></pre>
 <p>This change breaks our nice workflow composition again.</p>
 <p>We&#39;ll get back to async-await later, but the original way to combine <code>Task</code>-based
 methods was to use <code>ContinueWith</code> and <code>Unwrap</code> API:</p>
-<pre><code class="lang-csharp">static Task&lt;City&gt; NextTalkCity(Speaker speaker) 
+<pre><code class="language-csharp">static Task&lt;City&gt; NextTalkCity(Speaker speaker) 
 {
     return 
         speaker
@@ -470,24 +580,22 @@ methods was to use <code>ContinueWith</code> and <code>Unwrap</code> API:</p>
         .Unwrap()
         .ContinueWith(conf =&gt; conf.Result.GetCity())
         .Unwrap();
-}
-</code></pre>
+}</code></pre>
 <p>Hard to read, but let me apply my formatting trick again:</p>
-<pre><code class="lang-csharp">static Task&lt;City&gt; NextTalkCity(Speaker speaker) 
+<pre><code class="language-csharp">static Task&lt;City&gt; NextTalkCity(Speaker speaker) 
 {
     return 
         speaker
         .NextTalk()         .ContinueWith(x =&gt; x.Result
         .GetConference()   ).Unwrap().ContinueWith(x =&gt; x.Result
         .GetCity()         ).Unwrap();
-}
-</code></pre>
+}</code></pre>
 <p>You can see that, once again, it&#39;s our nice readable workflow on the left + some mechanical repeatable
 junction code on the right.</p>
 <h2 id="pattern">Pattern</h2>
 <p>Can you see a pattern yet?</p>
 <p>I&#39;ll repeat the <code>Nullable</code>-, <code>List</code>- and <code>Task</code>-based workflows again:</p>
-<pre><code class="lang-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
+<pre><code class="language-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
 {
     return 
         speaker               ?
@@ -512,18 +620,16 @@ static Task&lt;City&gt; NextTalkCity(Speaker speaker)
         .NextTalk()            .ContinueWith(x =&gt; x.Result
         .GetConference()      ).Unwrap().ContinueWith(x =&gt; x.Result
         .GetCity()            ).Unwrap();
-}
-</code></pre>
+}</code></pre>
 <p>In all 3 cases there was a complication which prevented us from sequencing method
 calls fluently. In all 3 cases we found the gluing code to get back to fluent composition.</p>
 <p>Let&#39;s try to generalize this approach. Given some generic container type 
 <code>WorkflowThatReturns&lt;T&gt;</code>, we have a method to combine an instance of such workflow with
 a function which accepts the result of that workflow and returns another workflow back:</p>
-<pre><code class="lang-csharp">class WorkflowThatReturns&lt;T&gt; 
+<pre><code class="language-csharp">class WorkflowThatReturns&lt;T&gt; 
 {
     WorkflowThatReturns&lt;U&gt; AddStep(Func&lt;T, WorkflowThatReturns&lt;U&gt;&gt; step);
-}
-</code></pre>
+}</code></pre>
 <p>In case this is hard to grasp, have a look at the picture of what is going on:</p>
 <p><img src="https://mikhail.io/2018/07/monads-explained-in-csharp-again//monad-bind.png" alt="Monad Bind Internals"></p>
 <ol>
@@ -541,36 +647,33 @@ original shape.</p>
 </li>
 </ol>
 <p>In the following code, <code>NextTalk</code> returns the first instance inside the container:</p>
-<pre><code class="lang-csharp">WorkflowThatReturns&lt;City&gt; Workflow(Speaker speaker) 
+<pre><code class="language-csharp">WorkflowThatReturns&lt;City&gt; Workflow(Speaker speaker) 
 {
     return 
         speaker
         .NextTalk()         
         .AddStep(x =&gt; x.GetConference())
         .AddStep(x =&gt; x.GetCity()); 
-}
-</code></pre>
+}</code></pre>
 <p>Subsequently, <code>AddStep</code> is called two times to transfer to <code>Conference</code> and then
 <code>City</code> inside the same container:</p>
 <p><img src="https://mikhail.io/2018/07/monads-explained-in-csharp-again//monad-two-binds.png" alt="Monad Bind Chaining"></p>
 <h2 id="finally-monads">Finally, Monads</h2>
 <p>The name of this pattern is <strong>Monad</strong>.</p>
 <p>In C# terms, a Monad is a generic class with two operations: constructor and bind.</p>
-<pre><code class="lang-csharp">class Monad&lt;T&gt; {
+<pre><code class="language-csharp">class Monad&lt;T&gt; {
     Monad(T instance);
     Monad&lt;U&gt; Bind(Func&lt;T, Monad&lt;U&gt;&gt; f);
-}
-</code></pre>
+}</code></pre>
 <p>Constructor is used to put an object into container, <code>Bind</code> is used to replace one
 contained object with another contained object.</p>
 <p>It&#39;s important that <code>Bind</code>&#39;s argument returns <code>Monad&lt;U&gt;</code> and not just <code>U</code>. We can think
 of <code>Bind</code> as a combination of <code>Map</code> and <code>Unwrap</code> as defined per following signature:</p>
-<pre><code class="lang-csharp">class Monad&lt;T&gt; {
+<pre><code class="language-csharp">class Monad&lt;T&gt; {
     Monad(T instance);
     Monad&lt;U&gt; Map(Function&lt;T, U&gt; f);
     static Monad&lt;U&gt; Unwrap(Monad&lt;Monad&lt;U&gt;&gt; nested);
-}
-</code></pre>
+}</code></pre>
 <p>Even though I spent quite some time with examples, I expect you to be slightly confused
 at this point. That&#39;s ok.</p>
 <p>Keep going and let&#39;s have a look at several sample implementations of Monad pattern.</p>
@@ -585,7 +688,7 @@ concept of <code>null</code>. </p>
 a maybe implementation built into the language: 
 it&#39;s called <code>option</code> type. </p>
 <p>Here is a sample implementation in C#:</p>
-<pre><code class="lang-csharp">public class Maybe&lt;T&gt; where T : class
+<pre><code class="language-csharp">public class Maybe&lt;T&gt; where T : class
 {
     private readonly T value;
 
@@ -606,31 +709,28 @@ it&#39;s called <code>option</code> type. </p>
     }
 
     public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;();
-}
-</code></pre>
+}</code></pre>
 <p>When <code>null</code> is not allowed, any API contract gets more explicit: either you
 return type <code>T</code> and it&#39;s always going to be filled, or you return <code>Maybe&lt;T&gt;</code>.
 The client will see that <code>Maybe</code> type is used, so it will be forced to handle 
 the case of absent value.</p>
 <p>Given an imaginary repository contract (which does something with customers and
 orders):</p>
-<pre><code class="lang-csharp">public interface IMaybeAwareRepository
+<pre><code class="language-csharp">public interface IMaybeAwareRepository
 {
     Maybe&lt;Customer&gt; GetCustomer(int id);
     Maybe&lt;Address&gt; GetAddress(int id);
     Maybe&lt;Order&gt; GetOrder(int id);
-}
-</code></pre>
+}</code></pre>
 <p>The client can be written with <code>Bind</code> method composition, without branching, 
 in fluent style:</p>
-<pre><code class="lang-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+<pre><code class="language-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
     repo.GetCustomer(customerId)
         .Bind(c =&gt; c.Address)
         .Bind(a =&gt; repo.GetAddress(a.Id))
         .Bind(a =&gt; a.LastOrder)
         .Bind(lo =&gt; repo.GetOrder(lo.Id))
-        .Bind(o =&gt; o.Shipper);
-</code></pre>
+        .Bind(o =&gt; o.Shipper);</code></pre>
 <p>As we saw above, this syntax looks very much like a LINQ query with a bunch 
 of <code>SelectMany</code> statements. One of the common 
 implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface to enable
@@ -640,12 +740,11 @@ a more C#-idiomatic binding composition. Actually:</p>
 <p>Enumerable containers can be created - thus the constructor monadic operation.</p>
 <p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here 
 is its signature:</p>
-<pre><code class="lang-csharp">public static IEnumerable&lt;U&gt; SelectMany&lt;T, U&gt;(
+<pre><code class="language-csharp">public static IEnumerable&lt;U&gt; SelectMany&lt;T, U&gt;(
     this IEnumerable&lt;T&gt; first, 
-    Func&lt;T, IEnumerable&lt;U&gt;&gt; selector)
-</code></pre>
+    Func&lt;T, IEnumerable&lt;U&gt;&gt; selector)</code></pre>
 <p>Direct implementation is quite straightforward:</p>
-<pre><code class="lang-csharp">static class Enumerable 
+<pre><code class="language-csharp">static class Enumerable 
 {
     public static IEnumerable&lt;U&gt; SelectMany(
         this IEnumerable&lt;T&gt; values, 
@@ -655,15 +754,13 @@ is its signature:</p>
             foreach (var subItem in func(item))
                 yield return subItem;
     }
-}
-</code></pre>
+}</code></pre>
 <p>And here is an example of composition:</p>
-<pre><code class="lang-csharp">IEnumerable&lt;Shipper&gt; shippers =
+<pre><code class="language-csharp">IEnumerable&lt;Shipper&gt; shippers =
     customers
         .SelectMany(c =&gt; c.Addresses)
         .SelectMany(a =&gt; a.Orders)
-        .SelectMany(o =&gt; o.Shippers);
-</code></pre>
+        .SelectMany(o =&gt; o.Shippers);</code></pre>
 <p>The query has no idea about how the collections are stored (encapsulated in
 containers). We use functions <code>T -&gt; IEnumerable&lt;U&gt;</code> to produce new enumerables
 (<code>Bind</code> operation).</p>
@@ -673,7 +770,7 @@ return an instance of <code>T</code>. The other names for similar concepts in ot
 are <code>Promise</code> and <code>Future</code>.</p>
 <p>While the typical usage of <code>Task</code> in C# is different from the Monad pattern we
 discussed, I can still come up with a <code>Future</code> class with the familiar structure:</p>
-<pre><code class="lang-csharp">public class Future&lt;T&gt;
+<pre><code class="language-csharp">public class Future&lt;T&gt;
 {
     private readonly Task&lt;T&gt; instance;
 
@@ -697,17 +794,15 @@ discussed, I can still come up with a <code>Future</code> class with the familia
     {
         this.instance.ContinueWith(t =&gt; action(t.Result));
     }
-}
-</code></pre>
+}</code></pre>
 <p>Effectively, it&#39;s just a wrapper around the <code>Task</code> which doesn&#39;t add too much value,
 but it&#39;s a useful illustration because now we can do:</p>
-<pre><code class="lang-csharp">repository
+<pre><code class="language-csharp">repository
     .LoadSpeaker()
     .Bind(speaker =&gt; speaker.NextTalk())
     .Bind(talk =&gt; talk.GetConference())
     .Bind(conference =&gt; conference.GetCity())
-    .OnComplete(city =&gt; reservations.BookFlight(city));
-</code></pre>
+    .OnComplete(city =&gt; reservations.BookFlight(city));</code></pre>
 <p>We are back to the familiar structure. Time for some more complications.</p>
 <h2 id="non-sequential-workflows">Non-Sequential Workflows</h2>
 <p>Up until now, all the composed workflows had very liniar, sequential
@@ -722,7 +817,7 @@ from two or more previous steps combined.</p>
 <p><img src="https://mikhail.io/2018/07/monads-explained-in-csharp-again//non-linear-workflow.png" alt="Non Linear Workflow"></p>
 <p>In this case, we would have to use closure to save <code>speaker</code> object until we get
 a <code>talk</code> too:</p>
-<pre><code class="lang-csharp">repository
+<pre><code class="language-csharp">repository
     .LoadSpeaker()
     .OnComplete(speaker =&gt;
         speaker
@@ -730,19 +825,17 @@ a <code>talk</code> too:</p>
             .Bind(talk =&gt; talk.GetConference())
             .Bind(conference =&gt; conference.GetCity())
             .OnComplete(city =&gt; reservations.BookFlight(speaker, city))
-        );
-</code></pre>
+        );</code></pre>
 <p>Obviously, this gets ugly very soon.</p>
 <p>To solve this structural problem, C# language got its <code>async</code>-<code>await</code> feature,
 which is now being reused in more languages including Javascript.</p>
 <p>If we move back to using <code>Task</code> instead of our custom <code>Future</code>, we are able to
 write</p>
-<pre><code class="lang-csharp">var speaker = await repository.LoadSpeaker();
+<pre><code class="language-csharp">var speaker = await repository.LoadSpeaker();
 var talk = await speaker.NextTalk();
 var conference = await talk.GetConference();
 var city = await conference.GetCity();
-await reservations.BookFlight(speaker, city);
-</code></pre>
+await reservations.BookFlight(speaker, city);</code></pre>
 <p>Even though we lost the fluent syntax, at least the block has just one level,
 which makes it easier to navigate.</p>
 <h2 id="monads-in-functional-languages">Monads in Functional Languages</h2>
@@ -757,30 +850,28 @@ level.</p>
 <p>F# is a functional-first language running on .NET framework. F# had its own way of
 doing workflows comparable to <code>async</code>-<code>await</code> before C# got it. In F#, the above
 code would look like this:</p>
-<pre><code class="lang-fsharp">let sendReservation () = async {
+<pre><code class="language-fsharp">let sendReservation () = async {
     let! speaker = repository.LoadSpeaker()
     let! talk = speaker.nextTalk()
     let! conf = talk.getConference()
     let! city = conf.getCity()
     do! bookFlight(speaker, city)
-}
-</code></pre>
+}</code></pre>
 <p>Apart from syntax (<code>!</code> instead of <code>await</code>), the major difference to C# is that
 <code>async</code> is just one possible monad type to be used this way. There are many
 other monads in F# standard library (they are called Computation Expressions).</p>
 <p>The best part is that any developer can create their own monads, and then use
 all the power of language features.</p>
 <p>Say, we want a hand-made <code>Maybe</code> computation expressoin in F#:</p>
-<pre><code class="lang-fsharp">let nextTalkCity (speaker: Speaker) = maybe {
+<pre><code class="language-fsharp">let nextTalkCity (speaker: Speaker) = maybe {
     let! talk = speaker.nextTalk()
     let! conf = talk.getConference()
     let! city = conf.getCity(talk)
     return city
-}
-</code></pre>
+}</code></pre>
 <p>To make this code runnable, we need to define Maybe computation expression
 builder:</p>
-<pre><code class="lang-fsharp">type MaybeBuilder() =
+<pre><code class="language-fsharp">type MaybeBuilder() =
 
     member this.Bind(x, f) = 
         match x with
@@ -790,54 +881,49 @@ builder:</p>
     member this.Return(x) = 
         Some x
 
-let maybe = new MaybeBuilder()
-</code></pre>
+let maybe = new MaybeBuilder()</code></pre>
 <p>I won&#39;t explain the details of what happens here, but you can see that the code is
 quite trivial. Note the presence of <code>Bind</code> operation (and <code>Return</code> operation being
 the monad constructor).</p>
 <p>The feature is widely used by third-party F# libraries. Here is an actor definition
 in Akka.NET F# API:</p>
-<pre><code class="lang-fsharp">let loop () = actor {
+<pre><code class="language-fsharp">let loop () = actor {
     let! message = mailbox.Receive()
     match message with
     | Greet(name) -&gt; printfn &quot;Hello %s&quot; name
     | Hi -&gt; printfn &quot;Hello from F#!&quot;
     return! loop ()
-}
-</code></pre>
+}</code></pre>
 <h2 id="monad-laws">Monad Laws</h2>
 <p>There are a couple laws that constructor and <code>Bind</code> need to adhere to, so
 that they produce a proper monad.</p>
 <p>A typical monad tutorial will make a lot of emphasis on the laws, but I find them
 less important to explain to a beginner. Nonetheless, here they are for the sake
 of completeness.</p>
-<p><strong>Left Identity law</strong> says that that Monad constructor is a neutral operation: you can safely
+<p><strong>Left Identity law</strong> says that Monad constructor is a neutral operation: you can safely
 run it before <code>Bind</code>, and it won&#39;t change the result of the function call:</p>
-<pre><code class="lang-csharp">// Given
+<pre><code class="language-csharp">// Given
 T value;
 Func&lt;T, Monad&lt;U&gt;&gt; f;
 
 // Then (== means both parts are equivalent)
-new Monad&lt;T&gt;(value).Bind(f) == f(value)
-</code></pre>
+new Monad&lt;T&gt;(value).Bind(f) == f(value) </code></pre>
 <p><strong>Right Identity law</strong> says that given a monadic value, wrapping its contained data
 into another monad of same type and then <code>Bind</code>ing it, doesn&#39;t change the original value:</p>
-<pre><code class="lang-csharp">// Given
+<pre><code class="language-csharp">// Given
 Monad&lt;T&gt; monadicValue;
 
 // Then (== means both parts are equivalent)
-monadicValue.Bind(x =&gt; new Monad&lt;T&gt;(x)) == monadicValue
-</code></pre>
+monadicValue.Bind(x =&gt; new Monad&lt;T&gt;(x)) == monadicValue</code></pre>
 <p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
 are composed does not matter:</p>
-<pre><code class="lang-csharp">// Given
+<pre><code class="language-csharp">// Given
 Monad&lt;T&gt; m;
 Func&lt;T, Monad&lt;U&gt;&gt; f;
 Func&lt;U, Monad&lt;V&gt;&gt; g;
 
 // Then (== means both parts are equivalent)
-m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))
-</code></pre>
+m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))</code></pre>
 <p>The laws may look complicated, but in fact they are very natural 
 expectations that any developer has when working with monads, so don&#39;t
 spend too much mental effort on memorizing them.</p>
@@ -903,12 +989,11 @@ to be different in subtle ways</li>
 <p>Azure comes with a powerful set of tools to manage resources with code.</p>
 <p>You can use PowerShell, CLI scripts or custom code like C# to do with code
 whatever is possible to do via portal.</p>
-<pre><code class="lang-csharp">var webApp = azure.WebApps.Define(appName)
+<pre><code class="language-csharp">var webApp = azure.WebApps.Define(appName)
     .WithRegion(Region.WestEurope)
     .WithNewResourceGroup(rgName)
     .WithNewFreeAppServicePlan()
-    .Create();
-</code></pre>
+    .Create();</code></pre>
 <p><em>Fluent C# code creating an App Service</em></p>
 <p>However, those commands are usually expressed in imperative style of 
 CRUD operations. You can run the commands once, but it&#39;s hard to modify
@@ -958,26 +1043,24 @@ requested</li>
 <p>I&#39;m using TypeScript to define my Azure resources in Pulumi. So, the program
 is a normal Node.js application with <code>index.ts</code> file, package references in 
 <code>package.json</code> and one extra file <code>Pulumi.yaml</code> to define the program:</p>
-<pre><code class="lang-yaml">name: azure-appservice
-runtime: nodejs
-</code></pre>
+<pre><code class="language-yaml">name: azure-appservice
+runtime: nodejs</code></pre>
 <p>Our <code>index.js</code> is as simple as a bunch of <code>import</code> statements followed by
 creating TypeScript objects per desired resource. The simplest program can
 look like this:</p>
-<pre><code class="lang-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
+<pre><code class="language-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
 import * as azure from &quot;@pulumi/azure&quot;;
 
 const resourceGroup = new azure.core.ResourceGroup(&quot;myrg&quot;, {
     location: &quot;West Europe&quot;
-});
-</code></pre>
+});</code></pre>
 <p>When executed by <code>pulumi update</code> command, this program will create a new
 Resource Group in your Azure subscription.</p>
 <h2 id="chaining-resources">Chaining Resources</h2>
 <p>When multiple resources are created, the properties of one resource will
 depend on properties of the others. E.g. I&#39;ve defined the Resource Group
 above, and now I want to create an App Service Plan under this Group:</p>
-<pre><code class="lang-ts">const resourceGroupArgs = {
+<pre><code class="language-ts">const resourceGroupArgs = {
     resourceGroupName: resourceGroup.name,
     location: resourceGroup.location
 };
@@ -991,8 +1074,7 @@ const appServicePlan = new azure.appservice.Plan(&quot;myplan&quot;, {
         tier: &quot;Basic&quot;,
         size: &quot;B1&quot;,
     },
-});
-</code></pre>
+});</code></pre>
 <p>I&#39;ve assigned <code>resourceGroupName</code> and <code>location</code> of App Service Plan to
 values from the Resource Group. It looks like a simple assignment of
 strings but in fact it&#39;s more complicated.</p>
@@ -1006,43 +1088,37 @@ so the actually provisioned group will be named e.g. <code>&quot;myrg65fb103e&qu
 and then it will get propagated to <code>Input</code> by Pulumi.</p>
 <p>There is also a nice way to return the end values of <code>Output</code>&#39;s from Pulumi
 program. Let&#39;s say we define an App Service:</p>
-<pre><code class="lang-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
+<pre><code class="language-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
     ...resourceGroupArgs,
 
     appServicePlanId: appServicePlan.id
-});
-</code></pre>
+});</code></pre>
 <p>First, notice how we used TypeScript spread operator to reuse
 properties from <code>resourceGroupArgs</code>.</p>
 <p>Second, <code>Output</code>-<code>Input</code> assignment got used again to propagate App Service
 Plan ID.</p>
 <p>Lastly, we can now export App Service host name from our program, e.g.
 for the user to be able to go to the web site immediately after deployment:</p>
-<pre><code class="lang-ts">exports.hostname = app.defaultSiteHostname;
-</code></pre>
+<pre><code class="language-ts">exports.hostname = app.defaultSiteHostname;</code></pre>
 <p><code>Output</code> can also be transformed with <code>apply</code> function. Here is the code to
 format output URL:</p>
-<pre><code class="lang-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);
-</code></pre>
+<pre><code class="language-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);</code></pre>
 <p>Running <code>pulumi update</code> from CLI will then print the endpoint for us:</p>
-<pre><code class="lang-sh">---outputs:---
-endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;
-</code></pre>
+<pre><code class="language-sh">---outputs:---
+endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;</code></pre>
 <p>Multiple outputs can be combined with <code>pulumi.all</code>, e.g. given SQL Server
 and Database, we could make a connection string:</p>
-<pre><code class="lang-ts">const connectionString = 
+<pre><code class="language-ts">const connectionString = 
     pulumi.all([sqlServer, database]).apply(([server, db]) =&gt; 
-        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)
-</code></pre>
+        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)</code></pre>
 <h2 id="using-the-power-of-npm">Using the Power of NPM</h2>
 <p>Since our program is just a TypeScript application, we are free to use any
 3rd party package which exists out there in NPM.</p>
 <p>For instance, we can install Azure Storage SDK. Just</p>
-<pre><code class="lang-sh">npm install azure-storage@2.9.0-preview
-</code></pre>
+<pre><code class="language-sh">npm install azure-storage@2.9.0-preview</code></pre>
 <p>and then we can write a function to produce SAS token for a Blob in Azure
 Storage:</p>
-<pre><code class="lang-ts">import * as azurestorage from &quot;azure-storage&quot;;
+<pre><code class="language-ts">import * as azurestorage from &quot;azure-storage&quot;;
 
 // Given an Azure blob, create a SAS URL that can read it.
 export function signedBlobReadUrl(
@@ -1071,8 +1147,7 @@ export function signedBlobReadUrl(
 
         return blobService.getUrl(containerName, blobName, signature);
     });
-}
-</code></pre>
+}</code></pre>
 <p>I took this function from <a href="https://github.com/pulumi/examples/tree/master/azure-ts-functions">Azure Functions</a>
 example, and it will probably move to Pulumi libraries at some point, but until
 then you are free to leverage the package ecosystem.</p>
@@ -1083,7 +1158,7 @@ files as part of the same workflow.</p>
 feature of App Service:</p>
 <ol>
 <li><p>Define Storage Account and Container</p>
-<pre><code class="lang-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
+<pre><code class="language-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
      ...resourceGroupArgs,
 
      accountKind: &quot;StorageV2&quot;,
@@ -1095,25 +1170,23 @@ feature of App Service:</p>
      resourceGroupName: resourceGroup.name,
      storageAccountName: storageAccount.name,
      containerAccessType: &quot;private&quot;,
- });
-</code></pre>
+ });</code></pre>
 </li>
 <li><p>Create a folder with application files, e.g. <code>wwwroot</code>. It may contain
 some test HTML, ASP.NET application, or anything supported by App Service.</p>
 </li>
 <li><p>Produce a zip file from that folder in Pulumi program:</p>
-<pre><code class="lang-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
+<pre><code class="language-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
      resourceGroupName: resourceGroup.name,
      storageAccountName: storageAccount.name,
      storageContainerName: storageContainer.name,
      type: &quot;block&quot;,
 
      content: new pulumi.asset.FileArchive(&quot;wwwroot&quot;)
- });
-</code></pre>
+ });</code></pre>
 </li>
 <li><p>Produce SAS Blob URL and assign it to App Service Run-as-Zip setting:</p>
-<pre><code class="lang-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
+<pre><code class="language-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
 
  const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
      ...resourceGroupArgs,
@@ -1123,8 +1196,7 @@ some test HTML, ASP.NET application, or anything supported by App Service.</p>
      appSettings: {
          &quot;WEBSITE_RUN_FROM_ZIP&quot;: codeBlobUrl
      }
- });
-</code></pre>
+ });</code></pre>
 </li>
 </ol>
 <p>Run the program, and your Application will start as soon as <code>pulumi update</code>
@@ -1205,12 +1277,11 @@ than normal full cold start time, so it could be related to HTTP stack loading.<
 request? Will the parallel request be delayed, or will it be processed by the same
 warm instance?</p>
 <p>I tested with a very lightweight function, which nevertheless takes some time to complete:</p>
-<pre><code class="lang-csharp">public static async Task&lt;HttpResponseMessage&gt; Delay500([HttpTrigger] HttpRequestMessage req)
+<pre><code class="language-csharp">public static async Task&lt;HttpResponseMessage&gt; Delay500([HttpTrigger] HttpRequestMessage req)
 {
     await Task.Delay(500);
     return req.CreateResponse(HttpStatusCode.OK, &quot;Done&quot;);
-}
-</code></pre>
+}</code></pre>
 <p>I believe it&#39;s an OK approximation for an IO-bound function.</p>
 <p>The test client then issued 2 to 10 parallel requests to this function and measured the
 response time for all requests.</p>
@@ -1449,7 +1520,7 @@ runtime.</p>
 <p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
 Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
 Here is a simple example of orchestrator in C#:</p>
-<pre><code class="lang-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
+<pre><code class="language-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
 {
     var outputs = new List&lt;string&gt;();
 
@@ -1459,17 +1530,15 @@ Here is a simple example of orchestrator in C#:</p>
 
     // returns [&quot;Hello Tokyo!&quot;, &quot;Hello Seattle!&quot;, &quot;Hello London!&quot;]
     return outputs;
-}
-</code></pre>
+}</code></pre>
 <p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
 computation expression. The direct refactoring could look something like</p>
-<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
+<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
   let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)   |&gt; Async.AwaitTask
   let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;) |&gt; Async.AwaitTask
   let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)  |&gt; Async.AwaitTask
   return [hello1; hello2; hello3]
-} |&gt; Async.StartAsTask
-</code></pre>
+} |&gt; Async.StartAsTask   </code></pre>
 <p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
 trigger because multi-threading operations are not allowed:</p>
 <blockquote>
@@ -1482,20 +1551,18 @@ any other threads that could be scheduled by other async APIs.</p>
 not very handy with standard F# libraries. So, I pulled an extra NuGet
 package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
 <p>The above function now looks very simple:</p>
-<pre><code class="lang-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
+<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
   let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)
   let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;)
   let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)
   return [hello1; hello2; hello3]
-}
-</code></pre>
+}       </code></pre>
 <p>And the best part is that it works just fine.</p>
 <p><code>SayHello</code> function is Activity trigger based, and no special effort is required
 to implement it in F#:</p>
-<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
+<pre><code class="language-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
 let SayHello([&lt;ActivityTrigger&gt;] name) =
-  sprintf &quot;Hello %s!&quot; name
-</code></pre>
+  sprintf &quot;Hello %s!&quot; name</code></pre>
 <h2 id="more-examples">More Examples</h2>
 <p>Durable Functions repository comes with 
 <a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/precompiled">a set of 4 samples</a>
@@ -1509,16 +1576,14 @@ is using this persistence mechanism to run
 a potentially slow workflow of copying all files from a given directory to
 a backup location. It shows how multiple activities can be executed in
 parallel:</p>
-<pre><code class="lang-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
-let! results = Task.WhenAll tasks
-</code></pre>
+<pre><code class="language-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
+let! results = Task.WhenAll tasks</code></pre>
 <p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
 demos a potentially infinite actor-like workflow, where state can exist and
 evolve for indefinite period of time. The key API calls are based on
 <code>OrchestrationContext</code>:</p>
-<pre><code class="lang-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
-let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)
-</code></pre>
+<pre><code class="language-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
+let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)</code></pre>
 <p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
 has several twists, like output binding for activity (<code>ICollector</code> is required
 instead of C#&#39;s <code>out</code> parameter), third-party integration (Twilio to send SMSs),
@@ -1672,7 +1737,7 @@ version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work wi
 versions.</p>
 <p>Now we can implement our trace server as a console application. The main
 method looks like this:</p>
-<pre><code class="lang-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
+<pre><code class="language-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
 {
     // 1. Run trace server
     var connectionInfo = new SqlConnectionInfo(args[0])
@@ -1693,19 +1758,17 @@ method looks like this:</p>
     Console.ReadKey();
     tokenSource.Cancel();
     Task.WaitAll(readerTask, senderTask);
-}
-</code></pre>
+}</code></pre>
 <p>The first block initializes SQL connection using command line arguments and integrated
 security, and then starts the Trace Server.</p>
 <p>Because of the large volume, I made trace reader and event sender to work on separate
 threads. They talk to each other via a concurrent queue:</p>
-<pre><code class="lang-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();
-</code></pre>
+<pre><code class="language-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();</code></pre>
 <p>Finally, when operator presses any key, the cancellation is requested and the reader and
 sender get shut down.</p>
 <p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
 (with some exclusions) to the concurrent in-memory queue:</p>
-<pre><code class="lang-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
+<pre><code class="language-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
 { 
     while (trace.Read() &amp;&amp; !token.IsCancellationRequested)
     {
@@ -1724,11 +1787,10 @@ sender get shut down.</p>
 
     trace.Stop();
     trace.Close();
-}
-</code></pre>
+}</code></pre>
 <p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
 events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
-<pre><code class="lang-csharp">private static void SendToEventHubs(CancellationToken token)
+<pre><code class="language-csharp">private static void SendToEventHubs(CancellationToken token)
 {
     var client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
     var batch = client.CreateBatch();
@@ -1749,17 +1811,15 @@ events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
             batch.TryAdd(eventData);
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>If your trace doesn&#39;t produce so many messages, you will probably want to periodically send out the batches
 even before they get full, just to keep that process closer to real time.</p>
 <p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
 callback to print it to console:</p>
-<pre><code class="lang-csharp">private static void OnMyAsyncMethodFailed(Task task)
+<pre><code class="language-csharp">private static void OnMyAsyncMethodFailed(Task task)
 {
     Console.WriteLine(task.Exception?.ToString() ?? &quot;null error&quot;);
-}
-</code></pre>
+}</code></pre>
 <p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
 up by Trace Replay.</p>
 <h2 id="trace-replay-function-app">Trace Replay Function App</h2>
@@ -1777,7 +1837,7 @@ expand until it catches up with the workload.</p>
 <p>But as long as you don&#39;t run the trace server, it won&#39;t consume any servers and won&#39;t cost you
 a dime. </p>
 <p>Here is the implementation of Trace Replay Azure Function:</p>
-<pre><code class="lang-csharp">public static class Replay
+<pre><code class="language-csharp">public static class Replay
 {
     [FunctionName(&quot;Replay&quot;)]
     public static void Run(
@@ -1822,8 +1882,7 @@ a dime. </p>
             throw;
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>It&#39;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
 logs the result with timing and returned row count. And that&#39;s everything required to start
 bombarding my Azure SQL Database.</p>
@@ -1874,13 +1933,11 @@ you the most:
 <p>I start with a domain model. The model is composed of immutable F# types (records and discriminated
 unions) and pure functions.</p>
 <p>We have two players, so we need a type for them:</p>
-<pre><code class="lang-fsharp">type Player = X | O
-</code></pre>
+<pre><code class="language-fsharp">type Player = X | O</code></pre>
 <p>In addition, there is a useful function to return the other player based on the given one.
 Simple pattern-matching will do:</p>
-<pre><code class="lang-fsharp">module Player =
-  let other = function | X -&gt; O | O -&gt; X
-</code></pre>
+<pre><code class="language-fsharp">module Player =
+  let other = function | X -&gt; O | O -&gt; X</code></pre>
 <p>The domain code is the most important part of the application, so I want it to be covered
 by unit tests. Of course, the above function doesn&#39;t really warrant testing, but it&#39;s a nice
 and simple way to try out <a href="https://fsharpforfunandprofit.com/posts/property-based-testing/">Property-Based Testing</a>. 
@@ -1891,33 +1948,29 @@ That is, instead of defining specific tests, we define properties which hold for
 <li>Other player of other player is the player itself</li>
 </ul>
 <p>Here is the code with <a href="https://github.com/haf/expecto">Expecto</a> and <a href="https://github.com/fscheck/FsCheck">FsCheck</a>:</p>
-<pre><code class="lang-fsharp">testProperty &quot;Other player is not equal to player&quot; &lt;| fun x -&gt;
+<pre><code class="language-fsharp">testProperty &quot;Other player is not equal to player&quot; &lt;| fun x -&gt;
   Expect.notEqual x (Player.other x) &quot;Other should be different from original&quot;
 
 testProperty &quot;Other player of other player is the player itself&quot; &lt;| fun x -&gt;
-  Expect.equal x (Player.other (Player.other x)) &quot;Other other should be equal to original&quot;
-</code></pre>
+  Expect.equal x (Player.other (Player.other x)) &quot;Other other should be equal to original&quot;</code></pre>
 <p>Let&#39;s move on to modelling the game. I decided to define a union type to be used for
 horizontal and vertical positions of the cells:</p>
-<pre><code class="lang-fsharp">type Position = One | Two | Three
-</code></pre>
+<pre><code class="language-fsharp">type Position = One | Two | Three</code></pre>
 <p>I could use the normal integers instead, but I don&#39;t want to be worried about validating
 the ranges all the time.</p>
 <p>My first record type models the move, or action done by a player: it has <code>X</code> and <code>Y</code>
 positions of the chosen cell, plus the player information:</p>
-<pre><code class="lang-fsharp">type Move = {
+<pre><code class="language-fsharp">type Move = {
   X: Position
   Y: Position
   By: Player
-}
-</code></pre>
+}</code></pre>
 <p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
 design of the whole application:</p>
-<pre><code class="lang-fsharp">type RunningGame = {
+<pre><code class="language-fsharp">type RunningGame = {
   MovesDone: Move list
   PossibleMoves: Move list
-}
-</code></pre>
+}</code></pre>
 <p>This type models any state of the game which is not finished yet. </p>
 <p><code>MovesDone</code> represents the ordered log of all moves, so we have the complete history 
 of actions at any time. Event Sourcing in small.</p>
@@ -1937,26 +1990,24 @@ most trivial bot is a one-liner: it picks a random move from the collection</li>
 correspond to possible moves, see <a href="https://mikhail.io/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">REST API</a> below</li>
 </ul>
 <p>Now, we can model a game which is already finished:</p>
-<pre><code class="lang-fsharp">type GameOutcome = Won of Player | Tie
+<pre><code class="language-fsharp">type GameOutcome = Won of Player | Tie
 
 type FinishedGame = {
   MovesDone: Move list
   Outcome: GameOutcome
-}
-</code></pre>
+}</code></pre>
 <p>Each finished game has a list of moves and the outcome: either one player won, or there
 was a tie.</p>
 <p>Each state of a game can be described by the union of the previous two states:</p>
-<pre><code class="lang-fsharp">type GameState = 
+<pre><code class="language-fsharp">type GameState = 
   | Finished of FinishedGame
-  | InProgress of RunningGame
-</code></pre>
+  | InProgress of RunningGame</code></pre>
 <h2 id="modeling-game-flow">Modeling Game Flow</h2>
 <p>Now, when all the types are in place, we can model the game flow. The flow is a sequence
 of transitions between game states, implemented with pure functions.</p>
 <p>First, each game starts at the same state, which is an empty field, and X turn. Here
 is the value which represents this initial state:</p>
-<pre><code class="lang-fsharp">module Game =
+<pre><code class="language-fsharp">module Game =
   let initialState = 
     let positions = [One; Two; Three]
     let cells = seq { 
@@ -1964,12 +2015,10 @@ is the value which represents this initial state:</p>
          for y in positions do
             yield { X = x; Y = y; By = X }
       }
-    { MovesDone = []; PossibleMoves = List.ofSeq cells }
-</code></pre>
+    { MovesDone = []; PossibleMoves = List.ofSeq cells }</code></pre>
 <p>After each move is made, we need a function to evaluate move outcome: whether current
 game is finished or is still in progress. I defined a function <code>evaluate</code> for that:</p>
-<pre><code class="lang-fsharp">let private evaluate (history: Move list): GameOutcome option = ...
-</code></pre>
+<pre><code class="language-fsharp">let private evaluate (history: Move list): GameOutcome option = ...</code></pre>
 <p>I don&#39;t show the full body here, since it&#39;s quite boring in evaluating rows, columns
 and diagonals for three-in-a-row. See the <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe/Game.fs#L42-L56">full code</a> 
 if you want to.</p>
@@ -1983,7 +2032,7 @@ doesn&#39;t make sense</li>
 <li>The result <em>can</em> be a finished game</li>
 </ul>
 <p>Here is the function implementation:</p>
-<pre><code class="lang-fsharp">let makeMove (game: RunningGame) (move: Move): GameState =
+<pre><code class="language-fsharp">let makeMove (game: RunningGame) (move: Move): GameState =
   let movesDone = move :: game.MovesDone
   match evaluate movesDone with
   | Some result -&gt; Finished { MovesDone = movesDone; Outcome = result }
@@ -1991,8 +2040,7 @@ doesn&#39;t make sense</li>
     let possibleMoves = 
       List.except [move] game.PossibleMoves
       |&gt; List.map (fun m -&gt; { m with By = Player.other m.By })
-    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }
-</code></pre>
+    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }</code></pre>
 <p>It works like this:</p>
 <ul>
 <li>Prepend the new move to moves done</li>
@@ -2004,12 +2052,11 @@ moves same as before, but excluding the move and assigned to the other player</l
 <p>Tic-Tic-Toe is two-player game, so I defined another function which runs
 a turn of 2 moves by 2 players, given the decision making functions of both
 players (so it&#39;s a higher-order function):</p>
-<pre><code class="lang-fsharp">let makeRound player1 player2 gameState =
+<pre><code class="language-fsharp">let makeRound player1 player2 gameState =
   let newGameState = player1 gameState |&gt; makeMove gameState
   match newGameState with
   | Finished _ -&gt; newGameState
-  | InProgress p -&gt; player2 p |&gt; makeMove p
-</code></pre>
+  | InProgress p -&gt; player2 p |&gt; makeMove p  </code></pre>
 <p>Looks almost like monadic <code>bind</code> operation...</p>
 <p><a name="PropertyBasedTesting" href="https://mikhail.io/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
 <h2 id="property-based-testing">Property-Based Testing</h2>
@@ -2046,18 +2093,16 @@ all kinds of input lists to try to break our property. If it succeeds, it will
 print the exact input which causes the test to fail.</p>
 <p>Here is how one such test is implemented.</p>
 <p>A helper function plays a sequence of indexes as moves:</p>
-<pre><code class="lang-fsharp">let playSequence moves = 
+<pre><code class="language-fsharp">let playSequence moves = 
   let playOne s i =
     match s with
     | InProgress p -&gt; Game.makeMove p (p.PossibleMoves.[i % p.PossibleMoves.Length])
     | _ -&gt; s
-  List.fold playOne (InProgress Game.initialState) moves
-</code></pre>
+  List.fold playOne (InProgress Game.initialState) moves</code></pre>
 <p>Then the property &quot;The game is always finished after 9 moves&quot; is simply:</p>
-<pre><code class="lang-fsharp">testProp &quot;The game is always finished after 9 moves&quot; &lt;| fun (Gen.ListOf9 xs) -&gt;
+<pre><code class="language-fsharp">testProp &quot;The game is always finished after 9 moves&quot; &lt;| fun (Gen.ListOf9 xs) -&gt;
   let result = playSequence xs
-  Expect.isTrue (Game.isFinished result) &quot;Game should be finished&quot;
-</code></pre>
+  Expect.isTrue (Game.isFinished result) &quot;Game should be finished&quot;</code></pre>
 <p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&#39;s a
 generator that I <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/Gen.fs#L31-L32">defined</a>, 
 so that the list always contains exactly 9 elements.</p>
@@ -2072,9 +2117,8 @@ service will expose to the clients. I define my API in REST model.</p>
 <pre><code>POST /game
 Content-Type: application/json
 
-{ &quot;name&quot;: &quot;Mikhail&quot; }
-</code></pre><p>And the response body is JSON which denotes a new game created:</p>
-<pre><code class="lang-json">{
+{ &quot;name&quot;: &quot;Mikhail&quot; }</code></pre><p>And the response body is JSON which denotes a new game created:</p>
+<pre><code class="language-json">{
     &quot;id&quot;: &quot;5d7b2261&quot;,
     &quot;busyCells&quot;: [],
     &quot;links&quot;: [
@@ -2088,16 +2132,14 @@ Content-Type: application/json
         },
         // ... 7 more links follow
     ]
-}
-</code></pre>
+}</code></pre>
 <p>The response contains a game ID and the list of occupied cells, empty for now,
 because no moves have been made.</p>
 <p>More importantly, it contains a list of links, each one of which has a <code>rel</code>
 field representing a cell, and a link. The client should <code>POST</code> to this link
 if it wants to make a move on the corresponding cell:</p>
-<pre><code>POST /game/5d7b2261/move/1
-</code></pre><p>And the response is:</p>
-<pre><code class="lang-json">{
+<pre><code>POST /game/5d7b2261/move/1</code></pre><p>And the response is:</p>
+<pre><code class="language-json">{
     &quot;id&quot;: &quot;5d7b2261&quot;,
     &quot;result&quot;: null,
     &quot;busyCells&quot;: [
@@ -2121,12 +2163,11 @@ if it wants to make a move on the corresponding cell:</p>
         },
         // ... 5 more links follow
     ]
-}
-</code></pre>
+}</code></pre>
 <p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
 list of links now has only 7 links, based on the count of free cells.</p>
 <p>The client keeps navigating the links until it gets non-empty <code>result</code> field:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
     &quot;id&quot;: &quot;5d7b2261&quot;,
     &quot;result&quot;: &quot;You Win!&quot;,
     &quot;busyCells&quot;: [
@@ -2142,8 +2183,7 @@ list of links now has only 7 links, based on the count of free cells.</p>
     ],
     &quot;links&quot;: [],
     &quot;score&quot;: 401
-}
-</code></pre>
+}</code></pre>
 <p>This denotes the end of the game. There&#39;s no more links to navigate, so the client knows it
 has to stop playing.</p>
 <p>This API is designed in HATEOAS-style (Hypermedia as the Engine of Application State). The
@@ -2154,7 +2194,7 @@ previous responses. It resembles the way a human navigates websites.</p>
 <p>I implemented the above API with Azure Functions. I used .NET Standard based v2 runtime
 with precompiled F# functions.</p>
 <p>The initial <code>POST /game</code> request is handled by <code>Start</code> function:</p>
-<pre><code class="lang-fsharp">type GameRequest = { Name: string }
+<pre><code class="language-fsharp">type GameRequest = { Name: string }
 
 type Cell = { Name: string; Value: string }
 type Link = { Rel:  string; Href:  string }
@@ -2174,8 +2214,7 @@ let start([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route
   let state = InProgress Game.initialState
   let serializedState = JsonConvert.SerializeObject state
   store.Add(GameEntity(PartitionKey = &quot;default&quot;, RowKey = gameid, Name = req.Name, State = serializedState))
-  ObjectResult(Api.serialize gameid state 0)
-</code></pre>
+  ObjectResult(Api.serialize gameid state 0)</code></pre>
 <p>The outline of this function:</p>
 <ul>
 <li>It&#39;s triggered by HTTP POST request, as configured for <code>req</code> parameter</li>
@@ -2187,7 +2226,7 @@ let start([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route
 <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Functions/Api.fs#L30-L51">serialized</a> game response of type <code>GameDTO</code></li>
 </ul>
 <p>The second Function <code>Play</code> handles the moves:</p>
-<pre><code class="lang-fsharp">[&lt;FunctionName(&quot;Play&quot;)&gt;]
+<pre><code class="language-fsharp">[&lt;FunctionName(&quot;Play&quot;)&gt;]
 let play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game/{gameid}/move/{index}&quot;)&gt;] 
          req: HttpRequest, gameid: string, index: int,
          [&lt;Table(&quot;TicTacToe&quot;, &quot;default&quot;, &quot;{gameid}&quot;)&gt;] entity: GameEntity) =
@@ -2199,8 +2238,7 @@ let play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route 
     let result = Game.makeRound (fun _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
     entity.State &lt;- JsonConvert.SerializeObject result
     entity.Score &lt;- Scoring.calculateScore (DateTime.UtcNow - entity.StartedAt).TotalMilliseconds result
-    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult
-</code></pre>
+    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult</code></pre>
 <p>The outline is very similar:</p>
 <ul>
 <li>It&#39;s triggered by a <code>POST</code> request with a URL template containing game ID and move index</li>
@@ -2220,14 +2258,13 @@ function. Its goal is to pick the <code>O</code> move for any given game-in-prog
 <p>Obviously, 3x3 Tic-Tac-Toe is a very simple game and it&#39;s quite easy to make a perfectly
 playing bot. This wasn&#39;t the goal though: it&#39;s more fun for a human to win.</p>
 <p>So, actually, the only property test that I ended up implementing is the following:</p>
-<pre><code class="lang-fsharp">testProp &quot;Bot is able to play O at any possible position&quot; &lt;| fun (Gen.ListOfNonNegative xs) -&gt;
+<pre><code class="language-fsharp">testProp &quot;Bot is able to play O at any possible position&quot; &lt;| fun (Gen.ListOfNonNegative xs) -&gt;
   let human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
   let round s i =
     match s with
     | InProgress p -&gt; Game.makeRound (human i p) Bot.pickMove p
     | _ -&gt; s
-  List.fold round (InProgress Game.initialState) xs |&gt; ignore
-</code></pre>
+  List.fold round (InProgress Game.initialState) xs |&gt; ignore     </code></pre>
 <p>It makes sure that for any possible sequence of human moves, bot is actually able to make
 <em>any</em> move of its own. Bot just shouldn&#39;t crash :)</p>
 <p>My very first implementation of the bot was just picking a random move. Such bot is fine,
@@ -2241,16 +2278,15 @@ but it&#39;s too boring to play against.</p>
 <p>I implemented the bot using the approach described in my 
 <a href="https://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Functional Fold as Decision Tree Pattern</a>
 post:</p>
-<pre><code class="lang-fsharp">let pickMove (game: RunningGame) = 
+<pre><code class="language-fsharp">let pickMove (game: RunningGame) = 
   [winNow O; notLoseNow; pickRandom]
   |&gt; Seq.ofList
   |&gt; Seq.choose (fun x -&gt; x game)
-  |&gt; Seq.head
-</code></pre>
+  |&gt; Seq.head</code></pre>
 <p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
 decision will be promoted to final decision.</p>
 <p>And here are those functions:</p>
-<pre><code class="lang-fsharp">let winNow player (game: RunningGame) =
+<pre><code class="language-fsharp">let winNow player (game: RunningGame) =
   let isWin = function | Finished { Outcome = Won x } when x = player -&gt; true | _ -&gt; false
   game.PossibleMoves
   |&gt; List.tryFind (fun move -&gt; Game.makeMove game move |&gt; isWin)
@@ -2266,8 +2302,7 @@ let notLoseNow (game: RunningGame) =
   else Some (notLosingMoves.[random.Next notLosingMoves.Length])
 
 let pickRandom (game: RunningGame) = 
-  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])
-</code></pre>
+  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])</code></pre>
 <p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
 <h2 id="score-calculation">Score Calculation</h2>
 <p>Last twist to the application is the scoring system. If a human player wins or gets a tie,
@@ -2276,7 +2311,7 @@ of all players.</p>
 <p>The score is calculated based on two principles: the less moves you make, and the faster
 you play, the higher the score is. Move count is more important than timing.</p>
 <p>These principles are nicely expressed as property tests:</p>
-<pre><code class="lang-fsharp">testProp &quot;The score of faster game is not lower than slower game&quot; 
+<pre><code class="language-fsharp">testProp &quot;The score of faster game is not lower than slower game&quot; 
   &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
   let (slower, faster) = maxmin id duration1 duration2
   let scoreFaster = Scoring.calculateScore faster game
@@ -2292,30 +2327,27 @@ testProp &quot;The score of won game in less moves is greater than game with mor
   if moreMoves.Length = lessMoves.Length then
     Expect.isGreaterThanOrEqual score1 score2 &quot;Bigger duration has lower score (or same)&quot;
   else
-    Expect.isGreaterThan score1 score2 &quot;More moves have lower score&quot;
-</code></pre>
+    Expect.isGreaterThan score1 score2 &quot;More moves have lower score&quot;</code></pre>
 <p>Note that tests are parameterized for durations and game states. We don&#39;t have to come up with specific
 scenarios: the framework should take care of those.</p>
 <p>One of the possible implementations for scoring is:</p>
-<pre><code class="lang-fsharp">let calculateScore duration (state: GameState) =
+<pre><code class="language-fsharp">let calculateScore duration (state: GameState) =
   let durationScore = (100.0 * (1.0 - duration / (duration + 10000.0))) |&gt; int
   match state with
   | Finished { Outcome = Won X; MovesDone = ms } -&gt; (11 - ms.Length) * 100 + durationScore
   | Finished { Outcome = Tie } -&gt; durationScore
-  | _ -&gt; 0
-</code></pre>
+  | _ -&gt; 0</code></pre>
 <p>Now, the leaderboard piece. You&#39;ve already seen the bits of this functionality in Azure Functions: 
 they store the game state into Azure Table Storage.</p>
 <p>There is another Azure Function which handles <code>GET</code> requests to <code>/leaderboard</code> resource. It
 loads all the past games from Table Storage, and then passes them to leaderboard calculation
 function below:</p>
-<pre><code class="lang-fsharp">let calculateLeaderboard top ns =
+<pre><code class="language-fsharp">let calculateLeaderboard top ns =
   ns
   |&gt; Seq.filter (fun entity -&gt; snd entity &gt; 0 &amp;&amp; not (String.IsNullOrEmpty (fst entity)))
   |&gt; Seq.sortByDescending snd
   |&gt; Seq.truncate top
-  |&gt; Seq.mapi (fun index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })
-</code></pre>
+  |&gt; Seq.mapi (fun index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })</code></pre>
 <h2 id="wrapping-up">Wrapping Up</h2>
 <p>Ok, the application is simple, but the blog post ended up being quite long. Thank you if you
 made it so far.</p>
@@ -2325,107 +2357,6 @@ combination.</p>
 inspirational or boring.</p>
 <p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
 <p>Happy coding!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Azure Functions Get More Scalable and Elastic</title>
-        <link href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/"/>
-        <updated>2017-12-13T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2017-12-13,/2017/12/azure-functions-get-more-scalable-and-elastic/</id>
-        <content type="html"><![CDATA[<p>Back in August this year, I&#39;ve posted 
-<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">Azure Functions: Are They Really Infinitely Scalable and Elastic?</a>
-with two experiments about Azure Function App auto scaling. I ran a simple
-CPU-bound function based on Bcrypt hashing, and measured how well Azure
-was running my Function under load.</p>
-<p>The results were rather pessimistic. Functions were scaling up to many 
-instances, but there were significant delays in doing so, so the processing
-slowed down up to 40 minutes.</p>
-<p>Azure Functions team notified me that they rolled out an updated version of
-the service, which should significantly improve my results.</p>
-<p>So I ran the exact same tests again, and got the new results. I will show
-these results below.</p>
-<p><em>TL;DR. Scaling responsiveness improved significantly. The max delay reduced
-from 40 to 6 minutes. There are some improvements still to be desired: 
-sub-minute latency is not yet reachable for similar scenarios.</em></p>
-<h2 id="setup">Setup</h2>
-<p>See the Function code and the description of the two experiments in
-<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">my previous article</a>.</p>
-<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
-<p>In &quot;Steady Load&quot; scenario 100,000 messages were sent to the queue at
-constant pace, evenly spread over 2 hours.</p>
-<p>Here are the <strong>old</strong> metrics of Queue Backlog and Instance Count over time:</p>
-<p><img src="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppScaling.png" alt="Function App Scaling (Old)"></p>
-<p><em>Old charts are shown in gray background</em></p>
-<p>You can see a huge delay of almost one hour before the function caught up 
-to speed of incoming messages and half-an-hour more before the backlog
-got cleared.</p>
-<p>The <strong>new</strong> results on the same chart after the runtime update:</p>
-<p><img src="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppScalingNew.png" alt="Function App Scaling (New)"></p>
-<p>This looks much better. The maximum backlog is 7 times lower; there&#39;s almost
-no initial delay before the auto scaling kicks in; and overall instance 
-allocation is much more stable.</p>
-<hr>
-<p>One more chart is from the same experiment, but it shows slightly different 
-metrics. The <strong>old</strong> results of Delay (Age) in seconds and Processing Rate 
-in messages per minute:</p>
-<p><img src="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppDelay.png" alt="Function App Delay"></p>
-<p>The <strong>new</strong> chart after the runtime update:</p>
-<p><img src="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic//FunctionAppDelayNew.png" alt="Function App Delay"></p>
-<p>Again, much less delay overall, and processing rate more-or-less stabilizes 
-after the first 15 minutes.</p>
-<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
-<p>The second experiment spanned over 5 hours. The messages were sent mostly
-at low-ish fixed rate, except for 5 periods of sudden spikes. The
-green line on the charts below shows these spikes very well.</p>
-<p>At the first run 4 months ago, Functions runtime had troubles keeping up
-to speed even between those bursts of messages.</p>
-<p>Here is the chart of the <strong>old</strong> spiky load processing:</p>
-<p><img src="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic//SpikyLoadProcessing.png" alt="Spicky Load Processing (Old)"></p>
-<p>You can see that the backlog after each spike goes down really slow. The
-blue line of processing rate doesn&#39;t match the green line almost nowhere,
-which reveals the struggle to adapt.</p>
-<p>The <strong>new</strong> results of the same chart after the runtime update are quite
-different:</p>
-<p><img src="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic//SpikyLoadProcessingNew.png" alt="Spicky Load Processing (New)"></p>
-<p>Notice how the backlog is empty and the blue processing rate matches exactly
-the incoming rate during all time except after traffic bursts. The queue goes 
-up during each spike, but the processing rate immediately accelerates too,
-and the crisis is gone within 15 minutes.</p>
-<h2 id="conclusions">Conclusions</h2>
-<p>Azure Functions team is clearly working on improvements. While the results in
-August were puzzling or even embarrassing, the December benchmark makes much
-more sense.</p>
-<p>Looks like Azure Functions are now suitable for CPU-intensive data processing
-scenarios with flexible load, targeting the maximum delay at about several
-minutes.</p>
-<p>Obviously, the results are not perfect just yet. Here&#39;s what still can be
-done better:</p>
-<ul>
-<li><p><strong>Scale faster initially</strong>. In the first experiment, the biggest delay
-appeared right after the start, when the backlog was growing linearly for 
-10 minutes. &quot;0 to 100&quot; might not be a very realistic scenario, but probably
-that&#39;s how many folks will test Functions against their workloads.</p>
-</li>
-<li><p><strong>Do not scale down that fast after backlog goes to 0</strong>. Every time the
-queue backlog goes to 0, the runtime kills the biggest part of instances
-almost immediately. During my runs, this caused the queue to grow again without
-a good reason from user&#39;s perspective.</p>
-</li>
-<li><p><strong>Do not allow the backlog to grow without message spikes</strong>. Related to
-the previous item, but slightly different focus. When the load is stable,
-I would expect the runtime to keep my queue as close to empty as possible.
-I guess Azure tries to minimize the resources that it consumes behind
-the scenes, but this should be balanced in favor of user experience.</p>
-</li>
-<li><p><strong>Make scaling algorithms more open</strong>. It&#39;s a black box right now. I
-would love to see some documentation, if not code, to be published about
-what exactly to expect from Consumption Plan auto scaling.</p>
-</li>
-</ul>
-<p>I&#39;ll be running more scaling experiments with other types of workloads in the
-nearest future, so... more benchmarks are coming.</p>
-<p>Happy scaling!</p>
 ]]></content>
     </entry>
     

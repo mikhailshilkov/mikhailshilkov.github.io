@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -123,8 +123,7 @@ GO
    FROM StoreRequest AS r
         INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
                     ON s.City = r.City AND s.Size = r.Size
-  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
-</code></pre><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
+  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55</code></pre><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
 <p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
 <p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
@@ -133,8 +132,7 @@ GO
    FROM StoreRequest AS r
         INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
                     ON s.City = r.City AND s.Size = r.Size
-  WHERE s.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
-</code></pre><p>Estimator is able to handle this situation correctly:</p>
+  WHERE s.Size &lt;&gt; 1 OR s.City &lt;&gt; 55</code></pre><p>Estimator is able to handle this situation correctly:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
 <p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
 <p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
@@ -143,27 +141,38 @@ GO
         INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
                     ON s.City = r.City AND s.Size = r.Size
   WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
- OPTION(QUERYTRACEON 9481) 
-</code></pre><p>And then we get this:</p>
+ OPTION(QUERYTRACEON 9481) </code></pre><p>And then we get this:</p>
 <p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
 <p>Which is as good as the best attempt of SQL Server 2014 and much-much better than the worst one.</p>
 <p>I posted this repro to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server forum</a>. Here is the comment that I got from Erland Sommarskog, SQL Server MVP:</p>
 <blockquote>
 <p>The estimate here is clearly incorrect. SQL Server knows the density of Size and City. It knows the cardinality of the temp table. The density information gives how many rows the join will produce. The WHERE clause will then remove a certain number of rows. With no statistics for the temp table, it does not know how many, but it will apply some standard guess.</p>
+</blockquote>
+<blockquote>
 <p>50000 is a completely bogus number, because the join cannot produce that many rows, and SQL Server is able to compute the join with out the WHERE clause decently. (Well, it estimates 90, when the number is 180.) No, this is obviously a case of the cardinality estimator giving up completely.</p>
+</blockquote>
+<blockquote>
 <p>It is worth noting that both these WHERE clauses gives reasonable estimates:</p>
+</blockquote>
+<blockquote>
 <pre><code>WHERE r.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
-WHERE s.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
-</code></pre><p>Whereas these two gives the spooky 50000:</p>
+WHERE s.Size &lt;&gt; 11 OR s.City &lt;&gt; 550</code></pre></blockquote>
+<blockquote>
+<p>Whereas these two gives the spooky 50000:</p>
+</blockquote>
+<blockquote>
 <pre><code>WHERE s.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
-WHERE r.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
-</code></pre><ul>
+WHERE r.Size &lt;&gt; 11 OR s.City &lt;&gt; 550</code></pre></blockquote>
+<blockquote>
+<ul>
 <li>Erland Sommarskog</li>
 </ul>
 </blockquote>
 <p>Then I also posted it to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server feedback issue tracker</a> and after a couple of weeks got a reply from Microsoft employee:</p>
 <blockquote>
 <p>Thank you for reporting this issue. I am happy to let you know that we have a fix for this problem, which will be available in one of the upcoming servicing releases for SQL Server 2014 (the details will be published in a KB).</p>
+</blockquote>
+<blockquote>
 <ul>
 <li>Thanks, Alexey, SQL Development</li>
 </ul>
@@ -214,7 +223,6 @@ Happy coding!</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -228,7 +236,6 @@ Happy coding!</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

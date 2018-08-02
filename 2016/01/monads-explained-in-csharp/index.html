@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -103,53 +103,48 @@ Quite often monads provide the way to avoid imperative code in favor of
 functional style.</p>
 <p>Monads are flexible, so in C# we could try to represent a monadic type as 
 a generic class:</p>
-<pre><code class="lang-csharp">public class Monad&lt;T&gt;
+<pre><code class="language-csharp">public class Monad&lt;T&gt;
 {
-}
-</code></pre>
+}</code></pre>
 <h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
 <p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should 
 be a way to create an object of this class out of an instance of type <code>T</code>. 
 In functional world this operation is known as <code>Return</code> function. In C# it 
 can be as simple as a constructor:</p>
-<pre><code class="lang-csharp">public class Monad&lt;T&gt;
+<pre><code class="language-csharp">public class Monad&lt;T&gt;
 {
     public Monad(T instance)
     {
     }
-}
-</code></pre>
+}</code></pre>
 <p>But usually it makes sense to define an extension method to enable fluent 
 syntax of monad creation:</p>
-<pre><code class="lang-csharp">public static class MonadExtensions
+<pre><code class="language-csharp">public static class MonadExtensions
 {
     public static Monad&lt;T&gt; Return&lt;T&gt;(this T instance) =&gt; new Monad&lt;T&gt;(instance);
-}
-</code></pre>
+}</code></pre>
 <h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
 <p>This is the property which makes monads so useful, but also a bit confusing. 
 In functional world this operation is expressed with the <code>Bind</code> function 
 (or <code>&gt;&gt;=</code> operator). Here is the signature of <code>Bind</code> method in C#:</p>
-<pre><code class="lang-csharp">public class Monad&lt;T&gt;
+<pre><code class="language-csharp">public class Monad&lt;T&gt;
 {
     public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
     {
     }
-}
-</code></pre>
+}</code></pre>
 <p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an 
 argument of type <code>T</code> (not a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> 
 where <code>TO</code> is another type. Now, our first instance of <code>Monad&lt;T&gt;</code> knows 
 how to bind itself to this function to produce another instance of monad 
 of the new type. The full power of monads comes when we compose several of 
 them in one chain:</p>
-<pre><code class="lang-csharp">initialValue
+<pre><code class="language-csharp">initialValue
     .Return()
     .Bind(v1 =&gt; produceV2OutOfV1(v1))
     .Bind(v2 =&gt; produceV3OutOfV2(v2))
     .Bind(v3 =&gt; produceV4OutOfV3(v3))
-    //...
-</code></pre>
+    //...</code></pre>
 <p>Let&#39;s have a look at some examples.</p>
 <p><a name="maybe" href="/2016/01/monads-explained-in-csharp/undefined"></a></p>
 <h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
@@ -158,7 +153,7 @@ to dealing with &#39;no value&#39; value, alternative to the concept of <code>nu
 Basically your object should never be null, but it can either have <code>Some</code> 
 value or be <code>None</code>. F# has a maybe implementation built into the language: 
 it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
-<pre><code class="lang-csharp">public class Maybe&lt;T&gt; where T : class
+<pre><code class="language-csharp">public class Maybe&lt;T&gt; where T : class
 {
     private readonly T value;
 
@@ -179,16 +174,14 @@ it&#39;s called <code>option</code> type. Here is a sample implementation in C#:
     }
 
     public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;();
-}
-</code></pre>
-<pre><code class="lang-csharp">public static class MaybeExtensions
+}</code></pre>
+<pre><code class="language-csharp">public static class MaybeExtensions
 {
     public static Maybe&lt;T&gt; Return&lt;T&gt;(this T value) where T : class
     {
         return value != null ? new Maybe&lt;T&gt;(value) : Maybe&lt;T&gt;.None();
     }
-}
-</code></pre>
+}</code></pre>
 <p>Return function is implemented with a combination of a public constructor 
 which accepts <code>Some</code> value (notice that <code>null</code> is not allowed) and a static 
 <code>None</code> method returning an object of &#39;no value&#39;. <code>Return</code> extension method
@@ -196,16 +189,15 @@ combines both of them in one call. </p>
 <p><code>Bind</code> function is implemented explicitly. </p>
 <p>Let&#39;s have a look at a use case. Imagine we have a traditional repository 
 which loads data from an external storage (no monads yet):</p>
-<pre><code class="lang-csharp">public interface ITraditionalRepository
+<pre><code class="language-csharp">public interface ITraditionalRepository
 {
     Customer GetCustomer(int id);
     Address GetAddress(int id);
     Order GetOrder(int id);
-}
-</code></pre>
+}</code></pre>
 <p>Now, we write a client class which loads data one by one and tries to find
 a shipper:</p>
-<pre><code class="lang-csharp">Shipper shipperOfLastOrderOnCurrentAddress = null;
+<pre><code class="language-csharp">Shipper shipperOfLastOrderOnCurrentAddress = null;
 var customer = repo.GetCustomer(customerId);
 if (customer?.Address != null)
 {
@@ -216,32 +208,29 @@ if (customer?.Address != null)
         shipperOfLastOrderOnCurrentAddress = order?.Shipper;
     }
 }
-return shipperOfLastOrderOnCurrentAddress;
-</code></pre>
+return shipperOfLastOrderOnCurrentAddress;</code></pre>
 <p>Note, that the code assumes that repository returns <code>null</code> if some entity
 is not found, although nothing in the type system shows that. Then, there
 is a number of <code>null</code> checks (facilitated with elvis operator). The code gets
 a bit cluttered and less linear.</p>
 <p>Here is an alternative repository which returns <code>Maybe</code> type:</p>
-<pre><code class="lang-csharp">public interface IMonadicRepository
+<pre><code class="language-csharp">public interface IMonadicRepository
 {
     Maybe&lt;Customer&gt; GetCustomer(int id);
     Maybe&lt;Address&gt; GetAddress(int id);
     Maybe&lt;Order&gt; GetOrder(int id);
-}
-</code></pre>
+}</code></pre>
 <p>The contract is more explicit: you see that <code>Maybe</code> type is used, so you
 will be forced to handle the case of absent value.</p>
 <p>And here is how the above example can be rewritten with <code>Bind</code> method 
 composition:</p>
-<pre><code class="lang-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+<pre><code class="language-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
     repo.GetCustomer(customerId)
         .Bind(c =&gt; c.Address)
         .Bind(a =&gt; repo.GetAddress(a.Id))
         .Bind(a =&gt; a.LastOrder)
         .Bind(lo =&gt; repo.GetOrder(lo.Id))
-        .Bind(o =&gt; o.Shipper);
-</code></pre>
+        .Bind(o =&gt; o.Shipper);</code></pre>
 <p>There&#39;s no branching anymore, the code is fluent and linear.</p>
 <p>If you think that the syntax looks very much like a LINQ query with a bunch 
 of <code>Select</code> statements, you are not the only one ;) One of the common 
@@ -252,17 +241,15 @@ a more C#-idiomatic binding composition. Actually:</p>
 <p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
 <p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here 
 is its signature:</p>
-<pre><code class="lang-csharp">public static IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
+<pre><code class="language-csharp">public static IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
     this IEnumerable&lt;A&gt; first, 
-    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
-</code></pre>
+    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)</code></pre>
 <p>And here is an example of composition:</p>
-<pre><code class="lang-csharp">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
+<pre><code class="language-csharp">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
     customers
         .SelectMany(c =&gt; c.Addresses)
         .SelectMany(a =&gt; a.Orders)
-        .SelectMany(o =&gt; o.Shippers);
-</code></pre>
+        .SelectMany(o =&gt; o.Shippers);</code></pre>
 <p>The query has no idea about how the collections are stored (encapsulated in
 containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
 (<code>Bind</code> operation).</p>
@@ -271,23 +258,21 @@ containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produ
 that they produce a proper monad.</p>
 <p><strong>Identity law</strong> says that that <code>Return</code> is a neutral operation: you can safely
 run it before <code>Bind</code>, and it won&#39;t change the result of the function call:</p>
-<pre><code class="lang-csharp">// Given
+<pre><code class="language-csharp">// Given
 T value;
 Func&lt;T, M&lt;U&gt;&gt; f;
 
 // == means both parts are equivalent
-value.Return().Bind(f) == f(value)
-</code></pre>
+value.Return().Bind(f) == f(value) </code></pre>
 <p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
 are composed does not matter:</p>
-<pre><code class="lang-csharp">// Given
+<pre><code class="language-csharp">// Given
 M&lt;T&gt; m;
 Func&lt;T, M&lt;U&gt;&gt; f;
 Func&lt;U, M&lt;V&gt;&gt; g;
 
 // == means both parts are equivalent
-m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))
-</code></pre>
+m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))</code></pre>
 <p>The laws may look complicated, but in fact they are very natural 
 expectations that any developer has when working with monads, so don&#39;t
 spend too much mental effort on memorizing them.</p>
@@ -342,7 +327,6 @@ languages.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -356,7 +340,6 @@ languages.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

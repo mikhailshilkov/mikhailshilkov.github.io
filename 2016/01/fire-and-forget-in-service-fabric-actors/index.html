@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -92,6 +92,8 @@ blocking its own execution.</p>
 <p>The default model of Akka.NET is <strong>Tell</strong>:</p>
 <blockquote>
 <p><strong>Tell: Fire-forget</strong></p>
+</blockquote>
+<blockquote>
 <p>This is the preferred way of sending messages. No blocking waiting for 
 a message. This gives the best concurrency and scalability characteristics.</p>
 </blockquote>
@@ -102,8 +104,7 @@ implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
 <pre><code>public interface IHardWorkingActor : IActor
 {
     Task DoWork(string payload);
-}
-</code></pre><p>As you can see, the method does not return any useful data, which means
+}</code></pre><p>As you can see, the method does not return any useful data, which means
 the client code isn&#39;t really interested in waiting for the operation to
 complete. Here&#39;s how we implement this interface in the Actor class:</p>
 <pre><code>public class HardWorkingActor : Actor, IHardWorkingActor
@@ -113,8 +114,7 @@ complete. Here&#39;s how we implement this interface in the Actor class:</p>
         ActorEventSource.Current.ActorMessage(this, &quot;Doing Work&quot;);
         await Task.Delay(500);
     }
-}
-</code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
+}</code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
 <p>Now, let&#39;s look at the client code. Let&#39;s say, the client receives the payloads
 from a queue or a web front-end and needs to go as fast as possible. It gets a payload,
 creates an actor proxy to dispatch the payload to, then it just wants 
@@ -129,16 +129,13 @@ while (true)
     await proxy.DoWork($&quot;Work ${i++}&quot;);
     Console.WriteLine($@&quot;Sent work to Actor {proxy.GetActorId()}, 
                          rate is {i / timer.Elapsed.TotalSeconds}/sec&quot;);
-}
-</code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
+}</code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
 block until the actor work is complete. When we run the client, no surprise that
 we get the rate of about 2 messages per second:</p>
-<pre><code>Sent work to Actor 1647857287613311317, rate is 1,98643230380293/sec
-</code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
+<pre><code>Sent work to Actor 1647857287613311317, rate is 1,98643230380293/sec</code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
 work and immediately proceed to the next one. Here&#39;s how the client call should
 look like:</p>
-<pre><code>proxy.DoWork($&quot;Work ${i++}&quot;).FireAndForget();
-</code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
+<pre><code>proxy.DoWork($&quot;Work ${i++}&quot;).FireAndForget();</code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
 extension method and proceed immediately. It appears that the implementation 
 of such extension method is trivial:</p>
 <pre><code>public static class TaskHelper
@@ -147,10 +144,8 @@ of such extension method is trivial:</p>
     {
         Task.Run(async() =&gt; await task).ConfigureAwait(false);
     }
-} 
-</code></pre><p>The result looks quite different from what we had before:</p>
-<pre><code>Sent work to Actor -8450334792912439527, rate is 408,484162592517/sec
-</code></pre><p>400 messages per second, which is some 200x difference... </p>
+} </code></pre><p>The result looks quite different from what we had before:</p>
+<pre><code>Sent work to Actor -8450334792912439527, rate is 408,484162592517/sec</code></pre><p>400 messages per second, which is some 200x difference... </p>
 <p>The conclusions are simple:</p>
 <ul>
 <li><p>Service Fabric is a powerful platform and programming paradigm which doesn&#39;t
@@ -204,7 +199,6 @@ take the defaults for granted</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -218,7 +212,6 @@ take the defaults for granted</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

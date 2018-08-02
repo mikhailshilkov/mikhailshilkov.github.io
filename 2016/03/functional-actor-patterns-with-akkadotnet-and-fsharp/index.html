@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -117,8 +117,8 @@ but that&#39;s not the path that I&#39;m willing to go.</p>
 need all the features of the framework. In this case we can define the required actor
 behavior in terms of a minimal function and then use creational patterns to
 spawn actor instances out of it.</p>
-<p>Let&#39;s look at some common patterns that I identified. For each pattern, I will</p>
-<p>define </p>
+<p>Let&#39;s look at some common patterns that I identified. For each pattern, I will
+define </p>
 <ul>
 <li>an example of a core function which implements the business logic</li>
 <li>a generic function to create actors with behavior of a core function</li>
@@ -136,21 +136,18 @@ logging the message, saving the data to the external storage and so on.</p>
 <p>So, we don&#39;t need the majority of actor features in this case. The whole actor
 processing could be represented by a function of type <code>&#39;a -&gt; unit</code>. Here 
 is an example of a core function:</p>
-<pre><code class="lang-fsharp">let print msg =
-  printn &quot;Message received: %A&quot; msg
-</code></pre>
+<pre><code class="language-fsharp">let print msg =
+  printn &quot;Message received: %A&quot; msg</code></pre>
 <p>So how do we make an actor out of this function? Well, it&#39;s already implemented
 as <code>actorOf</code> helper function in Akka.NET F# extensions:</p>
-<pre><code class="lang-fsharp">let actorOfSink (f : &#39;a -&gt; unit) = actorOf f
-</code></pre>
+<pre><code class="language-fsharp">let actorOfSink (f : &#39;a -&gt; unit) = actorOf f</code></pre>
 <p>And here is how we spawn an actor instance:</p>
-<pre><code class="lang-fsharp">let printActorRef = 
+<pre><code class="language-fsharp">let printActorRef = 
   actorOfSink print 
   |&gt; spawn system &quot;print-actor&quot;
 
 printActorRef &lt;! 3
-// &quot;Message received: 3&quot; is printed
-</code></pre>
+// &quot;Message received: 3&quot; is printed</code></pre>
 <p>That&#39;s the simplicity that I&#39;m searching for. Let&#39;s look at a slightly more
 complex example.</p>
 <hr>
@@ -161,23 +158,20 @@ it to another predefined actor.</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//converter.png" alt="Converter actor"></p>
 <p>The core of this actor is a classic function with one input and one output
 parameter (type <code>&#39;a - &#39;b</code>):</p>
-<pre><code class="lang-fsharp">let square msg =
-  msg * msg
-</code></pre>
+<pre><code class="language-fsharp">let square msg =
+  msg * msg</code></pre>
 <p>The actor function is similar to the one of Message Sink, but it also accepts
 a reference to the output actor and knows how to send messages to it:</p>
-<pre><code class="lang-fsharp">let actorOfConvert f outputRef =
-  actorOf2 (fun _ msg -&gt; outputRef &lt;! f msg)
-</code></pre>
+<pre><code class="language-fsharp">let actorOfConvert f outputRef =
+  actorOf2 (fun _ msg -&gt; outputRef &lt;! f msg)</code></pre>
 <p>Here is how we spawn an instance of a Converter using our <code>print-actor</code> as the
 output:</p>
-<pre><code class="lang-fsharp">let squareActorRef = 
+<pre><code class="language-fsharp">let squareActorRef = 
   actorOfConvert square printActorRef 
   |&gt; spawn system &quot;square-actor&quot;
 
 squareActorRef &lt;! 3
-// &quot;Message received: 9&quot; is printed
-</code></pre>
+// &quot;Message received: 9&quot; is printed</code></pre>
 <p>Both actor patterns had no notion of state so far. Let&#39;s see how we can 
 treat the statefulness in a functional way.</p>
 <hr>
@@ -194,13 +188,12 @@ first message becomes the input state of the second message:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//statefulsinkfunctional.png" alt="Stateful Sink functional actor"></p>
 <p>Here is an example of a function which prints out the index of a message together
 with the message contents:</p>
-<pre><code class="lang-fsharp">let printIndex index msg =
+<pre><code class="language-fsharp">let printIndex index msg =
   printn &quot;Message [%i] received: %A&quot; index msg
-  index + 1
-</code></pre>
+  index + 1</code></pre>
 <p>For the actor implementation we need a recursive function so we can&#39;t use 
 <code>actorOf2</code> anymore. Actor workflow is a bit more lines but still very simple:</p>
-<pre><code class="lang-fsharp">let actorOfStatefulSink f initialState (mailbox : Actor&lt;&#39;a&gt;) =
+<pre><code class="language-fsharp">let actorOfStatefulSink f initialState (mailbox : Actor&lt;&#39;a&gt;) =
 
   let rec imp lastState =
     actor {
@@ -209,10 +202,9 @@ with the message contents:</p>
       return! imp newState
     }
 
-  imp initialState
-</code></pre>
+  imp initialState</code></pre>
 <p>And here is a usage example:</p>
-<pre><code class="lang-fsharp">let printIndexActorRef = 
+<pre><code class="language-fsharp">let printIndexActorRef = 
   actorOfSink printIndex 1
   |&gt; spawn system &quot;print-ix-actor&quot;
 
@@ -220,8 +212,7 @@ printActorRef &lt;! 3
 // &quot;Message [1] received: 3&quot; is printed
 
 printActorRef &lt;! 4
-// &quot;Message [2] received: 4&quot; is printed
-</code></pre>
+// &quot;Message [2] received: 4&quot; is printed</code></pre>
 <hr>
 <p><a name="StatefulConverter" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/undefined"></a></p>
 <h2 id="stateful-converter">Stateful Converter</h2>
@@ -232,13 +223,12 @@ next actor:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//statefulconverter.png" alt="Stateful Converter actor"></p>
 <p>Here is a function which squares the messaged number, then calculates the running total
 and sends it forward:</p>
-<pre><code class="lang-fsharp">let squareAndSum sum msg =
+<pre><code class="language-fsharp">let squareAndSum sum msg =
   let result = sum + msg*msg
-  (result, result)
-</code></pre>
+  (result, result)</code></pre>
 <p>In this particular case the output message and state are equal, but they don&#39;t
 have to be. Here is the actor implementation:</p>
-<pre><code class="lang-fsharp">let actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;&#39;a&gt;) =
+<pre><code class="language-fsharp">let actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;&#39;a&gt;) =
 
   let rec imp lastState =
     actor {
@@ -248,10 +238,9 @@ have to be. Here is the actor implementation:</p>
       return! imp newState
     }
 
-  imp initialState
-</code></pre>
+  imp initialState</code></pre>
 <p>And a usage example:</p>
-<pre><code class="lang-fsharp">let squareAndSumActorRef = 
+<pre><code class="language-fsharp">let squareAndSumActorRef = 
   actorOfConvert square 0 printIndexActorRef 
   |&gt; spawn system &quot;square-sum-actor&quot;
 
@@ -259,8 +248,7 @@ squareAndSumActorRef &lt;! 3
 // &quot;Message [1] received: 9&quot; is printed
 
 squareAndSumActorRef &lt;! 4
-// &quot;Message [2] received: 25&quot; is printed
-</code></pre>
+// &quot;Message [2] received: 25&quot; is printed</code></pre>
 <hr>
 <p><a name="ConverterSupervisor" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/undefined"></a></p>
 <h2 id="converter-supervisor">Converter-Supervisor</h2>
@@ -275,7 +263,7 @@ comes in. (We can&#39;t spawn it before the first message because the
 reference that we store in the state, something like this:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//childasstate.png" alt="Supervised Child as State"></p>
 <p>Here is the generic actor implementation:</p>
-<pre><code class="lang-fsharp">let actorOfConvertToChild f spawnChild (mailbox : Actor&lt;&#39;a&gt;) =
+<pre><code class="language-fsharp">let actorOfConvertToChild f spawnChild (mailbox : Actor&lt;&#39;a&gt;) =
 
   let rec imp state =
     actor {
@@ -289,15 +277,13 @@ reference that we store in the state, something like this:</p>
       return! imp (Some newstate)
     }
 
-  imp None
-</code></pre>
+  imp None</code></pre>
 <p>The only difference is that we accept a <code>spawnChild</code> function instead of
 pre-baked actor reference. Here is the first calculator example refactored
 to Print actor being a child of Square actor.</p>
-<pre><code class="lang-fsharp">let squareWithChildRef = 
+<pre><code class="language-fsharp">let squareWithChildRef = 
   actorOfConvertToChild print (spawnChild square &quot;print-actor&quot;)
-  |&gt; spawn system &quot;square-with-child-actor&quot;
-</code></pre>
+  |&gt; spawn system &quot;square-with-child-actor&quot;</code></pre>
 <p>Notice that the <code>square</code> and <code>print</code> functions have exactly the same signatures
 and implementations as we used before, and the concern of actor hierarchy is 
 completely separated from the business logic of the actors.</p>
@@ -318,9 +304,8 @@ message processing to one or more of them:</p>
 of type <code>&#39;a -&gt; seq&lt;string * &#39;b&gt;</code>, where <code>&#39;a</code> is the type of incoming messages,
 <code>&#39;b</code> is the type of outgoing messages, and <code>string</code> represents the identifier of the 
 actor to get the message. Here is a sample implementation:</p>
-<pre><code class="lang-fsharp">let routeSensorData msg = 
-  msg |&gt; Seq.map (fun x -&gt; (&quot;sensor-actor-&quot; + x.SensorId, x.Temperature))
-</code></pre>
+<pre><code class="language-fsharp">let routeSensorData msg = 
+  msg |&gt; Seq.map (fun x -&gt; (&quot;sensor-actor-&quot; + x.SensorId, x.Temperature))</code></pre>
 <p>Based on the incoming metadata (sensor identifier) the actor forwards its
 temperature to corresponding sensor-specific actor. </p>
 <p>Here is the implementation of the generic actor function:</p>
@@ -340,12 +325,10 @@ temperature to corresponding sensor-specific actor. </p>
       return! imp ()
     }
 
-  imp ()
-</code></pre><p>And a usage example:</p>
-<pre><code class="lang-fsharp">let sensorRouterRef = 
+  imp ()</code></pre><p>And a usage example:</p>
+<pre><code class="language-fsharp">let sensorRouterRef = 
   actorOfRouteToChildren routeSensorData (spawnChild square)
-  |&gt; spawn system &quot;route-sensor-actor&quot;
-</code></pre>
+  |&gt; spawn system &quot;route-sensor-actor&quot;</code></pre>
 <p>Note that <code>spawnChild</code> does not accept the child ID anymore because it&#39;s being
 controlled by the router itself.</p>
 <hr>
@@ -402,7 +385,6 @@ code.</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -416,7 +398,6 @@ code.</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

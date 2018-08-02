@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -77,6 +77,226 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jan 25th, 2016</div>
+    
+    <h1><a href='/2016/01/monads-explained-in-csharp/'>Monads explained in C#</a></h1>
+    
+    <div class="post-content">
+        <p><em>The newer and much longer version of this article is now available:</em>
+<a href="https://mikhail.io/2018/07/monads-explained-in-csharp-again/">Monads explained in C# (again)</a></p>
+<p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
+what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
+developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
+loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
+it becomes kind of obvious once you read 3 or 5 explanations on the web. Here is my attempt, probably doomed
+to fail :)</p>
+<h2 id="monads-are-container-types">Monads are container types</h2>
+<p>Monads represent a class of types which behave in the common way.</p>
+<p>Monads are containers which encapsulate some kind of functionality. On top of
+that, they provide a way to combine two containers into one. And that&#39;s about it. </p>
+<p>The goals of monads are similar to generic goals of any encapsulation in 
+software development practices: hide the implementation details from the client, 
+but provide a proper way to use the hidden functionality. </p>
+<p>It&#39;s not because we 
+want to be able to change the implementation, it&#39;s because we want to make the 
+client as simple as possible and to enforce the best way of code structure. 
+Quite often monads provide the way to avoid imperative code in favor of 
+functional style.</p>
+<p>Monads are flexible, so in C# we could try to represent a monadic type as 
+a generic class:</p>
+<pre><code class="language-csharp">public class Monad&lt;T&gt;
+{
+}</code></pre>
+<h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
+<p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should 
+be a way to create an object of this class out of an instance of type <code>T</code>. 
+In functional world this operation is known as <code>Return</code> function. In C# it 
+can be as simple as a constructor:</p>
+<pre><code class="language-csharp">public class Monad&lt;T&gt;
+{
+    public Monad(T instance)
+    {
+    }
+}</code></pre>
+<p>But usually it makes sense to define an extension method to enable fluent 
+syntax of monad creation:</p>
+<pre><code class="language-csharp">public static class MonadExtensions
+{
+    public static Monad&lt;T&gt; Return&lt;T&gt;(this T instance) =&gt; new Monad&lt;T&gt;(instance);
+}</code></pre>
+<h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
+<p>This is the property which makes monads so useful, but also a bit confusing. 
+In functional world this operation is expressed with the <code>Bind</code> function 
+(or <code>&gt;&gt;=</code> operator). Here is the signature of <code>Bind</code> method in C#:</p>
+<pre><code class="language-csharp">public class Monad&lt;T&gt;
+{
+    public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
+    {
+    }
+}</code></pre>
+<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an 
+argument of type <code>T</code> (not a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> 
+where <code>TO</code> is another type. Now, our first instance of <code>Monad&lt;T&gt;</code> knows 
+how to bind itself to this function to produce another instance of monad 
+of the new type. The full power of monads comes when we compose several of 
+them in one chain:</p>
+<pre><code class="language-csharp">initialValue
+    .Return()
+    .Bind(v1 =&gt; produceV2OutOfV1(v1))
+    .Bind(v2 =&gt; produceV3OutOfV2(v2))
+    .Bind(v3 =&gt; produceV4OutOfV3(v3))
+    //...</code></pre>
+<p>Let&#39;s have a look at some examples.</p>
+<p><a name="maybe" href="/2016/01/monads-explained-in-csharp/undefined"></a></p>
+<h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
+<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach 
+to dealing with &#39;no value&#39; value, alternative to the concept of <code>null</code>. 
+Basically your object should never be null, but it can either have <code>Some</code> 
+value or be <code>None</code>. F# has a maybe implementation built into the language: 
+it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
+<pre><code class="language-csharp">public class Maybe&lt;T&gt; where T : class
+{
+    private readonly T value;
+
+    public Maybe(T someValue)
+    {
+        if (someValue == null)
+            throw new ArgumentNullException(nameof(someValue));
+        this.value = someValue;
+    }
+
+    private Maybe()
+    {
+    }
+
+    public Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func) where TO : class
+    {
+        return value != null ? func(value) : Maybe&lt;TO&gt;.None();
+    }
+
+    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;();
+}</code></pre>
+<pre><code class="language-csharp">public static class MaybeExtensions
+{
+    public static Maybe&lt;T&gt; Return&lt;T&gt;(this T value) where T : class
+    {
+        return value != null ? new Maybe&lt;T&gt;(value) : Maybe&lt;T&gt;.None();
+    }
+}</code></pre>
+<p>Return function is implemented with a combination of a public constructor 
+which accepts <code>Some</code> value (notice that <code>null</code> is not allowed) and a static 
+<code>None</code> method returning an object of &#39;no value&#39;. <code>Return</code> extension method
+combines both of them in one call. </p>
+<p><code>Bind</code> function is implemented explicitly. </p>
+<p>Let&#39;s have a look at a use case. Imagine we have a traditional repository 
+which loads data from an external storage (no monads yet):</p>
+<pre><code class="language-csharp">public interface ITraditionalRepository
+{
+    Customer GetCustomer(int id);
+    Address GetAddress(int id);
+    Order GetOrder(int id);
+}</code></pre>
+<p>Now, we write a client class which loads data one by one and tries to find
+a shipper:</p>
+<pre><code class="language-csharp">Shipper shipperOfLastOrderOnCurrentAddress = null;
+var customer = repo.GetCustomer(customerId);
+if (customer?.Address != null)
+{
+    var address = repo.GetAddress(customer.Address.Id);
+    if (address?.LastOrder != null)
+    {
+        var order = repo.GetOrder(address.LastOrder.Id);
+        shipperOfLastOrderOnCurrentAddress = order?.Shipper;
+    }
+}
+return shipperOfLastOrderOnCurrentAddress;</code></pre>
+<p>Note, that the code assumes that repository returns <code>null</code> if some entity
+is not found, although nothing in the type system shows that. Then, there
+is a number of <code>null</code> checks (facilitated with elvis operator). The code gets
+a bit cluttered and less linear.</p>
+<p>Here is an alternative repository which returns <code>Maybe</code> type:</p>
+<pre><code class="language-csharp">public interface IMonadicRepository
+{
+    Maybe&lt;Customer&gt; GetCustomer(int id);
+    Maybe&lt;Address&gt; GetAddress(int id);
+    Maybe&lt;Order&gt; GetOrder(int id);
+}</code></pre>
+<p>The contract is more explicit: you see that <code>Maybe</code> type is used, so you
+will be forced to handle the case of absent value.</p>
+<p>And here is how the above example can be rewritten with <code>Bind</code> method 
+composition:</p>
+<pre><code class="language-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+    repo.GetCustomer(customerId)
+        .Bind(c =&gt; c.Address)
+        .Bind(a =&gt; repo.GetAddress(a.Id))
+        .Bind(a =&gt; a.LastOrder)
+        .Bind(lo =&gt; repo.GetOrder(lo.Id))
+        .Bind(o =&gt; o.Shipper);</code></pre>
+<p>There&#39;s no branching anymore, the code is fluent and linear.</p>
+<p>If you think that the syntax looks very much like a LINQ query with a bunch 
+of <code>Select</code> statements, you are not the only one ;) One of the common 
+implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface which allows 
+a more C#-idiomatic binding composition. Actually:</p>
+<h2 id="ienumerable-selectmany-is-a-monad-">IEnumerable + SelectMany is a monad </h2>
+<p><code>IEnumerable</code> is an interface for enumerable containers.</p>
+<p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
+<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here 
+is its signature:</p>
+<pre><code class="language-csharp">public static IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
+    this IEnumerable&lt;A&gt; first, 
+    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)</code></pre>
+<p>And here is an example of composition:</p>
+<pre><code class="language-csharp">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
+    customers
+        .SelectMany(c =&gt; c.Addresses)
+        .SelectMany(a =&gt; a.Orders)
+        .SelectMany(o =&gt; o.Shippers);</code></pre>
+<p>The query has no idea about how the collections are stored (encapsulated in
+containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
+(<code>Bind</code> operation).</p>
+<h2 id="monad-laws">Monad laws</h2>
+<p>There are a couple of laws that <code>Return</code> and <code>Bind</code> need to adhere to, so
+that they produce a proper monad.</p>
+<p><strong>Identity law</strong> says that that <code>Return</code> is a neutral operation: you can safely
+run it before <code>Bind</code>, and it won&#39;t change the result of the function call:</p>
+<pre><code class="language-csharp">// Given
+T value;
+Func&lt;T, M&lt;U&gt;&gt; f;
+
+// == means both parts are equivalent
+value.Return().Bind(f) == f(value) </code></pre>
+<p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
+are composed does not matter:</p>
+<pre><code class="language-csharp">// Given
+M&lt;T&gt; m;
+Func&lt;T, M&lt;U&gt;&gt; f;
+Func&lt;U, M&lt;V&gt;&gt; g;
+
+// == means both parts are equivalent
+m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))</code></pre>
+<p>The laws may look complicated, but in fact they are very natural 
+expectations that any developer has when working with monads, so don&#39;t
+spend too much mental effort on memorizing them.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>You should not be afraid of the &quot;M-word&quot; just because you are a C# programmer. 
+C# does not have a notion of monads as predefined language constructs, but 
+it doesn&#39;t mean we can&#39;t borrow some ideas from the functional world. Having 
+said that, it&#39;s also true that C# is lacking some powerful ways to combine 
+and generalize monads which are possible in Haskell and other functional 
+languages.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/monads/'>Monads</a>, <a href='/tags/maybe/'>Maybe</a>, <a href='/tags/linq/'>LINQ</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jan 13th, 2016</div>
     
     <h1><a href='/2016/01/fire-and-forget-in-service-fabric-actors/'>Fire-and-forget in Service Fabric actors</a></h1>
@@ -93,6 +313,8 @@ blocking its own execution.</p>
 <p>The default model of Akka.NET is <strong>Tell</strong>:</p>
 <blockquote>
 <p><strong>Tell: Fire-forget</strong></p>
+</blockquote>
+<blockquote>
 <p>This is the preferred way of sending messages. No blocking waiting for 
 a message. This gives the best concurrency and scalability characteristics.</p>
 </blockquote>
@@ -103,8 +325,7 @@ implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
 <pre><code>public interface IHardWorkingActor : IActor
 {
     Task DoWork(string payload);
-}
-</code></pre><p>As you can see, the method does not return any useful data, which means
+}</code></pre><p>As you can see, the method does not return any useful data, which means
 the client code isn&#39;t really interested in waiting for the operation to
 complete. Here&#39;s how we implement this interface in the Actor class:</p>
 <pre><code>public class HardWorkingActor : Actor, IHardWorkingActor
@@ -114,8 +335,7 @@ complete. Here&#39;s how we implement this interface in the Actor class:</p>
         ActorEventSource.Current.ActorMessage(this, &quot;Doing Work&quot;);
         await Task.Delay(500);
     }
-}
-</code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
+}</code></pre><p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
 <p>Now, let&#39;s look at the client code. Let&#39;s say, the client receives the payloads
 from a queue or a web front-end and needs to go as fast as possible. It gets a payload,
 creates an actor proxy to dispatch the payload to, then it just wants 
@@ -130,16 +350,13 @@ while (true)
     await proxy.DoWork($&quot;Work ${i++}&quot;);
     Console.WriteLine($@&quot;Sent work to Actor {proxy.GetActorId()}, 
                          rate is {i / timer.Elapsed.TotalSeconds}/sec&quot;);
-}
-</code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
+}</code></pre><p>Note an <code>await</code> operator related to every call. That means that the client will
 block until the actor work is complete. When we run the client, no surprise that
 we get the rate of about 2 messages per second:</p>
-<pre><code>Sent work to Actor 1647857287613311317, rate is 1,98643230380293/sec
-</code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
+<pre><code>Sent work to Actor 1647857287613311317, rate is 1,98643230380293/sec</code></pre><p>That&#39;s not very exciting. What we want instead is to tell the actor to do the
 work and immediately proceed to the next one. Here&#39;s how the client call should
 look like:</p>
-<pre><code>proxy.DoWork($&quot;Work ${i++}&quot;).FireAndForget();
-</code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
+<pre><code>proxy.DoWork($&quot;Work ${i++}&quot;).FireAndForget();</code></pre><p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
 extension method and proceed immediately. It appears that the implementation 
 of such extension method is trivial:</p>
 <pre><code>public static class TaskHelper
@@ -148,10 +365,8 @@ of such extension method is trivial:</p>
     {
         Task.Run(async() =&gt; await task).ConfigureAwait(false);
     }
-} 
-</code></pre><p>The result looks quite different from what we had before:</p>
-<pre><code>Sent work to Actor -8450334792912439527, rate is 408,484162592517/sec
-</code></pre><p>400 messages per second, which is some 200x difference... </p>
+} </code></pre><p>The result looks quite different from what we had before:</p>
+<pre><code>Sent work to Actor -8450334792912439527, rate is 408,484162592517/sec</code></pre><p>400 messages per second, which is some 200x difference... </p>
 <p>The conclusions are simple:</p>
 <ul>
 <li><p>Service Fabric is a powerful platform and programming paradigm which doesn&#39;t
@@ -186,22 +401,20 @@ code more expressive and easier to maintain.</p>
 request is actually valid. If it&#39;s not valid, we want to make a detailed description
 of the problems that we identified. If it is valid, we want to produce a response
 about the successful acceptance of the request. Let&#39;s define the classes:</p>
-<pre><code class="lang-csharp">public class Request { ... }
+<pre><code class="language-csharp">public class Request { ... }
 public class Response { ... }
-public class ValidationError { ... }
-</code></pre>
+public class ValidationError { ... }</code></pre>
 <p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
 or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
 <h2 id="throw-an-exception">Throw an exception</h2>
 <p>Validation <em>error</em> sounds like it could be an exception:</p>
-<pre><code class="lang-csharp">public Response Validate(Request r)
+<pre><code class="language-csharp">public Response Validate(Request r)
 {
    if (!Valid(r))
        throw new ValidationException(new ValidationError(...));
 
    return new Response(r);
-}
-</code></pre>
+}</code></pre>
 <p>This approach is really bad though. You have to declare a special exception
 class to hold the validation error. But even worse, exception handling is not
 explicit - you don&#39;t see the exception type when you look at method signature.
@@ -209,7 +422,7 @@ Client processing code is going to be messed up because of exception handling.
 Never use exceptions for your business logic flow.</p>
 <h2 id="output-parameter">Output parameter</h2>
 <p>We could make an output parameter of <code>ValidationError</code> type:</p>
-<pre><code class="lang-csharp">public Response Validate(Request r, out ValidationError error)
+<pre><code class="language-csharp">public Response Validate(Request r, out ValidationError error)
 {
     if (Valid(r))
     { 
@@ -219,8 +432,7 @@ Never use exceptions for your business logic flow.</p>
 
     error = null;
     return new Response(r);
-}
-</code></pre>
+}</code></pre>
 <p>Now the interface is more explicit: client won&#39;t be able to completely ignore
 the fact that an error is possible. But output parameters are not really
 easy to use in C#, especially in fluent-style client code. Moreover, we are
@@ -229,7 +441,7 @@ because nulls are not explicit. Never use nulls in your business logic.</p>
 <h2 id="return-the-combined-result">Return the combined result</h2>
 <p>We could declare a container class which would keep both <code>Response</code> and 
 <code>ValidationError</code>, and then return it from the method.</p>
-<pre><code class="lang-csharp">public class Both&lt;TData, TError&gt;
+<pre><code class="language-csharp">public class Both&lt;TData, TError&gt;
 {
     public TData Data { get; set; }
     public TErrro Error { get; set; }
@@ -240,8 +452,7 @@ public Both&lt;Response, ValidationError&gt; Validate(Request r)
     return Valid(r) 
         ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
         : new Both&lt;Response, ValidationError&gt; { Error = new ValidationError(...) };
-}
-</code></pre>
+}</code></pre>
 <p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
 and output parameters, but we still use null for result state representation.
 Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
@@ -249,7 +460,7 @@ Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</
 <p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
 with just one of them. When constructing an object, you can specify either
 a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
-<pre><code class="lang-csharp">public class Either&lt;TL, TR&gt;
+<pre><code class="language-csharp">public class Either&lt;TL, TR&gt;
 {
     private readonly TL left;
     private readonly TR right;
@@ -266,40 +477,35 @@ a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
         this.right = right;
         this.isLeft = false;
     }
-}
-</code></pre>
+}</code></pre>
 <p>Now, the main difference is in how the client uses it. There are no properties
 to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
-<pre><code class="lang-csharp">public T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
-    =&gt; this.isLeft ? leftFunc(this.left) : rightFunc(this.right);
-</code></pre>
+<pre><code class="language-csharp">public T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
+    =&gt; this.isLeft ? leftFunc(this.left) : rightFunc(this.right);</code></pre>
 <p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
 is specified, <code>Match</code> will return the result of the left function, otherwise the result
 of the right function.</p>
 <p>Another improvement would be to create explicit operators for easy conversions
 from left and right types:</p>
-<pre><code class="lang-csharp">public static implicit operator Either&lt;TL, TR&gt;(TL left) =&gt; new Either&lt;TL, TR&gt;(left);
+<pre><code class="language-csharp">public static implicit operator Either&lt;TL, TR&gt;(TL left) =&gt; new Either&lt;TL, TR&gt;(left);
 
-public static implicit operator Either&lt;TL, TR&gt;(TR right) =&gt; new Either&lt;TL, TR&gt;(right);
-</code></pre>
+public static implicit operator Either&lt;TL, TR&gt;(TR right) =&gt; new Either&lt;TL, TR&gt;(right);</code></pre>
 <p>Let&#39;s have a look at a complete example.</p>
 <h2 id="why-it-s-great">Why it&#39;s great</h2>
 <p>Here is the service code written with <code>Either</code>:</p>
-<pre><code class="lang-csharp">public Either&lt;Response, ValidationError&gt; Validate(Request r)
+<pre><code class="language-csharp">public Either&lt;Response, ValidationError&gt; Validate(Request r)
 {
     return Valid(r) 
         ? Data = new Response(r)
         : new ValidationError(...);
-}
-</code></pre>
+}</code></pre>
 <p>Clean and nice! Now a simplistic client:</p>
-<pre><code class="lang-csharp">var validated = service.Validate(request);
+<pre><code class="language-csharp">var validated = service.Validate(request);
 Console.WriteLine(
     validated.Match(
         result =&gt; $&quot;Success: {result}&quot;,
         error =&gt; $&quot;Error: {error}&quot;)
-    );
-</code></pre>
+    );</code></pre>
 <p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
 validation may fail.</p>
 <h2 id="show-me-the-code">Show me the code</h2>
@@ -325,11 +531,10 @@ validation may fail.</p>
     
     <div class="post-content">
         <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive cruft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
-<pre><code class="lang-csharp">var trip = new Trip(
+<pre><code class="language-csharp">var trip = new Trip(
     origin: new Location(&quot;Paris&quot;, geoParis), 
     destination: new Location(&quot;Amsterdam&quot;, geoAmsterdam),
-    vehicle: new Vehicle(&quot;TBL-12-H&quot;, Type.HeavyTruck)
-</code></pre>
+    vehicle: new Vehicle(&quot;TBL-12-H&quot;, Type.HeavyTruck)</code></pre>
 <p>Let&#39;s include these requirements as parts of our trip model:</p>
 <ul>
 <li>It has a constructor which accepts three arguments (see above)</li>
@@ -339,7 +544,7 @@ validation may fail.</p>
 </ul>
 <h2 id="initial-version">Initial version</h2>
 <p>First, let&#39;s implement these requirement in a usual way:</p>
-<pre><code class="lang-csharp">public class Trip : IEquatable&lt;Trip&gt;
+<pre><code class="language-csharp">public class Trip : IEquatable&lt;Trip&gt;
 {
     public Trip(Location origin, Location destination, Vehicle vehicle)
     {
@@ -400,8 +605,7 @@ validation may fail.</p>
     {
         return !object.Equals(tripA, tripB);
     }
-}
-</code></pre>
+}</code></pre>
 <p>That&#39;s a lot of code! It&#39;s very repetitive but it&#39;s also tricky: you can implement it incorrectly in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
 <p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still a heavy luggage to carry on. This class is hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
 <p>Are there other options?</p>
@@ -412,19 +616,17 @@ validation may fail.</p>
 <li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
 </ul>
 <p>To install them just execute </p>
-<pre><code class="lang-ps">PM&gt; Install-Package NullGuard.Fody
-PM&gt; Install-Package Equals.Fody
-</code></pre>
+<pre><code class="language-ps">PM&gt; Install-Package NullGuard.Fody
+PM&gt; Install-Package Equals.Fody</code></pre>
 <p>The root of your project will now contain the following configuration file:</p>
-<pre><code class="lang-xml">&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;
+<pre><code class="language-xml">&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;
 &lt;Weavers&gt;
   &lt;NullGuard IncludeDebugAssert=&quot;false&quot; /&gt;
   &lt;Equals /&gt;
-&lt;/Weavers&gt;
-</code></pre>
+&lt;/Weavers&gt;</code></pre>
 <p>(I&#39;ve added <code>IncludeDebugAssert</code> attribute manually to disable assert statements in debug mode)</p>
 <p>Let&#39;s adjust our class to make use of the plugins:</p>
-<pre><code class="lang-csharp">[Equals]
+<pre><code class="language-csharp">[Equals]
 public class Trip
 {
     public Trip(Location origin, Location destination, Vehicle vehicle)
@@ -437,15 +639,14 @@ public class Trip
     public Location Origin { get; }
     public Location Destination { get; }
     public Vehicle Vehicle { get; }
-}
-</code></pre>
+}</code></pre>
 <p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
 <ul>
 <li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So this plugin is in <em>opt-in</em> mode.</li>
 <li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
 </ul>
 <p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
-<pre><code class="lang-csharp">public Trip(Location origin, Location destination, Vehicle vehicle)
+<pre><code class="language-csharp">public Trip(Location origin, Location destination, Vehicle vehicle)
 {
     bool flag = origin == null;
     if (flag)
@@ -465,10 +666,9 @@ public class Trip
     this.&lt;Origin&gt;k__BackingField = origin;
     this.&lt;Destination&gt;k__BackingField = destination;
     this.&lt;Vehicle&gt;k__BackingField = vehicle;
-}
-</code></pre>
+}</code></pre>
 <p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
-<pre><code class="lang-csharp">public Location Origin
+<pre><code class="language-csharp">public Location Origin
 {
     [CompilerGenerated]
     get
@@ -480,13 +680,11 @@ public class Trip
         }
         return expr_06;
     }
-}
-</code></pre>
+}</code></pre>
 <p>It doesn&#39;t make much sense to me, so I configured Fody on assembly level to check only arguments and return values:</p>
-<pre><code class="lang-csharp">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]
-</code></pre>
+<pre><code class="language-csharp">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]</code></pre>
 <p>Here is a set of operations related to equality (I&#39;ll skip the body in sake of brevity):</p>
-<pre><code class="lang-csharp">public class Trip : IEquatable&lt;Trip&gt;
+<pre><code class="language-csharp">public class Trip : IEquatable&lt;Trip&gt;
 {
     [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     private static bool EqualsInternal(Trip left, Trip right) { ... }
@@ -500,16 +698,14 @@ public class Trip
     public static bool operator ==(Trip left, Trip right) { ... }
     [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
     public static bool operator !=(Trip left, Trip right) { ... }
-}
-</code></pre>
+}</code></pre>
 <p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
 <h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
 <p>Here is how you actually should define similar types:</p>
-<pre><code class="lang-fsharp">type Trip = 
+<pre><code class="language-fsharp">type Trip = 
   { Origin : Location
     Destination : Location
-    Vehicle : Vehicle }
-</code></pre>
+    Vehicle : Vehicle }</code></pre>
 <p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
 
     </div>
@@ -576,30 +772,6 @@ and push them to <code>azure</code> remote. Now you should be able to browse to 
     
 </article>
 
-    <article class="post">
-    <div class="post-date">Nov 24th, 2015</div>
-    
-    <h1><a href='/2015/11/review-of-jspm-course/'>Review of the course &quot;Modern, Modular JavaScript with SystemJS and jspm&quot;</a></h1>
-    
-    <div class="post-content">
-        <p>Recently I was playing with <a href="http://aurelia.io">Aurelia</a> SPA framework, which makes heavy use of jspm and SystemJS for modules/packaging. This package manager is new to me, and it looked a bit like magic sometimes. So when I saw a jspm course on Pluralsight, I decided to give it a try. And I did not regret: the course is great. It&#39;s so good, that I decided to write a review for it, even though I have never done that before. </p>
-<p>So, the full course name is &quot;<a href="https://www.pluralsight.com/courses/javascript-systemjs-jspm">Modern, Modular JavaScript with SystemJS and jspm</a>&quot; by Wes Higbee. The topic sounds pretty narrow (compare to something like &quot;Building a Web App with ASP.NET 5, MVC 6, EF7 and AngularJS&quot;), but the video track is surprisingly long: 7.5 hours. And every hour is packed with well structured in-depth material which lays the topic out from A to Z.</p>
-<p>The majority of online courses are focusing on just explaining the <em>What</em>&#39;s of a technology: where you get it, how you start quickly, how you solve typical tasks. Wes does not stop there: he is really focusing on <em>Why</em>&#39;s: not only why we should use ES2015 modules and jspm, but the complete logical flow from the best practices in other programming environments to the module patterns to the tools that enable us use the modern approaches in javascript today. The understanding of this reasoning chain sets the solid ground, and you actually start getting the What&#39;s deeper. </p>
-<p>But Wes goes even further: he mixes the <em>How</em>&#39;s in. I love watching him breaking the stuff to show why it fails and how to fix it. The references to module dependency graphs and internals of the tools are insightful; that&#39;s how &quot;the magic&quot; transforms into the comprehension of modern open source tools and libraries. </p>
-<p>Of course, just watching the course won&#39;t make me an expert in the topic. Now I need to put the knowledge into practice, ask more questions and find answers myself. But I will hopefully save hours of debugging and frustration and will maybe produce better products in the end. Wes and Pluralsight, I definitely need more of courses like this - focused, deep and engaging! </p>
-<p>P.S. It was a bit awkward to watch the course in the office because of solitaire cards being shown on my screen. Not sure what my colleagues thought I was doing ;)</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/pluralsight/'>Pluralsight</a>, <a href='/tags/course/'>Course</a>, <a href='/tags/learning/'>Learning</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/jspm/'>JSPM</a>, <a href='/tags/systemjs/'>SystemJS</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
@@ -622,7 +794,6 @@ and push them to <code>azure</code> remote. Now you should be able to browse to 
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

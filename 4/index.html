@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -77,6 +77,169 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Aug 31st, 2017</div>
+    
+    <h1><a href='/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/'>Azure Functions: Are They Really Infinitely Scalable and Elastic?</a></h1>
+    
+    <div class="post-content">
+        <p><em>Updated results are available at 
+<a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">Azure Functions Get More Scalable and Elastic</a>.</em></p>
+<p>Automatic elastic scaling is a built-in feature of Serverless computing
+paradigm. One doesn&#39;t have to provision servers anymore, they just need to
+write code that will be provisioned on as many servers as needed based on the
+actual load. That&#39;s the theory.</p>
+<p>In particular, Azure Functions can be hosted on the Consumption plan:</p>
+<blockquote>
+<p>The Consumption plan automatically allocates compute power when your 
+code is running, scales out as necessary to handle load, and then scales 
+down when code is not running.</p>
+</blockquote>
+<p>In this post I will run a simple stress test to get a feel of how such
+automatic allocation works in practice and what kind of characteristics 
+we can rely on.</p>
+<h2 id="setup">Setup</h2>
+<p>Here are the parameters that I chose for my test of today:</p>
+<ul>
+<li>Azure Function written in C# and hosted on Consumption plan</li>
+<li>Triggered by Azure Storage Queue binding</li>
+<li>Workload is strictly CPU-bound, no I/O is executed</li>
+</ul>
+<p>Specifically, each queue item represents one password that I need to hash.
+Each function call performs 12-round <a href="https://en.wikipedia.org/wiki/Bcrypt">Bcrypt</a>
+hashing. Bcrypt is a slow algorithm recommended for
+password hashing, because it makes potential hash collision attacks really 
+hard and costly.</p>
+<p>My function is based on <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.Net</a>
+implementation, and it&#39;s extremely simple:</p>
+<pre><code class="language-csharp">public static void Run([QueueTrigger(&quot;bcrypt-password&quot;)] string password)
+{
+    BCrypt.Net.BCrypt.HashPassword(password, 12);
+}</code></pre>
+<p>It turns out that a single execution of this function takes approximately
+1 second on an instance of Consumption plan, and consumes 100% CPU during
+that second.</p>
+<p>Now, the challenge is simple. I send 100,000 passwords
+to the queue and see how long it will take to hash them, and also how the
+autoscaling will behave. I will run it two times, with different pace of
+sending messages to the queue.</p>
+<p>That sounds like a perfect job for a Function App on Consumption plan:</p>
+<ul>
+<li>Needs to scale based on load</li>
+<li>CPU intensive - easy to see how busy each server is</li>
+<li>Queue-based - easy to see the incoming vs outgoing rate</li>
+</ul>
+<p>Let&#39;s see how it went.</p>
+<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
+<p>In my first run, I was sending messages at constant rate. 100,000 messages
+were sent within 2 hours, without spikes or drops in the pace.</p>
+<p>Sounds like an easy job for autoscaling facilities. But here is the actual 
+chart of data processing:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppScaling.png" alt="Function App Scaling"></p>
+<p>The horizontal axis is time in minutes since the first message came in.</p>
+<p>The orange line shows the queue backlog - the amount of messages sitting in
+the queue at a given moment.</p>
+<p>The blue area represents the amount of instances (virtual servers) allocated
+to the function by Azure runtime (see the numbers at the right side).</p>
+<p>We can divide the whole process into 3 logical segments, approximately 
+40 minutes each:</p>
+<p><strong>Laging behind</strong>. Runtime starts with 0 instances, and immediately switches
+to 1 when the first message comes in. However it&#39;s reluctant to add any more
+servers for the next 20 (!) minutes. The scaling heuristic is probably based
+on the past history for this queue/function, and it wasn&#39;t busy at all during
+the hours before.</p>
+<p>After 20 minutes, the runtime starts adding more instances: it goes up to 2, 
+then jumps to 4, then reaches 5 at minute 40. The CPU is constantly at 
+100% and the queue backlog grows linearly.</p>
+<p><strong>Rapid scale up</strong>. After minute 40, it looks like the runtime realizes 
+that it needs more power. Much more power! The growth speeds up real quick
+and by minute 54 the backlog stops growing, even though the messages are still
+coming in. But there are now 21 instances working, which is enough to
+finally match and beat the rate of incoming messages.</p>
+<p>The runtime doesn&#39;t stop growing though. CPU&#39;s are still at 100%, and the backlog
+is still very high, so the scaling goes up and up. The amount of instances
+reaches astonishing 55, at which point all the backlog is processed and
+there are no messages in the queue.</p>
+<p><strong>Searching for balance</strong>. When queue is almost empty and CPU drops below
+100% for the first time, the runtime decides to scale down. It does that quickly
+and aggressively, switching from 55 to 21 instances in just 2 minutes.</p>
+<p>From there it keeps slowly reducing the number of instances until the backlog 
+starts growing again. The runtime allows the backlog to grow a bit, but
+then figures out a balanced number of servers (17) to keep the backlog flat 
+at around 2,000 messages. </p>
+<p>It stays at 17 until the producer stops sending new messages. The backlog 
+goes to 0, and the amount of instances gradually drops to 0 within 10 minutes.</p>
+<p>The second chart from the same experiment looks very similar, but it shows
+different metrics:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//FunctionAppDelay.png" alt="Function App Delay"></p>
+<p>The gray line is the delay in minutes since the currently processed message
+got enqueued (message &quot;age&quot;, in-queue latency). The blue line is the 
+total processing rate, measured in messages per minute.</p>
+<p>Due to perfect scalability and stability of my function, both charts are almost
+exactly the same. I&#39;ve put it here so that you could see that the slowest
+message spent more than 40 minutes sitting inside the queue.</p>
+<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
+<p>With the second run, I tried to emulate a spiky load profile. I was sending
+my 100,000 messages throughout 6 hours at lower pace than during the first
+run. But sometimes the producer switched to fast mode and sent a bigger bunch
+of messages in just several minutes. Here is the actual chart of incoming
+message rate:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoad.png" alt="Spiky Load"></p>
+<p>It&#39;s easy to imagine some service which has a usage pattern like that, when
+spikes of the events happen from time to time, or in rush hours.</p>
+<p>This is how the Function App managed to process the messages:</p>
+<p><img src="/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic//SpikyLoadProcessing.png" alt="Spiky Load Processing Result"></p>
+<p>The green line still shows the amount of incoming messages per minute. The 
+blue line denotes how many messages were actually processed at that minute.
+And the orange bars are queue backlogs - the amount of messages pending.</p>
+<p>Here are several observations:</p>
+<ul>
+<li><p>Obviously, processing latency is way too far from real time. There is
+constantly quite a significant backlog in the queue, and processing delay
+reaches 20 minutes at peak.</p>
+</li>
+<li><p>It took the runtime 2 hours to clean the backlog for the first time. Even
+without any spikes during the first hour, the autoscaling algorithm needs
+time to get up to speed.</p>
+</li>
+<li><p>Function App runtime is able to scale up quite fast (look at the reaction
+on the fourth spike), but it&#39;s not really willing to do that most of the time.</p>
+</li>
+<li><p>The growth of the backlog after minute 280 is purely caused by wrong
+decision of runtime. While the load is completely steady, the runtime
+decided to shut down most workers after 20 minutes of empty backlog, and could
+not recover for the next hour.</p>
+</li>
+</ul>
+<h2 id="conclusions">Conclusions</h2>
+<p>I tried to get a feeling about the ability of Azure Functions to scale
+on demand, adapting to the workload. The function under test was purely CPU-bound,
+and for that I can give two main conclusions:</p>
+<ul>
+<li><p>Function Apps are able to scale to high amount of instances running at the
+same time, and to eventually process large parallel jobs (at least up to 55
+instances).</p>
+</li>
+<li><p>Significant processing delays are to be expected for heavy loads. Function
+App runtime has quite some inertia, and the resulting processing latency can
+easily go up to tens of minutes.</p>
+</li>
+</ul>
+<p>If you know how these results can be improved, or why they are less than 
+optimal, please leave a comment or contact me directly.</p>
+<p>I look forward to conducting more tests in the future!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jul 26th, 2017</div>
     
     <h1><a href='/2017/07/authoring-custom-binding-azure-functions/'>Authoring a Custom Binding for Azure Functions</a></h1>
@@ -99,29 +262,26 @@ bindings: reading configuration values.</p>
 runtime uses <code>local.settings.json</code> file for that).</p>
 <p>That means, when you need a configuration value inside your C# code,
 you normally do</p>
-<pre><code class="lang-csharp">string setting = ConfigurationManager.AppSettings[&quot;MySetting&quot;];
-</code></pre>
+<pre><code class="language-csharp">string setting = ConfigurationManager.AppSettings[&quot;MySetting&quot;];</code></pre>
 <p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
 <p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a> 
 service bus subscription metrics, I wrote this kind of bulky code:</p>
-<pre><code class="lang-csharp">var resourceToScale = ConfigurationManager.AppSettings[&quot;ResourceToScale&quot;];
+<pre><code class="language-csharp">var resourceToScale = ConfigurationManager.AppSettings[&quot;ResourceToScale&quot;];
 
 var connectionString = ConfigurationManager.AppSettings[&quot;ServiceBusConnection&quot;];
 var topic = ConfigurationManager.AppSettings[&quot;Topic&quot;];
-var subscription = ConfigurationManager.AppSettings[&quot;Subscription&quot;];
-</code></pre>
+var subscription = ConfigurationManager.AppSettings[&quot;Subscription&quot;];</code></pre>
 <p>The code is no rocket science, but it&#39;s tedious to write, so instead I came
 up with this idea to define Functions:</p>
-<pre><code class="lang-csharp">public static void MyFunction(
+<pre><code class="language-csharp">public static void MyFunction(
     [TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo timer,
     [Configuration(Key = &quot;ResourceToScale&quot;)] string resource,
-    [Configuration] ServiceBusSubscriptionConfig config)
-</code></pre>
+    [Configuration] ServiceBusSubscriptionConfig config)</code></pre>
 <p>Note two usages of <code>Configuration</code> attribute. The first one defines the 
 specific configuration key, and binds its value to a string parameter. The 
 other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
 the config class as</p>
-<pre><code class="lang-csharp">public class ServiceBusSubscriptionConfig
+<pre><code class="language-csharp">public class ServiceBusSubscriptionConfig
 {
     public ServiceBusSubscriptionConfig(string serviceBusConnection, string topic, string subscription)
     {
@@ -133,8 +293,7 @@ the config class as</p>
     public string ServiceBusConnection { get; }
     public string Topic { get; }
     public string Subscription { get; }
-}
-</code></pre>
+}</code></pre>
 <p>The immutable class is a bit verbose, but I still prefer it over get-set
 container in this scenario.</p>
 <p>The binding behavior is convention-based in this case: the binding engine
@@ -160,20 +319,19 @@ simple:</p>
 <code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
 packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
 <p><strong>Define</strong> a class for binding attribute:</p>
-<pre><code class="lang-csharp">[AttributeUsage(AttributeTargets.Parameter)]
+<pre><code class="language-csharp">[AttributeUsage(AttributeTargets.Parameter)]
 [Binding]
 public class ConfigurationAttribute : Attribute
 {
     [AutoResolve]
     public string Key { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
 resolvable from <code>function.json</code>.</p>
 <p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
 how to use your binding correctly.</p>
 <p>The interface has just one method to implement:</p>
-<pre><code class="lang-csharp">public class ConfigurationExtensionConfigProvider : IExtensionConfigProvider
+<pre><code class="language-csharp">public class ConfigurationExtensionConfigProvider : IExtensionConfigProvider
 {
     public void Initialize(ExtensionConfigContext context)
     {
@@ -184,28 +342,25 @@ how to use your binding correctly.</p>
 <p>The first step of the implementation is to define a rule for our new
 <code>ConfigurationAttribute</code> and tell this rule how to get a string value out
 of any attribute instance:</p>
-<pre><code class="lang-csharp">var rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
-rule.BindToInput&lt;string&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
-</code></pre>
+<pre><code class="language-csharp">var rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
+rule.BindToInput&lt;string&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);</code></pre>
 <p>That&#39;s really all that needs to happen to bind <code>string</code> parameters.</p>
 <p>To make our binding work with any POCO, we need a more elaborate construct:</p>
-<pre><code class="lang-csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; new Env());
+<pre><code class="language-csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; new Env());
 var cm = context.Config.GetService&lt;IConverterManager&gt;();
-cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(typeof(PocoConverter&lt;&gt;));
-</code></pre>
+cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(typeof(PocoConverter&lt;&gt;));</code></pre>
 <p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
 this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
 type argument) with a generic converter called <code>PocoConverter</code>.</p>
 <p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
-<pre><code class="lang-csharp">private class Env
+<pre><code class="language-csharp">private class Env
 {
     public string GetValue(string key) =&gt; ConfigurationManager.AppSettings[key];
-}
-</code></pre>
+}</code></pre>
 <p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
 names and reads configuration values out of them. Then it calls a constructor
 which matches the property count:</p>
-<pre><code class="lang-csharp">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
+<pre><code class="language-csharp">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
 {
     public T Convert(Env env)
     {
@@ -224,8 +379,7 @@ which matches the property count:</p>
 
         return (T)constructor.Invoke(values);
     }
-}
-</code></pre>
+}</code></pre>
 <p>This piece of code is not particularly robust, but it is good enough to
 illustrate the concept.</p>
 <p>And that&#39;s it, the binding it ready! You can find the complete example in
@@ -239,8 +393,7 @@ too sophisticated:</p>
 </li>
 <li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
 to that folder&#39;s path. For local development add a line to <code>local.settings.json</code>:</p>
-<pre><code class="lang-json"> &quot;AzureWebJobs_ExtensionsPath&quot;: &quot;D:\\BindingExtensions&quot;,
-</code></pre>
+<pre><code class="language-json"> &quot;AzureWebJobs_ExtensionsPath&quot;: &quot;D:\\BindingExtensions&quot;,</code></pre>
 </li>
 <li><p>Create a subfolder for your extension, e.g. 
 <code>D:\BindingExtensions\ConfigurationExtension</code>.</p>
@@ -255,8 +408,7 @@ to that folder.</p>
 <p>Run the function app locally to try it out. In the console output you should
 be able to see something like</p>
 <pre><code>Loaded custom extension: ConfigurationExtensionConfigProvider from 
-&#39;D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll&#39;
-</code></pre><p>You will be able to debug your extension if needed.</p>
+&#39;D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll&#39;</code></pre><p>You will be able to debug your extension if needed.</p>
 <h2 id="useful-links">Useful Links</h2>
 <p>Use the following links to find out more about custom bindings, see more
 examples and walkthroughs, and get fresh updates:</p>
@@ -337,7 +489,7 @@ to keep the function minimal and clean. You can see the full code in
 <p><strong>Scaler</strong> function is triggered by Durable Function&#39;s <code>ActivityTrigger</code>. That
 basically means that it&#39;s ready to be called from other functions. Here is
 the code:</p>
-<pre><code class="lang-csharp">[FunctionName(nameof(Scaler))]
+<pre><code class="language-csharp">[FunctionName(nameof(Scaler))]
 public static int Scaler([ActivityTrigger] DurableActivityContext context)
 {
     var action = context.GetInput&lt;ScaleAction&gt;();
@@ -347,8 +499,7 @@ public static int Scaler([ActivityTrigger] DurableActivityContext context)
         action.Type == ScaleActionType.Down ? -1 : +1);
 
     return newCapacity;
-}
-</code></pre>
+}</code></pre>
 <p>In order to receive an input value, I utilize <code>context.GetInput()</code> method.
 I believe that the team is working on support of custom classes 
 (<code>ScaleAction</code> in my case) directly as function parameters.</p>
@@ -359,7 +510,7 @@ values in the previous implementation.</p>
 <p><strong>Scaling Logic</strong> is using <a href="https://azure.github.io/azure-functions-durable-extension/articles/samples/counter.html">Stateful Actor pattern</a>.
 One instance of such actor is created for each scalable resource (I only use
 1 now). Here is the implementation (again, simplified for readability):</p>
-<pre><code class="lang-csharp">[FunctionName(nameof(ScalingLogic))]
+<pre><code class="language-csharp">[FunctionName(nameof(ScalingLogic))]
 public static async Task&lt;ScalingState&gt; ScalingLogic(
     [OrchestrationTrigger] DurableOrchestrationContext context, 
     TraceWriter log)
@@ -380,8 +531,7 @@ public static async Task&lt;ScalingState&gt; ScalingLogic(
 
     context.ContinueAsNew(state);
     return state;
-}
-</code></pre>
+}</code></pre>
 <p>Here is how it works:</p>
 <ul>
 <li><p>Function is bound to <code>OrchestrationTrigger</code>, yet another trigger type from
@@ -414,7 +564,7 @@ and we now have the ability to get feedback from <strong>Scaler</strong> functio
 minimal and clean. You can see the full code in 
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
 <p>Here is the remaining implementation of <strong>Metric Collector</strong>:</p>
-<pre><code class="lang-csharp">[FunctionName(nameof(MetricCollector))]
+<pre><code class="language-csharp">[FunctionName(nameof(MetricCollector))]
 public static async Task MetricCollector(
     [TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo myTimer,
     [OrchestrationClient] DurableOrchestrationClient client,
@@ -433,8 +583,7 @@ public static async Task MetricCollector(
         log.Info($&quot;Collector: Current metric value is {metric.Value.Value} at {DateTime.Now}&quot;);
         await client.RaiseEventAsync(resource, nameof(Metric), metric);
     }
-}
-</code></pre>
+}</code></pre>
 <p>It&#39;s still a timer-triggered &quot;normal&quot; (non-durable) function, but now it 
 also has an additional binding to <code>OrchestrationClient</code>. This client is used 
 to communicate metric data to the <strong>Scaling Logic</strong>.</p>
@@ -573,7 +722,7 @@ the re-scaling action on App Service Plan using Azure Management SDK.</p>
 Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</p>
 <h2 id="metric-collector">Metric Collector</h2>
 <p>First, let&#39;s define <code>MetricValue</code> class, which simply holds time and value:</p>
-<pre><code class="lang-csharp">public class MetricValue
+<pre><code class="language-csharp">public class MetricValue
 {
     public MetricValue(DateTime time, int value)
     {
@@ -584,11 +733,10 @@ Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</
     public DateTime Time { get; }
 
     public int Value { get; }
-}
-</code></pre>
+}</code></pre>
 <p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
 Plan name) and measured parameter name:</p>
-<pre><code class="lang-csharp">public class Metric
+<pre><code class="language-csharp">public class Metric
 {
     public Metric(string resourceName, string name, MetricValue value)
     {
@@ -602,11 +750,10 @@ Plan name) and measured parameter name:</p>
     public string Name { get; }
 
     public MetricValue Value { get; }
-}
-</code></pre>
+}</code></pre>
 <p>The function definition has two associated bindings: timer trigger (runs every
 minute) and return binding to the storage queue:</p>
-<pre><code class="lang-csharp">[FunctionName(&quot;MetricCollector&quot;)]
+<pre><code class="language-csharp">[FunctionName(&quot;MetricCollector&quot;)]
 [return: Queue(&quot;Metrics&quot;)]
 public static Metric MetricCollector([TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo myTimer, TraceWriter log)
 {
@@ -623,8 +770,7 @@ public static Metric MetricCollector([TimerTrigger(&quot;0 */1 * * * *&quot;)] T
     var resource = Environment.GetEnvironmentVariable(&quot;ResourceToScale&quot;);
     var value = new MetricValue(DateTime.Now, (int)backlog);
     return new Metric(resource, $&quot;{topic}-{subscription}-backlog&quot;, value);
-}
-</code></pre>
+}</code></pre>
 <p>The function executes the following steps:</p>
 <ul>
 <li>Reads configuration value for Service Bus parameters;</li>
@@ -645,19 +791,18 @@ keep the state in between function calls.</li>
 <p>The bindings are illustrated on the following picture:</p>
 <p><img src="/2017/07/custom-auto-scaling-in-azure//ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
 <p>And here is the corresponding Function signature:</p>
-<pre><code class="lang-csharp">[FunctionName(&quot;ScalingLogic&quot;)]
+<pre><code class="language-csharp">[FunctionName(&quot;ScalingLogic&quot;)]
 [return: Queue(&quot;Actions&quot;)]
 public static ScaleAction ScalingLogic(
     [QueueTrigger(&quot;Metrics&quot;)] Metric metric, 
     [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] ScalingStateEntity stateEntity, 
     [Table(&quot;Scaling&quot;, &quot;{ResourceName}&quot;, &quot;{Name}&quot;)] out ScalingStateEntity newStateEntity,
-    TraceWriter log)
-</code></pre>
+    TraceWriter log)</code></pre>
 <p>Table storage is partitioned per scalable resource, and state is stored per metric;
 thus multiple resources and metrics are supported out of the box.</p>
 <p>The function implementation is relatively complex, so I&#39;ll describe it in parts.</p>
 <p><code>ScaleAction</code> is a simple message class:</p>
-<pre><code class="lang-csharp">public enum ScaleActionType
+<pre><code class="language-csharp">public enum ScaleActionType
 {
     Up,
     Down
@@ -674,42 +819,37 @@ public class ScaleAction
     public string ResourceName { get; }
 
     public ScaleActionType Type { get; }
-}
-</code></pre>
+}</code></pre>
 <p>Table Storage only allows primitive types for its columns, like strings. 
 So I had to create a separate Table Storage entity class:</p>
-<pre><code class="lang-csharp">public class ScalingStateEntity : TableEntity
+<pre><code class="language-csharp">public class ScalingStateEntity : TableEntity
 {
     public string SerializedState { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>which stores serialized state, from the state class itself:</p>
-<pre><code class="lang-csharp">public class ScalingState
+<pre><code class="language-csharp">public class ScalingState
 {
     public List&lt;MetricValue&gt; History { get; } = new List&lt;MetricValue&gt;();
 
     public DateTime LastScalingActionTime { get; set; } = DateTime.MinValue;
-}
-</code></pre>
+}</code></pre>
 <p>Now let&#39;s look at the function body. It consists of four blocks. </p>
 <p>The first block retrieves the previous values of the metric and logs it too:</p>
-<pre><code class="lang-csharp">// 1. Deserialize state
+<pre><code class="language-csharp">// 1. Deserialize state
 var state = stateEntity?.SerializedState != null 
     ? JsonConvert.DeserializeObject&lt;ScalingState&gt;(stateEntity.SerializedState) 
     : new ScalingState();
 var history = state.History;
-log.Info($&quot;Scaling logic: Received {metric.Name}, previous state is {string.Join(&quot;, &quot;, history)}&quot;);
-</code></pre>
+log.Info($&quot;Scaling logic: Received {metric.Name}, previous state is {string.Join(&quot;, &quot;, history)}&quot;);</code></pre>
 <p>The second block adds the current metric value and removes all metrics which are
 not in the target period of 10 minutes anymore:</p>
-<pre><code class="lang-csharp">// 2. Add current metric value, remove old values
+<pre><code class="language-csharp">// 2. Add current metric value, remove old values
 history.Add(metric.Value);
-history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
-</code></pre>
+history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));</code></pre>
 <p>Now, the actual logic finally kicks in and produces the scaling action if average
 or maximum value is above or below respective thresholds. For my implementation I also
 chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
-<pre><code class="lang-csharp">// 3. Compare the aggregates to thresholds, produce scaling action if needed
+<pre><code class="language-csharp">// 3. Compare the aggregates to thresholds, produce scaling action if needed
 ScaleAction action = null;
 if (history.Count &gt;= 5
     &amp;&amp; DateTime.Now - state.LastScalingActionTime &gt; cooldownPeriod)
@@ -728,22 +868,20 @@ if (history.Count &gt;= 5
         state.LastScalingActionTime = DateTime.Now;
         action = new ScaleAction(metric.ResourceName, ScaleActionType.Down);
     }
-}
-</code></pre>
+}</code></pre>
 <p>Finally, the state is serialized back to table entity and action is returned: </p>
-<pre><code class="lang-csharp">// 4. Serialize the state back and return the action
+<pre><code class="language-csharp">// 4. Serialize the state back and return the action
 newStateEntity = stateEntity != null 
     ? stateEntity 
     : new ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
 newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
-return action;
-</code></pre>
+return action;</code></pre>
 <p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message 
 gets sent to the output queue.</p>
 <h2 id="scaler">Scaler</h2>
 <p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
 I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
-<pre><code class="lang-csharp">[FunctionName(&quot;Scaler&quot;)]
+<pre><code class="language-csharp">[FunctionName(&quot;Scaler&quot;)]
 public static void Scaler([QueueTrigger(&quot;Actions&quot;)] ScaleAction action, TraceWriter log)
 {
     var secrets = Environment.GetEnvironmentVariable(&quot;ServicePrincipal&quot;).Split(&#39;,&#39;);
@@ -764,8 +902,7 @@ public static void Scaler([QueueTrigger(&quot;Actions&quot;)] ScaleAction action
     plan.Update()
         .WithCapacity(newCapacity)
         .Apply();
-}
-</code></pre>
+}</code></pre>
 <p>The functionality is pretty straightforward. Here are some links where you can read more about 
 <a href="https://docs.microsoft.com/en-us/dotnet/azure/dotnet-sdk-azure-authenticate?view=azure-dotnet#a-namemgmt-authaazure-management-libraries-for-net-authentication">Authentication in Azure Management libraries</a> 
 and <a href="https://github.com/Azure-Samples/app-service-dotnet-scale-web-apps">Managing Web App with Fluent SDK</a>.</p>
@@ -814,8 +951,7 @@ of this article will try to answer this seemingly simple question.</p>
 Bus in batches. The amount of batches should be close to minimal, but
 obviously each one of them must satisfy the restriction of 256k max size.</p>
 <p>So, we want to implement a method with the following signature:</p>
-<pre><code class="lang-csharp">public Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
-</code></pre>
+<pre><code class="language-csharp">public Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);</code></pre>
 <p>which would work for collections of any size.</p>
 <p>To limit the scope, I will restrict the article to the following assumptions:</p>
 <ul>
@@ -836,7 +972,7 @@ of sending the big batch, we might end up with partially sent batch.</p>
 It&#39;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a 
 helpful extension method that will split an arbitrary collection based on
 a metric function and maximum chunk size:</p>
-<pre><code class="lang-csharp">public static List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(this IEnumerable&lt;T&gt; source, Func&lt;T, long&gt; metric, long maxChunkSize)
+<pre><code class="language-csharp">public static List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(this IEnumerable&lt;T&gt; source, Func&lt;T, long&gt; metric, long maxChunkSize)
 {
     return source
         .Aggregate(
@@ -860,10 +996,9 @@ a metric function and maximum chunk size:</p>
                 return new { Sum = agg.Sum + value, agg.Current, agg.Result };
             })
         .Result;
-}
-</code></pre>
+}</code></pre>
 <p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
-<pre><code class="lang-csharp">public async Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, long&gt; getSize)
+<pre><code class="language-csharp">public async Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, long&gt; getSize)
 {
     var chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
     foreach (var chunk in chunks)
@@ -874,8 +1009,7 @@ a metric function and maximum chunk size:</p>
 }
 
 private const long MaxServiceBusMessage = 256000;
-private readonly QueueClient client;
-</code></pre>
+private readonly QueueClient client;</code></pre>
 <p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
 Another thing to notice is that we lost all-or-nothing guarantee: we might
 be able to send the first chunk, and then get an exception from subsequent
@@ -885,7 +1019,7 @@ parts. Some sort of retry mechanism is probably needed.</p>
 <code>getSize</code> function? </p>
 <p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
 rewrite our method the following way:</p>
-<pre><code class="lang-csharp">public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+<pre><code class="language-csharp">public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
 {
     var brokeredMessages = messages.Select(m =&gt; new BrokeredMessage(m));
     var chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
@@ -893,8 +1027,7 @@ rewrite our method the following way:</p>
     {
         await client.SendBatchAsync(chunk);
     }
-}
-</code></pre>
+}</code></pre>
 <p>Unfortunately, this won&#39;t work properly. A quote from documentation:</p>
 <blockquote>
 <p>The value of Size is only accurate after the BrokeredMessage 
@@ -913,15 +1046,13 @@ or set no custom headers at all. </p>
 <p>In this case, you might just measure this size once, and then put this
 fixed value inside a configuration file.</p>
 <p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
-<pre><code class="lang-csharp">var sizeBefore = message.Size;
+<pre><code class="language-csharp">var sizeBefore = message.Size;
 client.Send(message);
 var sizeAfter = message.Size;
-var headerSize = sizeAfter - sizeBefore;
-</code></pre>
+var headerSize = sizeAfter - sizeBefore;</code></pre>
 <p>Now you just need to adjust one line from the previous version of 
 <code>SendBigBatchAsync</code> method</p>
-<pre><code class="lang-csharp">var chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
-</code></pre>
+<pre><code class="language-csharp">var chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);</code></pre>
 <p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
 per application.</p>
 <h2 id="measuring-of-header-size-per-message">Measuring of Header Size per Message</h2>
@@ -942,7 +1073,7 @@ the send operation and adjust future calculations based on actual measured size
 of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
 operation failed, so we can use this information.</p>
 <p>Here is a sketch of how to do that in code:</p>
-<pre><code class="lang-csharp">// Sender is reused across requests
+<pre><code class="language-csharp">// Sender is reused across requests
 public class BatchSender
 {
     private readonly QueueClient queueClient;
@@ -987,8 +1118,7 @@ public class BatchSender
 
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>The code example is quite involved, here is what actually happens:</p>
 <ol>
 <li><p>Create a brokered message for each message object, but also save the
@@ -1043,77 +1173,6 @@ for status updates.</p>
     
 </article>
 
-    <article class="post">
-    <div class="post-date">Jun 7th, 2017</div>
-    
-    <h1><a href='/2017/06/finding-lost-events-in-azure-application-insights/'>Finding Lost Events in Azure Application Insights</a></h1>
-    
-    <div class="post-content">
-        <p>One of the ways we use Azure Application Insights is tracking custom
-application-specific events. For instance, every time a data point from an
-IoT device comes in, we log an AppInsights event. Then we are able to
-aggregate the data and plot charts to derive trends and detect possible 
-anomalies.</p>
-<p>And recently we found such anomaly, which looked like this:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//dashboard-chart.png" alt="Amount of Events on Dashboard Chart"></p>
-<p>This is a chart from our Azure dashboard, which shows the total amount of
-events of specific type received per day. </p>
-<p>The first two &quot;hills&quot; are two weeks, so we can clearly see that we get more
-events on business days compared to weekends.</p>
-<p>But then something happened on May 20: we started getting much less events,
-and the hill pattern disappeared, days looks much more alike.</p>
-<p>We haven&#39;t noticed any other problems in the system, but the trend looked
-quite bothering. Are we loosing data?</p>
-<p>I headed towards Analytics console of Application Insights to dig deeper.
-Here is the query that reproduces the problem:</p>
-<pre><code>customEvents
-| where name == &quot;EventXReceived&quot;
-| where timestamp &gt;= ago(22d)
-| project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]), timestamp
-| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
-| render timechart
-</code></pre><p>and I got the same chart as before:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics1.png" alt="Trend on Application Insights Analytics"></p>
-<p>I checked the history of our source code repository and deployments and I
-figured out that we upgraded the version of Application Insights SDK from 
-version 2.1 to version 2.3.</p>
-<p>My guess at this point was that Application Insights started sampling our
-data instead of sending all events to the server. After reading 
-<a href="https://docs.microsoft.com/en-us/azure/application-insights/app-insights-sampling">Sampling in Application Insights</a>
-article, I came up with the following query to see the sampling rate:</p>
-<pre><code>customEvents
-| where name == &quot;EventXReceived&quot;
-| where timestamp &gt;= ago(22d)
-| summarize 100/avg(itemCount) by bin(timestamp, 1d) 
-| render areachart
-</code></pre><p>and the result is self-explanatory:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//sampling-rate.png" alt="Sampling Rate"></p>
-<p>Clearly, the sampling rate dropped from 100% down to about 30% right when
-the anomaly started. The sampling-adjusted query (note <code>itemCount</code> multiplication)</p>
-<pre><code>customEvents
-| where name == &quot;EventXReceived&quot;
-| where timestamp &gt;= ago(22d)
-| project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]) * itemCount, timestamp
-| summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
-| render timechart
-</code></pre><p>puts us back to the point when results make sense:</p>
-<p><img src="/2017/06/finding-lost-events-in-azure-application-insights//analytics2.png" alt="Adjusted Trend on Application Insights Analytics"></p>
-<p>The third week&#39;s Thursday was bank holiday in several European countries, so 
-we got a drop there.</p>
-<p>Should Azure dashboard items take sampling into account - to avoid
-confusing people and to show more useful charts?</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/application-insights/'>Application Insights</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
@@ -1136,7 +1195,6 @@ confusing people and to show more useful charts?</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

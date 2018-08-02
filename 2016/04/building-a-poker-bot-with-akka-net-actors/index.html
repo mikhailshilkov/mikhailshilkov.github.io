@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -162,23 +162,20 @@ Akka.NET scheduling system just to be periodically activated.</p>
 <p>The domain function is called <code>findWindows</code> and has the type <code>unit -&gt; WindowInfo seq</code>.
 It returns the poker window screenshots and titles.</p>
 <p>Actor function of type <code>int -&gt; seq&lt;string * WindowInfo&gt;</code> is used by the 
-<a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to </p>
-<p>define the behavior. The ouput tuple defines an ID of an output actor and a
+<a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to 
+define the behavior. The ouput tuple defines an ID of an output actor and a
 message to send to it:</p>
-<pre><code class="lang-fsharp">let findActor msg = 
+<pre><code class="language-fsharp">let findActor msg = 
   findWindows ()
-  |&gt; Seq.map (fun x -&gt; (&quot;recognizer-actor-&quot; + x.TableName, x))
-</code></pre>
+  |&gt; Seq.map (fun x -&gt; (&quot;recognizer-actor-&quot; + x.TableName, x))</code></pre>
 <p>Here is how I spawn the singleton instance of this actor:</p>
-<pre><code class="lang-fsharp">let tableFinderRef = 
+<pre><code class="language-fsharp">let tableFinderRef = 
   actorOfRouteToChildren findActor (spawnChild recognizer)
-  |&gt; spawn system &quot;table-finder-actor&quot;
-</code></pre>
+  |&gt; spawn system &quot;table-finder-actor&quot;</code></pre>
 <p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
 <code>spawn</code> function with proper parameter order:</p>
-<pre><code class="lang-fsharp">let spawnChild childActor name (mailbox : Actor&lt;&#39;a&gt;) = 
-  spawn mailbox.Context name childActor
-</code></pre>
+<pre><code class="language-fsharp">let spawnChild childActor name (mailbox : Actor&lt;&#39;a&gt;) = 
+  spawn mailbox.Context name childActor</code></pre>
 <p>We can also extend it to debug messages when new actors get created.</p>
 <h2 id="recognizer">Recognizer</h2>
 <p>Recognizer receives the <code>WindowInfo</code> produced by the Table Finder.</p>
@@ -190,16 +187,14 @@ of these series.</p>
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern. 
 The output is a decision message for Decision Maker actor which is a supervised 
 child of the Recognizer. Here is the actor function:</p>
-<pre><code class="lang-fsharp">let recognizeActor (window : WindowInfo) =
+<pre><code class="language-fsharp">let recognizeActor (window : WindowInfo) =
   let result = recognize window.Bitmap
   { WindowTitle = window.Title 
     TableName = window.TableName 
     Screen = result 
-    Bitmap = window.Bitmap }
-</code></pre>
+    Bitmap = window.Bitmap }</code></pre>
 <p>And here is the spawn function:</p>
-<pre><code class="lang-fsharp">let recognizer = actorOfConvertToChild recognizeActor (spawnChild decider &quot;decider&quot;)
-</code></pre>
+<pre><code class="language-fsharp">let recognizer = actorOfConvertToChild recognizeActor (spawnChild decider &quot;decider&quot;)</code></pre>
 <p>Notice how this expression was used in Table Finder instantiation above.</p>
 <h2 id="decision-maker">Decision Maker</h2>
 <p>Decision Maker actor function is an implementation of 
@@ -212,28 +207,25 @@ ignored.</p>
 <p>This way the actor function has the type of 
 <code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code> 
 and looks like this:</p>
-<pre><code class="lang-fsharp">let decisionActor msg lastScreen =
+<pre><code class="language-fsharp">let decisionActor msg lastScreen =
   let screen = msg.Screen
   match lastScreen with
   | Some s when s = screen -&gt; (None, lastScreen)
   | _ -&gt;
     let action = decide screen
     let outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
-    (Some outMsg, Some screen)
-</code></pre>
+    (Some outMsg, Some screen) </code></pre>
 <p>Here is the spawn function:</p>
-<pre><code class="lang-fsharp">let decider = actorOfStatefulConvert decisionActor None clickerRef
-</code></pre>
+<pre><code class="language-fsharp">let decider = actorOfStatefulConvert decisionActor None clickerRef</code></pre>
 <p>where <code>None</code> represents the initial state.</p>
 <h2 id="button-clicker">Button Clicker</h2>
 <p>Clicker actor has the simplest implementation because it does not send messages to other actors.
 Here is the message that it receives from Decision Maker:</p>
-<pre><code class="lang-fsharp">type ClickTarget = (int * int * int * int)
+<pre><code class="language-fsharp">type ClickTarget = (int * int * int * int)
 type ClickerMessage = {
   WindowTitle: string
   Clicks: ClickTarget[]
-}
-</code></pre>
+}</code></pre>
 <p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
 clicks as side effect. You can read more about the mouse movements in 
 <a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">Part 3</a>
@@ -241,8 +233,7 @@ of these series.</p>
 <p><a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
 pattern is used for this actor, so actor function isn&#39;t
 really needed. We spawn the singleton instance with the following statement:</p>
-<pre><code class="lang-fsharp">let clickerRef = actorOfSink click |&gt; spawn system &quot;clicker-actor&quot;
-</code></pre>
+<pre><code class="language-fsharp">let clickerRef = actorOfSink click |&gt; spawn system &quot;clicker-actor&quot;</code></pre>
 <p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>The top layer of poker player application is composed of small single-purpose
@@ -294,7 +285,6 @@ very thin, and thus easy to understand and maintain. </p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -308,7 +298,6 @@ very thin, and thus easy to understand and maintain. </p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

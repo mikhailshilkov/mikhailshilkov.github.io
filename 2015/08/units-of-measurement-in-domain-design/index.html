@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -86,24 +86,21 @@ When working with 3rd party code, you can always find an answer on stack overflo
 <p>Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.</p>
 <h2 id="problem-statement">Problem statement</h2>
 <p>Our toy example will be about cars and fuel consumption. You receive some data about the trip of your car, e.g. an instance of</p>
-<pre><code class="lang-csharp">public interface ITrip
+<pre><code class="language-csharp">public interface ITrip
 {
     double FuelUsed { get; }
     double Distance { get; }
-}
-</code></pre>
+}</code></pre>
 <p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
-<pre><code class="lang-csharp">var fuelRate = trip.FuelUsed / trip.Distance;
-</code></pre>
+<pre><code class="language-csharp">var fuelRate = trip.FuelUsed / trip.Distance;</code></pre>
 <p>You get the value, but what is it? Let&#39;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
-<pre><code class="lang-csharp">public interface ITrip
+<pre><code class="language-csharp">public interface ITrip
 {
     double FuelUsedInLiters { get; }
     double DistanceInKilometers { get; }
 }
 
-var fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * 100.0 / trip.DistanceInKilometers;
-</code></pre>
+var fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * 100.0 / trip.DistanceInKilometers;</code></pre>
 <p>Now it&#39;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
 <ol>
 <li><p>You will start measuring same things in different units. E.g. you will store the distance in meters in the database, so you&#39;ll have to multiply by 1000 somewhere in persistence layer.</p>
@@ -117,14 +114,13 @@ var fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * 100.0 / trip.Distan
 <h2 id="defining-the-units">Defining the units</h2>
 <p>I tried several options like generic classes for units, but I ended up having a struct per measurement. The code is very boring and repetitive, but it provides me with the strongest compile-time checks and nice readability. If you are too bored with typing, you can do some code generation or just use 3rd party that suits you.
 So, my end result looks like</p>
-<pre><code class="lang-csharp">public interface ITrip
+<pre><code class="language-csharp">public interface ITrip
 {
     Volume FuelUsed { get; }
     Distance Distance { get; }
-}
-</code></pre>
+}</code></pre>
 <p>Let&#39;s see how Distance is defined (Volume will be almost exactly same):</p>
-<pre><code class="lang-csharp">public struct Distance
+<pre><code class="language-csharp">public struct Distance
 {
     private Distance(double kilometers)
     {
@@ -138,8 +134,7 @@ So, my end result looks like</p>
     public static readonly Distance Zero = new Distance(0.0);
 
     ...
-}
-</code></pre>
+}</code></pre>
 <p>Several important things to notice here:</p>
 <ol>
 <li><p>It&#39;s a struct.</p>
@@ -156,7 +151,7 @@ Of course, default constructor is still public, but you can only create a zero v
 <p>So, how do we create measurement objects?</p>
 <h3 id="factory-method">Factory method</h3>
 <p>The classic way is a set of static factory methods:</p>
-<pre><code class="lang-cs">public static Distance FromKilometers(double kilometers)
+<pre><code class="language-cs">public static Distance FromKilometers(double kilometers)
 {
     return new Distance(kilometers);
 }
@@ -164,65 +159,55 @@ Of course, default constructor is still public, but you can only create a zero v
 public static Distance FromMeters(double meters)
 {
     return new Distance(meters / 1000.0);
-}
-</code></pre>
+}</code></pre>
 <p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
 <h3 id="extension-method">Extension method</h3>
 <p>Imagine you have the following code which converts an integer value of a database result into our units</p>
-<pre><code class="lang-cs">trip.Distance = Distance.FromMeters(database.ReadInt32(&quot;TotalDistance&quot;)
-                        .GetDefaultOrEmpty());
-</code></pre>
+<pre><code class="language-cs">trip.Distance = Distance.FromMeters(database.ReadInt32(&quot;TotalDistance&quot;)
+                        .GetDefaultOrEmpty());</code></pre>
 <p>Such a long expression reads better with a fluent interface like</p>
-<pre><code class="lang-cs">trip.Distance = database.ReadInt32(&quot;TotalDistance&quot;)
+<pre><code class="language-cs">trip.Distance = database.ReadInt32(&quot;TotalDistance&quot;)
                         .GetDefaultOrEmpty()
-                        .MetersToDistance();
-</code></pre>
+                        .MetersToDistance();</code></pre>
 <p><code>MetersToDistance</code> in this case is an extension method:</p>
-<pre><code class="lang-cs">public static class DistanceExtensions
+<pre><code class="language-cs">public static class DistanceExtensions
 {
     public static Distance MetersToDistance(this double meters)
     {
         return Distance.FromMeters(meters);
     }
-}
-</code></pre>
+}</code></pre>
 <h3 id="operator-with-static-class-using">Operator with static class using</h3>
 <p>C# 6 brings us a new language construct. Now we can import a static helper class</p>
-<pre><code class="lang-cs">using static Units.Constants;
-</code></pre>
+<pre><code class="language-cs">using static Units.Constants;</code></pre>
 <p>And then we can write something like</p>
-<pre><code>var distance = 10.0 * km;
-</code></pre><p>where <code>km</code> is defined in that static class:</p>
-<pre><code class="lang-cs">public static class Constants
+<pre><code>var distance = 10.0 * km;</code></pre><p>where <code>km</code> is defined in that static class:</p>
+<pre><code class="language-cs">public static class Constants
 {
     public static readonly Distance km = Distance.FromKilometers(1.0);
-}
-</code></pre>
+}</code></pre>
 <p>This may not look like idiomatic C#, but I think it&#39;s very good at least for writing unit tests:</p>
-<pre><code class="lang-cs">var target = new Trip
+<pre><code class="language-cs">var target = new Trip
 {
     DistanceOnFoot = 5 * km,
     DistanceOnBicycle = 10 * km,
     DistanceOnCar = 30 * km
 };
-target.TotalDistance.Should().Be((30 + 10 + 5) * km);
-</code></pre>
+target.TotalDistance.Should().Be((30 + 10 + 5) * km);</code></pre>
 <p>For this to compile you just need to define the operator overload:</p>
-<pre><code class="lang-cs">public static Distance operator*(int value, Distance distance)
+<pre><code class="language-cs">public static Distance operator*(int value, Distance distance)
 {
     return Distance.FromKilometers(value * distance.Kilometers);
-}
-</code></pre>
+}</code></pre>
 <h2 id="conversion-and-printing">Conversion and printing</h2>
 <p>More advanced unit conversions are easy with unit classes. A common use case would be to convert metric units to imperial system. All you need to do is to add another calculated property</p>
-<pre><code class="lang-cs">// Distance class
+<pre><code class="language-cs">// Distance class
 private const double MilesInKilometer = 0.621371192;
 private const double FeetInMeter = = 3.2808399;
 
 public double Miles =&gt; this.Kilometers * MilesInKilometer;
 
-public double Feet =&gt; this.Meters * FeetInMeter;
-</code></pre>
+public double Feet =&gt; this.Meters * FeetInMeter;</code></pre>
 <p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
 <ul>
 <li>Format based on user preferences (metric/imperial)</li>
@@ -234,16 +219,14 @@ public double Feet =&gt; this.Meters * FeetInMeter;
 <h2 id="unit-derivation">Unit derivation</h2>
 <p>Once you write more unit classes, you will definitely want to derive the calculation result of two units into the third one. In our example, we want to divide <code>Volume</code> of fuel used by <code>Distance</code> to get fuel <code>ConsumptionRate</code>.</p>
 <p>There&#39;s no magic that you could do here. You will have to define <code>ConsumptionRate</code> class the same way you defined the other two, and then just overload the operation</p>
-<pre><code class="lang-cs">public static ConsumptionRate operator/(Volume volume, Distance distance)
+<pre><code class="language-cs">public static ConsumptionRate operator/(Volume volume, Distance distance)
 {
     return ConsumptionRate
         .FromLitersPer100Kilometers(volume.Liters * 100.0 / distance.Kilometers);
-}
-</code></pre>
+}</code></pre>
 <p>Of course, you&#39;ll have to define all the required combinations explicitly.</p>
 <p>If you defined Constants as described above, you&#39;ll be able to instantiate values in your tests in the following way:</p>
-<pre><code class="lang-cs">var fuelRate = 7.5 * lit / (100 * km);
-</code></pre>
+<pre><code class="language-cs">var fuelRate = 7.5 * lit / (100 * km);</code></pre>
 <h2 id="should-i-use-3rd-party-libraries-for-that-">Should I use 3rd party libraries for that?</h2>
 <p>It depends. Of course, people implemented all this functionality about 1 million times before you, so there are numerous libraries on GitHub.</p>
 <p>I would say, if you start a new project and you don&#39;t have a strong opinion about the unit code, just go grab the library and try to use it.</p>
@@ -293,7 +276,6 @@ public double Feet =&gt; this.Meters * FeetInMeter;
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -307,7 +289,6 @@ public double Feet =&gt; this.Meters * FeetInMeter;
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

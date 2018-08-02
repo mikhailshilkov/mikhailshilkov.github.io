@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -159,7 +159,7 @@ parses JSON, extracts the numeric value, and saves it into the sensor history.</
 messages in the backlog of a given Azure Service Bus queue. The 
 <code>function.json</code> file configures input and output HTTP bindings, including
 two parameters to derive from the URL: <code>account</code> (namespace) and queue <code>name</code>:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
   &quot;bindings&quot;: [
     {
       &quot;authLevel&quot;: &quot;function&quot;,
@@ -175,12 +175,11 @@ two parameters to derive from the URL: <code>account</code> (namespace) and queu
     }
   ],
   &quot;disabled&quot;: false
-}
-</code></pre>
+}</code></pre>
 <p>The C# implementation uses standard Service Bus API and a connection string
 from App Service configuration to retrieve the required data. And then returns
 a dynamic object, which will be converted to JSON by Function App runtime.</p>
-<pre><code class="lang-csharp">#r &quot;Microsoft.ServiceBus&quot;
+<pre><code class="language-csharp">#r &quot;Microsoft.ServiceBus&quot;
 
 using System.Net;
 using Microsoft.ServiceBus;
@@ -195,8 +194,7 @@ public static object Run(HttpRequestMessage req, string account, string name)
         messageCount = queue.MessageCountDetails.ActiveMessageCount,
         dlq = queue.MessageCountDetails.DeadLetterMessageCount
     };
-}
-</code></pre>
+}</code></pre>
 <p>And that is all the code required to start monitoring the queues!</p>
 <h2 id="service-bus-queue-statistics">Service Bus Queue Statistics</h2>
 <p>In addition to queue backlog and dead letter queue size, we wanted to see
@@ -206,7 +204,7 @@ so I described the whole approach in a separate post:
 <a href="https://mikhail.io/2017/03/azure-service-bus-entity-metrics-dotnet-apis/">Azure Service Bus Entity Metrics .NET APIs</a>.</p>
 <p>In my Azure Function I&#39;m using the NuGet package that I mentioned in the post.
 This is accomplished by adding a <code>project.json</code> file:</p>
-<pre><code class="lang-json">{
+<pre><code class="language-json">{
   &quot;frameworks&quot;: {
     &quot;net46&quot;:{
       &quot;dependencies&quot;: {
@@ -214,13 +212,12 @@ This is accomplished by adding a <code>project.json</code> file:</p>
       }
     }
    }
-}
-</code></pre>
+}</code></pre>
 <p>The <code>function.json</code> file is similar to the previous one, but with one added
 parameter called <code>metric</code>. I won&#39;t repeat the whole file here.</p>
 <p>The Function implementation loads a certificate from the store, calls 
 metric API and returns the last metric value available:</p>
-<pre><code class="lang-csharp">using System.Linq;
+<pre><code class="language-csharp">using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using MikhailIo.ServiceBusEntityMetrics;
 
@@ -240,8 +237,7 @@ public static DataPoint Run(HttpRequestMessage req, string account, string name,
     var client = new QueueStatistics(certCollection[0], subscription, account, name);
     var metrics = client.GetMetricSince(metric, DateTime.UtcNow.AddMinutes(-30));
     return metrics.LastOrDefault();
-}
-</code></pre>
+}</code></pre>
 <p>Don&#39;t forget to set <code>WEBSITE_LOAD_CERTIFICATES</code> setting to your certificate 
 thumbprint, otherwise Function App won&#39;t load it.</p>
 <h2 id="web-app-instance-count">Web App Instance Count</h2>
@@ -253,7 +249,7 @@ instances to increase the overall throughput.</p>
 <p>There is a REST endpoint to retrieve this information, but this time
 authentication and authorization are implemented with Active Directory. I
 created a helper class to wrap the authentication logic:</p>
-<pre><code class="lang-csharp">public static class RestClient
+<pre><code class="language-csharp">public static class RestClient
 {
     public static async Task&lt;T&gt; Query&lt;T&gt;(string url)
     {
@@ -278,12 +274,11 @@ created a helper class to wrap the authentication logic:</p>
             await context.AcquireTokenAsync(&quot;https://management.core.windows.net/&quot;, credential);
         return result.AccessToken;
     }
-}
-</code></pre>
+}</code></pre>
 <p>The function then uses this REST client to query Web App management API, 
 converts JSON to strongly typed C# objects and extracts the amount of
 instances into HTTP response:</p>
-<pre><code class="lang-csharp">public class Instance
+<pre><code class="language-csharp">public class Instance
 {
     public string id { get; set; }
     public string name { get; set; }
@@ -308,8 +303,7 @@ public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req)
     {
         instanceCount = response.value.Length
     });
-}
-</code></pre>
+}</code></pre>
 <p>Please follow <a href="https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-active-directory-application">this walkthrough</a>
 to setup your application in Active Directory, assign required permissions and
 get the proper keys.</p>
@@ -321,7 +315,7 @@ services used by that subscription will be reported.</p>
 <p>The exact usage of health service may depend on your use case, but the
 following example shows how to retrieve the basic counts of services per
 reported status.</p>
-<pre><code class="lang-csharp">public class ResourceProperties
+<pre><code class="language-csharp">public class ResourceProperties
 {
     public string availabilityState { get; set; }
     public string summary { get; set; }
@@ -365,8 +359,7 @@ public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req)
         other = other,
         details = r.value
     });
-}
-</code></pre>
+}</code></pre>
 <h2 id="users-online">Users Online</h2>
 <p>The last example I want to share is related to Application Insights data.
 For instance, we inject a small tracking snippet on our front-end page
@@ -378,7 +371,7 @@ preview, but at least it is nicely described at
 <a href="https://dev.applicationinsights.io/">dev.applicationinsights.io</a>. Be sure
 to check out <a href="https://dev.applicationinsights.io/apiexplorer/metrics">API Explorer</a> too.</p>
 <p>The following sample function returns the amount of users online:</p>
-<pre><code class="lang-csharp">public class UsersCount
+<pre><code class="language-csharp">public class UsersCount
 {
     public long unique { get; set; }
 }
@@ -411,8 +404,7 @@ public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req)
     {
         usersCount = r.value.UsersCount.unique
     });
-}
-</code></pre>
+}</code></pre>
 <h2 id="combine-several-metrics-in-one-sensor">Combine Several Metrics in One Sensor</h2>
 <p>Thanks to suggestion from Luciano Lingnau, we have migrated our PRTG
 sensors to <code>HTTP Data Advanced</code>. This sensor type allows bundling several 
@@ -432,7 +424,7 @@ sensors:</p>
 <p><code>HTTP Data Advanced</code> expects a URL which returns JSON of the predefined format.
 Here is a sample C# code to create a <code>dynamic</code> object which is then converted
 to the proper JSON:</p>
-<pre><code class="lang-csharp">return new
+<pre><code class="language-csharp">return new
 {
     prtg = new
     {
@@ -547,7 +539,6 @@ they are free to run!</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -561,7 +552,6 @@ they are free to run!</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

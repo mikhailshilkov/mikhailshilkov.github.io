@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>AWS Lambda Warmer as Pulumi Component | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="twitter:card" content="summary"></meta>
+    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
+
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="AWS Lambda Warmer as Pulumi Component" />
+    <meta property="og:url" content="https://mikhail.io/2018/08/aws-lambda-warmer-as-pulumi-component/" />
+
+    <meta property="og:image" content="https://mikhail.io/2018/08/aws-lambda-warmer-as-pulumi-component/teaser.jpg" />
+
+
+    <meta property="og:description" content="Provisioning AWS Lambda and API Gateway with Pulumi, examples in 5 programming languages" />
+
+
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
+
+    <meta name="generator" content="DocPad v6.80.6" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                    <li><a href="/tags/">Topics</a></li>
+                
+                    <li><a href="/archives/">Archives</a></li>
+                
+                    <li><a href="/talks/">Talks</a></li>
+                
+                    <li><a href="/about/">About</a></li>
+                
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <article class="post">
+    <div class="post-date">Aug 2nd, 2018</div>
+    
+    <h1>AWS Lambda Warmer as Pulumi Component</h1>
+    
+    <div class="post-content">
+        <p>Out of curiosity, I&#39;m currently investigating cold starts of Function-as-a-Service platforms of major cloud providers. Basically,
+if a function is not called for several minutes, the cloud instance behind it might be recycled, and then the next request will
+take longer because a new instance will need to be provisioned.</p>
+<p>Recently, Jeremy Daly <a href="https://www.jeremydaly.com/lambda-warmer-optimize-aws-lambda-function-cold-starts/">posted</a> a nice
+article about the proper way to keep AWS Lambda instances &quot;warm&quot; to (mostly) prevent cold starts with minimal overhead.
+Chris Munns <a href="https://twitter.com/chrismunns/status/1017777028274294784">endorsed</a> the article, so we know it&#39;s the right way.</p>
+<p>The amount of actions to be taken is quite significant:</p>
+<ul>
+<li>Define a CloudWatch event which would fire every 5 minutes</li>
+<li>Bind this event as another trigger for your Lambda</li>
+<li>Inside the Lambda, detect whether current invocation is triggered by our CloudWatch event</li>
+<li>If so, short-circuit the execution and return immediately; otherwise, run the normal workload</li>
+<li>(Bonus point) If you want to keep multiple instances alive, do some extra dancing with calling itself N times in parallel,
+provided by an extra permission to do so.</li>
+</ul>
+<h2 id="pursuing-reusability">Pursuing Reusability</h2>
+<p>To simplify this for his readers, Jeremy was so kind to</p>
+<ul>
+<li>Create an NPM package which you can install and then call from a function-to-be-warmed</li>
+<li>Provide SAM and Serverless Framework templates to automate Cloud Watch integration</li>
+</ul>
+<p>Those are still two distinct steps: writing the code (JS + NPM) and provisioning the cloud resources (YAML + CLI). There are some
+drawbacks to that:</p>
+<ul>
+<li>You need to change two parts, which don&#39;t look like each other</li>
+<li>They have to work in sync, e.g. Cloud Watch event must provide the right payload for the handler</li>
+<li>There&#39;s still some boilerplate for every new Lambda</li>
+</ul>
+<h2 id="pulumi-components">Pulumi Components</h2>
+<p>Pulumi takes a different approach. You can blend the application code and infrastructure management code
+into one cohesive cloud application.</p>
+<p>Related resources can be combined together into reusable components, which hide repetitive stuff behind code abstractions.</p>
+<p>One way to define an AWS Lambda with Typescript in Pulumi is the following:</p>
+<pre><code class="language-typescript">const handler = (event: any, context: any, callback: (error: any, result: any) =&gt; void) =&gt; {
+    const response = {
+        statusCode: 200,
+        body: &quot;Cheers, how are things?&quot;
+      };
+
+    callback(null, response);
+};
+
+const lambda = new aws.serverless.Function(&quot;my-function&quot;, { /* options */ }, handler);</code></pre>
+<p>The processing code <code>handler</code> is just passed to infrastructure code as a parameter.</p>
+<p>So, if I wanted to make reusable API for an &quot;always warm&quot; function, how would it look like?</p>
+<p>From the client code perspective, I just want to be able to do the same thing:</p>
+<pre><code class="language-typescript">const lambda = new mylibrary.WarmLambda(&quot;my-warm-function&quot;, { /* options */ }, handler);</code></pre>
+<p>CloudWatch? Event subscription? Short-circuiting? They are implementation details!</p>
+<h2 id="warm-lambda">Warm Lambda</h2>
+<p>Here is how to implement such component. The declaration starts with a Typescript class:</p>
+<pre><code class="language-typescript">export class WarmLambda extends pulumi.ComponentResource {
+    public lambda: aws.lambda.Function;
+
+    // Implementation goes here...
+}</code></pre>
+<p>We expose the raw Lambda Function object, so that it could be used for further bindings and retrieving outputs.</p>
+<p>The constructor accepts the same parameters as <code>aws.serverless.Function</code> provided by Pulumi:</p>
+<pre><code class="language-typescript">constructor(name: string,
+        options: aws.serverless.FunctionOptions,
+        handler: aws.serverless.Handler,
+        opts?: pulumi.ResourceOptions) {
+
+    // Subresources are created here...
+}</code></pre>
+<p>We start resource provisioning by creating the CloudWatch rule to be triggered every 5 minutes:</p>
+<pre><code class="language-typescript">const eventRule = new aws.cloudwatch.EventRule(`${name}-warming-rule`, 
+    { scheduleExpression: &quot;rate(5 minutes)&quot; },
+    { parent: this, ...opts }
+);</code></pre>
+<p>Then goes the cool trick. We substitute the user-provided handler with our own &quot;outer&quot; handler. This handler closes
+over <code>eventRule</code>, so it can use the rule to identify the warm-up event coming from CloudWatch. If such is identified,
+the handler short-circuits to the callback. Otherwise, it passes the event over to the original handler:</p>
+<pre><code class="language-typescript">const outerHandler = (event: any, context: aws.serverless.Context, callback: (error: any, result: any) =&gt; void) =&gt;
+{
+    if (event.resources &amp;&amp; event.resources[0] &amp;&amp; event.resources[0].includes(eventRule.name.get())) {
+        console.log(&#39;Warming...&#39;);
+        callback(null, &quot;warmed!&quot;);
+    } else {
+        console.log(&#39;Running the real handler...&#39;);
+        handler(event, context, callback);
+    }
+};</code></pre>
+<p>That&#39;s a great example of synergy enabled by doing both application code and application infrastructure in a
+single program. I&#39;m free to mix and match objects from both worlds.</p>
+<p>It&#39;s time to bind both <code>eventRule</code> and <code>outerHandler</code> to a new serverless function:</p>
+<pre><code class="language-typescript">const func = new aws.serverless.Function(
+    `${name}-warmed`, 
+    options, 
+    outerHandler, 
+    { parent: this, ...opts });
+this.lambda = func.lambda;            </code></pre>
+<p>Finally, I create an event subscription from CloudWatch schedule to Lambda:</p>
+<pre><code class="language-typescript">this.subscription = new serverless.cloudwatch.CloudwatchEventSubscription(
+    `${name}-warming-subscription`, 
+    eventRule,
+    this.lambda,
+    { },
+    { parent: this, ...opts });</code></pre>
+<p>And that&#39;s all we need for now! See the full code 
+<a href="https://github.com/mikhailshilkov/pulumi-serverless-examples/blob/master/WarmedLambda-TypeScript/warmLambda.ts">here</a>.</p>
+<p>Here is the output of <code>pulumi update</code> command for my sample &quot;warm&quot; lambda application:</p>
+<pre><code>     Type                                                      Name                            Plan
+ +   pulumi:pulumi:Stack                                       WarmLambda-WarmLambda-dev       create
+ +    samples:WarmLambda                                       i-am-warm                       create
+ +      aws-serverless:cloudwatch:CloudwatchEventSubscription  i-am-warm-warming-subscription  create
+ +        aws:lambda:Permission                                i-am-warm-warming-subscription  create
+ +        aws:cloudwatch:EventTarget                           i-am-warm-warming-subscription  create
+ +      aws:cloudwatch:EventRule                               i-am-warm-warming-rule          create
+ +      aws:serverless:Function                                i-am-warm-warmed                create
+ +         aws:lambda:Function                                 i-am-warm-warmed                create</code></pre><p>7 Pulumi components and 4 AWS cloud resources are provisioned by one <code>new WarmLambda()</code> line.</p>
+<h2 id="multi-instance-warming">Multi-Instance Warming</h2>
+<p>Jeremy&#39;s library supports warming several instances of Lambda by issuing parallel self-calls.</p>
+<p>Reproducing the same with Pulumi component should be fairly straightforward:</p>
+<ul>
+<li>Add an extra constructor option to accept the number of instances to keep warm</li>
+<li>Add a permission to call Lambda from itself</li>
+<li>Fire N calls when warming event is triggered</li>
+<li>Short-circuit those calls in each instance</li>
+</ul>
+<p>Note that only the first item would be visible to the client code. That&#39;s the power of componentization
+and code reuse.</p>
+<p>I didn&#39;t need multi-instance warming, so I&#39;ll leave the implementation as exercise for the reader.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Obligatory note: most probably, you don&#39;t need to add warming to your AWS Lambdas.</p>
+<p>But whatever advanced scenario you might have, it&#39;s likely that it is easier to express the scenario
+in terms of general-purpose reusable component, rather than a set of guidelines or templates.</p>
+<p>Happy hacking!</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2018/08/aws-lambda-warmer-as-pulumi-component//index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/aws/'>AWS</a>, <a href='/tags/aws-lambda/'>AWS Lambda</a>, <a href='/tags/pulumi/'>Pulumi</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/cold-starts/'>Cold Starts</a>
+    </div>
+    
+</article>
+    <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy F#, C#, Javascript and SQL development, reasoning about distributed systems, data processing pipelines, cloud and web apps. I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'https://mikhail.io/2018/08/aws-lambda-warmer-as-pulumi-component/';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'AWS Lambda Warmer as Pulumi Component';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/prism.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>

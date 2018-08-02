@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -85,14 +85,10 @@
 <p>Memory leaks in Silverlight applications may be found with WinDbg tool. Have a look here for a quick introduction:
 <a href="http://davybrion.com/blog/2009/08/finding-memory-leaks-in-silverlight-with-windbg/">http://davybrion.com/blog/2009/08/finding-memory-leaks-in-silverlight-with-windbg/</a></p>
 <p>Basically, I only use 4 commands in WinDbg. First, I enable debugging Silverlight 5 applications:</p>
-<pre><code>!load C:\Program Files (x86)\Microsoft Silverlight\5.0.61118.0\sos.dll
-</code></pre><p>Then, I get the amount of instances for class names matching the search pattern:</p>
-<pre><code>!dumpheap -stat -type &lt;type name&gt;
-</code></pre><p>Next, I use the result to locate class instances&#39; addresses:</p>
-<pre><code>!dumpheap -MT &lt;MT from previous&gt;
-</code></pre><p>Finally, I get the reference chain for each of address found:</p>
-<pre><code>!gcroot &lt;address&gt;
-</code></pre><p>Having done this, you&#39;ll have to turn your brain on and try to figure out whether you found a memory leak and why if yes, why it takes place. Here are several examples of memory leaks that I found during last session:</p>
+<pre><code>!load C:\Program Files (x86)\Microsoft Silverlight\5.0.61118.0\sos.dll</code></pre><p>Then, I get the amount of instances for class names matching the search pattern:</p>
+<pre><code>!dumpheap -stat -type &lt;type name&gt;</code></pre><p>Next, I use the result to locate class instances&#39; addresses:</p>
+<pre><code>!dumpheap -MT &lt;MT from previous&gt;</code></pre><p>Finally, I get the reference chain for each of address found:</p>
+<pre><code>!gcroot &lt;address&gt;</code></pre><p>Having done this, you&#39;ll have to turn your brain on and try to figure out whether you found a memory leak and why if yes, why it takes place. Here are several examples of memory leaks that I found during last session:</p>
 <ol>
 <li>HtmlPage.Document.AttachEvent() call, which was never detached. We were using some browser-level API to subscribe on HTML document events, and never cared about unsubscribing. I got it refactored to native Silverlight event handlers, and this solved the issue.</li>
 <li>Deriving from MultiScaleTileSource. We used to have several classes for map layer rendering, inherited from MultiScaleTileSource. If an instance of such class is never used for map rendering (no assignment to MultiScaleImage.Source), then the GC never collects it (together with everything it references, of course). Another portion of refactoring helped: do not derive from MultiScaleTileSource whenever it&#39;s not needed for MultiScaleImage population. Sounds trivial, right? But it helps a lot.</li>
@@ -154,8 +150,7 @@
  -&gt; 110df470 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
  -&gt; 110eb8b4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
  -&gt; 110ecde0 System.Windows.Style
- -&gt; 116d1cd4 OurNamespace.Controls.TextColumn
-</code></pre></li>
+ -&gt; 116d1cd4 OurNamespace.Controls.TextColumn</code></pre></li>
 </ol>
 <p>PageContainer is the application container which always exists, while TextColumn is a custom column class for a Telerik grid, which is already removed from application tree at the time point. Our TextColumn gets bound with root controls through ResourceDictionary/Style chain; and I can&#39;t explain the reason of such a leak. Though, clearing HeaderCellStyle when grid is not needed anymore does fix the problem. Weird enough.</p>
 <p>As you can see, there are numerous reasons for memory leaks in a Silverlight application. Some are obvious (e.g. global event handlers never unsubscribed), other ones are hard to understand intuitively and sometimes depend on runtime or third party internals. In any case, a way to fix or workaround always exists. Good luck with bug hunting!</p>
@@ -203,7 +198,6 @@
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -217,7 +211,6 @@
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

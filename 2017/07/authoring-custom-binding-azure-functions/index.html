@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -98,29 +98,26 @@ bindings: reading configuration values.</p>
 runtime uses <code>local.settings.json</code> file for that).</p>
 <p>That means, when you need a configuration value inside your C# code,
 you normally do</p>
-<pre><code class="lang-csharp">string setting = ConfigurationManager.AppSettings[&quot;MySetting&quot;];
-</code></pre>
+<pre><code class="language-csharp">string setting = ConfigurationManager.AppSettings[&quot;MySetting&quot;];</code></pre>
 <p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
 <p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a> 
 service bus subscription metrics, I wrote this kind of bulky code:</p>
-<pre><code class="lang-csharp">var resourceToScale = ConfigurationManager.AppSettings[&quot;ResourceToScale&quot;];
+<pre><code class="language-csharp">var resourceToScale = ConfigurationManager.AppSettings[&quot;ResourceToScale&quot;];
 
 var connectionString = ConfigurationManager.AppSettings[&quot;ServiceBusConnection&quot;];
 var topic = ConfigurationManager.AppSettings[&quot;Topic&quot;];
-var subscription = ConfigurationManager.AppSettings[&quot;Subscription&quot;];
-</code></pre>
+var subscription = ConfigurationManager.AppSettings[&quot;Subscription&quot;];</code></pre>
 <p>The code is no rocket science, but it&#39;s tedious to write, so instead I came
 up with this idea to define Functions:</p>
-<pre><code class="lang-csharp">public static void MyFunction(
+<pre><code class="language-csharp">public static void MyFunction(
     [TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo timer,
     [Configuration(Key = &quot;ResourceToScale&quot;)] string resource,
-    [Configuration] ServiceBusSubscriptionConfig config)
-</code></pre>
+    [Configuration] ServiceBusSubscriptionConfig config)</code></pre>
 <p>Note two usages of <code>Configuration</code> attribute. The first one defines the 
 specific configuration key, and binds its value to a string parameter. The 
 other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
 the config class as</p>
-<pre><code class="lang-csharp">public class ServiceBusSubscriptionConfig
+<pre><code class="language-csharp">public class ServiceBusSubscriptionConfig
 {
     public ServiceBusSubscriptionConfig(string serviceBusConnection, string topic, string subscription)
     {
@@ -132,8 +129,7 @@ the config class as</p>
     public string ServiceBusConnection { get; }
     public string Topic { get; }
     public string Subscription { get; }
-}
-</code></pre>
+}</code></pre>
 <p>The immutable class is a bit verbose, but I still prefer it over get-set
 container in this scenario.</p>
 <p>The binding behavior is convention-based in this case: the binding engine
@@ -159,20 +155,19 @@ simple:</p>
 <code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
 packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
 <p><strong>Define</strong> a class for binding attribute:</p>
-<pre><code class="lang-csharp">[AttributeUsage(AttributeTargets.Parameter)]
+<pre><code class="language-csharp">[AttributeUsage(AttributeTargets.Parameter)]
 [Binding]
 public class ConfigurationAttribute : Attribute
 {
     [AutoResolve]
     public string Key { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
 resolvable from <code>function.json</code>.</p>
 <p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
 how to use your binding correctly.</p>
 <p>The interface has just one method to implement:</p>
-<pre><code class="lang-csharp">public class ConfigurationExtensionConfigProvider : IExtensionConfigProvider
+<pre><code class="language-csharp">public class ConfigurationExtensionConfigProvider : IExtensionConfigProvider
 {
     public void Initialize(ExtensionConfigContext context)
     {
@@ -183,28 +178,25 @@ how to use your binding correctly.</p>
 <p>The first step of the implementation is to define a rule for our new
 <code>ConfigurationAttribute</code> and tell this rule how to get a string value out
 of any attribute instance:</p>
-<pre><code class="lang-csharp">var rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
-rule.BindToInput&lt;string&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
-</code></pre>
+<pre><code class="language-csharp">var rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
+rule.BindToInput&lt;string&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);</code></pre>
 <p>That&#39;s really all that needs to happen to bind <code>string</code> parameters.</p>
 <p>To make our binding work with any POCO, we need a more elaborate construct:</p>
-<pre><code class="lang-csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; new Env());
+<pre><code class="language-csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; new Env());
 var cm = context.Config.GetService&lt;IConverterManager&gt;();
-cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(typeof(PocoConverter&lt;&gt;));
-</code></pre>
+cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(typeof(PocoConverter&lt;&gt;));</code></pre>
 <p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
 this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
 type argument) with a generic converter called <code>PocoConverter</code>.</p>
 <p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
-<pre><code class="lang-csharp">private class Env
+<pre><code class="language-csharp">private class Env
 {
     public string GetValue(string key) =&gt; ConfigurationManager.AppSettings[key];
-}
-</code></pre>
+}</code></pre>
 <p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
 names and reads configuration values out of them. Then it calls a constructor
 which matches the property count:</p>
-<pre><code class="lang-csharp">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
+<pre><code class="language-csharp">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
 {
     public T Convert(Env env)
     {
@@ -223,8 +215,7 @@ which matches the property count:</p>
 
         return (T)constructor.Invoke(values);
     }
-}
-</code></pre>
+}</code></pre>
 <p>This piece of code is not particularly robust, but it is good enough to
 illustrate the concept.</p>
 <p>And that&#39;s it, the binding it ready! You can find the complete example in
@@ -238,8 +229,7 @@ too sophisticated:</p>
 </li>
 <li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
 to that folder&#39;s path. For local development add a line to <code>local.settings.json</code>:</p>
-<pre><code class="lang-json"> &quot;AzureWebJobs_ExtensionsPath&quot;: &quot;D:\\BindingExtensions&quot;,
-</code></pre>
+<pre><code class="language-json"> &quot;AzureWebJobs_ExtensionsPath&quot;: &quot;D:\\BindingExtensions&quot;,</code></pre>
 </li>
 <li><p>Create a subfolder for your extension, e.g. 
 <code>D:\BindingExtensions\ConfigurationExtension</code>.</p>
@@ -254,8 +244,7 @@ to that folder.</p>
 <p>Run the function app locally to try it out. In the console output you should
 be able to see something like</p>
 <pre><code>Loaded custom extension: ConfigurationExtensionConfigProvider from 
-&#39;D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll&#39;
-</code></pre><p>You will be able to debug your extension if needed.</p>
+&#39;D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll&#39;</code></pre><p>You will be able to debug your extension if needed.</p>
 <h2 id="useful-links">Useful Links</h2>
 <p>Use the following links to find out more about custom bindings, see more
 examples and walkthroughs, and get fresh updates:</p>
@@ -312,7 +301,6 @@ examples and walkthroughs, and get fresh updates:</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -326,7 +314,6 @@ examples and walkthroughs, and get fresh updates:</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

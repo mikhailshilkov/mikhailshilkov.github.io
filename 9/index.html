@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -77,6 +77,174 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">May 13th, 2016</div>
+    
+    <h1><a href='/2016/05/tweaking-immutable-objects-with-csharp-and-fody/'>Tweaking immutable objects with C# and Fody</a></h1>
+    
+    <div class="post-content">
+        <p>Immutable data structures provide a lot of benefits
+to programmers, especially when representing domain 
+<a href="https://lostechies.com/joeocampo/2007/04/23/a-discussion-on-domain-driven-design-value-objects/">value objects</a>. 
+Immutability is an essential part of functional programming paradigm.
+The concept is useful in object-oriented languages too, but you have
+to pay some price to get this advantage.</p>
+<p>In C# immutable classes are usually implemented with read-only
+properties which are populated from constructor parameters. One of the 
+disadvantages of this approach is the verbosity of creating a copy of an object
+with one property value modified.</p>
+<h2 id="example">Example</h2>
+<p>Let&#39;s have a look at an illustration of this problem. Let&#39;s say we have a value
+type representing poker player statistics:</p>
+<pre><code class="language-csharp">public class PlayerStats
+{
+    public PlayerStats(
+        int hands, 
+        int daysOnline,
+        Money won, 
+        Money expectedValue)
+    {
+        this.Hands = hands;
+        this.DaysOnline = daysOnline;
+        this.Won = won;
+        this.ExpectedValue = expectedValue;
+    }
+
+    public int Hands { get; }
+    public int DaysOnline { get; }
+    public Money Won { get; }
+    public Money ExpectedValue { get; }
+}</code></pre>
+<p>We already see that it&#39;s quite verbose: basically we repeat each property name
+five times. But the issue I&#39;m discussing today is related to how we create 
+a new object based on another object. Let&#39;s say we need to make a copy of 
+a given statistics, but with <code>Hands</code> property increased by 1:</p>
+<pre><code class="language-csharp">var increasedHands = new PlayerStats(
+    existing.Hands + 1,
+    existing.DaysOnline,
+    existing.Won,
+    existing.ExpectedValue);</code></pre>
+<p>Not as simple as we could hope. Also, there is some room for mistakes here. For 
+instance, we could swap <code>Won</code> and <code>ExpectedValue</code> property calls
+and compiler won&#39;t let us know because the types are the same. So we probably
+want to use explicit constructor parameter names:</p>
+<pre><code class="language-csharp">var increasedHands = new PlayerStats(
+    hands: existing.Hands + 1,
+    daysOnline: existing.DaysOnline,
+    won: existing.Won,
+    expectedValue: existing.ExpectedValue);</code></pre>
+<p>But that leads to even more typing and repetition...</p>
+<h2 id="inspiration">Inspiration</h2>
+<p>F# is a functional-first language with immutability as first-class concept.
+In F# value objects are usually modelled with Records, here is our example
+reimplemented:</p>
+<pre><code class="language-fsharp">type PlayerStats = {
+    Hands: int
+    DaysOnline: int
+    Won: Money
+    ExpectedValue: Money
+}</code></pre>
+<p>Creation of new objects based on other objects is also solved properly in F#,
+thanks to the <strong><code>with</code></strong> keyword :</p>
+<pre><code class="language-fsharp">let increasedHands = { existing with Hands = existing.Hands + 1 }</code></pre>
+<p>All the properties are copied from the source record except for the ones
+explicitly mentioned in the expression.</p>
+<h2 id="defining-with-in-c-">Defining With in C#</h2>
+<p>There&#39;s no <strong><code>with</code></strong> operator in C#, but we can try to come up with an
+alternative. We can define some fluent methods which would change
+property values one by one (they don&#39;t change the original object, but
+return a copy with changed value):</p>
+<pre><code class="language-csharp">public PlayerStats WithHands(int hands) 
+{
+    return new PlayerStats(
+        hands: hands,
+        daysOnline: existing.DaysOnline,
+        won: existing.Won,
+        expectedValue: existing.ExpectedValue);
+}
+
+public PlayerStats WithDaysOnline(int daysOnline) { ... }
+public PlayerStats WithWon(Money won) { ... }
+public PlayerStats WithExpectedValue (Money expectedValue) { ... }</code></pre>
+<p>The method implementation is very tedious but the usage gets much cleaner:</p>
+<pre><code class="language-csharp">var increasedHands = existing.WithHands(existing.Hands + 1);</code></pre>
+<p>One way to avoid repetitive code is to generate it.</p>
+<h2 id="with-fody-plugin">With.Fody Plugin</h2>
+<p>In <a href="https://mikhail.io/2015/12/weaving-your-domain-classes-with-fody/">one of my previous posts</a>
+I described how C# value objects can be made less painful with 
+<a href="https://github.com/Fody/Fody">Fody</a> - a tool which changes your assembly at
+compilation time to provide some desired properties in automated and reliable
+fashion.</p>
+<p>Please welcome the new Fody plugin <a href="https://github.com/mikhailshilkov/With.Fody"><strong>With.Fody</strong></a> 
+which auto-implements <code>With</code> method bodies for C# immutable classes.</p>
+<p>Here is how to use this plugin for our imaginary example.</p>
+<p>First, add a reference to NuGet pakages <code>Fody</code> and <code>With.Fody</code>.</p>
+<p>Then, keep the <code>PlayerStats</code> class definition, but get rid of the bodies
+of <code>WithXyz</code> methods. Keep the signature but return something trivial like
+<code>null</code> or <code>this</code>:</p>
+<pre><code class="language-csharp">public PlayerStats WithHands(int hands) =&gt; this;
+public PlayerStats WithDaysOnline(int daysOnline) =&gt; this;
+public PlayerStats WithWon(Money won) =&gt; this;
+public PlayerStats WithExpectedValue (Money expectedValue) =&gt; this;</code></pre>
+<p>Compile the project and you will see the following line in Build Output:</p>
+<pre><code>&gt;      Fody/With:   Added method &#39;With&#39; to type &#39;PlayerStats&#39;.</code></pre><p>It means that the method bodies were re-implemented with calls to 
+class constructor with proper parameter values.</p>
+<p>The method stubs are needed to satisfy code completion tools like 
+IntelliSense and Resharper, otherwise we could skip them altogether.</p>
+<h2 id="single-with-for-multiple-properties">Single With() for Multiple Properties</h2>
+<p>In case you avoid <a href="https://mikhail.io/2015/08/units-of-measurement-in-domain-design/">Primitive Obsession</a>
+antipattern, you will often end up with classes which have unique types of 
+properties, e.g.</p>
+<pre><code class="language-csharp">public class TripProfile
+{
+    public TripProfile(
+        Distance totalDistance,
+        Speed averageSpeed,
+        Volume fuelConsumed)
+    {
+        this.TotalDistance = totalDistance;
+        this.AverageSpeed = averageSpeed;
+        this.FuelConsumed = fuelConsumed;
+    }
+
+    public Distance TotalDistance { get; }
+    public Speed AverageSpeed { get; }
+    public Volume FuelConsumed { get; }
+}</code></pre>
+<p>In this case, the plugin can be smart enough to figure out which property
+you want to modify just by looking at the type of the argument. The single stub
+method can look like this:</p>
+<pre><code class="language-csharp">public TripProfile With&lt;T&gt;(T value) =&gt; this;</code></pre>
+<p>This would get compiled into 3 strongly typed <code>With</code> methods with <code>Distance</code>,
+<code>Speed</code> and <code>Volume</code> arguments respectively. Resharper is still happy. And
+if you make a mistake and try to call the generic <code>With</code> method with an
+argument of wrong type (say <code>int</code>), the compiler will give you an error.</p>
+<p>It is safe to call <code>With</code> methods in the same assembly where the class is defined:
+the calls get adapted to the real implementation automatically.</p>
+<h2 id="how-to-get-started-with-your-classes">How to Get Started with Your Classes</h2>
+<p>Here are the requirements for the classes to be picked up by <strong><code>Fody.With</code></strong>:</p>
+<ol>
+<li>Have a single constructor.</li>
+<li>The constructor should have more than one argument.</li>
+<li>For each constructor agrument, there must be a gettable property with
+same name (case insensitive).</li>
+<li>At least one <code>With</code> stub must be defined as described above.</li>
+</ol>
+<p>You can check out more examples, look at the source code or raise an issue in
+<a href="https://github.com/mikhailshilkov/With.Fody">With.Fody github repository</a>.</p>
+<p>Give it a try and let me know what your think!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/immutability/'>Immutability</a>, <a href='/tags/code-generation/'>Code Generation</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Apr 15th, 2016</div>
     
     <h1><a href='/2016/04/t-sql-merge-statement-is-underrated/'>T-SQL MERGE statement is underrated</a></h1>
@@ -90,30 +258,27 @@ implementation of &quot;INSERT or UPDATE&quot; command.</p>
 <h2 id="example">Example</h2>
 <p>Let&#39;s take a concrete example. You have a person object with just 3 fields, here is the
 type definition:</p>
-<pre><code class="lang-csharp">public class Person
+<pre><code class="language-csharp">public class Person
 {
     public Guid Id { get; set; }
     public string Name { get; set; }
     public string Email { get; set; }
-}
-</code></pre>
+}</code></pre>
 <p>Persons are entities, so we chose a GUID for the primary key column. We always generate
 the unique identifier at client side and just want to save the <code>Person</code>.</p>
 <h2 id="typical-solutions">Typical Solutions</h2>
 <p>The typical T-SQL developer&#39;s toolbox contains <code>SELECT</code>, <code>INSERT</code>,
 <code>UPDATE</code> and <code>DELETE</code> statements. <code>DELETE</code> is of no use here, but the combination of the other
 three can be employed to complete the task. The most straightforward option is</p>
-<pre><code class="lang-sql">IF NOT EXISTS(SELECT 1 FROM Person WHERE Id = @Id)
+<pre><code class="language-sql">IF NOT EXISTS(SELECT 1 FROM Person WHERE Id = @Id)
   INSERT Person (Id, Name, Email) VALUES (@Id, @Name, @Email)
 ELSE
-  UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id
-</code></pre>
+  UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id</code></pre>
 <p>It&#39;s 4 lines of code instead of one, but it works. Being more fancy, we can reduce the code to
 3 lines of code:</p>
-<pre><code class="lang-sql">UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id
+<pre><code class="language-sql">UPDATE Person SET Name = @Name AND Email = @Email WHERE Id = @Id
 IF @@ROWCOUNT = 0 THEN
-  INSERT Person (Id, Name, Email) VALUES (@Id, @Name, @Email)
-</code></pre>
+  INSERT Person (Id, Name, Email) VALUES (@Id, @Name, @Email)</code></pre>
 <p>It should also perform faster if you update more often then insert.</p>
 <p>Solved? Not completely...</p>
 <p>The problem is that sometimes it doesn&#39;t
@@ -138,14 +303,13 @@ statement. Generally, it&#39;s quite powerful and can be used to save all the di
 table into a target table. But we can also use it for our simple task of saving a person.</p>
 <p><code>MERGE</code> is just one statement, so it&#39;s atomic and consistent. It performs very well. 
 But the syntax is... oh my god, it&#39;s horrible. Your eyes might bleed:</p>
-<pre><code class="lang-sql">MERGE Person AS target
+<pre><code class="language-sql">MERGE Person AS target
 USING (SELECT @Id, @Name, @Email) AS source (Id, Name, Email)
    ON (target.Id = source.Id)
  WHEN MATCHED THEN 
       UPDATE SET Name = source.Name, Email = source.Email
  WHEN NOT MATCHED THEN
-      INSERT (Id, Name, Email) VALUES (source.Id, source.Name, source.Email)
-</code></pre>
+      INSERT (Id, Name, Email) VALUES (source.Id, source.Name, source.Email)</code></pre>
 <p>Yes, we repeat the name of each column 6 times. And we say <code>source</code> 7 times. And you can imagine
 how the <code>MERGE</code> of a table with 50 columns would look like. And how painful it is to add a new column
 to an existing statement written 2 years ago.</p>
@@ -161,12 +325,11 @@ related to <a href="https://en.wikipedia.org/wiki/Object-relational_impedance_mi
 You do your work in your favourite 
 general-purpose language, but stay &quot;close to the metal&quot;, or rather to SQL engine statements.</p>
 <p>Here is how I invoke a <code>MERGE</code> statement for a Person object (given a connection from the pool):</p>
-<pre><code class="lang-csharp">var person = new Person(...);
-DapperAdapter.Merge(connection, person);
-</code></pre>
+<pre><code class="language-csharp">var person = new Person(...);
+DapperAdapter.Merge(connection, person);</code></pre>
 <p>Voila! The implementation of generic <code>Merge</code> method takes care of the syntax complications.
 Write once, use everywhere:</p>
-<pre><code class="lang-csharp">public void Merge&lt;TEntity&gt;(IDbConnection dbConnection, TEntity entity) where TEntity : class
+<pre><code class="language-csharp">public void Merge&lt;TEntity&gt;(IDbConnection dbConnection, TEntity entity) where TEntity : class
 {
     var props = entity.GetType().GetProperties().Select(p =&gt; p.Name).ToList();
     var names = string.Join(&quot;, &quot;, props);
@@ -182,8 +345,7 @@ Write once, use everywhere:</p>
           WHEN not matched THEN
             INSERT({names}) VALUES({values});&quot;,
         entity);
-}
-</code></pre>
+}</code></pre>
 <p>Of course, it will only work if you use the convention of naming the <code>Person</code> properties
 after the database table. In most cases, there will be a domain class <code>Person</code> and a property
 bag class <code>PersonRow</code>, so you&#39;ll have to do the mapping between them. But that might be
@@ -290,23 +452,20 @@ Akka.NET scheduling system just to be periodically activated.</p>
 <p>The domain function is called <code>findWindows</code> and has the type <code>unit -&gt; WindowInfo seq</code>.
 It returns the poker window screenshots and titles.</p>
 <p>Actor function of type <code>int -&gt; seq&lt;string * WindowInfo&gt;</code> is used by the 
-<a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to </p>
-<p>define the behavior. The ouput tuple defines an ID of an output actor and a
+<a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to 
+define the behavior. The ouput tuple defines an ID of an output actor and a
 message to send to it:</p>
-<pre><code class="lang-fsharp">let findActor msg = 
+<pre><code class="language-fsharp">let findActor msg = 
   findWindows ()
-  |&gt; Seq.map (fun x -&gt; (&quot;recognizer-actor-&quot; + x.TableName, x))
-</code></pre>
+  |&gt; Seq.map (fun x -&gt; (&quot;recognizer-actor-&quot; + x.TableName, x))</code></pre>
 <p>Here is how I spawn the singleton instance of this actor:</p>
-<pre><code class="lang-fsharp">let tableFinderRef = 
+<pre><code class="language-fsharp">let tableFinderRef = 
   actorOfRouteToChildren findActor (spawnChild recognizer)
-  |&gt; spawn system &quot;table-finder-actor&quot;
-</code></pre>
+  |&gt; spawn system &quot;table-finder-actor&quot;</code></pre>
 <p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
 <code>spawn</code> function with proper parameter order:</p>
-<pre><code class="lang-fsharp">let spawnChild childActor name (mailbox : Actor&lt;&#39;a&gt;) = 
-  spawn mailbox.Context name childActor
-</code></pre>
+<pre><code class="language-fsharp">let spawnChild childActor name (mailbox : Actor&lt;&#39;a&gt;) = 
+  spawn mailbox.Context name childActor</code></pre>
 <p>We can also extend it to debug messages when new actors get created.</p>
 <h2 id="recognizer">Recognizer</h2>
 <p>Recognizer receives the <code>WindowInfo</code> produced by the Table Finder.</p>
@@ -318,16 +477,14 @@ of these series.</p>
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern. 
 The output is a decision message for Decision Maker actor which is a supervised 
 child of the Recognizer. Here is the actor function:</p>
-<pre><code class="lang-fsharp">let recognizeActor (window : WindowInfo) =
+<pre><code class="language-fsharp">let recognizeActor (window : WindowInfo) =
   let result = recognize window.Bitmap
   { WindowTitle = window.Title 
     TableName = window.TableName 
     Screen = result 
-    Bitmap = window.Bitmap }
-</code></pre>
+    Bitmap = window.Bitmap }</code></pre>
 <p>And here is the spawn function:</p>
-<pre><code class="lang-fsharp">let recognizer = actorOfConvertToChild recognizeActor (spawnChild decider &quot;decider&quot;)
-</code></pre>
+<pre><code class="language-fsharp">let recognizer = actorOfConvertToChild recognizeActor (spawnChild decider &quot;decider&quot;)</code></pre>
 <p>Notice how this expression was used in Table Finder instantiation above.</p>
 <h2 id="decision-maker">Decision Maker</h2>
 <p>Decision Maker actor function is an implementation of 
@@ -340,28 +497,25 @@ ignored.</p>
 <p>This way the actor function has the type of 
 <code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code> 
 and looks like this:</p>
-<pre><code class="lang-fsharp">let decisionActor msg lastScreen =
+<pre><code class="language-fsharp">let decisionActor msg lastScreen =
   let screen = msg.Screen
   match lastScreen with
   | Some s when s = screen -&gt; (None, lastScreen)
   | _ -&gt;
     let action = decide screen
     let outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
-    (Some outMsg, Some screen)
-</code></pre>
+    (Some outMsg, Some screen) </code></pre>
 <p>Here is the spawn function:</p>
-<pre><code class="lang-fsharp">let decider = actorOfStatefulConvert decisionActor None clickerRef
-</code></pre>
+<pre><code class="language-fsharp">let decider = actorOfStatefulConvert decisionActor None clickerRef</code></pre>
 <p>where <code>None</code> represents the initial state.</p>
 <h2 id="button-clicker">Button Clicker</h2>
 <p>Clicker actor has the simplest implementation because it does not send messages to other actors.
 Here is the message that it receives from Decision Maker:</p>
-<pre><code class="lang-fsharp">type ClickTarget = (int * int * int * int)
+<pre><code class="language-fsharp">type ClickTarget = (int * int * int * int)
 type ClickerMessage = {
   WindowTitle: string
   Clicks: ClickTarget[]
-}
-</code></pre>
+}</code></pre>
 <p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
 clicks as side effect. You can read more about the mouse movements in 
 <a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">Part 3</a>
@@ -369,8 +523,7 @@ of these series.</p>
 <p><a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
 pattern is used for this actor, so actor function isn&#39;t
 really needed. We spawn the singleton instance with the following statement:</p>
-<pre><code class="lang-fsharp">let clickerRef = actorOfSink click |&gt; spawn system &quot;clicker-actor&quot;
-</code></pre>
+<pre><code class="language-fsharp">let clickerRef = actorOfSink click |&gt; spawn system &quot;clicker-actor&quot;</code></pre>
 <p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>The top layer of poker player application is composed of small single-purpose
@@ -432,8 +585,8 @@ but that&#39;s not the path that I&#39;m willing to go.</p>
 need all the features of the framework. In this case we can define the required actor
 behavior in terms of a minimal function and then use creational patterns to
 spawn actor instances out of it.</p>
-<p>Let&#39;s look at some common patterns that I identified. For each pattern, I will</p>
-<p>define </p>
+<p>Let&#39;s look at some common patterns that I identified. For each pattern, I will
+define </p>
 <ul>
 <li>an example of a core function which implements the business logic</li>
 <li>a generic function to create actors with behavior of a core function</li>
@@ -451,21 +604,18 @@ logging the message, saving the data to the external storage and so on.</p>
 <p>So, we don&#39;t need the majority of actor features in this case. The whole actor
 processing could be represented by a function of type <code>&#39;a -&gt; unit</code>. Here 
 is an example of a core function:</p>
-<pre><code class="lang-fsharp">let print msg =
-  printn &quot;Message received: %A&quot; msg
-</code></pre>
+<pre><code class="language-fsharp">let print msg =
+  printn &quot;Message received: %A&quot; msg</code></pre>
 <p>So how do we make an actor out of this function? Well, it&#39;s already implemented
 as <code>actorOf</code> helper function in Akka.NET F# extensions:</p>
-<pre><code class="lang-fsharp">let actorOfSink (f : &#39;a -&gt; unit) = actorOf f
-</code></pre>
+<pre><code class="language-fsharp">let actorOfSink (f : &#39;a -&gt; unit) = actorOf f</code></pre>
 <p>And here is how we spawn an actor instance:</p>
-<pre><code class="lang-fsharp">let printActorRef = 
+<pre><code class="language-fsharp">let printActorRef = 
   actorOfSink print 
   |&gt; spawn system &quot;print-actor&quot;
 
 printActorRef &lt;! 3
-// &quot;Message received: 3&quot; is printed
-</code></pre>
+// &quot;Message received: 3&quot; is printed</code></pre>
 <p>That&#39;s the simplicity that I&#39;m searching for. Let&#39;s look at a slightly more
 complex example.</p>
 <hr>
@@ -476,23 +626,20 @@ it to another predefined actor.</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//converter.png" alt="Converter actor"></p>
 <p>The core of this actor is a classic function with one input and one output
 parameter (type <code>&#39;a - &#39;b</code>):</p>
-<pre><code class="lang-fsharp">let square msg =
-  msg * msg
-</code></pre>
+<pre><code class="language-fsharp">let square msg =
+  msg * msg</code></pre>
 <p>The actor function is similar to the one of Message Sink, but it also accepts
 a reference to the output actor and knows how to send messages to it:</p>
-<pre><code class="lang-fsharp">let actorOfConvert f outputRef =
-  actorOf2 (fun _ msg -&gt; outputRef &lt;! f msg)
-</code></pre>
+<pre><code class="language-fsharp">let actorOfConvert f outputRef =
+  actorOf2 (fun _ msg -&gt; outputRef &lt;! f msg)</code></pre>
 <p>Here is how we spawn an instance of a Converter using our <code>print-actor</code> as the
 output:</p>
-<pre><code class="lang-fsharp">let squareActorRef = 
+<pre><code class="language-fsharp">let squareActorRef = 
   actorOfConvert square printActorRef 
   |&gt; spawn system &quot;square-actor&quot;
 
 squareActorRef &lt;! 3
-// &quot;Message received: 9&quot; is printed
-</code></pre>
+// &quot;Message received: 9&quot; is printed</code></pre>
 <p>Both actor patterns had no notion of state so far. Let&#39;s see how we can 
 treat the statefulness in a functional way.</p>
 <hr>
@@ -509,13 +656,12 @@ first message becomes the input state of the second message:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//statefulsinkfunctional.png" alt="Stateful Sink functional actor"></p>
 <p>Here is an example of a function which prints out the index of a message together
 with the message contents:</p>
-<pre><code class="lang-fsharp">let printIndex index msg =
+<pre><code class="language-fsharp">let printIndex index msg =
   printn &quot;Message [%i] received: %A&quot; index msg
-  index + 1
-</code></pre>
+  index + 1</code></pre>
 <p>For the actor implementation we need a recursive function so we can&#39;t use 
 <code>actorOf2</code> anymore. Actor workflow is a bit more lines but still very simple:</p>
-<pre><code class="lang-fsharp">let actorOfStatefulSink f initialState (mailbox : Actor&lt;&#39;a&gt;) =
+<pre><code class="language-fsharp">let actorOfStatefulSink f initialState (mailbox : Actor&lt;&#39;a&gt;) =
 
   let rec imp lastState =
     actor {
@@ -524,10 +670,9 @@ with the message contents:</p>
       return! imp newState
     }
 
-  imp initialState
-</code></pre>
+  imp initialState</code></pre>
 <p>And here is a usage example:</p>
-<pre><code class="lang-fsharp">let printIndexActorRef = 
+<pre><code class="language-fsharp">let printIndexActorRef = 
   actorOfSink printIndex 1
   |&gt; spawn system &quot;print-ix-actor&quot;
 
@@ -535,8 +680,7 @@ printActorRef &lt;! 3
 // &quot;Message [1] received: 3&quot; is printed
 
 printActorRef &lt;! 4
-// &quot;Message [2] received: 4&quot; is printed
-</code></pre>
+// &quot;Message [2] received: 4&quot; is printed</code></pre>
 <hr>
 <p><a name="StatefulConverter" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/undefined"></a></p>
 <h2 id="stateful-converter">Stateful Converter</h2>
@@ -547,13 +691,12 @@ next actor:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//statefulconverter.png" alt="Stateful Converter actor"></p>
 <p>Here is a function which squares the messaged number, then calculates the running total
 and sends it forward:</p>
-<pre><code class="lang-fsharp">let squareAndSum sum msg =
+<pre><code class="language-fsharp">let squareAndSum sum msg =
   let result = sum + msg*msg
-  (result, result)
-</code></pre>
+  (result, result)</code></pre>
 <p>In this particular case the output message and state are equal, but they don&#39;t
 have to be. Here is the actor implementation:</p>
-<pre><code class="lang-fsharp">let actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;&#39;a&gt;) =
+<pre><code class="language-fsharp">let actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;&#39;a&gt;) =
 
   let rec imp lastState =
     actor {
@@ -563,10 +706,9 @@ have to be. Here is the actor implementation:</p>
       return! imp newState
     }
 
-  imp initialState
-</code></pre>
+  imp initialState</code></pre>
 <p>And a usage example:</p>
-<pre><code class="lang-fsharp">let squareAndSumActorRef = 
+<pre><code class="language-fsharp">let squareAndSumActorRef = 
   actorOfConvert square 0 printIndexActorRef 
   |&gt; spawn system &quot;square-sum-actor&quot;
 
@@ -574,8 +716,7 @@ squareAndSumActorRef &lt;! 3
 // &quot;Message [1] received: 9&quot; is printed
 
 squareAndSumActorRef &lt;! 4
-// &quot;Message [2] received: 25&quot; is printed
-</code></pre>
+// &quot;Message [2] received: 25&quot; is printed</code></pre>
 <hr>
 <p><a name="ConverterSupervisor" href="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/undefined"></a></p>
 <h2 id="converter-supervisor">Converter-Supervisor</h2>
@@ -590,7 +731,7 @@ comes in. (We can&#39;t spawn it before the first message because the
 reference that we store in the state, something like this:</p>
 <p><img src="/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp//childasstate.png" alt="Supervised Child as State"></p>
 <p>Here is the generic actor implementation:</p>
-<pre><code class="lang-fsharp">let actorOfConvertToChild f spawnChild (mailbox : Actor&lt;&#39;a&gt;) =
+<pre><code class="language-fsharp">let actorOfConvertToChild f spawnChild (mailbox : Actor&lt;&#39;a&gt;) =
 
   let rec imp state =
     actor {
@@ -604,15 +745,13 @@ reference that we store in the state, something like this:</p>
       return! imp (Some newstate)
     }
 
-  imp None
-</code></pre>
+  imp None</code></pre>
 <p>The only difference is that we accept a <code>spawnChild</code> function instead of
 pre-baked actor reference. Here is the first calculator example refactored
 to Print actor being a child of Square actor.</p>
-<pre><code class="lang-fsharp">let squareWithChildRef = 
+<pre><code class="language-fsharp">let squareWithChildRef = 
   actorOfConvertToChild print (spawnChild square &quot;print-actor&quot;)
-  |&gt; spawn system &quot;square-with-child-actor&quot;
-</code></pre>
+  |&gt; spawn system &quot;square-with-child-actor&quot;</code></pre>
 <p>Notice that the <code>square</code> and <code>print</code> functions have exactly the same signatures
 and implementations as we used before, and the concern of actor hierarchy is 
 completely separated from the business logic of the actors.</p>
@@ -633,9 +772,8 @@ message processing to one or more of them:</p>
 of type <code>&#39;a -&gt; seq&lt;string * &#39;b&gt;</code>, where <code>&#39;a</code> is the type of incoming messages,
 <code>&#39;b</code> is the type of outgoing messages, and <code>string</code> represents the identifier of the 
 actor to get the message. Here is a sample implementation:</p>
-<pre><code class="lang-fsharp">let routeSensorData msg = 
-  msg |&gt; Seq.map (fun x -&gt; (&quot;sensor-actor-&quot; + x.SensorId, x.Temperature))
-</code></pre>
+<pre><code class="language-fsharp">let routeSensorData msg = 
+  msg |&gt; Seq.map (fun x -&gt; (&quot;sensor-actor-&quot; + x.SensorId, x.Temperature))</code></pre>
 <p>Based on the incoming metadata (sensor identifier) the actor forwards its
 temperature to corresponding sensor-specific actor. </p>
 <p>Here is the implementation of the generic actor function:</p>
@@ -655,12 +793,10 @@ temperature to corresponding sensor-specific actor. </p>
       return! imp ()
     }
 
-  imp ()
-</code></pre><p>And a usage example:</p>
-<pre><code class="lang-fsharp">let sensorRouterRef = 
+  imp ()</code></pre><p>And a usage example:</p>
+<pre><code class="language-fsharp">let sensorRouterRef = 
   actorOfRouteToChildren routeSensorData (spawnChild square)
-  |&gt; spawn system &quot;route-sensor-actor&quot;
-</code></pre>
+  |&gt; spawn system &quot;route-sensor-actor&quot;</code></pre>
 <p>Note that <code>spawnChild</code> does not accept the child ID anymore because it&#39;s being
 controlled by the router itself.</p>
 <hr>
@@ -699,43 +835,36 @@ my map looks like:</p>
 <p>So, I assume you already have an existing Aurelia application, and let&#39;s start.</p>
 <h2 id="install-leaflet">Install Leaflet</h2>
 <p>The following command will install Leaflet module to the application:</p>
-<pre><code>jspm install leaflet
-</code></pre><p>If you are using TypeScript, don&#39;t forget to add type definitions</p>
-<pre><code>tsd install leaflet
-</code></pre><h2 id="define-a-map-component">Define a Map Component</h2>
+<pre><code>jspm install leaflet</code></pre><p>If you are using TypeScript, don&#39;t forget to add type definitions</p>
+<pre><code>tsd install leaflet</code></pre><h2 id="define-a-map-component">Define a Map Component</h2>
 <p>Create a new <code>map.html</code> file and put the following contents there:</p>
-<pre><code class="lang-html">&lt;template&gt;
+<pre><code class="language-html">&lt;template&gt;
   &lt;require from=&quot;leaflet/dist/leaflet.css&quot;&gt;&lt;/require&gt;
   &lt;div id=&quot;mapid&quot; style=&quot;height: 100%&quot;&gt;&lt;/div&gt;
-&lt;/template&gt;
-</code></pre>
+&lt;/template&gt;</code></pre>
 <p>We import the CSS required by leaflet and define the <code>div</code> element to host
 the map in. Then, create a new <code>map.js</code> file (or <code>map.ts</code> for typescript),
 here is the minimum code:</p>
-<pre><code class="lang-js">export class Map {
-}
-</code></pre>
+<pre><code class="language-js">export class Map {
+}</code></pre>
 <h2 id="load-the-map-with-tiles">Load the Map with Tiles</h2>
 <p>First, import the leaflet module in your codebehind:</p>
-<pre><code class="lang-js">import * as L from &#39;leaflet&#39;;
-</code></pre>
+<pre><code class="language-js">import * as L from &#39;leaflet&#39;;</code></pre>
 <p>Now, define the <code>attached</code> function, which would be called by Aurelia when
 control&#39;s HTML is loaded, and make a map there:</p>
-<pre><code class="lang-js">export class Map {
+<pre><code class="language-js">export class Map {
   attached() {
     let map = L.map(&#39;mapid&#39;).setView([51.505, -0.09], 13);
 
     let urlTemplate = &#39;http://{s}.tile.osm.org/{z}/{x}/{y}.png&#39;;
     map.addLayer(L.tileLayer(urlTemplate, { minZoom: 4 }));
   }
-}
-</code></pre>
+}</code></pre>
 <p>The example above uses the URL template of Open Street Maps as per the Leaflet&#39;s
 tutorial, but I needed to use our privately hosted maps, so I changed it to
 something like:</p>
-<pre><code class="lang-js">let urlTemplate = &#39;http://www.mysite.com/tiles?layer=background&amp;level={z}&amp;x={x}&amp;y={y}&#39;;
-map.addLayer(L.tileLayer(urlTemplate, { minZoom: 4, zoomOffset: 8 }));
-</code></pre>
+<pre><code class="language-js">let urlTemplate = &#39;http://www.mysite.com/tiles?layer=background&amp;level={z}&amp;x={x}&amp;y={y}&#39;;
+map.addLayer(L.tileLayer(urlTemplate, { minZoom: 4, zoomOffset: 8 }));</code></pre>
 <p>The <code>zoomOffset</code> parameter was required to fix impedance mismatch of zoom levels.</p>
 <h2 id="custom-overlay-layer">Custom Overlay Layer</h2>
 <p>For our custom maps we needed to show two layers on top of each other:</p>
@@ -748,7 +877,7 @@ so we need to show the whole layer as a single picture and then refresh it every
 time user pans or zooms the map.</p>
 <p>The overlay layer can be implemented with <code>onAdd</code> and <code>onRemove</code> functions
 and then feeding an image element to the Leaflet as a layer. Here is the code:</p>
-<pre><code class="lang-js">import * as L from &#39;leaflet&#39;;
+<pre><code class="language-js">import * as L from &#39;leaflet&#39;;
 
 export class LabelOverlayLayer {
   map;
@@ -779,29 +908,25 @@ export class LabelOverlayLayer {
     let pos = this.map.latLngToLayerPoint(nw);
     L.DomUtil.setPosition(this.image, pos, false);
   }
-};
-</code></pre>
+};</code></pre>
 <p>The usage of this layer in the map component is trivial:</p>
-<pre><code class="lang-js">this.map.addLayer(new LabelOverlayLayer());
-</code></pre>
+<pre><code class="language-js">this.map.addLayer(new LabelOverlayLayer());</code></pre>
 <h2 id="use-the-map-component">Use the Map Component</h2>
 <p>The map component is ready to be used in the application:</p>
-<pre><code class="lang-html">&lt;require from=&quot;./components/map&quot;&gt;&lt;/require&gt;
+<pre><code class="language-html">&lt;require from=&quot;./components/map&quot;&gt;&lt;/require&gt;
 &lt;div  style=&quot;height: 700px&quot;&gt;
   &lt;map&gt;&lt;/map&gt;
-&lt;/div&gt;
-</code></pre>
+&lt;/div&gt;</code></pre>
 <p>The container around the map should have a non-zero height, so I made it fixed
 in the example above.</p>
 <p>Don&#39;t forget to bundle the leaflet assets by including the following lines
 into your <code>bundles.json</code>:</p>
-<pre><code class="lang-json">&quot;includes&quot;: [
+<pre><code class="language-json">&quot;includes&quot;: [
   &quot;aurelia-framework&quot;,
   // ...
   &quot;leaflet&quot;,
   &quot;leaflet/dist/leaflet.css!text&quot;
-],
-</code></pre>
+],</code></pre>
 
     </div>
 
@@ -810,126 +935,6 @@ into your <code>bundles.json</code>:</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/leaflet/'>Leaflet</a>, <a href='/tags/typescript/'>Typescript</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/maps/'>Maps</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Mar 1st, 2016</div>
-    
-    <h1><a href='/2016/03/building-a-poker-bot-mouse-movements/'>Building a Poker Bot: Mouse Movements</a></h1>
-    
-    <div class="post-content">
-        <p><em>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
-to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
-easy and very enjoyable. Here are the previous parts:</em></p>
-<ul>
-<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
-<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
-</ul>
-<p>In this short post I write about the last step of the poker bot flow: clicking
-the buttons. So, the screen is already recognized, the hand is understood,
-the decisions are made and now the bot needs to execute the actions. Except for
-the bet sizing, this simply means clicking the right button at the poker table.</p>
-<p>The stealthiness of such clicks is a valid concern here. Ideally, we want all
-the mouse movements to look as similar as possible to the movements produced
-by a human being. For this post, I will simplify the task to the following steps:</p>
-<ul>
-<li>Identify where the mouse cursor is right now</li>
-<li>Decide where the mouse should be moved to</li>
-<li>Gradually move the mouse cursor</li>
-<li>Click the button</li>
-</ul>
-<h2 id="cursor-position">Cursor Position</h2>
-<p>It&#39;s really easy to understand where the mouse cursor currently is: just
-use <code>Control.MousePosition</code> property from the standard library:</p>
-<pre><code class="lang-fsharp">let currentPosition () = 
-  let mp = System.Windows.Forms.Control.MousePosition
-  (mp.X, mp.Y)
-</code></pre>
-<p>Note that your application doesn&#39;t have to be based on WinForms, just reference
-the required assembly.</p>
-<h2 id="move-the-cursor">Move the Cursor</h2>
-<p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
-library to control the mouse and the keyboard programmatically. It uses some
-weird coordinate system, so the function to move the mouse cursor looks like this:</p>
-<pre><code class="lang-fsharp">let simulator = new InputSimulator()
-
-let moveTo x y =
-  let toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
-  let toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
-  simulator.Mouse.MoveMouseTo(toX, toY)
-</code></pre>
-<p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
-the top-left corner of the screen.</p>
-<h2 id="move-it-smoothly">Move It Smoothly</h2>
-<p>Now we want to simulate the human-like movements. It won&#39;t be perfect, but
-at least it should look decent. For this gradual movement function I used
-a nice F# feature called asynchronous workflows. Effectively, it looks like
-a loop with async sleep statements inside.</p>
-<pre><code class="lang-fsharp">let moveToWorkflow step (toX, toY) = async {
-  let (fromX, fromY) = currentPosition()
-  let count = Math.Max(10, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / 20)
-  for i = 0 to count do
-    let x = step fromX toX count i |&gt; float
-    let y = step fromY toY count i |&gt; float
-    moveTo x y
-    do! Async.Sleep 3
-  }
-</code></pre>
-<p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
-Basically, it calculates a coordinate for n-th step of the movement. We can
-plug different implementations of this function to find the right balance of
-the movement style. Here is the simplest linear implementation:</p>
-<pre><code class="lang-fsharp">let linearStep from until max i =
-  from + (until - from) * i / max
-</code></pre>
-<p>The sinus-based implementation is a bit more verbose because of float-int 
-conversions:</p>
-<pre><code class="lang-fsharp">let sinStep (from:int) (until:int) (max:int) (index:int) =
-  let fromf = from |&gt; float
-  let untilf = until |&gt; float
-  let maxf = max |&gt; float
-  let indexf = index |&gt; float
-  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int
-</code></pre>
-<p>The following animation illustrates the concept: </p>
-<svg width="778" height="190" viewbox="0 0 500 190">
-  <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
-  <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
-  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
-
-  <animate xlink:href="#mouse1" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" calcmode="discrete" id="img-anim1"></animate>
-  <animate xlink:href="#mouse2" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"></animate>
-  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate><br></svg>
-
-<p>The top mouse cursor just
-jumps from left to right and back (no animation). The middle cursor moves with
-linear speed (<code>linearStep</code> function above). The bottom cursor moves based on
-the <code>sinStep</code> function derived from sinus of time.</p>
-<h2 id="click-the-button">Click the Button</h2>
-<p>A button is a rectangle and we want to click a random point inside it. So, all
-we need is to pick random coordinates, move the mouse there and send a 
-click event via the simulator:</p>
-<pre><code class="lang-fsharp">let clickButton (minX, minY, maxX, maxY) =
-  let r = new Random()
-  let p = (r.Next(minX, maxX), r.Next(minY, maxY))
-  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
-  simulator.Mouse.LeftButtonClick()
-</code></pre>
-<h2 id="demo-time">Demo Time</h2>
-<p>Here is the demo of the mouse movements:</p>
-<p><img src="/2016/03/building-a-poker-bot-mouse-movements//mouseclicking.gif" alt="Mouse clicking the button"></p>
-<p>It looks fun, doesn&#39;t it? The full code for the mouse movements can be found in 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/human-like-behavior/'>Human-like Behavior</a>
     </div>
     
 </article>
@@ -956,7 +961,6 @@ click event via the simulator:</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -218,7 +218,7 @@ version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work wi
 versions.</p>
 <p>Now we can implement our trace server as a console application. The main
 method looks like this:</p>
-<pre><code class="lang-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
+<pre><code class="language-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
 {
     // 1. Run trace server
     var connectionInfo = new SqlConnectionInfo(args[0])
@@ -239,19 +239,17 @@ method looks like this:</p>
     Console.ReadKey();
     tokenSource.Cancel();
     Task.WaitAll(readerTask, senderTask);
-}
-</code></pre>
+}</code></pre>
 <p>The first block initializes SQL connection using command line arguments and integrated
 security, and then starts the Trace Server.</p>
 <p>Because of the large volume, I made trace reader and event sender to work on separate
 threads. They talk to each other via a concurrent queue:</p>
-<pre><code class="lang-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();
-</code></pre>
+<pre><code class="language-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();</code></pre>
 <p>Finally, when operator presses any key, the cancellation is requested and the reader and
 sender get shut down.</p>
 <p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
 (with some exclusions) to the concurrent in-memory queue:</p>
-<pre><code class="lang-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
+<pre><code class="language-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
 { 
     while (trace.Read() &amp;&amp; !token.IsCancellationRequested)
     {
@@ -270,11 +268,10 @@ sender get shut down.</p>
 
     trace.Stop();
     trace.Close();
-}
-</code></pre>
+}</code></pre>
 <p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
 events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
-<pre><code class="lang-csharp">private static void SendToEventHubs(CancellationToken token)
+<pre><code class="language-csharp">private static void SendToEventHubs(CancellationToken token)
 {
     var client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
     var batch = client.CreateBatch();
@@ -295,17 +292,15 @@ events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
             batch.TryAdd(eventData);
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>If your trace doesn&#39;t produce so many messages, you will probably want to periodically send out the batches
 even before they get full, just to keep that process closer to real time.</p>
 <p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
 callback to print it to console:</p>
-<pre><code class="lang-csharp">private static void OnMyAsyncMethodFailed(Task task)
+<pre><code class="language-csharp">private static void OnMyAsyncMethodFailed(Task task)
 {
     Console.WriteLine(task.Exception?.ToString() ?? &quot;null error&quot;);
-}
-</code></pre>
+}</code></pre>
 <p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
 up by Trace Replay.</p>
 <h2 id="trace-replay-function-app">Trace Replay Function App</h2>
@@ -323,7 +318,7 @@ expand until it catches up with the workload.</p>
 <p>But as long as you don&#39;t run the trace server, it won&#39;t consume any servers and won&#39;t cost you
 a dime. </p>
 <p>Here is the implementation of Trace Replay Azure Function:</p>
-<pre><code class="lang-csharp">public static class Replay
+<pre><code class="language-csharp">public static class Replay
 {
     [FunctionName(&quot;Replay&quot;)]
     public static void Run(
@@ -368,8 +363,7 @@ a dime. </p>
             throw;
         }
     }
-}
-</code></pre>
+}</code></pre>
 <p>It&#39;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
 logs the result with timing and returned row count. And that&#39;s everything required to start
 bombarding my Azure SQL Database.</p>
@@ -431,7 +425,6 @@ hope is not a good strategy, so go ahead and try it out!</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -445,7 +438,6 @@ hope is not a good strategy, so go ahead and try it out!</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">

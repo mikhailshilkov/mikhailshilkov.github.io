@@ -27,7 +27,7 @@
     <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
 
-    <meta name="generator" content="DocPad v6.78.6" />
+    <meta name="generator" content="DocPad v6.80.6" />
     
 </head>
 <body>
@@ -104,23 +104,21 @@ by a human being. For this post, I will simplify the task to the following steps
 <h2 id="cursor-position">Cursor Position</h2>
 <p>It&#39;s really easy to understand where the mouse cursor currently is: just
 use <code>Control.MousePosition</code> property from the standard library:</p>
-<pre><code class="lang-fsharp">let currentPosition () = 
+<pre><code class="language-fsharp">let currentPosition () = 
   let mp = System.Windows.Forms.Control.MousePosition
-  (mp.X, mp.Y)
-</code></pre>
+  (mp.X, mp.Y)</code></pre>
 <p>Note that your application doesn&#39;t have to be based on WinForms, just reference
 the required assembly.</p>
 <h2 id="move-the-cursor">Move the Cursor</h2>
 <p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
 library to control the mouse and the keyboard programmatically. It uses some
 weird coordinate system, so the function to move the mouse cursor looks like this:</p>
-<pre><code class="lang-fsharp">let simulator = new InputSimulator()
+<pre><code class="language-fsharp">let simulator = new InputSimulator()
 
 let moveTo x y =
   let toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
   let toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
-  simulator.Mouse.MoveMouseTo(toX, toY)
-</code></pre>
+  simulator.Mouse.MoveMouseTo(toX, toY)</code></pre>
 <p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
 the top-left corner of the screen.</p>
 <h2 id="move-it-smoothly">Move It Smoothly</h2>
@@ -128,7 +126,7 @@ the top-left corner of the screen.</p>
 at least it should look decent. For this gradual movement function I used
 a nice F# feature called asynchronous workflows. Effectively, it looks like
 a loop with async sleep statements inside.</p>
-<pre><code class="lang-fsharp">let moveToWorkflow step (toX, toY) = async {
+<pre><code class="language-fsharp">let moveToWorkflow step (toX, toY) = async {
   let (fromX, fromY) = currentPosition()
   let count = Math.Max(10, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / 20)
   for i = 0 to count do
@@ -136,24 +134,21 @@ a loop with async sleep statements inside.</p>
     let y = step fromY toY count i |&gt; float
     moveTo x y
     do! Async.Sleep 3
-  }
-</code></pre>
+  }</code></pre>
 <p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
 Basically, it calculates a coordinate for n-th step of the movement. We can
 plug different implementations of this function to find the right balance of
 the movement style. Here is the simplest linear implementation:</p>
-<pre><code class="lang-fsharp">let linearStep from until max i =
-  from + (until - from) * i / max
-</code></pre>
+<pre><code class="language-fsharp">let linearStep from until max i =
+  from + (until - from) * i / max</code></pre>
 <p>The sinus-based implementation is a bit more verbose because of float-int 
 conversions:</p>
-<pre><code class="lang-fsharp">let sinStep (from:int) (until:int) (max:int) (index:int) =
+<pre><code class="language-fsharp">let sinStep (from:int) (until:int) (max:int) (index:int) =
   let fromf = from |&gt; float
   let untilf = until |&gt; float
   let maxf = max |&gt; float
   let indexf = index |&gt; float
-  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int
-</code></pre>
+  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int</code></pre>
 <p>The following animation illustrates the concept: </p>
 <svg width="778" height="190" viewbox="0 0 500 190">
   <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
@@ -162,7 +157,8 @@ conversions:</p>
 
   <animate xlink:href="#mouse1" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" calcmode="discrete" id="img-anim1"></animate>
   <animate xlink:href="#mouse2" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"></animate>
-  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate><br></svg>
+  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate>  
+</svg>
 
 <p>The top mouse cursor just
 jumps from left to right and back (no animation). The middle cursor moves with
@@ -172,12 +168,11 @@ the <code>sinStep</code> function derived from sinus of time.</p>
 <p>A button is a rectangle and we want to click a random point inside it. So, all
 we need is to pick random coordinates, move the mouse there and send a 
 click event via the simulator:</p>
-<pre><code class="lang-fsharp">let clickButton (minX, minY, maxX, maxY) =
+<pre><code class="language-fsharp">let clickButton (minX, minY, maxX, maxY) =
   let r = new Random()
   let p = (r.Next(minX, maxX), r.Next(minY, maxY))
   moveToWorkflow sinStep p |&gt; Async.RunSynchronously
-  simulator.Mouse.LeftButtonClick()
-</code></pre>
+  simulator.Mouse.LeftButtonClick()</code></pre>
 <h2 id="demo-time">Demo Time</h2>
 <p>Here is the demo of the mouse movements:</p>
 <p><img src="/2016/03/building-a-poker-bot-mouse-movements//mouseclicking.gif" alt="Mouse clicking the button"></p>
@@ -227,7 +222,6 @@ click event via the simulator:</p>
         <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
     </p>
 </div>
-
     <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
 <script type="text/javascript">
     var disqus_shortname = 'mikhailio';
@@ -241,7 +235,6 @@ click event via the simulator:</p>
         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
     })();
 </script>
-
 </div>
 <div class="container">
     <div class="navbar navbar-footer">
