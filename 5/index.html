@@ -16,7 +16,7 @@
 
     <meta property="og:type" content="article" />
     <meta property="og:title" content="Mikhail Shilkov" />
-    <meta property="og:url" content="https://mikhail.io/5/" />
+    <meta property="og:url" content="https://mikhail.io/5/index.html" />
 
 
 
@@ -76,6 +76,245 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Jul 4th, 2017</div>
+    
+    <h1><a href='/2017/07/sending-large-batches-to-azure-service-bus/'>Sending Large Batches to Azure Service Bus</a></h1>
+    
+    <div class="post-content">
+        <p>Azure Service Bus client supports sending messages in batches (<code>SendBatch</code>
+and <code>SendBatchAsync</code> methods of <code>QueueClient</code> and <code>TopicClient</code>). However,
+the size of a single batch must stay below 256k bytes, otherwise the whole
+batch will get rejected.</p>
+<p>How do we make sure that the batch-to-be-sent is going to fit? The rest 
+of this article will try to answer this seemingly simple question.</p>
+<h2 id="problem-statement">Problem Statement</h2>
+<p>Given a list of messages of arbitrary type <code>T</code>, we want to send them to Service
+Bus in batches. The amount of batches should be close to minimal, but
+obviously each one of them must satisfy the restriction of 256k max size.</p>
+<p>So, we want to implement a method with the following signature:</p>
+<pre><code class="language-csharp">public Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);</code></pre>
+<p>which would work for collections of any size.</p>
+<p>To limit the scope, I will restrict the article to the following assumptions:</p>
+<ul>
+<li><p>Each individual message is less than 256k serialized. If that wasn&#39;t true,
+we&#39;d have to put the body into external blob storage first, and then send
+the reference. It&#39;s not directly related to the topic of discussion.</p>
+</li>
+<li><p>I&#39;ll use <code>public BrokeredMessage(object serializableObject)</code> constructor.
+Custom serialization could be used, but again, it&#39;s not related to batching,
+so I&#39;ll ignore it.</p>
+</li>
+<li><p>We won&#39;t care about transactions, i.e. if connectivity dies in the middle
+of sending the big batch, we might end up with partially sent batch.</p>
+</li>
+</ul>
+<h2 id="messages-of-known-size">Messages of Known Size</h2>
+<p>Let&#39;s start with a simple use case: the size of each message is known to us. 
+It&#39;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a 
+helpful extension method that will split an arbitrary collection based on
+a metric function and maximum chunk size:</p>
+<pre><code class="language-csharp">public static List&lt;List&lt;T&gt;&gt; ChunkBy&lt;T&gt;(this IEnumerable&lt;T&gt; source, Func&lt;T, long&gt; metric, long maxChunkSize)
+{
+    return source
+        .Aggregate(
+            new
+            {
+                Sum = 0L,
+                Current = (List&lt;T&gt;)null,
+                Result = new List&lt;List&lt;T&gt;&gt;()
+            },
+            (agg, item) =&gt;
+            {
+                var value = metric(item);
+                if (agg.Current == null || agg.Sum + value &gt; maxChunkSize)
+                {
+                    var current = new List&lt;T&gt; { item };
+                    agg.Result.Add(current);
+                    return new { Sum = value, Current = current, agg.Result };
+                }
+
+                agg.Current.Add(item);
+                return new { Sum = agg.Sum + value, agg.Current, agg.Result };
+            })
+        .Result;
+}</code></pre>
+<p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
+<pre><code class="language-csharp">public async Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, long&gt; getSize)
+{
+    var chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
+    foreach (var chunk in chunks)
+    {
+        var brokeredMessages = chunk.Select(m =&gt; new BrokeredMessage(m));
+        await client.SendBatchAsync(brokeredMessages);
+    }
+}
+
+private const long MaxServiceBusMessage = 256000;
+private readonly QueueClient client;</code></pre>
+<p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
+Another thing to notice is that we lost all-or-nothing guarantee: we might
+be able to send the first chunk, and then get an exception from subsequent
+parts. Some sort of retry mechanism is probably needed.</p>
+<h2 id="brokeredmessage-size">BrokeredMessage.Size</h2>
+<p>OK, how do we determine the size of each message? How do we implement 
+<code>getSize</code> function? </p>
+<p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
+rewrite our method the following way:</p>
+<pre><code class="language-csharp">public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+{
+    var brokeredMessages = messages.Select(m =&gt; new BrokeredMessage(m));
+    var chunks = brokeredMessages.ChunkBy(bm =&gt; bm.Size, MaxServiceBusMessage);
+    foreach (var chunk in chunks)
+    {
+        await client.SendBatchAsync(chunk);
+    }
+}</code></pre>
+<p>Unfortunately, this won&#39;t work properly. A quote from documentation:</p>
+<blockquote>
+<p>The value of Size is only accurate after the BrokeredMessage 
+instance is sent or received.</p>
+</blockquote>
+<p>My experiments show that <code>Size</code> of a draft message returns the size of 
+the message body, ignoring headers. If the message bodies are large, and
+each chunk has just a handful of them, the code might work ok-ish. </p>
+<p>But it will significantly underestimate the size of large batches of messages
+with small payload.</p>
+<p>So, for the rest of this article I&#39;ll try to adjust the calculation for headers.</p>
+<h2 id="fixed-header-size">Fixed Header Size</h2>
+<p>It could be that the header size of each message is always the same.
+Quite often people will set the same headers for all their messages,
+or set no custom headers at all. </p>
+<p>In this case, you might just measure this size once, and then put this
+fixed value inside a configuration file.</p>
+<p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
+<pre><code class="language-csharp">var sizeBefore = message.Size;
+client.Send(message);
+var sizeAfter = message.Size;
+var headerSize = sizeAfter - sizeBefore;</code></pre>
+<p>Now you just need to adjust one line from the previous version of 
+<code>SendBigBatchAsync</code> method</p>
+<pre><code class="language-csharp">var chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);</code></pre>
+<p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
+per application.</p>
+<h2 id="measuring-of-header-size-per-message">Measuring of Header Size per Message</h2>
+<p>If the size of headers varies per message, you need a way to adjust batching
+algorithm accordingly. </p>
+<p>Unfortunately, I haven&#39;t found a straightforward way to accomplish that. It looks like
+you&#39;d have to serialize the headers yourself, and then measure the size of
+resulting binary. This is not a trivial operation to do correctly,
+and also implies some performance penalty.</p>
+<p>Sean Feldman <a href="https://weblogs.asp.net/sfeldman/asb-batching-brokered-messages">came up</a> 
+with a way to <em>estimate</em> the size of headers. That might be a good way to go,
+though the estimation tends to err on the safe side for messages with small
+payload.</p>
+<h2 id="heuristics-retry">Heuristics &amp; Retry</h2>
+<p>The last possibility that I want to consider is actually allow yourself
+violating the max size of the batch, but then handle the exception, retry
+the send operation and adjust future calculations based on actual measured size
+of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
+operation failed, so we can use this information.</p>
+<p>Here is a sketch of how to do that in code:</p>
+<pre><code class="language-csharp">// Sender is reused across requests
+public class BatchSender
+{
+    private readonly QueueClient queueClient;
+    private long batchSizeLimit = 262000;
+    private long headerSizeEstimate = 54; // start with the smallest header possible
+
+    public BatchSender(QueueClient queueClient)
+    {
+        this.queueClient = queueClient;
+    }
+
+    public async Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
+    {
+        var packets = (from m in messages
+                     let bm = new BrokeredMessage(m)
+                     select new { Source = m, Brokered = bm, BodySize = bm.Size }).ToList();
+        var chunks = packets.ChunkBy(p =&gt; this.headerSizeEstimate + p.Brokered.Size, this.batchSizeLimit);
+        foreach (var chunk in chunks)
+        {
+            try
+            {
+                await this.queueClient.SendBatchAsync(chunk.Select(p =&gt; p.Brokered));
+            }
+            catch (MessageSizeExceededException)
+            {
+                var maxHeader = packets.Max(p =&gt; p.Brokered.Size - p.BodySize);
+                if (maxHeader &gt; this.headerSizeEstimate)
+                {
+                    // If failed messages had bigger headers, remember this header size 
+                    // as max observed and use it in future calculations
+                    this.headerSizeEstimate = maxHeader;
+                }
+                else
+                {
+                    // Reduce max batch size to 95% of current value
+                    this.batchSizeLimit = (long)(this.batchSizeLimit * .95);
+                }
+
+                // Re-send the failed chunk
+                await this.SendBigBatchAsync(packets.Select(p =&gt; p.Source));
+            }
+
+        }
+    }
+}</code></pre>
+<p>The code example is quite involved, here is what actually happens:</p>
+<ol>
+<li><p>Create a brokered message for each message object, but also save the
+corresponding source message. This is critical to be able to re-send items:
+there&#39;s no way to send the same <code>BrokeredMessage</code> instance twice.</p>
+</li>
+<li><p>Also save the body size of the brokered message. We&#39;ll use it for retry
+calculation.</p>
+</li>
+<li><p>Start with some guess of header size estimate. I start with 54 bytes, 
+which seems to be the minimal header size possible.</p>
+</li>
+<li><p>Split the batch into chunks the same way we did before.</p>
+</li>
+<li><p>Try sending chunks one by one.</p>
+</li>
+<li><p>If send operation fails with <code>MessageSizeExceededException</code>, iterate
+through failed items and find out the actual header size of the message.</p>
+</li>
+<li><p>If that actual size is bigger than our known estimate, increase the estimate
+to the newly observed value. Retry sending the chunk (not the whole batch) with
+this new setting.</p>
+</li>
+<li><p>If the header is small, but message size is still too big - reduce the 
+allowed total size of the chunk. Retry again.</p>
+</li>
+</ol>
+<p>The combination of checks of steps 7 and 8 should make the mechanism reliable
+and self-adopting to message header payloads.</p>
+<p>Since we reuse the sender between send operations, the size parameters will
+also converge quite quickly and no more retries will be needed. Thus the 
+performance overhead should be minimal.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>It seems like there is no &quot;one size fits all&quot; solution for this problem at 
+the moment. The best implementation might depend on your messaging 
+requirements.</p>
+<p>But if you have the silver bullet solution, please leave a comment under
+this post and answer <a href="https://stackoverflow.com/questions/44779707/split-batch-of-messages-to-be-sent-to-azure-service-bus">my StackOverflow question</a>!</p>
+<p>Otherwise, let&#39;s hope that the new 
+<a href="https://github.com/azure/azure-service-bus-dotnet">.NET Standard-compatible Service Bus client</a>
+will solve this issue for us. Track <a href="https://github.com/Azure/azure-service-bus-dotnet/issues/109">this github issue</a>
+for status updates.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Jun 7th, 2017</div>
     
@@ -426,135 +665,13 @@ the covered topics.</p>
     
 </article>
 
-    <article class="post">
-    <div class="post-date">Mar 25th, 2017</div>
-    
-    <h1><a href='/2017/03/visualizing-dependency-tree-from-di-container/'>Visualizing Dependency Tree from DI Container</a></h1>
-    
-    <div class="post-content">
-        <p>So you are a C# developer. And you need to read the code and understand its
-structure. Maybe you&#39;ve just joined the project, or it&#39;s your own code you
-wrote 1 year ago. In any case, reading code is hard.</p>
-<p>Luckily, some good thought was applied to this particular piece of code.
-It&#39;s all broken down into small classes (they might even be SOLID!), and all 
-the dependencies are injected via constructors. It looks like it&#39;s your
-code indeed.</p>
-<p>So, you figured out that the entry point for your current use case is the
-class called <code>ThingService</code>. It&#39;s probably doing something with <code>Thing</code>&#39;s
-and that&#39;s what you need. The signature of the class constructor looks 
-like this:</p>
-<pre><code class="language-csharp">public ThingService(
-    IGetThings readRepository,
-    ISaveThing saveRepository,
-    IParseAndValidateExcel&lt;Thing, string&gt; fileParser,
-    IThingChangeDetector thingChangeDetector,
-    IMap&lt;Thing, ThingDTO&gt; thingToDtoMapper,
-    IMap&lt;int, ThingDTO, Thing&gt; dtoToThingMapper)</code></pre>
-<p>OK, so we clearly have 6 dependencies here, and they are all interfaces.
-We don&#39;t know where those interfaces are implemented, but hey - we&#39;ve got
-the best tooling in the industry, so right click on <code>IGetThings</code>, then 
-<code>Go To Implementation</code>.</p>
-<pre><code class="language-csharp">public DapperThingRepository(
-    ICRUDAdapter adapter,
-    IDatabaseConnectionFactory connectionFactory,
-    IMap&lt;Thing, ThingRow&gt; thingRowMapper,
-    IMap&lt;ThingRow, Thing&gt; thingMapper)</code></pre>
-<p>Now we know that we get <code>Thing</code> from Dapper, so probably from a SQL database.
-Let&#39;s go one level deeper and check where those Mappers are implemented.
-Right click, <code>Go To Implementation</code>... But instead of navigating to another code
-file you see</p>
-<pre><code>Find Symbol Result - 28 matches found</code></pre><p>Oh, right, looks like we use <code>IMap&lt;T, U&gt;</code> in more places. OK, we&#39;ll find the
-right one later, let&#39;s first check the connection factory... 
-Right click, <code>Go To Implementation</code>. Nah:</p>
-<pre><code>The symbol has no implementation</code></pre><p>What? But the application works! Ah, <code>IDatabaseConnectionFactory</code> comes
-from an internal library, so most probably the implementation is also 
-inside that library.</p>
-<p>Clearly, navigation doesn&#39;t go that well so far.</p>
-<h2 id="dependency-graph">Dependency Graph</h2>
-<p>When code reading gets tricky, usually an image can boost the understanding.
-The picture below actually shows the graph of class dependencies from our
-example:</p>
-<p><img src="/2017/03/visualizing-dependency-tree-from-di-container//class-dependency-graph.png" alt="Class Dependency Graph"></p>
-<p>Each node is a class, each arrow is a dependency - an interface injected
-into the constructor. </p>
-<p>Just by looking at the picture for a minute of two you can start seeing some 
-structure, and get at least the high-level opinion about the application
-complexity and class relationships.</p>
-<p>Picture is also a great way of communication. Once you understand the structure,
-you can explain it to a colleague much easier with boxes and lines
-on the screen in addition to a plain wall of code.</p>
-<p>You can enrich such picture with comments at the time of writing and leave 
-it to your future self or anyone who would read the code in 2 years time.</p>
-<p>But now the question is - what&#39;s the easiest way to draw such dependency graph?</p>
-<h2 id="di-container">DI Container</h2>
-<p>The assumption of this post is that a dependency injection (DI) container
-of some kind is used in the project. If so, chances are that you can get such
-dependency graph from the container registrations.</p>
-<p>My example is based on <a href="https://simpleinjector.org/">Simple Injector</a> DI 
-container which is used by ourselves. So, further on I will explain how to
-draw a dependency graph from Simple Injector container.</p>
-<p>My guess is that any mature DI library will provide you with such possibility,
-mostly because the dependency graphs are built internally by any container 
-during its normal operations.</p>
-<h2 id="implementation">Implementation</h2>
-<p>The implementation idea of dependency graph visualization is quite simple, as
-the biggest chunk of work is done by Simple Injector itself. Here are the steps:</p>
-<ol>
-<li><p>Run all your DI registrations as you do in the actual application. This will
-initialize Container to the desired state.</p>
-</li>
-<li><p>Define which class should be the root of the dependency tree under study. 
-You can refine later, but you need to start somewhere.</p>
-</li>
-<li><p>Call <code>GetRegistration</code> method of DI container for the selected type. An instance
-of <code>InstanceProducer</code> type is returned.</p>
-</li>
-<li><p>Call <code>GetRelationships</code> method of the instance producer to retrieve all 
-interface/class pairs that the given type depends on. Save each relation into
-your output list.</p>
-</li>
-<li><p>Navigate through each dependency recursively to load further layers of the graph.
-Basically, do the depth-first search and save all found relations.</p>
-</li>
-<li><p>Convert the list of found relations into <a href="https://en.wikipedia.org/wiki/Graphviz">GraphViz</a>
-textual graph description.</p>
-</li>
-<li><p>Use a tool like <a href="http://www.webgraphviz.com/">WebGraphviz</a> do the actual
-visualization by converting text to picture.</p>
-</li>
-</ol>
-<p>There are several potential pitfalls on the way, like cyclic graphs, decorator
-registrations etc. To help you avoid those I&#39;ve created a small library to automate 
-steps 3 to 6 from the list above. See my 
-<a href="https://github.com/mikhailshilkov/SimpleInjector.Visualization">SimpleInjector.Visualization github repo</a> 
-and let me know if you find it useful.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>People are good at making sense of visual representations - use that skill to
-improve understanding and communication within your development team.</p>
-<p>Dependency injection practice requires a lot of ceremony to set it up and
-running. Leverage this work for the best: check what kind of insights you
-can get from that setup. Dependency graph visualization is one example of 
-such leverage, but there might be other gems in there. </p>
-<p>Just keep searching!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/dependency-injection/'>Dependency Injection</a>, <a href='/tags/visualization/'>Visualization</a>, <a href='/tags/clean-code/'>Clean Code</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
-    <a class="page-nav-newer" href="/4/">&lt;&lt; Previous page</a>
+    <a class="page-nav-newer" href="/4/index.html">&lt;&lt; Previous page</a>
     
     
-    <a class="page-nav-older" href="/6/">Next page &gt;&gt;</span></a>
+    <a class="page-nav-older" href="/6/index.html">Next page &gt;&gt;</span></a>
     
 </div>
 

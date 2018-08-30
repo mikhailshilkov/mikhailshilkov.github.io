@@ -16,7 +16,7 @@
 
     <meta property="og:type" content="article" />
     <meta property="og:title" content="Mikhail Shilkov" />
-    <meta property="og:url" content="https://mikhail.io/2/" />
+    <meta property="og:url" content="https://mikhail.io/2/index.html" />
 
 
 
@@ -76,6 +76,123 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">May 18th, 2018</div>
+    
+    <h1><a href='/2018/05/azure-functions-cold-starts-beyond-first-load/'>Cold Starts Beyond First Request in Azure Functions</a></h1>
+    
+    <div class="post-content">
+        <p>In my <a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">previous article</a>
+I&#39;ve explored the topic of Cold Starts in Azure Functions. Particularly, I&#39;ve measured the
+cold start delays per language and runtime version.</p>
+<p>I received some follow-up questions that I&#39;d like to explore in today&#39;s post:</p>
+<ul>
+<li>Can we avoid cold starts except the very first one by keeping the instance warm?</li>
+<li>Given one warm instance, if two requests come at the same time, will one request hit 
+a cold start because existing instance is busy with the other?</li>
+<li>In general, does a cold start happen at scale-out when a new extra instance is provisioned?</li>
+</ul>
+<p>Again, we are only talking Consumption Plan here.</p>
+<h2 id="theory">Theory</h2>
+<p>Azure Functions are running on instances provided by Azure App Service. Each instance is
+able to process several requests concurrently, which is different comparing to AWS Lambda.</p>
+<p>Thus, the following <em>could</em> be true:</p>
+<ul>
+<li>If we issue at least 1 request every 20 minutes, the first instance should stay warm for
+long time</li>
+<li>Simultaneous requests don&#39;t cause cold start unless the existing instance gets too busy</li>
+<li>When runtime decides to scale out and spin up a new instance, it could do so in the background,
+still forwarding incoming requests to the existing warm instance(s). Once the new instance
+is ready, it could be added to the pool without causing cold starts</li>
+<li>If so, cold starts are mitigated beyond the very first execution</li>
+</ul>
+<p>Let&#39;s put this theory under test!</p>
+<h2 id="keeping-always-warm">Keeping Always Warm</h2>
+<p>I&#39;ve tested a Function App which consists of two Functions:</p>
+<ul>
+<li>HTTP Function under test</li>
+<li>Timer Function which runs every 10 minutes and does nothing but logging 1 line of text</li>
+</ul>
+<p>I then measured the cold start statistics similar to all the tests from my previous article.</p>
+<p>During 2 days I was issuing infrequent requests to the same app, most of them would normally
+lead to a cold start. Interestingly, even though I was regularly firing the timer, Azure 
+switched instances to serve my application 2 times during the test period:</p>
+<p><img src="/2018/05/azure-functions-cold-starts-beyond-first-load//cold-starts-keep-warm.png" alt="Infrequent Requests to Azure Functions with &quot;Keep It Warm&quot; Timer"></p>
+<p>I can see that most responses are fast, so timer &quot;warmer&quot; definitely helps.</p>
+<p>The first request(s) to a new instance are slower than subsequent ones. Still, they are faster
+than normal full cold start time, so it could be related to HTTP stack loading.</p>
+<p>Anyway, keeping Functions warm seems a viable strategy.</p>
+<h2 id="parallel-requests">Parallel Requests</h2>
+<p>What happens when there is a warm instance, but it&#39;s already busy with processing another
+request? Will the parallel request be delayed, or will it be processed by the same
+warm instance?</p>
+<p>I tested with a very lightweight function, which nevertheless takes some time to complete:</p>
+<pre><code class="language-csharp">public static async Task&lt;HttpResponseMessage&gt; Delay500([HttpTrigger] HttpRequestMessage req)
+{
+    await Task.Delay(500);
+    return req.CreateResponse(HttpStatusCode.OK, &quot;Done&quot;);
+}</code></pre>
+<p>I believe it&#39;s an OK approximation for an IO-bound function.</p>
+<p>The test client then issued 2 to 10 parallel requests to this function and measured the
+response time for all requests.</p>
+<p>It&#39;s not the easiest chart to understand in full, but note the following:</p>
+<ul>
+<li><p>Each group of bars are for requests sent at the same time. Then there goes a pause about
+20 seconds before the next group of requests gets sent</p>
+</li>
+<li><p>The bars are colored by the instance which processed that request: same instance - same
+color</p>
+</li>
+</ul>
+<p><img src="/2018/05/azure-functions-cold-starts-beyond-first-load//cold-starts-during-simultaneous-requests.png" alt="Azure Functions Response Time to Batches of Simultaneous Requests"></p>
+<p>Here are some observations from this experiment:</p>
+<ul>
+<li><p>Out of 64 requests, there were 11 cold starts</p>
+</li>
+<li><p>Same instance <em>can</em> process multiple simultaneous requests, e.g. one instance processed
+7 out of 10 requests in the last batch</p>
+</li>
+<li><p>Nonetheless, Azure is eager to spin up new instances for multiple requests. In total
+12 instances were created, which is even more than max amount of requests in any single
+batch</p>
+</li>
+<li><p>Some of those instances were actually never reused (gray-ish bars in batched x2 and x3,
+brown bar in x10)</p>
+</li>
+<li><p>The first request to each new instance pays the full cold start price. Runtime doesn&#39;t
+provision them in background while reusing existing instances for received requests</p>
+</li>
+<li><p>If an instance handled more than one request at a time, response time invariably suffers,
+even though the function is super lightweight (<code>Task.Delay</code>)</p>
+</li>
+</ul>
+<h2 id="conclusion">Conclusion</h2>
+<p>Getting back to the experiment goals, there are several things that we learned.</p>
+<p>For low-traffic apps with sporadic requests it makes sense to setup a &quot;warmer&quot; timer
+function firing every 10 minutes or so to prevent the only instance from being recycled.</p>
+<p>However, scale-out cold starts are real and I don&#39;t see any way to prevent them from
+happening.</p>
+<p>When multiple requests come in at the same time, we might expect some of them to hit
+a new instance and get slowed down. The exact algorithm of instance reuse is not
+entirely clear.</p>
+<p>Same instance is capable of processing multiple requests in parallel, so there are
+possibilities for optimization in terms of routing to warm instances during the
+provisioning of cold ones. </p>
+<p>If such optimizations happen, I&#39;ll be glad to re-run my tests and report any noticeable
+improvements.</p>
+<p>Stay tuned for more serverless perf goodness!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/cold-start/'>Cold Start</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Apr 24th, 2018</div>
     
@@ -685,480 +802,13 @@ hope is not a good strategy, so go ahead and try it out!</p>
     
 </article>
 
-    <article class="post">
-    <div class="post-date">Jan 23rd, 2018</div>
-    
-    <h1><a href='/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/'>Tic-Tac-Toe with F#, Azure Functions, HATEOAS and Property-Based Testing</a></h1>
-    
-    <div class="post-content">
-        <p>This post describes a toy application that I&#39;ve built with F# and Azure Functions
-in about 1 day of work. It shows a simple end-to-end implementation with some 
-useful techniques applied, and can be used as a reference point for anyone interested in
-one of the topics mentioned in the title.</p>
-<p>The requirements for my application are quite simple:</p>
-<ul>
-<li>Implement the game of Tic-Tac-Toe for a human player to play against the computer</li>
-<li>The field is 3x3, the player to have three-in-a-row wins</li>
-<li>After the game, the score is calculated based on the number of moves combined 
-with the duration of the game</li>
-<li>The history of players&#39; scores is persisted and presented as the leaderboard</li>
-</ul>
-<p>Below I go through the code step by step. Feel free to jump to the part which interests
-you the most: 
-<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#DomainModelling">Domain Modelling</a>, 
-<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#AzureFunctions">Azure Functions</a>, 
-<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">HATEOAS</a>,
-<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#PropertyBasedTesting">Property-Based Testing</a>.</p>
-<p>The game is online, so you can play it <a href="https://tictactoefs.azurewebsites.net/home">here</a>.</p>
-<p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
-<p><a name="DomainModelling" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
-<h2 id="modeling-the-game-with-types">Modeling the Game with Types</h2>
-<p>I start with a domain model. The model is composed of immutable F# types (records and discriminated
-unions) and pure functions.</p>
-<p>We have two players, so we need a type for them:</p>
-<pre><code class="language-fsharp">type Player = X | O</code></pre>
-<p>In addition, there is a useful function to return the other player based on the given one.
-Simple pattern-matching will do:</p>
-<pre><code class="language-fsharp">module Player =
-  let other = function | X -&gt; O | O -&gt; X</code></pre>
-<p>The domain code is the most important part of the application, so I want it to be covered
-by unit tests. Of course, the above function doesn&#39;t really warrant testing, but it&#39;s a nice
-and simple way to try out <a href="https://fsharpforfunandprofit.com/posts/property-based-testing/">Property-Based Testing</a>. 
-That is, instead of defining specific tests, we define properties which hold for any valid input.</p>
-<p>For <code>other</code> function, I came up with two properties:</p>
-<ul>
-<li>Other player is not equal to original player</li>
-<li>Other player of other player is the player itself</li>
-</ul>
-<p>Here is the code with <a href="https://github.com/haf/expecto">Expecto</a> and <a href="https://github.com/fscheck/FsCheck">FsCheck</a>:</p>
-<pre><code class="language-fsharp">testProperty &quot;Other player is not equal to player&quot; &lt;| fun x -&gt;
-  Expect.notEqual x (Player.other x) &quot;Other should be different from original&quot;
-
-testProperty &quot;Other player of other player is the player itself&quot; &lt;| fun x -&gt;
-  Expect.equal x (Player.other (Player.other x)) &quot;Other other should be equal to original&quot;</code></pre>
-<p>Let&#39;s move on to modelling the game. I decided to define a union type to be used for
-horizontal and vertical positions of the cells:</p>
-<pre><code class="language-fsharp">type Position = One | Two | Three</code></pre>
-<p>I could use the normal integers instead, but I don&#39;t want to be worried about validating
-the ranges all the time.</p>
-<p>My first record type models the move, or action done by a player: it has <code>X</code> and <code>Y</code>
-positions of the chosen cell, plus the player information:</p>
-<pre><code class="language-fsharp">type Move = {
-  X: Position
-  Y: Position
-  By: Player
-}</code></pre>
-<p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
-design of the whole application:</p>
-<pre><code class="language-fsharp">type RunningGame = {
-  MovesDone: Move list
-  PossibleMoves: Move list
-}</code></pre>
-<p>This type models any state of the game which is not finished yet. </p>
-<p><code>MovesDone</code> represents the ordered log of all moves, so we have the complete history 
-of actions at any time. Event Sourcing in small.</p>
-<p>Equally importantly, there is a list of all possible moves at this point of the game.
-I could get away without this property: in the end, it can always be derived from
-the history of done moves and 3x3 size of the field.</p>
-<p>However, having the list of possible moves simplifies the design of all the decision
-maker (client) code:</p>
-<ul>
-<li>Clients don&#39;t have to search for remaining cells based on move log</li>
-<li>Validation of a move received from clients gets trivial: just check that it&#39;s in
-the list of possible moves</li>
-<li>Bot implementation gets easy: it just needs to pick one of the valid moves. The
-most trivial bot is a one-liner: it picks a random move from the collection</li>
-<li>Tests take advantage of this in a similar way, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#PropertyBasedTesting">Game Tests</a> below</li>
-<li>We build a nice bridge into HATEOAS-style API, where links provided in the response
-correspond to possible moves, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">REST API</a> below</li>
-</ul>
-<p>Now, we can model a game which is already finished:</p>
-<pre><code class="language-fsharp">type GameOutcome = Won of Player | Tie
-
-type FinishedGame = {
-  MovesDone: Move list
-  Outcome: GameOutcome
-}</code></pre>
-<p>Each finished game has a list of moves and the outcome: either one player won, or there
-was a tie.</p>
-<p>Each state of a game can be described by the union of the previous two states:</p>
-<pre><code class="language-fsharp">type GameState = 
-  | Finished of FinishedGame
-  | InProgress of RunningGame</code></pre>
-<h2 id="modeling-game-flow">Modeling Game Flow</h2>
-<p>Now, when all the types are in place, we can model the game flow. The flow is a sequence
-of transitions between game states, implemented with pure functions.</p>
-<p>First, each game starts at the same state, which is an empty field, and X turn. Here
-is the value which represents this initial state:</p>
-<pre><code class="language-fsharp">module Game =
-  let initialState = 
-    let positions = [One; Two; Three]
-    let cells = seq { 
-      for x in positions do
-         for y in positions do
-            yield { X = x; Y = y; By = X }
-      }
-    { MovesDone = []; PossibleMoves = List.ofSeq cells }</code></pre>
-<p>After each move is made, we need a function to evaluate move outcome: whether current
-game is finished or is still in progress. I defined a function <code>evaluate</code> for that:</p>
-<pre><code class="language-fsharp">let private evaluate (history: Move list): GameOutcome option = ...</code></pre>
-<p>I don&#39;t show the full body here, since it&#39;s quite boring in evaluating rows, columns
-and diagonals for three-in-a-row. See the <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe/Game.fs#L42-L56">full code</a> 
-if you want to.</p>
-<p>The following function is even more important: that&#39;s the main domain function called 
-<code>makeMove</code>. Its type is <code>RunningGame -&gt; Move -&gt; GameState</code> which perfectly communicates
-its intent: given a running game and a move, it returns the game state after the move.
-Note that</p>
-<ul>
-<li>You can&#39;t pass a finished game as an argument, because making a move on finished game
-doesn&#39;t make sense</li>
-<li>The result <em>can</em> be a finished game</li>
-</ul>
-<p>Here is the function implementation:</p>
-<pre><code class="language-fsharp">let makeMove (game: RunningGame) (move: Move): GameState =
-  let movesDone = move :: game.MovesDone
-  match evaluate movesDone with
-  | Some result -&gt; Finished { MovesDone = movesDone; Outcome = result }
-  | None -&gt;
-    let possibleMoves = 
-      List.except [move] game.PossibleMoves
-      |&gt; List.map (fun m -&gt; { m with By = Player.other m.By })
-    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }</code></pre>
-<p>It works like this:</p>
-<ul>
-<li>Prepend the new move to moves done</li>
-<li>Evaluate the game result of these combined moves</li>
-<li>If the result is known, return a <code>Finished</code> game with calculated outcome</li>
-<li>If the result is not clear yet, return <code>InProgress</code> game with possible
-moves same as before, but excluding the move and assigned to the other player</li>
-</ul>
-<p>Tic-Tic-Toe is two-player game, so I defined another function which runs
-a turn of 2 moves by 2 players, given the decision making functions of both
-players (so it&#39;s a higher-order function):</p>
-<pre><code class="language-fsharp">let makeRound player1 player2 gameState =
-  let newGameState = player1 gameState |&gt; makeMove gameState
-  match newGameState with
-  | Finished _ -&gt; newGameState
-  | InProgress p -&gt; player2 p |&gt; makeMove p  </code></pre>
-<p>Looks almost like monadic <code>bind</code> operation...</p>
-<p><a name="PropertyBasedTesting" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
-<h2 id="property-based-testing">Property-Based Testing</h2>
-<p>I&#39;ve already shown two simplistic properties for <code>other</code> function.</p>
-<p>It&#39;s a bit more challenging to come up with invariant properties when it
-comes to testing the game itself. After some brainstorming, I&#39;ve made the
-following list:</p>
-<ul>
-<li>The game is never finished after 4 moves</li>
-<li>The game is always finished after 9 moves</li>
-<li>X and 0 have to make moves in turns</li>
-<li>Player wins by filling one column</li>
-<li>Player wins by filling one row</li>
-<li>Player wins by filling diagonal</li>
-<li>Evaluate a known tie</li>
-</ul>
-<p>Each property-based test should accept some input from the testing framework.
-It should then evaluate the test against this input and assert the invariants.
-If the property holds for any possible valid input, the test is green.</p>
-<p>I decided to structure my property tests in the following way:</p>
-<ul>
-<li>Each test accepts a list of non-negative integers</li>
-<li>Each integer is interpreted as an index of a possible move to select at turn <code>i</code>.
-That means that the test receives a sequence which uniquely identifies the moves
-to be made</li>
-<li>We can restrict this sequence to a scenario under test, e.g. make it less
-than 4 moves, or exactly 9 moves, or pick moves from a limited subset of all
-possible moves</li>
-<li>We apply the moves to calculate the end result</li>
-<li>We assert that the result confirms the property under test</li>
-</ul>
-<p>Now, it&#39;s the responsibility of property based testing framework to generate
-all kinds of input lists to try to break our property. If it succeeds, it will
-print the exact input which causes the test to fail.</p>
-<p>Here is how one such test is implemented.</p>
-<p>A helper function plays a sequence of indexes as moves:</p>
-<pre><code class="language-fsharp">let playSequence moves = 
-  let playOne s i =
-    match s with
-    | InProgress p -&gt; Game.makeMove p (p.PossibleMoves.[i % p.PossibleMoves.Length])
-    | _ -&gt; s
-  List.fold playOne (InProgress Game.initialState) moves</code></pre>
-<p>Then the property &quot;The game is always finished after 9 moves&quot; is simply:</p>
-<pre><code class="language-fsharp">testProp &quot;The game is always finished after 9 moves&quot; &lt;| fun (Gen.ListOf9 xs) -&gt;
-  let result = playSequence xs
-  Expect.isTrue (Game.isFinished result) &quot;Game should be finished&quot;</code></pre>
-<p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&#39;s a
-generator that I <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/Gen.fs#L31-L32">defined</a>, 
-so that the list always contains exactly 9 elements.</p>
-<p>Other property tests follow a similar pattern, you can see them 
-<a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/GameTests.fs">here</a>.</p>
-<p><a name="HATEOAS" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
-<h2 id="rest-api">REST API</h2>
-<p>Now, when I&#39;m done with Game domain model, I want to define API that our HTTP
-service will expose to the clients. I define my API in REST model.</p>
-<p>The main resource is <code>/game</code> resource. To start a new game, a client has to send
-<code>POST</code> command:</p>
-<pre><code>POST /game
-Content-Type: application/json
-
-{ &quot;name&quot;: &quot;Mikhail&quot; }</code></pre><p>And the response body is JSON which denotes a new game created:</p>
-<pre><code class="language-json">{
-    &quot;id&quot;: &quot;5d7b2261&quot;,
-    &quot;busyCells&quot;: [],
-    &quot;links&quot;: [
-        {
-            &quot;rel&quot;: &quot;x1y1&quot;,
-            &quot;href&quot;: &quot;/game/5d7b2261/move/0&quot;
-        },
-        {
-            &quot;rel&quot;: &quot;x1y2&quot;,
-            &quot;href&quot;: &quot;/game/5d7b2261/move/1&quot;
-        },
-        // ... 7 more links follow
-    ]
-}</code></pre>
-<p>The response contains a game ID and the list of occupied cells, empty for now,
-because no moves have been made.</p>
-<p>More importantly, it contains a list of links, each one of which has a <code>rel</code>
-field representing a cell, and a link. The client should <code>POST</code> to this link
-if it wants to make a move on the corresponding cell:</p>
-<pre><code>POST /game/5d7b2261/move/1</code></pre><p>And the response is:</p>
-<pre><code class="language-json">{
-    &quot;id&quot;: &quot;5d7b2261&quot;,
-    &quot;result&quot;: null,
-    &quot;busyCells&quot;: [
-        {
-            &quot;name&quot;: &quot;x2y3&quot;,
-            &quot;value&quot;: &quot;O&quot;
-        },
-        {
-            &quot;name&quot;: &quot;x1y2&quot;,
-            &quot;value&quot;: &quot;X&quot;
-        }
-    ],
-    &quot;links&quot;: [
-        {
-            &quot;rel&quot;: &quot;x1y1&quot;,
-            &quot;href&quot;: &quot;/game/5d7b2261/move/0&quot;
-        },
-        {
-            &quot;rel&quot;: &quot;x1y3&quot;,
-            &quot;href&quot;: &quot;/game/5d7b2261/move/1&quot;
-        },
-        // ... 5 more links follow
-    ]
-}</code></pre>
-<p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
-list of links now has only 7 links, based on the count of free cells.</p>
-<p>The client keeps navigating the links until it gets non-empty <code>result</code> field:</p>
-<pre><code class="language-json">{
-    &quot;id&quot;: &quot;5d7b2261&quot;,
-    &quot;result&quot;: &quot;You Win!&quot;,
-    &quot;busyCells&quot;: [
-        {
-            &quot;name&quot;: &quot;x3y1&quot;,
-            &quot;value&quot;: &quot;X&quot;
-        },
-        {
-            &quot;name&quot;: &quot;x3y2&quot;,
-            &quot;value&quot;: &quot;O&quot;
-        },
-        // ... more cells here
-    ],
-    &quot;links&quot;: [],
-    &quot;score&quot;: 401
-}</code></pre>
-<p>This denotes the end of the game. There&#39;s no more links to navigate, so the client knows it
-has to stop playing.</p>
-<p>This API is designed in HATEOAS-style (Hypermedia as the Engine of Application State). The
-clients only need to know the initial URL, while all the other URLs are received from the
-previous responses. It resembles the way a human navigates websites.</p>
-<p><a name="AzureFunctions" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
-<h2 id="azure-functions">Azure Functions</h2>
-<p>I implemented the above API with Azure Functions. I used .NET Standard based v2 runtime
-with precompiled F# functions.</p>
-<p>The initial <code>POST /game</code> request is handled by <code>Start</code> function:</p>
-<pre><code class="language-fsharp">type GameRequest = { Name: string }
-
-type Cell = { Name: string; Value: string }
-type Link = { Rel:  string; Href:  string }
-
-type GameDTO = {
-  Id: string
-  Result: string
-  BusyCells: Cell list
-  Links: Link list
-  Score: int
-}
-
-[&lt;FunctionName(&quot;Start&quot;)&gt;]
-let start([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game&quot;)&gt;] req: GameRequest,
-          [&lt;Table(&quot;TicTacToe&quot;)&gt;] store: ICollector&lt;GameEntity&gt;) =
-  let gameid = Guid.NewGuid().ToString()
-  let state = InProgress Game.initialState
-  let serializedState = JsonConvert.SerializeObject state
-  store.Add(GameEntity(PartitionKey = &quot;default&quot;, RowKey = gameid, Name = req.Name, State = serializedState))
-  ObjectResult(Api.serialize gameid state 0)</code></pre>
-<p>The outline of this function:</p>
-<ul>
-<li>It&#39;s triggered by HTTP POST request, as configured for <code>req</code> parameter</li>
-<li>The request body is parsed to <code>GameRequest</code> type containing player name</li>
-<li>It generates a new game ID</li>
-<li>It creates initial game state of empty field</li>
-<li>It serializes the state and saves it to Table Storage with <code>store</code> output binding</li>
-<li>It returns HTTP body with 
-<a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Functions/Api.fs#L30-L51">serialized</a> game response of type <code>GameDTO</code></li>
-</ul>
-<p>The second Function <code>Play</code> handles the moves:</p>
-<pre><code class="language-fsharp">[&lt;FunctionName(&quot;Play&quot;)&gt;]
-let play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game/{gameid}/move/{index}&quot;)&gt;] 
-         req: HttpRequest, gameid: string, index: int,
-         [&lt;Table(&quot;TicTacToe&quot;, &quot;default&quot;, &quot;{gameid}&quot;)&gt;] entity: GameEntity) =
-  let state = JsonConvert.DeserializeObject&lt;GameState&gt; entity.State
-  match state with
-  | Finished _ -&gt; BadRequestResult() :&gt; IActionResult
-  | InProgress p when index &lt; 0 || index &gt;= p.PossibleMoves.Length -&gt; BadRequestResult() :&gt; IActionResult
-  | InProgress p -&gt; 
-    let result = Game.makeRound (fun _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
-    entity.State &lt;- JsonConvert.SerializeObject result
-    entity.Score &lt;- Scoring.calculateScore (DateTime.UtcNow - entity.StartedAt).TotalMilliseconds result
-    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult</code></pre>
-<p>The outline is very similar:</p>
-<ul>
-<li>It&#39;s triggered by a <code>POST</code> request with a URL template containing game ID and move index</li>
-<li>It has an in/out Table Storage binding which reads the serialized state saved after previous
-game and move requests</li>
-<li>It validates the state: if the game is already finished, or if the move index is not in the valid range,
-<code>Bad Request</code> HTTP status is returned</li>
-<li>If the move is valid, it runs the round, including bot play</li>
-<li>It also calculates the score, which is going to be non-zero only for finished games</li>
-<li>The game state and the score are saved to Table Storage entity (that&#39;s the only mutation in the whole
-application)</li>
-</ul>
-<h2 id="bot">Bot</h2>
-<p>Azure Function above used a <code>Bot.pickMove</code> function which I haven&#39;t described yet.</p>
-<p>This function has the type <code>RunningGame -&gt; Move</code>, exactly what is expected by <code>makeRound</code> game
-function. Its goal is to pick the <code>O</code> move for any given game-in-progress.</p>
-<p>Obviously, 3x3 Tic-Tac-Toe is a very simple game and it&#39;s quite easy to make a perfectly
-playing bot. This wasn&#39;t the goal though: it&#39;s more fun for a human to win.</p>
-<p>So, actually, the only property test that I ended up implementing is the following:</p>
-<pre><code class="language-fsharp">testProp &quot;Bot is able to play O at any possible position&quot; &lt;| fun (Gen.ListOfNonNegative xs) -&gt;
-  let human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
-  let round s i =
-    match s with
-    | InProgress p -&gt; Game.makeRound (human i p) Bot.pickMove p
-    | _ -&gt; s
-  List.fold round (InProgress Game.initialState) xs |&gt; ignore     </code></pre>
-<p>It makes sure that for any possible sequence of human moves, bot is actually able to make
-<em>any</em> move of its own. Bot just shouldn&#39;t crash :)</p>
-<p>My very first implementation of the bot was just picking a random move. Such bot is fine,
-but it&#39;s too boring to play against.</p>
-<p>So, my current bot implementation has 3 rules:</p>
-<ul>
-<li>If there is a move that immediately wins the game, do that move</li>
-<li>If possible, don&#39;t pick a move which leads to immediate loss after the next human move</li>
-<li>Otherwise, pick a random move</li>
-</ul>
-<p>I implemented the bot using the approach described in my 
-<a href="https://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Functional Fold as Decision Tree Pattern</a>
-post:</p>
-<pre><code class="language-fsharp">let pickMove (game: RunningGame) = 
-  [winNow O; notLoseNow; pickRandom]
-  |&gt; Seq.ofList
-  |&gt; Seq.choose (fun x -&gt; x game)
-  |&gt; Seq.head</code></pre>
-<p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
-decision will be promoted to final decision.</p>
-<p>And here are those functions:</p>
-<pre><code class="language-fsharp">let winNow player (game: RunningGame) =
-  let isWin = function | Finished { Outcome = Won x } when x = player -&gt; true | _ -&gt; false
-  game.PossibleMoves
-  |&gt; List.tryFind (fun move -&gt; Game.makeMove game move |&gt; isWin)
-
-let notLoseNow (game: RunningGame) =
-  let canLose = function 
-    | InProgress p -&gt; match winNow X p with | Some _ -&gt; true | None -&gt; false
-    | _ -&gt; false
-  let notLosingMoves =
-    game.PossibleMoves
-    |&gt; List.filter (fun move -&gt; Game.makeMove game move |&gt; canLose |&gt; not)
-  if List.isEmpty notLosingMoves &amp;&amp; notLosingMoves.Length &lt; game.PossibleMoves.Length then None
-  else Some (notLosingMoves.[random.Next notLosingMoves.Length])
-
-let pickRandom (game: RunningGame) = 
-  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])</code></pre>
-<p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
-<h2 id="score-calculation">Score Calculation</h2>
-<p>Last twist to the application is the scoring system. If a human player wins or gets a tie,
-they are assigned a numeric score, which can be then compared to the historic leaderboard
-of all players.</p>
-<p>The score is calculated based on two principles: the less moves you make, and the faster
-you play, the higher the score is. Move count is more important than timing.</p>
-<p>These principles are nicely expressed as property tests:</p>
-<pre><code class="language-fsharp">testProp &quot;The score of faster game is not lower than slower game&quot; 
-  &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
-  let (slower, faster) = maxmin id duration1 duration2
-  let scoreFaster = Scoring.calculateScore faster game
-  let scoreSlower = Scoring.calculateScore slower game
-  Expect.isGreaterThanOrEqual scoreFaster scoreSlower &quot;Bigger duration has lower score (or same)&quot;
-
-testProp &quot;The score of won game in less moves is greater than game with more moves&quot; 
-  &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game1 game2 -&gt;
-  let (slower, faster) = maxmin id duration1 duration2
-  let (moreMoves, lessMoves) = maxmin List.length game1 game2
-  let score1 = Scoring.calculateScore slower (Finished { Outcome = Won X; MovesDone = lessMoves })
-  let score2 = Scoring.calculateScore faster (Finished { Outcome = Won X; MovesDone = moreMoves })
-  if moreMoves.Length = lessMoves.Length then
-    Expect.isGreaterThanOrEqual score1 score2 &quot;Bigger duration has lower score (or same)&quot;
-  else
-    Expect.isGreaterThan score1 score2 &quot;More moves have lower score&quot;</code></pre>
-<p>Note that tests are parameterized for durations and game states. We don&#39;t have to come up with specific
-scenarios: the framework should take care of those.</p>
-<p>One of the possible implementations for scoring is:</p>
-<pre><code class="language-fsharp">let calculateScore duration (state: GameState) =
-  let durationScore = (100.0 * (1.0 - duration / (duration + 10000.0))) |&gt; int
-  match state with
-  | Finished { Outcome = Won X; MovesDone = ms } -&gt; (11 - ms.Length) * 100 + durationScore
-  | Finished { Outcome = Tie } -&gt; durationScore
-  | _ -&gt; 0</code></pre>
-<p>Now, the leaderboard piece. You&#39;ve already seen the bits of this functionality in Azure Functions: 
-they store the game state into Azure Table Storage.</p>
-<p>There is another Azure Function which handles <code>GET</code> requests to <code>/leaderboard</code> resource. It
-loads all the past games from Table Storage, and then passes them to leaderboard calculation
-function below:</p>
-<pre><code class="language-fsharp">let calculateLeaderboard top ns =
-  ns
-  |&gt; Seq.filter (fun entity -&gt; snd entity &gt; 0 &amp;&amp; not (String.IsNullOrEmpty (fst entity)))
-  |&gt; Seq.sortByDescending snd
-  |&gt; Seq.truncate top
-  |&gt; Seq.mapi (fun index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })</code></pre>
-<h2 id="wrapping-up">Wrapping Up</h2>
-<p>Ok, the application is simple, but the blog post ended up being quite long. Thank you if you
-made it so far.</p>
-<p>I touched base on several important concepts and tools, which can be useful apart or in
-combination.</p>
-<p>Please leave a comment if such kind of articles is useful, and which part you found most
-inspirational or boring.</p>
-<p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
-<p>Happy coding!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/hateoas/'>HATEOAS</a>, <a href='/tags/property-based-testing/'>Property-Based Testing</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
     <a class="page-nav-newer" href="/">&lt;&lt; Previous page</a>
     
     
-    <a class="page-nav-older" href="/3/">Next page &gt;&gt;</span></a>
+    <a class="page-nav-older" href="/3/index.html">Next page &gt;&gt;</span></a>
     
 </div>
 
