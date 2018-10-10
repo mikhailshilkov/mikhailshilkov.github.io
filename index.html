@@ -78,6 +78,137 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Oct 10th, 2018</div>
+    
+    <h1><a href='/2018/10/azure-functions-v2-released-how-performant-is-it/'>Azure Functions V2 Is Released, How Performant Is It?</a></h1>
+    
+    <div class="post-content">
+        <p>Azure Functions major version 2.0 was released into GA a few days back during Microsoft Ignite. The runtime is now
+based on .NET Core and thus is cross-platform and more interoperable. It has a nice extensibility story too.</p>
+<p>In theory, .NET Core runtime is more lean and performant.
+But last time <a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">I checked back in April</a>,
+the preview version of Azure Functions V2 had some serious issues with cold start durations.</p>
+<p>I decided to give the new and shiny version another try and ran several benchmarks. <strong>TL;DR</strong>: it&#39;s not
+perfect just yet.</p>
+<h2 id="cold-starts">Cold Starts</h2>
+<p>Cold starts happen when a new instance handles its first request, see my other posts:
+<a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">one</a>,
+<a href="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load/">two</a>,
+<a href="https://mikhail.io/2018/08/serverless-cold-start-war/">three</a>.</p>
+<h3 id="hello-world">Hello World</h3>
+<p>The following chart gives a comparison of V1 vs V2 cold starts for the two most popular runtimes:
+.NET and Javascript. The dark bar shows the most probable range of values, while the light ones
+are possible but less frequent:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/cold-starts-dotnet-js.png" alt="Cold Starts V1 vs V2: .NET and Javascript"></p>
+<p>Apparently, V2 is slower to start for both runtimes. V2 on .NET is slower by 10% on average and seems 
+to have higher variation. V2 on Javascript is massively slower: 2 times on average, and the slowest startup
+time goes above 10 seconds.</p>
+<h3 id="dependencies-on-board">Dependencies On Board</h3>
+<p>The values for the previous chart were calculated for Hello-World type of functions with no extra dependencies.</p>
+<p>The chart below shows two more Javascript functions, this time with a decent number of dependencies:</p>
+<ul>
+<li>Referencing 3 NPM packages - 5MB zipped</li>
+<li>Referencing 38 NPM packages - 35 MB zipped</li>
+</ul>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/cold-starts-js-dependencies.png" alt="Cold Starts V1 vs V2: Javascript with NPM dependencies"></p>
+<p>V2 clearly loses on both samples, but V2-V1 difference seems to be consistently within 2.5-3
+seconds for any amount of dependencies.</p>
+<p>All the functions were deployed with the Run-from-Package method which promises faster startup times.</p>
+<h3 id="java">Java</h3>
+<p>Functions V2 come with a new generally-available runtime: Java / JVM. It utilizes the same extensibility
+model as Javascript, and thus it seems to be a first-class citizen now.</p>
+<p>Cold starts are not first-class though: </p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/cold-starts-java.png" alt="Cold Starts Java"></p>
+<p>If you are a Java developer, be prepared for 20-25 seconds of initial startup time.</p>
+<blockquote class="twitter-tweet" data-conversation="none" data-dnt="true"><p lang="en" dir="ltr">That matches some of our internal data. We are looking into it.</p>&mdash; Paul Batum (@paulbatum) <a href="https://twitter.com/paulbatum/status/1048391445386735616?ref_src=twsrc%5Etfw">October 6, 2018</a></blockquote> <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<h2 id="queue-processor">Queue Processor</h2>
+<p>Cold starts are most problematic for synchronous triggers like HTTP requests. They are less relevant
+for queue-based workloads, where scale out is of higher importance.</p>
+<p>Last year I ran some tests around the ability of Functions to keep up with variable queue load:
+<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">one</a>,
+<a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">two</a>.</p>
+<p>Today I ran two simple tests to compare the scalability of V1 vs. V2 runtimes.</p>
+<h3 id="pause-and-go">Pause-and-Go</h3>
+<p>In my first tests, a lightweight Javascript Function processed messages from an Azure Storage Queue. For
+each message, it just pauses for 500 msec and then completes. This is supposed to simulate I/O-bound 
+Functions.</p>
+<p>I&#39;ve sent 100,000 messages to the queue and measured how fast they went away. Batch size (degree of parallelism
+on each instance) was set to 16.</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/queue-scaling-io-based.png" alt="Processing Queue Messages with Lightweight I/O Workload"></p>
+<p>Two lines show the queue backlogs of two runtimes, while the bars indicate the number of instances working
+in parallel at a given minute.</p>
+<p>We see that V2 was a bit faster to complete, probably due to more instances provisioned to it at any moment.
+The difference is not big though and might be statistically insignificant.</p>
+<h3 id="cpu-at-work">CPU at Work</h3>
+<p>Functions in my second experiment are CPU-bound. Each message invokes calculation of a 10-stage Bcrypt
+hash. On a very quiet moment, 1 such function call takes about 300-400 ms to complete, consuming 100% CPU 
+load on a single core.</p>
+<p>Both Functions are precompiled .NET and both are using <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.NET</a>.</p>
+<p>Batch size (degree of parallelism on each instance) was set to 2 to avoid too much fighting for the same CPU. Yet, 
+the average call duration is about 1.5 seconds (3x slower than possible).</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/queue-scaling-cpu-bound.png" alt="Processing Queue Messages with CPU-bound Workload"></p>
+<p>The first thing to notice: it&#39;s the same number of messages with comparable &quot;sequential&quot; execution time, but 
+the total time to complete the job increased 3-fold. That&#39;s because the workload is much more demanding to
+the resources of application instances, and they struggle to parallelize work more aggressively.</p>
+<p>V1 and V2 are again close to each other. One more time, V2 got more instances allocated to it most of the time.
+And yet, it seemed to be <em>consistently</em> slower and lost about 2.5 minutes on 25 minutes interval (~10%).</p>
+<h2 id="http-scalability">HTTP Scalability</h2>
+<p>I ran two similar Functions &mdash; I/O-bound &quot;Pause&quot; (~100 ms) and CPU-bound Bcrypt (9 stages, ~150ms) &mdash; under a stress test.
+But this time they were triggered by HTTP requests. Then I compared the results for V1 and V2.</p>
+<h3 id="pause-and-go">Pause-and-Go</h3>
+<p>The grey bars on the following charts represent the rate of requests sent and processed within a given minute.</p>
+<p>The lines are percentiles of response time: green lines for V2 and orange lines for V1.</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-io-based.png" alt="Processing HTTP Requests with Lightweight I/O Workload"></p>
+<p>Yes, you saw it right, my Azure Functions were processing 100,000 messages per minute at peak. That&#39;s a lot of
+messages.</p>
+<p>Apart from the initial spike at minutes 2 and 3, both versions performed pretty close to each other.</p>
+<p>50th percentile is flat close to the theoretic minimum of 100 ms, while the 95th percentile fluctuates a bit, but still
+mostly stays quite low. </p>
+<p>Note that the response time is measured from the client perspective, not by looking at the statistics provided by Azure.</p>
+<h3 id="cpu-fanout">CPU Fanout</h3>
+<p>How did CPU-heavy workload perform?</p>
+<p>To skip ahead, I must say that the response time increased much more significantly, so my sample clients were
+not able to generate request rates of 100k per minute. They &quot;only&quot; did about 48k per minute at peak, which still
+seems massive to me.</p>
+<p>I&#39;ve run the same test twice: one for Bcrypt implemented in .NET, and one for Javascript.</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-dotnet.png" alt="Processing HTTP Requests with .NET CPU-bound Workload"></p>
+<p>V2 had a real struggle during the first minute, where response time got terribly slow up to 9 seconds.</p>
+<p>Looking at the bold-green 50th percentile, we can see that it&#39;s consistently higher than the orange one throughout
+the load growth period of the first 10 minutes. V2 seemed to have a harder time to adjust.</p>
+<p>This might be explainable by slower growth of instance count:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-dotnet-instance-growth.png" alt="Instance Count Growth while Processing HTTP Requests with .NET CPU-bound Workload"></p>
+<p>This difference could be totally random, so let&#39;s look at a similar test with Javascript worker. Here is the percentile chart:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-js.png" alt="Processing HTTP Requests with Javascript CPU-bound Workload"></p>
+<p>The original slowness of the first 3 minutes is still there, but after that time V2 and V1 are on-par.</p>
+<p>On-par doesn&#39;t sound that great though if you look at the significant edge in the number of allocated instances, in
+favor of V2 this time:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-js-instance-growth.png" alt="Instance Count Growth while Processing HTTP Requests with Javascript CPU-bound Workload"></p>
+<p>Massive 147 instances were crunching Bcrypt hashes in Javascript V2, and that made it a bit faster to respond than V1.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>As always, be reluctant to make definite conclusions based on simplistic benchmarks. But I see some trends which might
+be true as of today:</p>
+<ul>
+<li>Performance of .NET Functions is comparable across two versions of Functions runtimes;</li>
+<li>V1 still has a clear edge in the cold start time of Javascript Functions;</li>
+<li>V2 is the only option for Java developers, but be prepared to very slow cold starts;</li>
+<li>Scale-out characteristics seem to be independent of the runtime version, although there are blurry signs of
+V2 being a bit slower to ramp up or slightly more resource hungry.</li>
+</ul>
+<p>I hope this helps in your serverless journey!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/cold-start/'>Cold Start</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Aug 30th, 2018</div>
     
     <h1><a href='/2018/08/serverless-cold-start-war/'>Serverless: Cold Start War</a></h1>
@@ -1249,310 +1380,11 @@ languages.</p>
     
 </article>
 
-    <article class="post">
-    <div class="post-date">Jun 22nd, 2018</div>
-    
-    <h1><a href='/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi/'>Programmable Cloud: Provisioning Azure App Service with Pulumi</a></h1>
-    
-    <div class="post-content">
-        <p>Modern Cloud providers offer a wide variety of services of different types
-and levels. A modern cloud application would leverage multiple services
-in order to be efficient in terms of developer experience, price, operations
-etc.</p>
-<p>For instance, a very simple Web Application deployed to Azure PaaS services
-could use</p>
-<ul>
-<li>App Service - to host the application</li>
-<li>App Service Plan - to define the instance size, price, scaling and other
-hosting parameters</li>
-<li>Azure SQL Database - to store relational data</li>
-<li>Application Insights - to collect telemetry and logs</li>
-<li>Storage Account - to store the binaries and leverage Run-as-Zip feature</li>
-</ul>
-<p>Provisioning such environment becomes a task on its own:</p>
-<ul>
-<li>How do we create the initial setup?</li>
-<li>How do we make changes?</li>
-<li>What if we need multiple environments?</li>
-<li>How do we apply settings?</li>
-<li>How do we recycle resources which aren&#39;t needed anymore?</li>
-</ul>
-<p>Well, there are several options.</p>
-<h2 id="manually-in-azure-portal">Manually in Azure Portal</h2>
-<p>We all start doing this in Azure Portal. User Interface is great for
-discovering new services and features, and it&#39;s a quick way to make a single
-change.</p>
-<p><img src="/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//azureportal.png" alt="Azure Portal"></p>
-<p><em>Creating an App Service in Azure Portal</em></p>
-<p>Clicking buttons manually doesn&#39;t scale though. After the initial setup is
-complete, maintaining the environment over time poses significant challenges:</p>
-<ul>
-<li>Every change requires going back to the portal, finding the right resource
-and doing the right change</li>
-<li>People make mistakes, so if you have multiple environments, they are likely
-to be different in subtle ways</li>
-<li>Naming gets messy over time</li>
-<li>There is no easily accessible history of environment changes</li>
-<li>Cleaning up is hard: usually some leftovers will remain unnoticed</li>
-<li>Skills are required from everybody involved in provisioning</li>
-</ul>
-<p>So, how do we streamline this process?</p>
-<h2 id="azure-powershell-cli-and-management-sdks">Azure PowerShell, CLI and Management SDKs</h2>
-<p>Azure comes with a powerful set of tools to manage resources with code.</p>
-<p>You can use PowerShell, CLI scripts or custom code like C# to do with code
-whatever is possible to do via portal.</p>
-<pre><code class="language-csharp">var webApp = azure.WebApps.Define(appName)
-    .WithRegion(Region.WestEurope)
-    .WithNewResourceGroup(rgName)
-    .WithNewFreeAppServicePlan()
-    .Create();</code></pre>
-<p><em>Fluent C# code creating an App Service</em></p>
-<p>However, those commands are usually expressed in imperative style of 
-CRUD operations. You can run the commands once, but it&#39;s hard to modify
-existing resources from an arbitrary state to the desired end state.</p>
-<h2 id="azure-resource-manager-templates">Azure Resource Manager Templates</h2>
-<p>All services in Azure are managed by Azure Resource Manager (ARM). ARM 
-has a special JSON-based format for templates. </p>
-<p>Once a template is defined,
-it&#39;s relatively straightforward to be deployed to Azure environment. So, if
-resources are defined in JSON, they will be created automatically via
-PowerShell or CLI commands.</p>
-<p>It is also possible to deploy templates in incremental mode, when the tool
-will compare existing environment with desired configuration and will deploy
-the difference.</p>
-<p>Templates can be parametrized, which enables multi-environment deployments.</p>
-<p>There&#39;s a problem with templates though: they are JSON files. They get
-very large very fast, they are hard to reuse, it&#39;s easy to make a typo.</p>
-<p><img src="/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//armtemplate.png" alt="ARM Template"></p>
-<p><em>A fragment of auto-generated ARM Template for App Service, note the 
-line numbers</em></p>
-<p>Terraform is another templating tool to provision cloud resources but it uses
-YAML instead of JSON. I don&#39;t have much experience with it, but the problems 
-seem to be very similar.</p>
-<p>Can we combine the power of SDKs and the power of JSON-/YAML-based desired state
-configuration tools?</p>
-<h2 id="pulumi">Pulumi</h2>
-<p>One potential solution has just arrived.
-A startup called Pulumi <a href="http://joeduffyblog.com/2018/06/18/hello-pulumi/">just went out of private beta to open source</a>.</p>
-<p><img src="/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//pulumi.jpg" alt="Pulumi"></p>
-<p>Pulumi wants to be much more than a better version of ARM templates, aiming
-to become the tool to build cloud-first distributed systems. But for today I&#39;ll 
-focus on lower level of resource provisioning task.</p>
-<p>With Pulumi cloud infrastructure is defined in code using full-blown general 
-purpose programming languages.</p>
-<p>The workflow goes like this:</p>
-<ul>
-<li>Define a Stack, which is a container for a group of related resources</li>
-<li>Write a program in one of supported languages (I&#39;ll use TypeScript) which
-references <code>pulumi</code> libraries and constructs all the resources as objects</li>
-<li>Establish connection with your Azure account</li>
-<li>Call <code>pulumi</code> CLI to create, update or destroy Azure resources based on
-the program</li>
-<li>Pulumi will first show the preview of changes, and then apply them as
-requested</li>
-</ul>
-<h2 id="pulumi-program">Pulumi Program</h2>
-<p>I&#39;m using TypeScript to define my Azure resources in Pulumi. So, the program
-is a normal Node.js application with <code>index.ts</code> file, package references in 
-<code>package.json</code> and one extra file <code>Pulumi.yaml</code> to define the program:</p>
-<pre><code class="language-yaml">name: azure-appservice
-runtime: nodejs</code></pre>
-<p>Our <code>index.js</code> is as simple as a bunch of <code>import</code> statements followed by
-creating TypeScript objects per desired resource. The simplest program can
-look like this:</p>
-<pre><code class="language-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
-import * as azure from &quot;@pulumi/azure&quot;;
-
-const resourceGroup = new azure.core.ResourceGroup(&quot;myrg&quot;, {
-    location: &quot;West Europe&quot;
-});</code></pre>
-<p>When executed by <code>pulumi update</code> command, this program will create a new
-Resource Group in your Azure subscription.</p>
-<h2 id="chaining-resources">Chaining Resources</h2>
-<p>When multiple resources are created, the properties of one resource will
-depend on properties of the others. E.g. I&#39;ve defined the Resource Group
-above, and now I want to create an App Service Plan under this Group:</p>
-<pre><code class="language-ts">const resourceGroupArgs = {
-    resourceGroupName: resourceGroup.name,
-    location: resourceGroup.location
-};
-
-const appServicePlan = new azure.appservice.Plan(&quot;myplan&quot;, {
-    ...resourceGroupArgs,
-
-    kind: &quot;App&quot;,
-
-    sku: {
-        tier: &quot;Basic&quot;,
-        size: &quot;B1&quot;,
-    },
-});</code></pre>
-<p>I&#39;ve assigned <code>resourceGroupName</code> and <code>location</code> of App Service Plan to
-values from the Resource Group. It looks like a simple assignment of
-strings but in fact it&#39;s more complicated.</p>
-<p>Property <code>resourceGroup.name</code> has the type of <code>pulumi.Output&lt;string&gt;</code>.
-Constructor argument <code>resourceGroupName</code> of <code>Plan</code> has the type of
-<code>pulumi.Input&lt;string&gt;</code>.</p>
-<p>We assigned <code>&quot;myrg&quot;</code> value to Resource Group name, but during the actual 
-deployment it will change. Pulumi will append a unique identifier to the name,
-so the actually provisioned group will be named e.g. <code>&quot;myrg65fb103e&quot;</code>.</p>
-<p>This value will materialize inside <code>Output</code> type only at deployment time, 
-and then it will get propagated to <code>Input</code> by Pulumi.</p>
-<p>There is also a nice way to return the end values of <code>Output</code>&#39;s from Pulumi
-program. Let&#39;s say we define an App Service:</p>
-<pre><code class="language-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
-    ...resourceGroupArgs,
-
-    appServicePlanId: appServicePlan.id
-});</code></pre>
-<p>First, notice how we used TypeScript spread operator to reuse
-properties from <code>resourceGroupArgs</code>.</p>
-<p>Second, <code>Output</code>-<code>Input</code> assignment got used again to propagate App Service
-Plan ID.</p>
-<p>Lastly, we can now export App Service host name from our program, e.g.
-for the user to be able to go to the web site immediately after deployment:</p>
-<pre><code class="language-ts">exports.hostname = app.defaultSiteHostname;</code></pre>
-<p><code>Output</code> can also be transformed with <code>apply</code> function. Here is the code to
-format output URL:</p>
-<pre><code class="language-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);</code></pre>
-<p>Running <code>pulumi update</code> from CLI will then print the endpoint for us:</p>
-<pre><code class="language-sh">---outputs:---
-endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;</code></pre>
-<p>Multiple outputs can be combined with <code>pulumi.all</code>, e.g. given SQL Server
-and Database, we could make a connection string:</p>
-<pre><code class="language-ts">const connectionString = 
-    pulumi.all([sqlServer, database]).apply(([server, db]) =&gt; 
-        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)</code></pre>
-<h2 id="using-the-power-of-npm">Using the Power of NPM</h2>
-<p>Since our program is just a TypeScript application, we are free to use any
-3rd party package which exists out there in NPM.</p>
-<p>For instance, we can install Azure Storage SDK. Just</p>
-<pre><code class="language-sh">npm install azure-storage@2.9.0-preview</code></pre>
-<p>and then we can write a function to produce SAS token for a Blob in Azure
-Storage:</p>
-<pre><code class="language-ts">import * as azurestorage from &quot;azure-storage&quot;;
-
-// Given an Azure blob, create a SAS URL that can read it.
-export function signedBlobReadUrl(
-    blob: azure.storage.Blob | azure.storage.ZipBlob,
-    account: azure.storage.Account,
-    container: azure.storage.Container,
-): pulumi.Output&lt;string&gt; {
-    const signatureExpiration = new Date(2100, 1);
-
-    return pulumi.all([
-        account.primaryConnectionString,
-        container.name,
-        blob.name,
-    ]).apply(([connectionString, containerName, blobName]) =&gt; {
-        let blobService = new azurestorage.BlobService(connectionString);
-        let signature = blobService.generateSharedAccessSignature(
-            containerName,
-            blobName,
-            {
-                AccessPolicy: {
-                    Expiry: signatureExpiration,
-                    Permissions: azurestorage.BlobUtilities.SharedAccessPermissions.READ,
-                },
-            }
-        );
-
-        return blobService.getUrl(containerName, blobName, signature);
-    });
-}</code></pre>
-<p>I took this function from <a href="https://github.com/pulumi/examples/tree/master/azure-ts-functions">Azure Functions</a>
-example, and it will probably move to Pulumi libraries at some point, but until
-then you are free to leverage the package ecosystem.</p>
-<h2 id="deploying-application-files">Deploying Application Files</h2>
-<p>So far we provisioned Azure App Service, but we can also deploy the application
-files as part of the same workflow.</p>
-<p>The code below is using <a href="https://github.com/Azure/app-service-announcements/issues/84">Run from Zip</a>
-feature of App Service:</p>
-<ol>
-<li><p>Define Storage Account and Container</p>
-<pre><code class="language-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
-     ...resourceGroupArgs,
-
-     accountKind: &quot;StorageV2&quot;,
-     accountTier: &quot;Standard&quot;,
-     accountReplicationType: &quot;LRS&quot;,
- });
-
- const storageContainer = new azure.storage.Container(&quot;mycontainer&quot;, {
-     resourceGroupName: resourceGroup.name,
-     storageAccountName: storageAccount.name,
-     containerAccessType: &quot;private&quot;,
- });</code></pre>
-</li>
-<li><p>Create a folder with application files, e.g. <code>wwwroot</code>. It may contain
-some test HTML, ASP.NET application, or anything supported by App Service.</p>
-</li>
-<li><p>Produce a zip file from that folder in Pulumi program:</p>
-<pre><code class="language-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
-     resourceGroupName: resourceGroup.name,
-     storageAccountName: storageAccount.name,
-     storageContainerName: storageContainer.name,
-     type: &quot;block&quot;,
-
-     content: new pulumi.asset.FileArchive(&quot;wwwroot&quot;)
- });</code></pre>
-</li>
-<li><p>Produce SAS Blob URL and assign it to App Service Run-as-Zip setting:</p>
-<pre><code class="language-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
-
- const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
-     ...resourceGroupArgs,
-
-     appServicePlanId: appServicePlan.id,
-
-     appSettings: {
-         &quot;WEBSITE_RUN_FROM_ZIP&quot;: codeBlobUrl
-     }
- });</code></pre>
-</li>
-</ol>
-<p>Run the program, and your Application will start as soon as <code>pulumi update</code>
-is complete.</p>
-<h2 id="determinism">Determinism</h2>
-<p>Pulumi programs should strive to be deterministic.
-That means you should avoid using things like current date/time or random numbers.</p>
-<p>The reason is incremental updates. Every time you run <code>pulumi update</code>, it
-will execute the program from scratch. If your resources depend on random
-values, they will not match the existing resources and thus the false
-delta will be detected and deployed.</p>
-<p>In the SAS generation example above we used a fixed date in the future
-instead of doing today + 1 year kind of calculation.</p>
-<p>Should Pulumi provide some workaround for this?</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>My code was kindly merged to 
-<a href="https://github.com/pulumi/examples/tree/master/azure-ts-appservice">Pulumi examples</a>, 
-go there for the complete runnable program that provisions App Service with
-Azure SQL Database and Application Insights.</p>
-<p>I really see high potential in Cloud-as-Code approach suggested by Pulumi.
-Today we just scratched the surface of the possibilities. We were working
-with cloud services on raw level: provisioning specific services with
-given parameters.</p>
-<p>Pulumi&#39;s vision includes providing higher-level components to blur the line
-between infrastructure and code, and to enable everybody to create such
-components on their own.</p>
-<p>Exciting future ahead!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/pulumi/'>Pulumi</a>, <a href='/tags/azure-app-service/'>Azure App Service</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
     
-    <a class="page-nav-older" href="/2/">Next page &gt;&gt;</span></a>
+    <a class="page-nav-older" href="/2/index.html">Next page &gt;&gt;</span></a>
     
 </div>
 

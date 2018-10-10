@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Azure Functions V2 Is Released, How Performant Is It? | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="twitter:card" content="summary_large_image"></meta>
+    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
+    <meta name="twitter:title" content="Azure Functions V2 Is Released, How Performant Is It?"></meta>
+
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Azure Functions V2 Is Released, How Performant Is It?" />
+    <meta property="og:url" content="https://mikhail.io/2018/10/azure-functions-v2-released-how-performant-is-it/" />
+
+    <meta property="og:image" content="https://mikhail.io/2018/10/azure-functions-v2-released-how-performant-is-it/teaser.png" />
+
+
+    <meta property="og:description" content="Comparison of performance benchmarks for Azure Functions V1 and V2" />
+
+
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
+
+    <meta name="generator" content="DocPad v6.80.6" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                    <li><a href="/tags/">Topics</a></li>
+                
+                    <li><a href="/archives/">Archives</a></li>
+                
+                    <li><a href="/talks/">Talks</a></li>
+                
+                    <li><a href="/about/">About</a></li>
+                
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <article class="post">
+    <div class="post-date">Oct 10th, 2018</div>
+    
+    <h1>Azure Functions V2 Is Released, How Performant Is It?</h1>
+    
+    <div class="post-content">
+        <p>Azure Functions major version 2.0 was released into GA a few days back during Microsoft Ignite. The runtime is now
+based on .NET Core and thus is cross-platform and more interoperable. It has a nice extensibility story too.</p>
+<p>In theory, .NET Core runtime is more lean and performant.
+But last time <a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">I checked back in April</a>,
+the preview version of Azure Functions V2 had some serious issues with cold start durations.</p>
+<p>I decided to give the new and shiny version another try and ran several benchmarks. <strong>TL;DR</strong>: it&#39;s not
+perfect just yet.</p>
+<h2 id="cold-starts">Cold Starts</h2>
+<p>Cold starts happen when a new instance handles its first request, see my other posts:
+<a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">one</a>,
+<a href="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load/">two</a>,
+<a href="https://mikhail.io/2018/08/serverless-cold-start-war/">three</a>.</p>
+<h3 id="hello-world">Hello World</h3>
+<p>The following chart gives a comparison of V1 vs V2 cold starts for the two most popular runtimes:
+.NET and Javascript. The dark bar shows the most probable range of values, while the light ones
+are possible but less frequent:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/cold-starts-dotnet-js.png" alt="Cold Starts V1 vs V2: .NET and Javascript"></p>
+<p>Apparently, V2 is slower to start for both runtimes. V2 on .NET is slower by 10% on average and seems 
+to have higher variation. V2 on Javascript is massively slower: 2 times on average, and the slowest startup
+time goes above 10 seconds.</p>
+<h3 id="dependencies-on-board">Dependencies On Board</h3>
+<p>The values for the previous chart were calculated for Hello-World type of functions with no extra dependencies.</p>
+<p>The chart below shows two more Javascript functions, this time with a decent number of dependencies:</p>
+<ul>
+<li>Referencing 3 NPM packages - 5MB zipped</li>
+<li>Referencing 38 NPM packages - 35 MB zipped</li>
+</ul>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/cold-starts-js-dependencies.png" alt="Cold Starts V1 vs V2: Javascript with NPM dependencies"></p>
+<p>V2 clearly loses on both samples, but V2-V1 difference seems to be consistently within 2.5-3
+seconds for any amount of dependencies.</p>
+<p>All the functions were deployed with the Run-from-Package method which promises faster startup times.</p>
+<h3 id="java">Java</h3>
+<p>Functions V2 come with a new generally-available runtime: Java / JVM. It utilizes the same extensibility
+model as Javascript, and thus it seems to be a first-class citizen now.</p>
+<p>Cold starts are not first-class though: </p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/cold-starts-java.png" alt="Cold Starts Java"></p>
+<p>If you are a Java developer, be prepared for 20-25 seconds of initial startup time.</p>
+<blockquote class="twitter-tweet" data-conversation="none" data-dnt="true"><p lang="en" dir="ltr">That matches some of our internal data. We are looking into it.</p>&mdash; Paul Batum (@paulbatum) <a href="https://twitter.com/paulbatum/status/1048391445386735616?ref_src=twsrc%5Etfw">October 6, 2018</a></blockquote> <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<h2 id="queue-processor">Queue Processor</h2>
+<p>Cold starts are most problematic for synchronous triggers like HTTP requests. They are less relevant
+for queue-based workloads, where scale out is of higher importance.</p>
+<p>Last year I ran some tests around the ability of Functions to keep up with variable queue load:
+<a href="https://mikhail.io/2017/08/azure-functions-are-they-really-infinitely-scalable-and-elastic/">one</a>,
+<a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">two</a>.</p>
+<p>Today I ran two simple tests to compare the scalability of V1 vs. V2 runtimes.</p>
+<h3 id="pause-and-go">Pause-and-Go</h3>
+<p>In my first tests, a lightweight Javascript Function processed messages from an Azure Storage Queue. For
+each message, it just pauses for 500 msec and then completes. This is supposed to simulate I/O-bound 
+Functions.</p>
+<p>I&#39;ve sent 100,000 messages to the queue and measured how fast they went away. Batch size (degree of parallelism
+on each instance) was set to 16.</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/queue-scaling-io-based.png" alt="Processing Queue Messages with Lightweight I/O Workload"></p>
+<p>Two lines show the queue backlogs of two runtimes, while the bars indicate the number of instances working
+in parallel at a given minute.</p>
+<p>We see that V2 was a bit faster to complete, probably due to more instances provisioned to it at any moment.
+The difference is not big though and might be statistically insignificant.</p>
+<h3 id="cpu-at-work">CPU at Work</h3>
+<p>Functions in my second experiment are CPU-bound. Each message invokes calculation of a 10-stage Bcrypt
+hash. On a very quiet moment, 1 such function call takes about 300-400 ms to complete, consuming 100% CPU 
+load on a single core.</p>
+<p>Both Functions are precompiled .NET and both are using <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.NET</a>.</p>
+<p>Batch size (degree of parallelism on each instance) was set to 2 to avoid too much fighting for the same CPU. Yet, 
+the average call duration is about 1.5 seconds (3x slower than possible).</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/queue-scaling-cpu-bound.png" alt="Processing Queue Messages with CPU-bound Workload"></p>
+<p>The first thing to notice: it&#39;s the same number of messages with comparable &quot;sequential&quot; execution time, but 
+the total time to complete the job increased 3-fold. That&#39;s because the workload is much more demanding to
+the resources of application instances, and they struggle to parallelize work more aggressively.</p>
+<p>V1 and V2 are again close to each other. One more time, V2 got more instances allocated to it most of the time.
+And yet, it seemed to be <em>consistently</em> slower and lost about 2.5 minutes on 25 minutes interval (~10%).</p>
+<h2 id="http-scalability">HTTP Scalability</h2>
+<p>I ran two similar Functions &mdash; I/O-bound &quot;Pause&quot; (~100 ms) and CPU-bound Bcrypt (9 stages, ~150ms) &mdash; under a stress test.
+But this time they were triggered by HTTP requests. Then I compared the results for V1 and V2.</p>
+<h3 id="pause-and-go">Pause-and-Go</h3>
+<p>The grey bars on the following charts represent the rate of requests sent and processed within a given minute.</p>
+<p>The lines are percentiles of response time: green lines for V2 and orange lines for V1.</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-io-based.png" alt="Processing HTTP Requests with Lightweight I/O Workload"></p>
+<p>Yes, you saw it right, my Azure Functions were processing 100,000 messages per minute at peak. That&#39;s a lot of
+messages.</p>
+<p>Apart from the initial spike at minutes 2 and 3, both versions performed pretty close to each other.</p>
+<p>50th percentile is flat close to the theoretic minimum of 100 ms, while the 95th percentile fluctuates a bit, but still
+mostly stays quite low. </p>
+<p>Note that the response time is measured from the client perspective, not by looking at the statistics provided by Azure.</p>
+<h3 id="cpu-fanout">CPU Fanout</h3>
+<p>How did CPU-heavy workload perform?</p>
+<p>To skip ahead, I must say that the response time increased much more significantly, so my sample clients were
+not able to generate request rates of 100k per minute. They &quot;only&quot; did about 48k per minute at peak, which still
+seems massive to me.</p>
+<p>I&#39;ve run the same test twice: one for Bcrypt implemented in .NET, and one for Javascript.</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-dotnet.png" alt="Processing HTTP Requests with .NET CPU-bound Workload"></p>
+<p>V2 had a real struggle during the first minute, where response time got terribly slow up to 9 seconds.</p>
+<p>Looking at the bold-green 50th percentile, we can see that it&#39;s consistently higher than the orange one throughout
+the load growth period of the first 10 minutes. V2 seemed to have a harder time to adjust.</p>
+<p>This might be explainable by slower growth of instance count:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-dotnet-instance-growth.png" alt="Instance Count Growth while Processing HTTP Requests with .NET CPU-bound Workload"></p>
+<p>This difference could be totally random, so let&#39;s look at a similar test with Javascript worker. Here is the percentile chart:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-js.png" alt="Processing HTTP Requests with Javascript CPU-bound Workload"></p>
+<p>The original slowness of the first 3 minutes is still there, but after that time V2 and V1 are on-par.</p>
+<p>On-par doesn&#39;t sound that great though if you look at the significant edge in the number of allocated instances, in
+favor of V2 this time:</p>
+<p><img src="/2018/10/azure-functions-v2-released-how-performant-is-it/http-scaling-cpu-bound-js-instance-growth.png" alt="Instance Count Growth while Processing HTTP Requests with Javascript CPU-bound Workload"></p>
+<p>Massive 147 instances were crunching Bcrypt hashes in Javascript V2, and that made it a bit faster to respond than V1.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>As always, be reluctant to make definite conclusions based on simplistic benchmarks. But I see some trends which might
+be true as of today:</p>
+<ul>
+<li>Performance of .NET Functions is comparable across two versions of Functions runtimes;</li>
+<li>V1 still has a clear edge in the cold start time of Javascript Functions;</li>
+<li>V2 is the only option for Java developers, but be prepared to very slow cold starts;</li>
+<li>Scale-out characteristics seem to be independent of the runtime version, although there are blurry signs of
+V2 being a bit slower to ramp up or slightly more resource hungry.</li>
+</ul>
+<p>I hope this helps in your serverless journey!</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2018/10/azure-functions-v2-released-how-performant-is-it//index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/cold-start/'>Cold Start</a>
+    </div>
+    
+</article>
+    <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy F#, C#, Javascript and SQL development, reasoning about distributed systems, data processing pipelines, cloud and web apps. I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'https://mikhail.io/2018/10/azure-functions-v2-released-how-performant-is-it/';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Azure Functions V2 Is Released, How Performant Is It?';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/prism.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>

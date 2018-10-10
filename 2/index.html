@@ -17,7 +17,7 @@
 
     <meta property="og:type" content="article" />
     <meta property="og:title" content="Mikhail Shilkov" />
-    <meta property="og:url" content="https://mikhail.io/2/" />
+    <meta property="og:url" content="https://mikhail.io/2/index.html" />
 
 
 
@@ -77,6 +77,305 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Jun 22nd, 2018</div>
+    
+    <h1><a href='/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi/'>Programmable Cloud: Provisioning Azure App Service with Pulumi</a></h1>
+    
+    <div class="post-content">
+        <p>Modern Cloud providers offer a wide variety of services of different types
+and levels. A modern cloud application would leverage multiple services
+in order to be efficient in terms of developer experience, price, operations
+etc.</p>
+<p>For instance, a very simple Web Application deployed to Azure PaaS services
+could use</p>
+<ul>
+<li>App Service - to host the application</li>
+<li>App Service Plan - to define the instance size, price, scaling and other
+hosting parameters</li>
+<li>Azure SQL Database - to store relational data</li>
+<li>Application Insights - to collect telemetry and logs</li>
+<li>Storage Account - to store the binaries and leverage Run-as-Zip feature</li>
+</ul>
+<p>Provisioning such environment becomes a task on its own:</p>
+<ul>
+<li>How do we create the initial setup?</li>
+<li>How do we make changes?</li>
+<li>What if we need multiple environments?</li>
+<li>How do we apply settings?</li>
+<li>How do we recycle resources which aren&#39;t needed anymore?</li>
+</ul>
+<p>Well, there are several options.</p>
+<h2 id="manually-in-azure-portal">Manually in Azure Portal</h2>
+<p>We all start doing this in Azure Portal. User Interface is great for
+discovering new services and features, and it&#39;s a quick way to make a single
+change.</p>
+<p><img src="/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//azureportal.png" alt="Azure Portal"></p>
+<p><em>Creating an App Service in Azure Portal</em></p>
+<p>Clicking buttons manually doesn&#39;t scale though. After the initial setup is
+complete, maintaining the environment over time poses significant challenges:</p>
+<ul>
+<li>Every change requires going back to the portal, finding the right resource
+and doing the right change</li>
+<li>People make mistakes, so if you have multiple environments, they are likely
+to be different in subtle ways</li>
+<li>Naming gets messy over time</li>
+<li>There is no easily accessible history of environment changes</li>
+<li>Cleaning up is hard: usually some leftovers will remain unnoticed</li>
+<li>Skills are required from everybody involved in provisioning</li>
+</ul>
+<p>So, how do we streamline this process?</p>
+<h2 id="azure-powershell-cli-and-management-sdks">Azure PowerShell, CLI and Management SDKs</h2>
+<p>Azure comes with a powerful set of tools to manage resources with code.</p>
+<p>You can use PowerShell, CLI scripts or custom code like C# to do with code
+whatever is possible to do via portal.</p>
+<pre><code class="language-csharp">var webApp = azure.WebApps.Define(appName)
+    .WithRegion(Region.WestEurope)
+    .WithNewResourceGroup(rgName)
+    .WithNewFreeAppServicePlan()
+    .Create();</code></pre>
+<p><em>Fluent C# code creating an App Service</em></p>
+<p>However, those commands are usually expressed in imperative style of 
+CRUD operations. You can run the commands once, but it&#39;s hard to modify
+existing resources from an arbitrary state to the desired end state.</p>
+<h2 id="azure-resource-manager-templates">Azure Resource Manager Templates</h2>
+<p>All services in Azure are managed by Azure Resource Manager (ARM). ARM 
+has a special JSON-based format for templates. </p>
+<p>Once a template is defined,
+it&#39;s relatively straightforward to be deployed to Azure environment. So, if
+resources are defined in JSON, they will be created automatically via
+PowerShell or CLI commands.</p>
+<p>It is also possible to deploy templates in incremental mode, when the tool
+will compare existing environment with desired configuration and will deploy
+the difference.</p>
+<p>Templates can be parametrized, which enables multi-environment deployments.</p>
+<p>There&#39;s a problem with templates though: they are JSON files. They get
+very large very fast, they are hard to reuse, it&#39;s easy to make a typo.</p>
+<p><img src="/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//armtemplate.png" alt="ARM Template"></p>
+<p><em>A fragment of auto-generated ARM Template for App Service, note the 
+line numbers</em></p>
+<p>Terraform is another templating tool to provision cloud resources but it uses
+YAML instead of JSON. I don&#39;t have much experience with it, but the problems 
+seem to be very similar.</p>
+<p>Can we combine the power of SDKs and the power of JSON-/YAML-based desired state
+configuration tools?</p>
+<h2 id="pulumi">Pulumi</h2>
+<p>One potential solution has just arrived.
+A startup called Pulumi <a href="http://joeduffyblog.com/2018/06/18/hello-pulumi/">just went out of private beta to open source</a>.</p>
+<p><img src="/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//pulumi.jpg" alt="Pulumi"></p>
+<p>Pulumi wants to be much more than a better version of ARM templates, aiming
+to become the tool to build cloud-first distributed systems. But for today I&#39;ll 
+focus on lower level of resource provisioning task.</p>
+<p>With Pulumi cloud infrastructure is defined in code using full-blown general 
+purpose programming languages.</p>
+<p>The workflow goes like this:</p>
+<ul>
+<li>Define a Stack, which is a container for a group of related resources</li>
+<li>Write a program in one of supported languages (I&#39;ll use TypeScript) which
+references <code>pulumi</code> libraries and constructs all the resources as objects</li>
+<li>Establish connection with your Azure account</li>
+<li>Call <code>pulumi</code> CLI to create, update or destroy Azure resources based on
+the program</li>
+<li>Pulumi will first show the preview of changes, and then apply them as
+requested</li>
+</ul>
+<h2 id="pulumi-program">Pulumi Program</h2>
+<p>I&#39;m using TypeScript to define my Azure resources in Pulumi. So, the program
+is a normal Node.js application with <code>index.ts</code> file, package references in 
+<code>package.json</code> and one extra file <code>Pulumi.yaml</code> to define the program:</p>
+<pre><code class="language-yaml">name: azure-appservice
+runtime: nodejs</code></pre>
+<p>Our <code>index.js</code> is as simple as a bunch of <code>import</code> statements followed by
+creating TypeScript objects per desired resource. The simplest program can
+look like this:</p>
+<pre><code class="language-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
+import * as azure from &quot;@pulumi/azure&quot;;
+
+const resourceGroup = new azure.core.ResourceGroup(&quot;myrg&quot;, {
+    location: &quot;West Europe&quot;
+});</code></pre>
+<p>When executed by <code>pulumi update</code> command, this program will create a new
+Resource Group in your Azure subscription.</p>
+<h2 id="chaining-resources">Chaining Resources</h2>
+<p>When multiple resources are created, the properties of one resource will
+depend on properties of the others. E.g. I&#39;ve defined the Resource Group
+above, and now I want to create an App Service Plan under this Group:</p>
+<pre><code class="language-ts">const resourceGroupArgs = {
+    resourceGroupName: resourceGroup.name,
+    location: resourceGroup.location
+};
+
+const appServicePlan = new azure.appservice.Plan(&quot;myplan&quot;, {
+    ...resourceGroupArgs,
+
+    kind: &quot;App&quot;,
+
+    sku: {
+        tier: &quot;Basic&quot;,
+        size: &quot;B1&quot;,
+    },
+});</code></pre>
+<p>I&#39;ve assigned <code>resourceGroupName</code> and <code>location</code> of App Service Plan to
+values from the Resource Group. It looks like a simple assignment of
+strings but in fact it&#39;s more complicated.</p>
+<p>Property <code>resourceGroup.name</code> has the type of <code>pulumi.Output&lt;string&gt;</code>.
+Constructor argument <code>resourceGroupName</code> of <code>Plan</code> has the type of
+<code>pulumi.Input&lt;string&gt;</code>.</p>
+<p>We assigned <code>&quot;myrg&quot;</code> value to Resource Group name, but during the actual 
+deployment it will change. Pulumi will append a unique identifier to the name,
+so the actually provisioned group will be named e.g. <code>&quot;myrg65fb103e&quot;</code>.</p>
+<p>This value will materialize inside <code>Output</code> type only at deployment time, 
+and then it will get propagated to <code>Input</code> by Pulumi.</p>
+<p>There is also a nice way to return the end values of <code>Output</code>&#39;s from Pulumi
+program. Let&#39;s say we define an App Service:</p>
+<pre><code class="language-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
+    ...resourceGroupArgs,
+
+    appServicePlanId: appServicePlan.id
+});</code></pre>
+<p>First, notice how we used TypeScript spread operator to reuse
+properties from <code>resourceGroupArgs</code>.</p>
+<p>Second, <code>Output</code>-<code>Input</code> assignment got used again to propagate App Service
+Plan ID.</p>
+<p>Lastly, we can now export App Service host name from our program, e.g.
+for the user to be able to go to the web site immediately after deployment:</p>
+<pre><code class="language-ts">exports.hostname = app.defaultSiteHostname;</code></pre>
+<p><code>Output</code> can also be transformed with <code>apply</code> function. Here is the code to
+format output URL:</p>
+<pre><code class="language-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);</code></pre>
+<p>Running <code>pulumi update</code> from CLI will then print the endpoint for us:</p>
+<pre><code class="language-sh">---outputs:---
+endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;</code></pre>
+<p>Multiple outputs can be combined with <code>pulumi.all</code>, e.g. given SQL Server
+and Database, we could make a connection string:</p>
+<pre><code class="language-ts">const connectionString = 
+    pulumi.all([sqlServer, database]).apply(([server, db]) =&gt; 
+        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)</code></pre>
+<h2 id="using-the-power-of-npm">Using the Power of NPM</h2>
+<p>Since our program is just a TypeScript application, we are free to use any
+3rd party package which exists out there in NPM.</p>
+<p>For instance, we can install Azure Storage SDK. Just</p>
+<pre><code class="language-sh">npm install azure-storage@2.9.0-preview</code></pre>
+<p>and then we can write a function to produce SAS token for a Blob in Azure
+Storage:</p>
+<pre><code class="language-ts">import * as azurestorage from &quot;azure-storage&quot;;
+
+// Given an Azure blob, create a SAS URL that can read it.
+export function signedBlobReadUrl(
+    blob: azure.storage.Blob | azure.storage.ZipBlob,
+    account: azure.storage.Account,
+    container: azure.storage.Container,
+): pulumi.Output&lt;string&gt; {
+    const signatureExpiration = new Date(2100, 1);
+
+    return pulumi.all([
+        account.primaryConnectionString,
+        container.name,
+        blob.name,
+    ]).apply(([connectionString, containerName, blobName]) =&gt; {
+        let blobService = new azurestorage.BlobService(connectionString);
+        let signature = blobService.generateSharedAccessSignature(
+            containerName,
+            blobName,
+            {
+                AccessPolicy: {
+                    Expiry: signatureExpiration,
+                    Permissions: azurestorage.BlobUtilities.SharedAccessPermissions.READ,
+                },
+            }
+        );
+
+        return blobService.getUrl(containerName, blobName, signature);
+    });
+}</code></pre>
+<p>I took this function from <a href="https://github.com/pulumi/examples/tree/master/azure-ts-functions">Azure Functions</a>
+example, and it will probably move to Pulumi libraries at some point, but until
+then you are free to leverage the package ecosystem.</p>
+<h2 id="deploying-application-files">Deploying Application Files</h2>
+<p>So far we provisioned Azure App Service, but we can also deploy the application
+files as part of the same workflow.</p>
+<p>The code below is using <a href="https://github.com/Azure/app-service-announcements/issues/84">Run from Zip</a>
+feature of App Service:</p>
+<ol>
+<li><p>Define Storage Account and Container</p>
+<pre><code class="language-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
+     ...resourceGroupArgs,
+
+     accountKind: &quot;StorageV2&quot;,
+     accountTier: &quot;Standard&quot;,
+     accountReplicationType: &quot;LRS&quot;,
+ });
+
+ const storageContainer = new azure.storage.Container(&quot;mycontainer&quot;, {
+     resourceGroupName: resourceGroup.name,
+     storageAccountName: storageAccount.name,
+     containerAccessType: &quot;private&quot;,
+ });</code></pre>
+</li>
+<li><p>Create a folder with application files, e.g. <code>wwwroot</code>. It may contain
+some test HTML, ASP.NET application, or anything supported by App Service.</p>
+</li>
+<li><p>Produce a zip file from that folder in Pulumi program:</p>
+<pre><code class="language-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
+     resourceGroupName: resourceGroup.name,
+     storageAccountName: storageAccount.name,
+     storageContainerName: storageContainer.name,
+     type: &quot;block&quot;,
+
+     content: new pulumi.asset.FileArchive(&quot;wwwroot&quot;)
+ });</code></pre>
+</li>
+<li><p>Produce SAS Blob URL and assign it to App Service Run-as-Zip setting:</p>
+<pre><code class="language-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
+
+ const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
+     ...resourceGroupArgs,
+
+     appServicePlanId: appServicePlan.id,
+
+     appSettings: {
+         &quot;WEBSITE_RUN_FROM_ZIP&quot;: codeBlobUrl
+     }
+ });</code></pre>
+</li>
+</ol>
+<p>Run the program, and your Application will start as soon as <code>pulumi update</code>
+is complete.</p>
+<h2 id="determinism">Determinism</h2>
+<p>Pulumi programs should strive to be deterministic.
+That means you should avoid using things like current date/time or random numbers.</p>
+<p>The reason is incremental updates. Every time you run <code>pulumi update</code>, it
+will execute the program from scratch. If your resources depend on random
+values, they will not match the existing resources and thus the false
+delta will be detected and deployed.</p>
+<p>In the SAS generation example above we used a fixed date in the future
+instead of doing today + 1 year kind of calculation.</p>
+<p>Should Pulumi provide some workaround for this?</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>My code was kindly merged to 
+<a href="https://github.com/pulumi/examples/tree/master/azure-ts-appservice">Pulumi examples</a>, 
+go there for the complete runnable program that provisions App Service with
+Azure SQL Database and Application Insights.</p>
+<p>I really see high potential in Cloud-as-Code approach suggested by Pulumi.
+Today we just scratched the surface of the possibilities. We were working
+with cloud services on raw level: provisioning specific services with
+given parameters.</p>
+<p>Pulumi&#39;s vision includes providing higher-level components to blur the line
+between infrastructure and code, and to enable everybody to create such
+components on their own.</p>
+<p>Exciting future ahead!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/pulumi/'>Pulumi</a>, <a href='/tags/azure-app-service/'>Azure App Service</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">May 18th, 2018</div>
     
@@ -485,331 +784,13 @@ before going GA.</p>
     
 </article>
 
-    <article class="post">
-    <div class="post-date">Feb 6th, 2018</div>
-    
-    <h1><a href='/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server/'>Load Testing Azure SQL Database by Copying Traffic from Production SQL Server</a></h1>
-    
-    <div class="post-content">
-        <p>Azure SQL Database is a managed service that provides low-maintenance SQL Server instances in the cloud.
-You don&#39;t have to run and update VMs, or even take backups and setup failover clusters.
-Microsoft will do administration for you, you just pay an hourly fee.</p>
-<p>So, let&#39;s say you decide this value proposition is a good reason to migrate
-away from your existing self-hosted SQL Server database running in production and replace
-it with Azure SQL Database.</p>
-<p>You do the functional testing and eventually everything works like charm. The next set of questions 
-is going to be related to Database performance level:</p>
-<ul>
-<li>Which tier / how many DTU&#39;s should I provision?</li>
-<li>How much will it cost?</li>
-<li>Will it be able to handle my current production load?</li>
-</ul>
-<h2 id="dtus">DTUs</h2>
-<p>Even if you collect all the specs of the hardware behind your existing SQL Server, you can&#39;t
-directly use that knowledge to choose the right Azure SQL Database size.</p>
-<p>The sizes are measured in Database Transaction Units (DTUs). These are abstract units
-of measure which don&#39;t necessarily mean much on their own. Within a given tier
-(Standard / Premium), doubling the DTU amount will double the max throughput.</p>
-<p>That doesn&#39;t really help to plan for workload migrations.</p>
-<p>There are some ways to estimate the DTU requirements by measuring metrics like CPU
-and IOPS on your existing server. Have a look at <a href="http://dtucalculator.azurewebsites.net/">DTU Calculator</a>:
-it consists of a data collector and an online converter from metric values to DTUs.</p>
-<p>While useful as a first approximation, I&#39;m reluctant to provision Azure SQL Database 
-size solely based on such estimates.</p>
-<p>My answer to the problem is: Measure It!</p>
-<h2 id="synthetic-tests">Synthetic Tests</h2>
-<p>Go get a backup of your existing production database and Export / Import it into
-Azure SQL Database. Pick the size based on your gut feel, run a load test, evaluate
-the results, adjust the size, repeat.</p>
-<p>If you know your workload really well, you can create a synthetic test:</p>
-<ul>
-<li>Create a script or scenario which resembles the real production load</li>
-<li>Run it for a given period of time</li>
-<li>Measure the DTU&#39;s consumed</li>
-</ul>
-<p>Unfortunately, I&#39;m yet to see a non-trivial database where I could manually create
-such script and be reasonably sure that it reflects the reality. Most of the time
-the load is consumer-driven, changes over time and heavily depends on exact query
-parameter values.</p>
-<p>Which brings me to the need of replaying <em>the actual production workload</em> on Azure
-SQL Database.</p>
-<h2 id="trace-and-replay">Trace and Replay</h2>
-<p>SQL Server comes with a marvelous suite of tools refined over years of its existence.
-It includes the tools to capture and replay the queries, so I started with those.</p>
-<p>SQL Server Profiler has a trace template called <code>TSQL_Replay</code>:</p>
-<blockquote>
-<p>This template records information required to replay the trace. Use this template
-to perform iterative turning, such as benchmark testing.</p>
-</blockquote>
-<p>This sounded like what I needed, so I ran the profiler with this template to save
-a short trace.</p>
-<p>Afterwards, it is possible to use the same SQL Server Profiler to replay the trace against
-another target database. So the process looks like this:</p>
-<p><img src="/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-trace-replay.png" alt="Replaying Traffic with SQL Server Profiler"></p>
-<p>Unfortunately, this didn&#39;t go very well:</p>
-<ul>
-<li><p>Azure SQL Database is not supported by the tooling. The replay kind of runs, but
-it throws lots of errors like reading from non-existent system tables, trying to
-switch between databases and so on </p>
-</li>
-<li><p>Related or not to the previous item, but replay went terribly slow. It
-seemed to slow down exponentially over time</p>
-</li>
-<li><p>The trace file itself was of huge size. Because the template tries to record pretty
-much everything, tracing 5 minutes on production produced 10 GB of XML</p>
-</li>
-<li><p>Replay was not real-time: you first record, then you replay. This might not be a big
-issue for many databases, but some of our queries have time parameter, and results would
-change if I replay the trace 1 hour later</p>
-</li>
-</ul>
-<p>Just to give you a rough idea, our production database-under-study is handling about
-1000 RPC calls per second (mostly stored procedures).</p>
-<h2 id="custom-trace-replay">Custom Trace &amp; Replay</h2>
-<p>Since off-the-shelf solution didn&#39;t work for me, I decided to come up with my own
-custom tool chain. Here is the idea:</p>
-<p><img src="/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-trace-replay-event-hubs-functions.png" alt="Replaying Traffic with SQL Server Profiler"></p>
-<p>There are two custom steps that I implemented:</p>
-<ol>
-<li><p>Run a console app which would host a custom trace server. The trace server
-receives SQL commands and sends them to Azure Event Hubs in batches</p>
-</li>
-<li><p>Create an Azure Function application triggered by the Event Hub. Each function
-call gets one SQL command to execute and runs it against Azure SQL database that
-we are trying to load-test</p>
-</li>
-</ol>
-<p>This setup worked remarkably well for me: I got the real-time replay of SQL commands
-from production SQL Server to Azure SQL Database.</p>
-<p>The rest of the article describes my setup so that you could reproduce it for your
-workload.</p>
-<h2 id="azure-sql-database">Azure SQL Database</h2>
-<p>Ideally, you want your copy of the database to be as fresh as possible, so that the 
-query plans and results match.</p>
-<p>Some ideas to accomplish this are given in 
-<a href="https://docs.microsoft.com/en-us/azure/sql-database/sql-database-cloud-migrate">SQL Server database migration to SQL Database in the cloud</a>.</p>
-<p>Premium RS tier is great for testing, because it is much cheaper than Premium
-tier, while it provides the same level of performance.</p>
-<h2 id="event-hubs">Event Hubs</h2>
-<p>I used Azure Event Hubs as messaging middleware between Trace Server and Replay 
-Function App.</p>
-<p>I started with Azure Storage Queues, but the server wasn&#39;t able to send messages
-fast enough, mostly due to lack of batching.</p>
-<p>Event Hubs match naturally my choice of Azure Functions: Functions have a built-in
-trigger with dynamic scaling out of the box.</p>
-<p>So, I just created a new Event Hub via the portal, with 32 partitions allocated.</p>
-<h2 id="trace-definition-file">Trace Definition File</h2>
-<p>In order to run a custom Trace Server, you still need a trace definition file.
-The built-in template <code>TSQL_Replay</code> mentioned above could work, but
-it&#39;s subscribed to way too many events and columns.</p>
-<p>Instead, I produced my own trace template with minimal selection.
-To do that, open SQL Server Profiler, then navigate to <code>File -&gt; Templates -&gt; New Template</code>,
-give it a name and then on <code>Events Selection</code> tab exclude everything except
-exactly the commands that you want to replay.</p>
-<p>We use stored procedures for pretty much everything, so my selection looked
-just like this:</p>
-<p><img src="/2018/02/load-testing-azure-sql-database-by-copying-traffic-from-production-sql-server//sql-profiler-template.png" alt="SQL Profiler Template"></p>
-<p>For the first few runs, I advise you to restrict the trace even further. Click
-<code>Column Filters</code> button, select <code>TextData</code> there and set <strong>Like</strong> filter
-to a single stored procedure, e.g. matching the pattern <code>%spProductList%</code>.</p>
-<p>This way you can debug your whole replay chain without immediately overloading
-any part of it with huge stream of commands.</p>
-<p>Once done, save the <code>tdf</code> file to disk. An example of such trace definition file
-can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
-<h2 id="trace-server">Trace Server</h2>
-<p>My trace server is a simple C# console application.</p>
-<p>Create a new console app and reference a NuGet package <code>Microsoft.SqlServer.SqlManagementObjects</code>.
-Mine is of version <code>140.17218.0</code> (latest as of today).</p>
-<p>Unfortunately, this NuGet package is not fully self-contained. In order to run
-a profiling session, you have to install SQL Server Profiler tool on the machine
-where you want to run the trace server.</p>
-<p>Chances are that you already have it there, but be sure to update to the matching
-version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work with older 
-versions.</p>
-<p>Now we can implement our trace server as a console application. The main
-method looks like this:</p>
-<pre><code class="language-csharp">static void Main(string[] args) // args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
-{
-    // 1. Run trace server
-    var connectionInfo = new SqlConnectionInfo(args[0])
-    {
-        DatabaseName = args[1],
-        UseIntegratedSecurity = true
-    };
-    var trace = new TraceServer();
-    trace.InitializeAsReader(connectionInfo, args[2]);
-
-    // 2. Continuously read traces and send them to event hubs
-    var tokenSource = new CancellationTokenSource();
-    var readerTask = Task.Factory.StartNew(() =&gt; ReadTrace(trace, tokenSource.Token), tokenSource.Token);
-    var senderTask = Task.Factory.StartNew(() =&gt; SendToEventHubs(tokenSource.Token), tokenSource.Token);
-
-    // 3. Stop the trace
-    Console.WriteLine(&quot;Press any key to stop...&quot;);
-    Console.ReadKey();
-    tokenSource.Cancel();
-    Task.WaitAll(readerTask, senderTask);
-}</code></pre>
-<p>The first block initializes SQL connection using command line arguments and integrated
-security, and then starts the Trace Server.</p>
-<p>Because of the large volume, I made trace reader and event sender to work on separate
-threads. They talk to each other via a concurrent queue:</p>
-<pre><code class="language-csharp">private static readonly ConcurrentQueue&lt;string&gt; eventQueue = new ConcurrentQueue&lt;string&gt;();</code></pre>
-<p>Finally, when operator presses any key, the cancellation is requested and the reader and
-sender get shut down.</p>
-<p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
-(with some exclusions) to the concurrent in-memory queue:</p>
-<pre><code class="language-csharp">private static void ReadTrace(TraceServer trace, CancellationToken token)
-{ 
-    while (trace.Read() &amp;&amp; !token.IsCancellationRequested)
-    {
-        var eventClass = trace[&quot;EventClass&quot;].ToString();
-        if (string.Compare(eventClass, &quot;RPC:Completed&quot;) == 0)
-        {
-            var textData = trace[&quot;TextData&quot;].ToString();
-            if (!textData.Contains(&quot;sp_reset_connection&quot;)
-                &amp;&amp; !textData.Contains(&quot;sp_trace&quot;)
-                &amp;&amp; !textData.Contains(&quot;sqlagent&quot;))
-            {
-                eventQueue.Enqueue(textData);
-            }
-        }
-    }
-
-    trace.Stop();
-    trace.Close();
-}</code></pre>
-<p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
-events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
-<pre><code class="language-csharp">private static void SendToEventHubs(CancellationToken token)
-{
-    var client = EventHubClient.CreateFromConnectionString(EventHubsConnectionString);
-    var batch = client.CreateBatch();
-    while (!token.IsCancellationRequested)
-    {
-        if (!eventQueue.TryDequeue(out string sql))
-        {
-            Thread.Sleep(10);
-            continue;
-        }
-
-        var eventData = new EventData(Encoding.UTF8.GetBytes(sql));
-        if (!batch.TryAdd(eventData) &amp;&amp; batch.Count &gt; 0)
-        {
-            client.SendAsync(batch.ToEnumerable())
-                .ContinueWith(OnAsyncMethodFailed, token, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-            batch = client.CreateBatch();
-            batch.TryAdd(eventData);
-        }
-    }
-}</code></pre>
-<p>If your trace doesn&#39;t produce so many messages, you will probably want to periodically send out the batches
-even before they get full, just to keep that process closer to real time.</p>
-<p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
-callback to print it to console:</p>
-<pre><code class="language-csharp">private static void OnMyAsyncMethodFailed(Task task)
-{
-    Console.WriteLine(task.Exception?.ToString() ?? &quot;null error&quot;);
-}</code></pre>
-<p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
-up by Trace Replay.</p>
-<h2 id="trace-replay-function-app">Trace Replay Function App</h2>
-<p>To replay those traces against the target Azure SQL Database, I could make another console
-application which would contain <code>EventProcessorHost</code> to receive and process SQL commands.</p>
-<p>However, under high load a single machine might not be able to keep up with executing all
-those commands in real time.</p>
-<p>Instead, I decided to distribute such Replay App over multiple machines. To deploy a 
-DDoS network, if you will :)</p>
-<p>And I don&#39;t have to build, find, configure and synchronize all those servers myself, since we
-are living in the world of serverless.</p>
-<p><a href="https://azure.microsoft.com/en-us/services/functions/">Azure Functions</a> are the perfect tool for this job. Once you start the trace server,
-Function App will start scaling up based on the amount of events in Event Hub, and will
-expand until it catches up with the workload.</p>
-<p>But as long as you don&#39;t run the trace server, it won&#39;t consume any servers and won&#39;t cost you
-a dime. </p>
-<p>Here is the implementation of Trace Replay Azure Function:</p>
-<pre><code class="language-csharp">public static class Replay
-{
-    [FunctionName(&quot;Replay&quot;)]
-    public static void Run(
-        [EventHubTrigger(&quot;sqltrace&quot;, Connection = &quot;EventHubsConn&quot;)] string sql,
-        TraceWriter log)
-    {
-        var commandName = sql
-            .Split(null)
-            .SkipWhile(r =&gt; r != &quot;exec&quot; &amp;&amp; r != &quot;sp_executesql&quot;)
-            .FirstOrDefault(r =&gt; !r.Contains(&quot;exec&quot;)) ?? &quot;&lt;empty&gt;&quot;;
-
-        var stopwatch = new Stopwatch();
-        stopwatch.Start();
-
-        try
-        {
-            using (var sqlConnection = new SqlConnection(AzureSqlConnectionString))
-            using (var cmd = new SqlCommand())
-            {
-                sqlConnection.Open();
-
-                cmd.CommandText = sql;
-                cmd.CommandType = CommandType.Text;
-
-                cmd.Connection = sqlConnection;
-
-                int count = 0;
-                using (var reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        count++;
-                    }
-                }
-
-                log.Info($&quot;Processed {commandName} in {stopwatch.ElapsedMilliseconds} ms with {count} rows&quot;);
-            }
-        }
-        catch (Exception ex)
-        {
-            log.Error($&quot;Error in {commandName} in {stopwatch.ElapsedMilliseconds} {ex.Message}&quot;);
-            throw;
-        }
-    }
-}</code></pre>
-<p>It&#39;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
-logs the result with timing and returned row count. And that&#39;s everything required to start
-bombarding my Azure SQL Database.</p>
-<h2 id="evaluating-results">Evaluating Results</h2>
-<p>The purpose of this whole exercise was to evaluate whether a provisioned DTU level
-is enough to stand the load comparable to existing production.</p>
-<p>So, after I ran the test, I could browse through the DTU usage chart in Azure portal to
-get overall usage statistics.</p>
-<p>I&#39;ve also spent quite some time analyzing the usage breakdown as reported by <code>sp_BlitzCache</code>
-from <a href="https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit">Responder Kit</a>. 
-Please note that it&#39;s not officially supported for Azure SQL Database, but it seems to work 
-reasonably well.</p>
-<p>Be sure to re-run your experiments multiple times, at different days and time intervals.</p>
-<p>The full code sample can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
-<p>I hope Azure SQL Database will perform to your expectations and within your budget. But
-hope is not a good strategy, so go ahead and try it out!</p>
-<p>Happy DDoS-ing!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-sql-database/'>Azure SQL Database</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/scalability/'>Scalability</a>, <a href='/tags/azure-event-hubs/'>Azure Event Hubs</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
-    </div>
-    
-</article>
-
 
 <div class="page-nav">
     
     <a class="page-nav-newer" href="/">&lt;&lt; Previous page</a>
     
     
-    <a class="page-nav-older" href="/3/">Next page &gt;&gt;</span></a>
+    <a class="page-nav-older" href="/3/index.html">Next page &gt;&gt;</span></a>
     
 </div>
 
