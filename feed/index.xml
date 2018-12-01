@@ -3,13 +3,278 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-10-22T21:24:43.062Z</updated>
+    <updated>2018-12-01T20:31:17.220Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>From 0 to 1000 Instances: How Serverless Providers Scale Queue Processing</title>
+        <link href="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing/"/>
+        <updated>2018-11-19T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2018-11-19,/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing/</id>
+        <content type="html"><![CDATA[<p>Whenever I see a &quot;Getting Started with Function-as-a-Service&quot; tutorial, it usually shows off 
+a synchronous HTTP-triggered scenario. In my projects, though, I use a lot of asynchronous 
+functions triggered by a queue or an event stream.</p>
+<p>Quite often, the number of messages passing through a queue isn&#39;t uniform over time. I might 
+drop batches of work now and then. My app may get piles of queue items arriving from upstream 
+systems that were down or under maintenance for an extended period. The system might see some 
+rush-hour peaks every day or only a few busy days per month.</p>
+<p>This is where serverless tech shines: You pay per execution, and then the promise is that the 
+provider takes care of scaling up or down for you. Today, I want to put this scalability under 
+test.</p>
+<p>The goal of this article is to explore queue-triggered serverless functions and hopefully distill 
+some practical advice regarding asynchronous functions for real projects. I will be evaluating 
+the problem:</p>
+<ul>
+<li>Across Big-3 cloud providers (Amazon, Microsoft, Google)</li>
+<li>For different types of workloads</li>
+<li>For different performance tiers</li>
+</ul>
+<p>Let&#39;s see how I did that and what the outcome was.</p>
+<p><em>DISCLAIMER. Performance testing is hard. I might be missing some crucial factors and parameters 
+that influence the outcome. My interpretation might be wrong. The results might change over time. 
+If you happen to know a way to improve my tests, please let me know, and I will re-run them and 
+re-publish the results.</em></p>
+<h2 id="methodology">Methodology</h2>
+<p>In this article I analyze the execution results of the following cloud services:</p>
+<ul>
+<li>AWS Lambda triggered via SQS queues</li>
+<li>Azure Function triggered via Storage queues</li>
+<li>Google Cloud Function triggered via Cloud Pub/Sub</li>
+</ul>
+<p>All functions are implemented in Javascript and are running on GA runtime.</p>
+<p>At the beginning of each test, I threw 100,000 messages into a queue that was previously idle. 
+Enqueuing never took longer than one minute (I sent the messages from multiple clients in 
+parallel).</p>
+<p>I disabled any batch processing, so each message was consumed by a separate function invocation.</p>
+<p>I then analyzed the logs (AWS CloudWatch, Azure Application Insights, and GCP Stackdriver 
+Logging) to generate charts of execution distribution over time.</p>
+<h2 id="how-scaling-actually-works">How Scaling Actually Works</h2>
+<p>To understand the experiment better, let&#39;s look at a very simplistic but still useful model of 
+how cloud providers scale serverless applications.</p>
+<p>All providers handle the increased load by 
+<a href="https://en.wikipedia.org/wiki/Scalability#Horizontal_and_vertical_scaling">scaling out</a>, i.e., 
+by creating multiple instances of the same application that execute the chunks of work in 
+parallel.</p>
+<p>In theory, a cloud provider could spin up an instance for each message in the queue as soon as 
+the messages arrive. The backlog processing time would then stay very close to zero.</p>
+<p>In practice, allocating instances is not cheap. The Cloud provider has to boot up the function 
+runtime, hit a <a href="https://mikhail.io/2018/08/serverless-cold-start-war/">cold start</a>, and waste 
+expensive resources on a job that potentially will take just a few milliseconds.</p>
+<p>So the providers are trying to find a sweet spot between handling the work as soon as possible 
+and using resources efficiently. The outcomes differ, which is the point of my article.</p>
+<h3 id="aws">AWS</h3>
+<p>AWS Lambda defines scale out with a notion of Concurrent Executions. Each instance of your AWS 
+Lambda is handling a single execution at any given time. In our case, it&#39;s processing a single 
+SQS message.</p>
+<p>It&#39;s helpful to think of a function instance as a container working on a single task. If execution 
+pauses or waits for an external I/O operation, the instance is on hold.</p>
+<p>The model of concurrent executions is universal to all trigger types supported by Lambdas. An 
+instance doesn&#39;t work with event sources directly; it just receives an event to work on.</p>
+<p>There is a central element in the system, let&#39;s call it &quot;Orchestrator&quot;. The Orchestrator is the 
+component talking to an SQS queue and getting the messages from it. It&#39;s then the job of the 
+Orchestrator and related infrastructure to provision the required number of instances for working 
+on concurrent executions:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//aws-lambda-queue-scaling.png" alt="Model of AWS Lambda Scale-Out"></p>
+<center class="img-caption">Model of AWS Lambda Scale-Out</center>
+
+<p>As to scaling behavior, here is what the official 
+<a href="https://docs.aws.amazon.com/en_us/lambda/latest/dg/scaling.html">AWS docs</a> say:</p>
+<blockquote>
+<p>AWS Lambda automatically scales up ... until the number of concurrent function executions 
+reaches 1000 ... Amazon Simple Queue Service supports an initial burst of 5 concurrent function 
+invocations and increases concurrency by 60 concurrent invocations per minute.</p>
+</blockquote>
+<h3 id="gcp">GCP</h3>
+<p>The model of Google Cloud Functions is very similar to what AWS does. It runs a single 
+simultaneous execution per instance and routes the messages centrally.</p>
+<p>I wasn&#39;t able to find any scaling specifics except the definition of 
+<a href="https://cloud.google.com/functions/quotas">Function Quotas</a>.</p>
+<h3 id="azure">Azure</h3>
+<p>Experiments with Azure Functions were run on 
+<a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-scale#consumption-plan">Consumption Plan</a>
+&mdash;the dynamically scaled and billed-per-execution runtime. The concurrency model of Azure Functions 
+is different from the counterparts of AWS/GCP.</p>
+<p>Function App instance is closer to a VM than a single-task container. It runs multiple concurrent 
+executions in parallel. Equally importantly, it pulls messages from the queue on its own instead of 
+getting them pushed from a central Orchestrator.</p>
+<p>There is still a central coordinator called Scale Controller, but its role is a bit more subtle. It 
+connects to the same data source (the queue) and needs to determine how many instances to provision 
+based on the metrics from that queue:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//azure-function-queue-scaling.png" alt="Model of Azure Function Scale-Out"></p>
+<center class="img-caption">Model of Azure Function Scale-Out</center>
+
+<p>This model has pros and cons. If one execution is idle, waiting for some I/O operation such as an 
+HTTP request to finish, the instance might become busy processing other messages, thus being more 
+efficient. Running multiple executions is useful in terms of shared resource utilization, e.g., 
+keeping database connection pools and reusing HTTP connections.</p>
+<p>On the flip side, the Scale Controller now needs to be smarter: to know not only the queue backlog 
+but also how instances are doing and at what pace they are processing the messages. It&#39;s probably 
+achievable based on queue telemetry though.</p>
+<p>Let&#39;s start applying this knowledge in practical experiments.</p>
+<h2 id="pause-the-world-workload">Pause-the-World Workload</h2>
+<p>My first serverless function is aimed to simulate I/O-bound workloads without using external 
+dependencies to keep the experiment clean. Therefore, the implementation is extremely 
+straightforward: pause for 500 ms and return.</p>
+<p>It could be loading data from a scalable third-party API. It could be running a database query. 
+Instead, it just runs <code>setTimeout</code>.</p>
+<p>I sent 100k messages to queues of all three cloud providers and observed the result.</p>
+<h3 id="aws">AWS</h3>
+<p>AWS Lambda allows multiple instance sizes to be provisioned. Since the workload is neither CPU- 
+nor memory-intensive, I was using the smallest memory allocation of 128 MB.</p>
+<p>Here comes the first chart of many, so let&#39;s learn to read it. The horizontal axis shows time in 
+minutes since all the messages were sent to the queue.</p>
+<p>The line going from top-left to bottom-right shows the decreasing queue backlog. Accordingly, the 
+left vertical axis denotes the number of items still-to-be-handled.</p>
+<p>The bars show the number of concurrent executions crunching the messages at a given time. Every 
+execution logs the instance ID so that I could derive the instance count from the logs. The right 
+vertical axis shows the instance number.</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//aws-lambda-sqs-iobound-scaling.png" alt="AWS Lambda processing 100k SQS messages with &quot;Pause&quot; handler"></p>
+<center class="img-caption">AWS Lambda processing 100k SQS messages with "Pause" handler</center>
+
+<p>It took AWS Lambda 5.5 minutes to process the whole batch of 100k messages. For comparison, the 
+same batch processed sequentially would take about 14 hours.</p>
+<p>Notice how linear the growth of instance count is. If I apply the official scaling formula:</p>
+<pre><code>Instance Count = 5 + Minutes * 60 = 5 + 5.5 * 60  = 335</code></pre><p>We get a very close result! Promises kept.</p>
+<h3 id="gcp">GCP</h3>
+<p>Same function, same chart, same instance size of 128 MB of RAM&mdash;but this time for Google Cloud Functions:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//gcp-cloud-function-pubsub-iobound-scaling.png" alt="Google Cloud Function processing 100k Pub/Sub messages with &quot;Pause&quot; handler"></p>
+<center class="img-caption">Google Cloud Function processing 100k Pub/Sub messages with "Pause" handler</center>
+
+<p>Coincidentally, the total amount of instances, in the end, was very close to AWS. The scaling
+pattern looks entirely different though: Within the very first minute, there was a burst of 
+scaling close to 300 instances, and then the growth got very modest.</p>
+<p>Thanks to this initial jump, GCP managed to finish processing almost one minute earlier than AWS.</p>
+<h3 id="azure">Azure</h3>
+<p>Azure Function doesn&#39;t have a configuration for allocated memory or any other instance size parameters.</p>
+<p>The shape of the chart for Azure Functions is very similar, but the instance number growth is 
+significantly different:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//azure-function-queue-iobound-scaling.png" alt="Azure Function processing 100k queue messages with &quot;Pause&quot; handler"></p>
+<center class="img-caption">Azure Function processing 100k queue messages with "Pause" handler</center>
+
+<p>The total processing time was a bit faster than AWS and somewhat slower than GCP. Azure Function 
+instances process several messages in parallel, so it takes much less of them to do the same amount 
+of work.</p>
+<p>Instance number growth seems far more linear than bursty.</p>
+<h3 id="what-we-learned">What we learned</h3>
+<p>Based on this simple test, it&#39;s hard to say if one cloud provider handles scale-out better than 
+the others.</p>
+<p>It looks like all serverless platforms under stress are making decisions at the resolution of 5-15 
+seconds, so the backlog processing delays are likely to be measured in minutes. It sounds quite far 
+from the theoretical &quot;close to zero&quot; target but is most likely good enough for the majority of 
+applications.</p>
+<h2 id="crunching-numbers">Crunching Numbers</h2>
+<p>That was an easy job though. Let&#39;s give cloud providers a hard time by executing CPU-heavy workloads 
+and see if they survive!</p>
+<p>This time, each message handler calculates a <a href="https://en.wikipedia.org/wiki/Bcrypt">Bcrypt</a>
+hash with a cost of 10. One such calculation takes about 200 ms on my laptop.</p>
+<h3 id="aws">AWS</h3>
+<p>Once again, I sent 100k messages to an SQS queue and recorded the processing speed and instance count.</p>
+<p>Since the workload is CPU-bound, and AWS allocates CPU shares proportionally to the allocated 
+memory, the instance size might have a significant influence on the result.</p>
+<p>I started with the smallest memory allocation of 128 MB:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//aws-lambda-sqs-cpubound-scaling.png" alt="AWS Lambda (128 MB) processing 100k SQS messages with &quot;Bcrypt&quot; handler"></p>
+<center class="img-caption">AWS Lambda (128 MB) processing 100k SQS messages with "Bcrypt" handler</center>
+
+<p>This time it took almost 10 minutes to complete the experiment.</p>
+<p>The scaling shape is pretty much the same as last time, still correctly described by the formula 
+<code>60 * Minutes + 5</code>. However, because AWS allocates a small fraction of a full CPU to each 128 MB 
+execution, one message takes around 1,700 ms to complete. Thus, the total work increased 
+approximately by the factor of 3 (47 hours if done sequentially).</p>
+<p>At the peak, 612 concurrent executions were running, nearly double the amount in our initial 
+experiment. So, the total processing time increased only by the factor of 2&mdash;up to 10 minutes.</p>
+<p>Let&#39;s see if larger Lambda instances would improve the outcome. Here is the chart for 512 MB of 
+allocated memory:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//aws-lambda-sqs-cpubound-scaling-512.png" alt="AWS Lambda (512 MB) processing 100k SQS messages with &quot;Bcrypt&quot; handler"></p>
+<center class="img-caption">AWS Lambda (512 MB) processing 100k SQS messages with "Bcrypt" handler</center>
+
+<p>And yes it does. The average execution duration is down to 400 ms: 4 times less, as expected. 
+The scaling shape still holds, so the entire batch was done in less than four minutes.</p>
+<h3 id="gcp">GCP</h3>
+<p>I executed the same experiment on Google Cloud Functions. I started with 128 MB, and it looks 
+impressive:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//gcp-cloud-function-pubsub-cpubound-scaling.png" alt="Google Cloud Function (128 MB) processing 100k Pub/Sub messages with &quot;Bcrypt&quot; handler"></p>
+<center class="img-caption">Google Cloud Function (128 MB) processing 100k Pub/Sub messages with "Bcrypt" handler</center>
+
+<p>The average execution duration is very close to Amazon&#39;s: 1,600 ms. However, GCP scaled more 
+aggressively&mdash;to a staggering 1,169 parallel executions! Scaling also has a different shape: 
+It&#39;s not linear but grows in steep jumps. As a result, it took less than six minutes on the 
+lowest CPU profile&mdash;very close to AWS&#39;s time on a 4x more powerful CPU.</p>
+<p>What will GCP achieve on a faster CPU? Let&#39;s provision 512 MB. It must absolutely crush the 
+test. Umm, wait, look at that:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//gcp-cloud-function-pubsub-cpubound-scaling-512.png" alt="Google Cloud Function (512 MB) processing 100k Pub/Sub messages with &quot;Bcrypt&quot; handler"></p>
+<center class="img-caption">Google Cloud Function (512 MB) processing 100k Pub/Sub messages with "Bcrypt" handler</center>
+
+<p>It actually... got slower. Yes, the average execution time is 4x lower: 400 ms, but the scaling 
+got much less aggressive too, which canceled the speedup.</p>
+<p>I confirmed it with the largest instance size of 2,048 MB:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//gcp-cloud-function-pubsub-cpubound-scaling-2048.png" alt="Google Cloud Function (2 GB) processing 100k Pub/Sub messages with &quot;Bcrypt&quot; handler"></p>
+<center class="img-caption">Google Cloud Function (2 GB) processing 100k Pub/Sub messages with "Bcrypt" handler</center>
+
+<p>CPU is fast: 160 ms average execution time, but the total time to process 100k messages went up 
+to eight minutes. Beyond the initial spike at the first minute, it failed to scale up any further 
+and stayed at about 110 concurrent executions.</p>
+<p>It seems that GCP is not that keen to scale out larger instances. It&#39;s probably easier to find 
+many small instances available on the pool rather than a similar number of giant instances.</p>
+<h3 id="azure">Azure</h3>
+<p>A single invocation takes about 400 ms to complete on Azure Function. Here is the burndown chart:</p>
+<p><img src="https://mikhail.io/2018/11/from-0-to-1000-instances-how-serverless-providers-scale-queue-processing//azure-function-queue-cpubound-scaling.png" alt="Azure Function processing 100k queue messages with &quot;Bcrypt&quot; handler"></p>
+<center class="img-caption">Azure Function processing 100k queue messages with "Bcrypt" handler</center>
+
+<p>Azure spent 21 minutes to process the whole backlog. The scaling was linear, similarly to AWS, 
+but with a much slower pace regarding instance size growth, about <code>2.5 * Minutes</code>.</p>
+<p>As a reminder, each instance could process multiple queue messages in parallel, but each such 
+execution would be competing for the same CPU resource, which doesn&#39;t help for the purely 
+CPU-bound workload.</p>
+<h2 id="practical-considerations">Practical Considerations</h2>
+<p>Time for some conclusions and pieces of advice to apply in real serverless applications.</p>
+<h3 id="serverless-is-great-for-async-data-processing">Serverless is great for async data processing</h3>
+<p>If you are already using cloud services, such as managed queues and topics, serverless functions 
+are the easiest way to consume them. </p>
+<p>Moreover, the scalability is there too. When was the last time you ran 1,200 copies of your 
+application?</p>
+<h3 id="serverless-is-not-infinitely-scalable">Serverless is not infinitely scalable</h3>
+<p>There are limits. Your functions won&#39;t scale perfectly to accommodate your spike&mdash;a 
+provider-specific algorithm will determine the scaling pattern.</p>
+<p>If you have large spikes in queue workloads, which is quite likely for medium- to high-load 
+scenarios, you can and should expect delays up to several minutes before the backlog is fully 
+digested.</p>
+<p>All cloud providers have quotas and limits that define an upper boundary of scalability.</p>
+<h3 id="cloud-providers-have-different-implementations">Cloud providers have different implementations</h3>
+<p><strong>AWS Lambda</strong> seems to have a very consistent and well-documented linear scale growth for 
+SQS-triggered Lambda functions. It will happily scale to 1,000 instances, or whatever other 
+limit you hit first.</p>
+<p><strong>Google Cloud Functions</strong> has the most aggressive scale-out strategy for the smallest instance 
+sizes. It can be a cost-efficient and scalable way to run your queue-based workloads. Larger 
+instances seem to scale in a more limited way, so a further investigation is required if you 
+need those.</p>
+<p><strong>Azure Functions</strong> share instances for multiple concurrent executions, which works better 
+for I/O-bound workloads than for CPU-bound ones. Depending on the exact scenario that you 
+have, it might help to play with instance-level settings.</p>
+<h3 id="don-t-forget-batching">Don&#39;t forget batching</h3>
+<p>For the tests, I was handling queue messages in the 1-by-1 fashion. In practice, it helps 
+if you can batch several messages together and execute a single action for all of them in one go.</p>
+<p>If the destination for your data supports batched operations, the throughput will usually 
+increase immensely. 
+<a href="https://blogs.msdn.microsoft.com/appserviceteam/2017/09/19/processing-100000-events-per-second-on-azure-functions/">Processing 100,000 Events Per Second on Azure Functions</a>
+is an excellent case to prove the point.</p>
+<h3 id="you-might-get-too-much-scale">You might get too much scale</h3>
+<p>A month ago, Troy Hunt published a great post 
+<a href="https://www.troyhunt.com/breaking-azure-functions-with-too-many-connections/">Breaking Azure Functions with Too Many Connections</a>. 
+His scenario looks very familiar: He uses queue-triggered Azure Functions to notify 
+subscribers about data breaches. One day, he dropped 126 million items into the queue, and Azure 
+scaled out, which overloaded Mozilla&#39;s servers and caused them to go all-timeouts.</p>
+<p>Another consideration is that non-serverless dependencies limit the scalability of your serverless 
+application. If you call a legacy HTTP endpoint, a SQL database, or a third-party web service&mdash;be
+sure to test how they react when your serverless function scales out to hundreds of concurrent 
+executions.</p>
+<p>Stay tuned for more serverless performance goodness!</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Azure Functions V2 Is Released, How Performant Is It?</title>
@@ -1805,121 +2070,6 @@ job preparing the event; everything went smooth, informal and fun.</p>
 super early bird tickets are for sale now and until Monday April 9, go 
 get one and join F# Exchange in London next year! </p>
 <p>I&#39;m already missing you all.</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Azure Durable Functions in F#</title>
-        <link href="https://mikhail.io/2018/02/azure-durable-functions-in-fsharp/"/>
-        <updated>2018-02-19T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2018-02-19,/2018/02/azure-durable-functions-in-fsharp/</id>
-        <content type="html"><![CDATA[<p>Azure Functions are designed for stateless, fast-to-execute,
-simple actions. Typically, they are triggered by an HTTP call or a queue message,
-then they read something from the storage or database and return the result
-to the caller or send it to another queue. All within several seconds at most.</p>
-<p>However, there exists a preview of <a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">Durable Functions</a>,
-an extension that lets you write stateful functions for long-running workflows.
-Here is a picture of one possible workflow from the docs:</p>
-<p><img src="https://mikhail.io/2018/02/azure-durable-functions-in-fsharp//fan-out-fan-in.png" alt="Fan-out Fan-in Workflow"></p>
-<p>Such workflows might take arbitrary time to complete. Instead of blocking and
-waiting for all that period, Durable Functions use the combination of
-Storage Queues and Tables to do all the work asynchronously.</p>
-<p>The code still <em>feels</em> like one continuous thing because it&#39;s programmed
-as a single orchestrator function. So, it&#39;s easier for a human to reason 
-about the functionality without the complexities of low-level communication.</p>
-<p>I won&#39;t describe Durable Functions any further, just go read
-<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">documentation</a>,
-it&#39;s nice and clean.</p>
-<h2 id="language-support">Language Support</h2>
-<p>As of February 2018, Durable Functions are still in preview. That also means
-that language support is limited:</p>
-<blockquote>
-<p>Currently C# is the only supported language for Durable Functions. This 
-includes orchestrator functions and activity functions. In the future, 
-we will add support for all languages that Azure Functions supports.</p>
-</blockquote>
-<p>I was a bit disappointed that F# is not an option. But actually, since
-Durable Functions support precompiled .NET assembly model, pretty much
-anything doable in C# can be done in F# too.</p>
-<p>The goal of this post is to show that you can write Durable Functions in F#.
-I used precompiled .NET Standard 2.0 F# Function App running on 2.0 preview
-runtime.</p>
-<h2 id="orchestration-functions">Orchestration Functions</h2>
-<p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
-Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
-Here is a simple example of orchestrator in C#:</p>
-<pre><code class="language-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
-{
-    var outputs = new List&lt;string&gt;();
-
-    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;));
-    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;));
-    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;));
-
-    // returns [&quot;Hello Tokyo!&quot;, &quot;Hello Seattle!&quot;, &quot;Hello London!&quot;]
-    return outputs;
-}</code></pre>
-<p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
-computation expression. The direct refactoring could look something like</p>
-<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
-  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)   |&gt; Async.AwaitTask
-  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;) |&gt; Async.AwaitTask
-  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)  |&gt; Async.AwaitTask
-  return [hello1; hello2; hello3]
-} |&gt; Async.StartAsTask   </code></pre>
-<p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
-trigger because multi-threading operations are not allowed:</p>
-<blockquote>
-<p>Orchestrator code must never initiate any async operation except by 
-using the DurableOrchestrationContext API. The Durable Task Framework 
-executes orchestrator code on a single thread and cannot interact with 
-any other threads that could be scheduled by other async APIs.</p>
-</blockquote>
-<p>To solve this issue, we need to keep working with <code>Task</code> directly. This is
-not very handy with standard F# libraries. So, I pulled an extra NuGet
-package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
-<p>The above function now looks very simple:</p>
-<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
-  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)
-  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;)
-  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)
-  return [hello1; hello2; hello3]
-}       </code></pre>
-<p>And the best part is that it works just fine.</p>
-<p><code>SayHello</code> function is Activity trigger based, and no special effort is required
-to implement it in F#:</p>
-<pre><code class="language-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
-let SayHello([&lt;ActivityTrigger&gt;] name) =
-  sprintf &quot;Hello %s!&quot; name</code></pre>
-<h2 id="more-examples">More Examples</h2>
-<p>Durable Functions repository comes with 
-<a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/precompiled">a set of 4 samples</a>
-implemented in C#. I took all of those samples and ported them over to F#.</p>
-<p>You&#39;ve already seen the first <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/HelloSequence.fs"><code>Hello Sequence</code> sample</a>
-above: the orchestrator calls the activity function 3 times and combines the
-results. As simple as it looks, the function will actually run 3 times for each
-execution, saving state before each subsequent call.</p>
-<p>The second <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/BackupSiteContent.fs"><code>Backup Site Content</code> sample</a>
-is using this persistence mechanism to run
-a potentially slow workflow of copying all files from a given directory to
-a backup location. It shows how multiple activities can be executed in
-parallel:</p>
-<pre><code class="language-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
-let! results = Task.WhenAll tasks</code></pre>
-<p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
-demos a potentially infinite actor-like workflow, where state can exist and
-evolve for indefinite period of time. The key API calls are based on
-<code>OrchestrationContext</code>:</p>
-<pre><code class="language-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
-let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)</code></pre>
-<p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
-has several twists, like output binding for activity (<code>ICollector</code> is required
-instead of C#&#39;s <code>out</code> parameter), third-party integration (Twilio to send SMSs),
-recursive sub-function to loop through several attempts and context-based
-timers for reliable timeout implementation.</p>
-<p>So, if you happen to be an F# fan, you can still give Durable Functions a try.
-Be sure to leave your feedback, so that the library could get even better 
-before going GA.</p>
 ]]></content>
     </entry>
     

@@ -21,6 +21,7 @@
 
 
 
+
     <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
     <link href="/favicon.ico?v=2" rel="shortcut icon">
 
@@ -78,10 +79,622 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jul 5th, 2018</div>
+    
+    <h1><a href='/2018/07/monads-explained-in-csharp-again/'>Monads explained in C# (again)</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>I love functional programming for the simplicity that it brings.</p>
+<p>But at the same time, I realize that learning functional programming is a challenging 
+process. FP comes with a baggage of unfamiliar vocabulary that can be daunting for 
+somebody coming from an object-oriented language like C#.</p>
+<p><img src="/2018/07/monads-explained-in-csharp-again//functional-programming-word-cloud.png" alt="Functional Programming Word Cloud"></p>
+<p><em>Some of functional lingo</em></p>
+<p>&quot;Monad&quot; is probably the most infamous term from the list above. Monads have reputation of being 
+something very abstract and very confusing. </p>
+<h2 id="the-fallacy-of-monad-tutorials">The Fallacy of Monad Tutorials</h2>
+<p>Numerous attempts were made to explain monads in simple definitions; and monad tutorials have become a
+genre of its own. And yet, times and times again, they fail to enlighten the readers.</p>
+<p>The shortest explanation of monads looks like this:</p>
+<p><img src="/2018/07/monads-explained-in-csharp-again//monoid-endofunctors.png" alt="A Monad is just a monoid in the category of endofunctors"></p>
+<p>It&#39;s both mathematically correct and totally useless to anybody learning functional programming. To
+understand this statement, one has to know the terms &quot;monoid&quot;, &quot;category&quot; and &quot;endofunctors&quot; and be able
+to mentally compose them into something meaningful.</p>
+<p>The same problem is apparent in most monad tutorials. They assume some pre-existing knowledge in
+heads of their readers, and if that assumption fails, the tutorial doesn&#39;t click.</p>
+<p>Focusing too much on mechanics of monads instead of explaining why they are important is another
+common problem.</p>
+<p>Douglas Crockford grasped this fallacy very well:</p>
+<blockquote>
+<p>The monadic curse is that once someone learns what monads are and how to use them, they lose the ability to explain them to other people</p>
+</blockquote>
+<p>The problem here is likely the following. Every person who understands monads had their own path to
+this knowledge. It hasn&#39;t come all at once, instead there was a series of steps, each giving an insight,
+until the last final step made the puzzle complete.</p>
+<p>But they don&#39;t remember the whole path anymore. They go online and blog about that very last step as
+the key to understanding, joining the club of flawed explanations.</p>
+<p>There is an actual <a href="http://tomasp.net/academic/papers/monads/monads-programming.pdf">academic paper from Tomas Petricek</a> 
+that studies monad tutorials.</p>
+<p>I&#39;ve read that paper and a dozen of monad tutorials online. And of course, now I came up with my own.</p>
+<p>I&#39;m probably doomed to fail too, at least for some readers. Yet, I know that many people found the
+<a href="https://mikhail.io/2016/01/monads-explained-in-csharp/">previous version</a> of this article useful.</p>
+<p>I based my explanation on examples from C# - the object-oriented language familiar to .NET developers.</p>
+<h2 id="story-of-composition">Story of Composition</h2>
+<p>The base element of each functional program is Function. In typed languages each function 
+is just a mapping between the type of its input parameter and output parameter.
+Such type can be annotated as <code>func: TypeA -&gt; TypeB</code>.</p>
+<p>C# is object-oriented language, so we use methods to declare functions. There are two ways 
+to define a method comparable to <code>func</code> function above. I can use static method:</p>
+<pre><code class="language-csharp">static class Mapper 
+{
+    static ClassB func(ClassA a) { ... }
+}</code></pre>
+<p>... or instance method:</p>
+<pre><code class="language-csharp">class ClassA 
+{
+    // Instance method
+    ClassB func() { ... }
+}</code></pre>
+<p>Static form looks closer to the function annotation, but both ways are actually equivalent
+for the purpose of our discussion. I will use instance methods in my examples, however all of
+them could be written as static extension methods too.</p>
+<p>How do we compose more complex workflows, programs and applications out of such simple
+building blocks? A lot of patterns both in OOP and FP worlds revolve around this question.
+And monads are one of the answers.</p>
+<p>My sample code is going to be about conferences and speakers. The method implementations 
+aren&#39;t really important, just watch the types carefully. There are 4 classes (types) and 
+3 methods (functions):</p>
+<pre><code class="language-csharp">class Speaker 
+{
+    Talk NextTalk() { ... }
+}
+
+class Talk 
+{
+    Conference GetConference() { ... }
+}
+
+class Conference 
+{
+    City GetCity() { ... }
+}
+
+class City { ... }</code></pre>
+<p>These methods are currently very easy to compose into a workflow:</p>
+<pre><code class="language-csharp">static City NextTalkCity(Speaker speaker) 
+{
+    Talk talk = speaker.NextTalk();
+    Conference conf = talk.GetConference();
+    City city = conf.GetCity();
+    return city;
+}</code></pre>
+<p>Because the return type of the previous step always matches the input type of the next step, we can
+write it even shorter:</p>
+<pre><code class="language-csharp">static City NextTalkCity(Speaker speaker) 
+{
+    return 
+        speaker
+        .NextTalk()
+        .GetConference()
+        .GetCity();
+}</code></pre>
+<p>This code looks quite readable. It&#39;s concise and it flows from top to bottom, from left to right, 
+similar to how we are used to read any text. There is not much noise too.</p>
+<p>That&#39;s not what real codebases look like though, because there are multiple complications
+along the happy composition path. Let&#39;s look at some of them.</p>
+<h2 id="nulls">NULLs</h2>
+<p>Any class instance in C# can be <code>null</code>. In the example above I might get runtime errors if
+one of the methods ever returns <code>null</code> back.</p>
+<p>Typed functional programming always tries to be explicit about types, so I&#39;ll re-write the signatures
+of my methods to annotate the return types as nullables:</p>
+<pre><code class="language-csharp">class Speaker 
+{
+    Nullable&lt;Talk&gt; NextTalk() { ... }
+}
+
+class Talk 
+{
+    Nullable&lt;Conference&gt; GetConference() { ... }
+}
+
+class Conference 
+{
+    Nullable&lt;City&gt; GetCity() { ... }
+}
+
+class City { ... }</code></pre>
+<p>This is actually invalid syntax in current C# version, because <code>Nullable&lt;T&gt;</code> and its short form
+<code>T?</code> are not applicable to reference types. This <a href="https://blogs.msdn.microsoft.com/dotnet/2017/11/15/nullable-reference-types-in-csharp/">might change in C# 8</a>
+though, so bear with me.</p>
+<p>Now, when composing our workflow, we need to take care of <code>null</code> results:</p>
+<pre><code class="language-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
+{
+    Nullable&lt;Talk&gt; talk = speaker.NextTalk();
+    if (talk == null) return null;
+
+    Nullable&lt;Conference&gt; conf = talk.GetConference();
+    if (conf == null) return null;
+
+    Nullable&lt;City&gt; city = conf.GetCity();
+    return city;
+}</code></pre>
+<p>It&#39;s still the same method, but it got more noise now. Even though I used short-circuit returns
+and one-liners, it still got harder to read.</p>
+<p>To fight that problem, smart language designers came up with the Null Propagation Operator:</p>
+<pre><code class="language-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
+{
+    return 
+        speaker
+        ?.NextTalk()
+        ?.GetConference()
+        ?.GetCity();
+}</code></pre>
+<p>Now we are almost back to our original workflow code: it&#39;s clean and concise, we just got
+3 extra <code>?</code> symbols around.</p>
+<p>Let&#39;s take another leap.</p>
+<h2 id="collections">Collections</h2>
+<p>Quite often a function returns a collection of items, not just a single item. To some extent,
+that&#39;s a generalization of <code>null</code> case: with <code>Nullable&lt;T&gt;</code> we might get 0 or 1 results back,
+while with a collection we can get <code>0</code> to any <code>n</code> results.</p>
+<p>Our sample API could look like this:</p>
+<pre><code class="language-csharp">class Speaker 
+{
+    List&lt;Talk&gt; GetTalks() { ... }
+}
+
+class Talk 
+{
+    List&lt;Conference&gt; GetConferences() { ... }
+}
+
+class Conference 
+{
+    List&lt;City&gt; GetCities() { ... }
+}</code></pre>
+<p>I used <code>List&lt;T&gt;</code> but it could be any class or plain <code>IEnumerable&lt;T&gt;</code> interface.</p>
+<p>How would we combine the methods into one workflow? Traditional version would look like this:</p>
+<pre><code class="language-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
+{
+    var result = new List&lt;City&gt;();
+
+    foreach (Talk talk in speaker.GetTalks())
+        foreach (Conference conf in talk.GetConferences())
+            foreach (City city in conf.GetCities())
+                result.Add(city);
+
+    return result;
+}</code></pre>
+<p>It reads ok-ish still. But the combination of nested loops and mutation with some conditionals sprinkled 
+on them can get unreadable pretty soon. The exact workflow might be lost in the mechanics.</p>
+<p>As an alternative, C# language designers invented LINQ extension methods. We can write code like this:</p>
+<pre><code class="language-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
+{
+    return 
+        speaker
+        .GetTalks()
+        .SelectMany(talk =&gt; talk.GetConferences())
+        .SelectMany(conf =&gt; conf.GetCities())
+        .ToList();
+}</code></pre>
+<p>Let me do one further trick and format the same code in an unusual way:</p>
+<pre><code class="language-csharp">static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
+{
+    return 
+        speaker
+        .GetTalks()           .SelectMany(x =&gt; x
+        .GetConferences()    ).SelectMany(x =&gt; x
+        .GetCities()         ).ToList();
+}</code></pre>
+<p>Now you can see the same original code on the left, combined with just a bit of technical repeatable
+clutter on the right. Hold on, I&#39;ll show you where I&#39;m going.</p>
+<p>Let&#39;s discuss another possible complication.</p>
+<h2 id="asynchronous-calls">Asynchronous Calls</h2>
+<p>What if our methods need to access some remote database or service to produce the results? This
+should be shown in type signature, and C# has <code>Task&lt;T&gt;</code> for that:</p>
+<pre><code class="language-csharp">class Speaker 
+{
+    Task&lt;Talk&gt; NextTalk() { ... }
+}
+
+class Talk 
+{
+    Task&lt;Conference&gt; GetConference() { ... }
+}
+
+class Conference 
+{
+    Task&lt;City&gt; GetCity() { ... }
+}</code></pre>
+<p>This change breaks our nice workflow composition again.</p>
+<p>We&#39;ll get back to async-await later, but the original way to combine <code>Task</code>-based
+methods was to use <code>ContinueWith</code> and <code>Unwrap</code> API:</p>
+<pre><code class="language-csharp">static Task&lt;City&gt; NextTalkCity(Speaker speaker) 
+{
+    return 
+        speaker
+        .NextTalk()
+        .ContinueWith(talk =&gt; talk.Result.GetConference())
+        .Unwrap()
+        .ContinueWith(conf =&gt; conf.Result.GetCity())
+        .Unwrap();
+}</code></pre>
+<p>Hard to read, but let me apply my formatting trick again:</p>
+<pre><code class="language-csharp">static Task&lt;City&gt; NextTalkCity(Speaker speaker) 
+{
+    return 
+        speaker
+        .NextTalk()         .ContinueWith(x =&gt; x.Result
+        .GetConference()   ).Unwrap().ContinueWith(x =&gt; x.Result
+        .GetCity()         ).Unwrap();
+}</code></pre>
+<p>You can see that, once again, it&#39;s our nice readable workflow on the left + some mechanical repeatable
+junction code on the right.</p>
+<h2 id="pattern">Pattern</h2>
+<p>Can you see a pattern yet?</p>
+<p>I&#39;ll repeat the <code>Nullable</code>-, <code>List</code>- and <code>Task</code>-based workflows again:</p>
+<pre><code class="language-csharp">static Nullable&lt;City&gt; NextTalkCity(Speaker speaker) 
+{
+    return 
+        speaker               ?
+        .NextTalk()           ?
+        .GetConference()      ?
+        .GetCity();
+}
+
+static List&lt;City&gt; AllCitiesToVisit(Speaker speaker) 
+{
+    return 
+        speaker
+        .GetTalks()            .SelectMany(x =&gt; x
+        .GetConferences()     ).SelectMany(x =&gt; x
+        .GetCities()          ).ToList();
+}
+
+static Task&lt;City&gt; NextTalkCity(Speaker speaker) 
+{
+    return 
+        speaker
+        .NextTalk()            .ContinueWith(x =&gt; x.Result
+        .GetConference()      ).Unwrap().ContinueWith(x =&gt; x.Result
+        .GetCity()            ).Unwrap();
+}</code></pre>
+<p>In all 3 cases there was a complication which prevented us from sequencing method
+calls fluently. In all 3 cases we found the gluing code to get back to fluent composition.</p>
+<p>Let&#39;s try to generalize this approach. Given some generic container type 
+<code>WorkflowThatReturns&lt;T&gt;</code>, we have a method to combine an instance of such workflow with
+a function which accepts the result of that workflow and returns another workflow back:</p>
+<pre><code class="language-csharp">class WorkflowThatReturns&lt;T&gt; 
+{
+    WorkflowThatReturns&lt;U&gt; AddStep(Func&lt;T, WorkflowThatReturns&lt;U&gt;&gt; step);
+}</code></pre>
+<p>In case this is hard to grasp, have a look at the picture of what is going on:</p>
+<p><img src="/2018/07/monads-explained-in-csharp-again//monad-bind.png" alt="Monad Bind Internals"></p>
+<ol>
+<li><p>An instance of type <code>T</code> sits in a generic container.</p>
+</li>
+<li><p>We call <code>AddStep</code> with a function, which maps <code>T</code> to <code>U</code> sitting inside yet another
+container. </p>
+</li>
+<li><p>We get an instance of <code>U</code> but inside two containers.</p>
+</li>
+<li><p>Two containers are automatically unwrapped into a single container to get back to the
+original shape.</p>
+</li>
+<li><p>Now we are ready to add another step!</p>
+</li>
+</ol>
+<p>In the following code, <code>NextTalk</code> returns the first instance inside the container:</p>
+<pre><code class="language-csharp">WorkflowThatReturns&lt;City&gt; Workflow(Speaker speaker) 
+{
+    return 
+        speaker
+        .NextTalk()         
+        .AddStep(x =&gt; x.GetConference())
+        .AddStep(x =&gt; x.GetCity()); 
+}</code></pre>
+<p>Subsequently, <code>AddStep</code> is called two times to transfer to <code>Conference</code> and then
+<code>City</code> inside the same container:</p>
+<p><img src="/2018/07/monads-explained-in-csharp-again//monad-two-binds.png" alt="Monad Bind Chaining"></p>
+<h2 id="finally-monads">Finally, Monads</h2>
+<p>The name of this pattern is <strong>Monad</strong>.</p>
+<p>In C# terms, a Monad is a generic class with two operations: constructor and bind.</p>
+<pre><code class="language-csharp">class Monad&lt;T&gt; {
+    Monad(T instance);
+    Monad&lt;U&gt; Bind(Func&lt;T, Monad&lt;U&gt;&gt; f);
+}</code></pre>
+<p>Constructor is used to put an object into container, <code>Bind</code> is used to replace one
+contained object with another contained object.</p>
+<p>It&#39;s important that <code>Bind</code>&#39;s argument returns <code>Monad&lt;U&gt;</code> and not just <code>U</code>. We can think
+of <code>Bind</code> as a combination of <code>Map</code> and <code>Unwrap</code> as defined per following signature:</p>
+<pre><code class="language-csharp">class Monad&lt;T&gt; {
+    Monad(T instance);
+    Monad&lt;U&gt; Map(Function&lt;T, U&gt; f);
+    static Monad&lt;U&gt; Unwrap(Monad&lt;Monad&lt;U&gt;&gt; nested);
+}</code></pre>
+<p>Even though I spent quite some time with examples, I expect you to be slightly confused
+at this point. That&#39;s ok.</p>
+<p>Keep going and let&#39;s have a look at several sample implementations of Monad pattern.</p>
+<p><a name="maybe" href="/2018/07/monads-explained-in-csharp-again/undefined"></a></p>
+<h2 id="maybe-option-">Maybe (Option)</h2>
+<p>My first motivational example was with <code>Nullable&lt;T&gt;</code> and <code>?.</code>. The full pattern
+containing either 0 or 1 instance of some type is called <code>Maybe</code> (it maybe has a value,
+or maybe not).</p>
+<p><code>Maybe</code> is another approach to dealing with &#39;no value&#39; value, alternative to the 
+concept of <code>null</code>. </p>
+<p>Functional-first language F# typically doesn&#39;t allow <code>null</code> for its types. Instead, F# has 
+a maybe implementation built into the language: 
+it&#39;s called <code>option</code> type. </p>
+<p>Here is a sample implementation in C#:</p>
+<pre><code class="language-csharp">public class Maybe&lt;T&gt; where T : class
+{
+    private readonly T value;
+
+    public Maybe(T someValue)
+    {
+        if (someValue == null)
+            throw new ArgumentNullException(nameof(someValue));
+        this.value = someValue;
+    }
+
+    private Maybe()
+    {
+    }
+
+    public Maybe&lt;U&gt; Bind&lt;U&gt;(Func&lt;T, Maybe&lt;U&gt;&gt; func) where U : class
+    {
+        return value != null ? func(value) : Maybe&lt;U&gt;.None();
+    }
+
+    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;();
+}</code></pre>
+<p>When <code>null</code> is not allowed, any API contract gets more explicit: either you
+return type <code>T</code> and it&#39;s always going to be filled, or you return <code>Maybe&lt;T&gt;</code>.
+The client will see that <code>Maybe</code> type is used, so it will be forced to handle 
+the case of absent value.</p>
+<p>Given an imaginary repository contract (which does something with customers and
+orders):</p>
+<pre><code class="language-csharp">public interface IMaybeAwareRepository
+{
+    Maybe&lt;Customer&gt; GetCustomer(int id);
+    Maybe&lt;Address&gt; GetAddress(int id);
+    Maybe&lt;Order&gt; GetOrder(int id);
+}</code></pre>
+<p>The client can be written with <code>Bind</code> method composition, without branching, 
+in fluent style:</p>
+<pre><code class="language-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+    repo.GetCustomer(customerId)
+        .Bind(c =&gt; c.Address)
+        .Bind(a =&gt; repo.GetAddress(a.Id))
+        .Bind(a =&gt; a.LastOrder)
+        .Bind(lo =&gt; repo.GetOrder(lo.Id))
+        .Bind(o =&gt; o.Shipper);</code></pre>
+<p>As we saw above, this syntax looks very much like a LINQ query with a bunch 
+of <code>SelectMany</code> statements. One of the common 
+implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface to enable
+a more C#-idiomatic binding composition. Actually:</p>
+<h2 id="enumerable-selectmany-is-a-monad-">Enumerable + SelectMany is a Monad </h2>
+<p><code>IEnumerable</code> is an interface for enumerable containers.</p>
+<p>Enumerable containers can be created - thus the constructor monadic operation.</p>
+<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here 
+is its signature:</p>
+<pre><code class="language-csharp">public static IEnumerable&lt;U&gt; SelectMany&lt;T, U&gt;(
+    this IEnumerable&lt;T&gt; first, 
+    Func&lt;T, IEnumerable&lt;U&gt;&gt; selector)</code></pre>
+<p>Direct implementation is quite straightforward:</p>
+<pre><code class="language-csharp">static class Enumerable 
+{
+    public static IEnumerable&lt;U&gt; SelectMany(
+        this IEnumerable&lt;T&gt; values, 
+        Func&lt;T, IEnumerable&lt;U&gt;&gt; func) 
+    { 
+        foreach (var item in values)
+            foreach (var subItem in func(item))
+                yield return subItem;
+    }
+}</code></pre>
+<p>And here is an example of composition:</p>
+<pre><code class="language-csharp">IEnumerable&lt;Shipper&gt; shippers =
+    customers
+        .SelectMany(c =&gt; c.Addresses)
+        .SelectMany(a =&gt; a.Orders)
+        .SelectMany(o =&gt; o.Shippers);</code></pre>
+<p>The query has no idea about how the collections are stored (encapsulated in
+containers). We use functions <code>T -&gt; IEnumerable&lt;U&gt;</code> to produce new enumerables
+(<code>Bind</code> operation).</p>
+<h2 id="task-future-">Task (Future)</h2>
+<p>In C# <code>Task&lt;T&gt;</code> type is used to denote asynchronous computation which will eventually
+return an instance of <code>T</code>. The other names for similar concepts in other languages
+are <code>Promise</code> and <code>Future</code>.</p>
+<p>While the typical usage of <code>Task</code> in C# is different from the Monad pattern we
+discussed, I can still come up with a <code>Future</code> class with the familiar structure:</p>
+<pre><code class="language-csharp">public class Future&lt;T&gt;
+{
+    private readonly Task&lt;T&gt; instance;
+
+    public Future(T instance)
+    {
+        this.instance = Task.FromResult(instance);
+    }
+
+    private Future(Task&lt;T&gt; instance)
+    {
+        this.instance = instance;
+    }
+
+    public Future&lt;U&gt; Bind&lt;U&gt;(Func&lt;T, Future&lt;U&gt;&gt; func)
+    {
+        var a = this.instance.ContinueWith(t =&gt; func(t.Result).instance).Unwrap();
+        return new Future&lt;U&gt;(a);
+    }
+
+    public void OnComplete(Action&lt;T&gt; action)
+    {
+        this.instance.ContinueWith(t =&gt; action(t.Result));
+    }
+}</code></pre>
+<p>Effectively, it&#39;s just a wrapper around the <code>Task</code> which doesn&#39;t add too much value,
+but it&#39;s a useful illustration because now we can do:</p>
+<pre><code class="language-csharp">repository
+    .LoadSpeaker()
+    .Bind(speaker =&gt; speaker.NextTalk())
+    .Bind(talk =&gt; talk.GetConference())
+    .Bind(conference =&gt; conference.GetCity())
+    .OnComplete(city =&gt; reservations.BookFlight(city));</code></pre>
+<p>We are back to the familiar structure. Time for some more complications.</p>
+<h2 id="non-sequential-workflows">Non-Sequential Workflows</h2>
+<p>Up until now, all the composed workflows had very liniar, sequential
+structure: the output of a previous step was always the input for the next step.
+That piece of data could be discarded after the first use because it was never needed 
+for later steps:</p>
+<p><img src="/2018/07/monads-explained-in-csharp-again//linear-workflow.png" alt="Linear Workflow"></p>
+<p>Quite often though, this might not be the case. A workflow step might need data
+from two or more previous steps combined.</p>
+<p>In the example above, <code>BookFlight</code> method might actually need both <code>Speaker</code> and
+<code>City</code> objects:</p>
+<p><img src="/2018/07/monads-explained-in-csharp-again//non-linear-workflow.png" alt="Non Linear Workflow"></p>
+<p>In this case, we would have to use closure to save <code>speaker</code> object until we get
+a <code>talk</code> too:</p>
+<pre><code class="language-csharp">repository
+    .LoadSpeaker()
+    .OnComplete(speaker =&gt;
+        speaker
+            .NextTalk()
+            .Bind(talk =&gt; talk.GetConference())
+            .Bind(conference =&gt; conference.GetCity())
+            .OnComplete(city =&gt; reservations.BookFlight(speaker, city))
+        );</code></pre>
+<p>Obviously, this gets ugly very soon.</p>
+<p>To solve this structural problem, C# language got its <code>async</code>-<code>await</code> feature,
+which is now being reused in more languages including Javascript.</p>
+<p>If we move back to using <code>Task</code> instead of our custom <code>Future</code>, we are able to
+write</p>
+<pre><code class="language-csharp">var speaker = await repository.LoadSpeaker();
+var talk = await speaker.NextTalk();
+var conference = await talk.GetConference();
+var city = await conference.GetCity();
+await reservations.BookFlight(speaker, city);</code></pre>
+<p>Even though we lost the fluent syntax, at least the block has just one level,
+which makes it easier to navigate.</p>
+<h2 id="monads-in-functional-languages">Monads in Functional Languages</h2>
+<p>So far we learned that</p>
+<ul>
+<li>Monad is a workflow composition pattern</li>
+<li>This pattern is used in functional programming</li>
+<li>Special syntax helps simplify the usage</li>
+</ul>
+<p>It should come at no surprise that functional languages support monads on syntactic
+level.</p>
+<p>F# is a functional-first language running on .NET framework. F# had its own way of
+doing workflows comparable to <code>async</code>-<code>await</code> before C# got it. In F#, the above
+code would look like this:</p>
+<pre><code class="language-fsharp">let sendReservation () = async {
+    let! speaker = repository.LoadSpeaker()
+    let! talk = speaker.nextTalk()
+    let! conf = talk.getConference()
+    let! city = conf.getCity()
+    do! bookFlight(speaker, city)
+}</code></pre>
+<p>Apart from syntax (<code>!</code> instead of <code>await</code>), the major difference to C# is that
+<code>async</code> is just one possible monad type to be used this way. There are many
+other monads in F# standard library (they are called Computation Expressions).</p>
+<p>The best part is that any developer can create their own monads, and then use
+all the power of language features.</p>
+<p>Say, we want a hand-made <code>Maybe</code> computation expressoin in F#:</p>
+<pre><code class="language-fsharp">let nextTalkCity (speaker: Speaker) = maybe {
+    let! talk = speaker.nextTalk()
+    let! conf = talk.getConference()
+    let! city = conf.getCity(talk)
+    return city
+}</code></pre>
+<p>To make this code runnable, we need to define Maybe computation expression
+builder:</p>
+<pre><code class="language-fsharp">type MaybeBuilder() =
+
+    member this.Bind(x, f) = 
+        match x with
+        | None -&gt; None
+        | Some a -&gt; f a
+
+    member this.Return(x) = 
+        Some x
+
+let maybe = new MaybeBuilder()</code></pre>
+<p>I won&#39;t explain the details of what happens here, but you can see that the code is
+quite trivial. Note the presence of <code>Bind</code> operation (and <code>Return</code> operation being
+the monad constructor).</p>
+<p>The feature is widely used by third-party F# libraries. Here is an actor definition
+in Akka.NET F# API:</p>
+<pre><code class="language-fsharp">let loop () = actor {
+    let! message = mailbox.Receive()
+    match message with
+    | Greet(name) -&gt; printfn &quot;Hello %s&quot; name
+    | Hi -&gt; printfn &quot;Hello from F#!&quot;
+    return! loop ()
+}</code></pre>
+<h2 id="monad-laws">Monad Laws</h2>
+<p>There are a couple laws that constructor and <code>Bind</code> need to adhere to, so
+that they produce a proper monad.</p>
+<p>A typical monad tutorial will make a lot of emphasis on the laws, but I find them
+less important to explain to a beginner. Nonetheless, here they are for the sake
+of completeness.</p>
+<p><strong>Left Identity law</strong> says that Monad constructor is a neutral operation: you can safely
+run it before <code>Bind</code>, and it won&#39;t change the result of the function call:</p>
+<pre><code class="language-csharp">// Given
+T value;
+Func&lt;T, Monad&lt;U&gt;&gt; f;
+
+// Then (== means both parts are equivalent)
+new Monad&lt;T&gt;(value).Bind(f) == f(value) </code></pre>
+<p><strong>Right Identity law</strong> says that given a monadic value, wrapping its contained data
+into another monad of same type and then <code>Bind</code>ing it, doesn&#39;t change the original value:</p>
+<pre><code class="language-csharp">// Given
+Monad&lt;T&gt; monadicValue;
+
+// Then (== means both parts are equivalent)
+monadicValue.Bind(x =&gt; new Monad&lt;T&gt;(x)) == monadicValue</code></pre>
+<p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
+are composed does not matter:</p>
+<pre><code class="language-csharp">// Given
+Monad&lt;T&gt; m;
+Func&lt;T, Monad&lt;U&gt;&gt; f;
+Func&lt;U, Monad&lt;V&gt;&gt; g;
+
+// Then (== means both parts are equivalent)
+m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))</code></pre>
+<p>The laws may look complicated, but in fact they are very natural 
+expectations that any developer has when working with monads, so don&#39;t
+spend too much mental effort on memorizing them.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>You should not be afraid of the &quot;M-word&quot; just because you are a C# programmer. </p>
+<p>C# does not have a notion of monads as predefined language constructs, but 
+that doesn&#39;t mean we can&#39;t borrow some ideas from the functional world. Having 
+said that, it&#39;s also true that C# is lacking some powerful ways to combine 
+and generalize monads that are available in functional programming
+languages.</p>
+<p>Go learn some more Functional Programming!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/monads/'>Monads</a>, <a href='/tags/maybe/'>Maybe</a>, <a href='/tags/linq/'>LINQ</a>, <a href='/tags/c#/'>C#</a>, <a href='/tags/f#/'>F#</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jun 22nd, 2018</div>
     
     <h1><a href='/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi/'>Programmable Cloud: Provisioning Azure App Service with Pulumi</a></h1>
     
+
+    
+
     <div class="post-content">
         <p>Modern Cloud providers offer a wide variety of services of different types
 and levels. A modern cloud application would leverage multiple services
@@ -381,6 +994,9 @@ components on their own.</p>
     
     <h1><a href='/2018/05/azure-functions-cold-starts-beyond-first-load/'>Cold Starts Beyond First Request in Azure Functions</a></h1>
     
+
+    
+
     <div class="post-content">
         <p>In my <a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">previous article</a>
 I&#39;ve explored the topic of Cold Starts in Azure Functions. Particularly, I&#39;ve measured the
@@ -498,6 +1114,9 @@ improvements.</p>
     
     <h1><a href='/2018/04/azure-functions-cold-starts-in-numbers/'>Azure Functions: Cold Starts in Numbers</a></h1>
     
+
+    
+
     <div class="post-content">
         <p>Auto-provisioning and auto-scalability are the killer features of Function-as-a-Service
 cloud offerings, and Azure Functions in particular.</p>
@@ -600,6 +1219,9 @@ Please leave a comment below or ping me on twitter, and let&#39;s sort it all ou
     
     <h1><a href='/2018/04/fsharp-exchange-2018/'>Awesome F# Exchange 2018</a></h1>
     
+
+    
+
     <div class="post-content">
         <p>I&#39;m writing this post in the train to London Stensted, on my way back from F# Exchange 2018
 conference.</p>
@@ -655,131 +1277,6 @@ get one and join F# Exchange in London next year! </p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-exchange/'>F# Exchange</a>, <a href='/tags/talk/'>Talk</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Feb 19th, 2018</div>
-    
-    <h1><a href='/2018/02/azure-durable-functions-in-fsharp/'>Azure Durable Functions in F#</a></h1>
-    
-    <div class="post-content">
-        <p>Azure Functions are designed for stateless, fast-to-execute,
-simple actions. Typically, they are triggered by an HTTP call or a queue message,
-then they read something from the storage or database and return the result
-to the caller or send it to another queue. All within several seconds at most.</p>
-<p>However, there exists a preview of <a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">Durable Functions</a>,
-an extension that lets you write stateful functions for long-running workflows.
-Here is a picture of one possible workflow from the docs:</p>
-<p><img src="/2018/02/azure-durable-functions-in-fsharp//fan-out-fan-in.png" alt="Fan-out Fan-in Workflow"></p>
-<p>Such workflows might take arbitrary time to complete. Instead of blocking and
-waiting for all that period, Durable Functions use the combination of
-Storage Queues and Tables to do all the work asynchronously.</p>
-<p>The code still <em>feels</em> like one continuous thing because it&#39;s programmed
-as a single orchestrator function. So, it&#39;s easier for a human to reason 
-about the functionality without the complexities of low-level communication.</p>
-<p>I won&#39;t describe Durable Functions any further, just go read
-<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable-functions-overview">documentation</a>,
-it&#39;s nice and clean.</p>
-<h2 id="language-support">Language Support</h2>
-<p>As of February 2018, Durable Functions are still in preview. That also means
-that language support is limited:</p>
-<blockquote>
-<p>Currently C# is the only supported language for Durable Functions. This 
-includes orchestrator functions and activity functions. In the future, 
-we will add support for all languages that Azure Functions supports.</p>
-</blockquote>
-<p>I was a bit disappointed that F# is not an option. But actually, since
-Durable Functions support precompiled .NET assembly model, pretty much
-anything doable in C# can be done in F# too.</p>
-<p>The goal of this post is to show that you can write Durable Functions in F#.
-I used precompiled .NET Standard 2.0 F# Function App running on 2.0 preview
-runtime.</p>
-<h2 id="orchestration-functions">Orchestration Functions</h2>
-<p>The stateful workflows are Azure Functions with a special <code>OrchestrationTrigger</code>.
-Since they are asynchronous, C# code is always based on <code>Task</code> and <code>async</code>-<code>await</code>.
-Here is a simple example of orchestrator in C#:</p>
-<pre><code class="language-csharp">public static async Task&lt;List&lt;string&gt;&gt; Run([OrchestrationTrigger] DurableOrchestrationContext context)
-{
-    var outputs = new List&lt;string&gt;();
-
-    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;));
-    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;));
-    outputs.Add(await context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;));
-
-    // returns [&quot;Hello Tokyo!&quot;, &quot;Hello Seattle!&quot;, &quot;Hello London!&quot;]
-    return outputs;
-}</code></pre>
-<p>F# has its own preferred way of doing asynchronous code based on <code>async</code>
-computation expression. The direct refactoring could look something like</p>
-<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = async {
-  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)   |&gt; Async.AwaitTask
-  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;) |&gt; Async.AwaitTask
-  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)  |&gt; Async.AwaitTask
-  return [hello1; hello2; hello3]
-} |&gt; Async.StartAsTask   </code></pre>
-<p>That would work for a normal HTTP trigger, but it blows up for the Orchestrator
-trigger because multi-threading operations are not allowed:</p>
-<blockquote>
-<p>Orchestrator code must never initiate any async operation except by 
-using the DurableOrchestrationContext API. The Durable Task Framework 
-executes orchestrator code on a single thread and cannot interact with 
-any other threads that could be scheduled by other async APIs.</p>
-</blockquote>
-<p>To solve this issue, we need to keep working with <code>Task</code> directly. This is
-not very handy with standard F# libraries. So, I pulled an extra NuGet
-package <code>TaskBuilder.fs</code> which provides a <code>task</code> computation expression.</p>
-<p>The above function now looks very simple:</p>
-<pre><code class="language-fsharp">let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
-  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)
-  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;)
-  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)
-  return [hello1; hello2; hello3]
-}       </code></pre>
-<p>And the best part is that it works just fine.</p>
-<p><code>SayHello</code> function is Activity trigger based, and no special effort is required
-to implement it in F#:</p>
-<pre><code class="language-fsharp">[&lt;FunctionName(&quot;E1_SayHello&quot;)&gt;]
-let SayHello([&lt;ActivityTrigger&gt;] name) =
-  sprintf &quot;Hello %s!&quot; name</code></pre>
-<h2 id="more-examples">More Examples</h2>
-<p>Durable Functions repository comes with 
-<a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/precompiled">a set of 4 samples</a>
-implemented in C#. I took all of those samples and ported them over to F#.</p>
-<p>You&#39;ve already seen the first <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/HelloSequence.fs"><code>Hello Sequence</code> sample</a>
-above: the orchestrator calls the activity function 3 times and combines the
-results. As simple as it looks, the function will actually run 3 times for each
-execution, saving state before each subsequent call.</p>
-<p>The second <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/BackupSiteContent.fs"><code>Backup Site Content</code> sample</a>
-is using this persistence mechanism to run
-a potentially slow workflow of copying all files from a given directory to
-a backup location. It shows how multiple activities can be executed in
-parallel:</p>
-<pre><code class="language-fsharp">let tasks = Array.map (fun f -&gt; backupContext.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
-let! results = Task.WhenAll tasks</code></pre>
-<p>The third <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/Counter.fs"><code>Counter</code> example</a>
-demos a potentially infinite actor-like workflow, where state can exist and
-evolve for indefinite period of time. The key API calls are based on
-<code>OrchestrationContext</code>:</p>
-<pre><code class="language-fsharp">let counterState = counterContext.GetInput&lt;int&gt;()
-let! command = counterContext.WaitForExternalEvent&lt;string&gt;(&quot;operation&quot;)</code></pre>
-<p>The final elaborate <a href="https://github.com/mikhailshilkov/azure-functions-fsharp-examples/blob/master/12-durable/PhoneVerification.fs"><code>Phone Verification</code> workflow</a>
-has several twists, like output binding for activity (<code>ICollector</code> is required
-instead of C#&#39;s <code>out</code> parameter), third-party integration (Twilio to send SMSs),
-recursive sub-function to loop through several attempts and context-based
-timers for reliable timeout implementation.</p>
-<p>So, if you happen to be an F# fan, you can still give Durable Functions a try.
-Be sure to leave your feedback, so that the library could get even better 
-before going GA.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/durable-functions/'>Durable Functions</a>
     </div>
     
 </article>
