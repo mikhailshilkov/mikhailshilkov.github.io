@@ -79,6 +79,215 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jul 12th, 2018</div>
+    
+    <h1><a href='/2018/07/getting-started-with-aws-lambda-in-pulumi/'>Getting Started with AWS Lambda in Pulumi</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>For a small research project of mine, I needed to create HTTP triggered
+AWS Lambda&#39;s in all supported programming languages.</p>
+<p>I&#39;m not a power AWS user, so I get easily confused about the configuration
+of things like IAM roles or API Gateway. Moreover, I wanted my environment to
+be reproducible, so manual AWS Console wasn&#39;t a good option.</p>
+<p>I decided it was a good job for Pulumi. They pay a lot of attention to
+serverless and especially AWS Lambda, and I love the power of 
+configuration as code.</p>
+<p>I created a Pulumi program which provisions Lambda&#39;s running on Javascript,
+.NET, Python, Java and Go. Pulumi program itself is written in Javascript.</p>
+<p>I&#39;m describing the resulting code below in case folks need to do the same thing.
+The code itself is on <a href="https://github.com/mikhailshilkov/pulumi-aws-serverless-examples">my github</a>.</p>
+<h2 id="javascript">Javascript</h2>
+<p>Probably, the vast majority of Pulumi + AWS Lambda users will be using
+Javascript as programming language for their serverless functions.</p>
+<p>No wonder that this scenario is the easiest to start with. There is a
+high-level package <code>@pulumi/cloud-aws</code> which hides all the AWS machinery from
+a developer. </p>
+<p>The simplest function will consist of just several lines:</p>
+<pre><code class="language-js">const cloud = require(&quot;@pulumi/cloud-aws&quot;);
+
+const api = new cloud.API(&quot;aws-hellolambda-js&quot;);
+api.get(&quot;/js&quot;, (req, res) =&gt; {
+    res.status(200).json(&quot;Hi from Javascript lambda&quot;);
+});
+
+exports.endpointJs = api.publish().url;</code></pre>
+<p>Configure your Pulumi stack, run <code>pulumi update</code> and a Lambda 
+is up, running and accessible via HTTP.</p>
+<h2 id="-net-core">.NET Core</h2>
+<p>.NET is my default development environment and AWS Lambda supports .NET Core
+as execution runtime.</p>
+<p>Pulumi program is still Javascript, so it can&#39;t mix C# code in. Thus, the setup
+looks like this:</p>
+<ul>
+<li>There is a .NET Core 2.0 application written in C# and utilizing
+<code>Amazon.Lambda.*</code> NuGet packages</li>
+<li>I build and publish this application with <code>dotnet</code> CLI</li>
+<li>Pulumi then utilizes the published binaries to create deployment artifacts</li>
+</ul>
+<p>C# function looks like this:</p>
+<pre><code class="language-csharp">public class Functions
+{
+    public async Task&lt;APIGatewayProxyResponse&gt; GetAsync(APIGatewayProxyRequest request, ILambdaContext context)
+    {
+        return new APIGatewayProxyResponse
+        {
+            StatusCode = (int)HttpStatusCode.OK,
+            Body = &quot;\&quot;Hi from C# Lambda\&quot;&quot;,
+            Headers = new Dictionary&lt;string, string&gt; { { &quot;Content-Type&quot;, &quot;application/json&quot; } }
+        };
+    }
+}</code></pre>
+<p>For non-Javascript lambdas I utilize <code>@pulumi/aws</code> package. It&#39;s of lower level
+than <code>@pulumi/cloud-aws</code>, so I had to setup IAM first:</p>
+<pre><code class="language-js">const aws = require(&quot;@pulumi/aws&quot;);
+
+const policy = {
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Action&quot;: &quot;sts:AssumeRole&quot;,
+            &quot;Principal&quot;: {
+                &quot;Service&quot;: &quot;lambda.amazonaws.com&quot;,
+            },
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Sid&quot;: &quot;&quot;,
+        },
+    ],
+};
+const role = new aws.iam.Role(&quot;precompiled-lambda-role&quot;, {
+    assumeRolePolicy: JSON.stringify(policy),
+});</code></pre>
+<p>And then I did a raw definition of AWS Lambda:</p>
+<pre><code class="language-js">const pulumi = require(&quot;@pulumi/pulumi&quot;);
+
+const csharpLambda = new aws.lambda.Function(&quot;aws-hellolambda-csharp&quot;, {
+    runtime: aws.lambda.DotnetCore2d0Runtime,
+    code: new pulumi.asset.AssetArchive({
+        &quot;.&quot;: new pulumi.asset.FileArchive(&quot;./csharp/bin/Debug/netcoreapp2.0/publish&quot;),
+    }),
+    timeout: 5,
+    handler: &quot;app::app.Functions::GetAsync&quot;,
+    role: role.arn
+});</code></pre>
+<p>Note the path to <code>publish</code> folder, which should match the path created by
+<code>dotnet publish</code>, and the handler name matching C# class/method.</p>
+<p>Finally, I used <code>@pulumi/aws-serverless</code> to define API Gateway endpoint for
+the lambda:</p>
+<pre><code class="language-js">const serverless = require(&quot;@pulumi/aws-serverless&quot;);
+
+const precompiledApi = new serverless.apigateway.API(&quot;aws-hellolambda-precompiledapi&quot;, {
+    routes: [
+        { method: &quot;GET&quot;, path: &quot;/csharp&quot;, handler: csharpLambda },
+    ],
+});</code></pre>
+<p>That&#39;s definitely more ceremony compared to Javascript version. But hey, it&#39;s
+code, so if you find yourself repeating the same code, go ahead and make a
+higher order component out of it, incapsulating the repetitive logic.</p>
+<h2 id="python">Python</h2>
+<p>Pulumi supports Python as scripting language, but I&#39;m sticking to Javascript
+for uniform experience.</p>
+<p>In this case, the flow is similar to .NET but simpler: no compilation step
+is required. Just define a <code>handler.py</code>:</p>
+<pre><code class="language-python">def handler(event, context): 
+    return {
+        &#39;statusCode&#39;: 200,
+        &#39;headers&#39;: {&#39;Content-Type&#39;: &#39;application/json&#39;},
+        &#39;body&#39;: &#39;&quot;Hi from Python lambda&quot;&#39;
+    }</code></pre>
+<p>and package it into zip in AWS lambda definition:</p>
+<pre><code class="language-js">const pythonLambda = new aws.lambda.Function(&quot;aws-hellolambda-python&quot;, {
+    runtime: aws.lambda.Python3d6Runtime,
+    code: new pulumi.asset.AssetArchive({
+        &quot;.&quot;: new pulumi.asset.FileArchive(&quot;./python&quot;),
+    }),
+    timeout: 5,
+    handler: &quot;handler.handler&quot;,
+    role: role.arn
+});</code></pre>
+<p>I&#39;m reusing the <code>role</code> definition from above. The API definition will also
+be the same as for .NET.</p>
+<h2 id="go">Go</h2>
+<p>Golang is a compiled language, so the approach is similar to .NET: write code,
+build, reference the built artifact from Pulumi.</p>
+<p>My Go function looks like this:</p>
+<pre><code class="language-go">func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+
+ return events.APIGatewayProxyResponse{
+  Body:       &quot;\&quot;Hi from Golang lambda\&quot;&quot;,
+  StatusCode: 200,
+ }, nil
+
+}</code></pre>
+<p>Because I&#39;m on Windows but AWS Lambda runs on Linux, I had to use 
+<a href="https://github.com/aws/aws-lambda-go"><code>build-lambda-zip</code></a> 
+tool to make the package compatible. Here is the PowerShell build script:</p>
+<pre><code class="language-powershell">$env:GOOS = &quot;linux&quot;
+$env:GOARCH = &quot;amd64&quot;
+go build -o main main.go
+~\Go\bin\build-lambda-zip.exe -o main.zip main</code></pre>
+<p>and Pulumi function definition:</p>
+<pre><code class="language-js">const golangLambda = new aws.lambda.Function(&quot;aws-hellolambda-golang&quot;, {
+    runtime: aws.lambda.Go1dxRuntime,
+    code: new pulumi.asset.FileArchive(&quot;./go/main.zip&quot;),
+    timeout: 5,
+    handler: &quot;main&quot;,
+    role: role.arn
+});</code></pre>
+<h2 id="java">Java</h2>
+<p>Java class implements an interface from AWS SDK:</p>
+<pre><code class="language-java">public class Hello implements RequestStreamHandler {
+
+    public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context) throws IOException {
+
+        JSONObject responseJson = new JSONObject();
+
+        responseJson.put(&quot;isBase64Encoded&quot;, false);
+        responseJson.put(&quot;statusCode&quot;, &quot;200&quot;);
+        responseJson.put(&quot;body&quot;, &quot;\&quot;Hi from Java lambda\&quot;&quot;);  
+
+        OutputStreamWriter writer = new OutputStreamWriter(outputStream, &quot;UTF-8&quot;);
+        writer.write(responseJson.toJSONString());  
+        writer.close();
+    }
+}</code></pre>
+<p>I compiled this code with Maven (<code>mvn package</code>), which produced a <code>jar</code> file. AWS Lambda accepts
+<code>jar</code> directly, but Pulumi&#39;s <code>FileArchive</code> is unfortunately crashing on trying
+to read it.</p>
+<p>As a workaround, I had to define a <code>zip</code> file with <code>jar</code> placed inside <code>lib</code>
+folder:</p>
+<pre><code class="language-js">const javaLambda = new aws.lambda.Function(&quot;aws-coldstart-java&quot;, {
+    code: new pulumi.asset.AssetArchive({
+        &quot;lib/lambda-java-example-1.0-SNAPSHOT.jar&quot;: new pulumi.asset.FileAsset(&quot;./java/target/lambda-java-example-1.0-SNAPSHOT.jar&quot;),
+    }),
+    runtime: aws.lambda.Java8Runtime,
+    timeout: 5,
+    handler: &quot;example.Hello&quot;,
+    role: role.arn
+});</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>The complete code for 5 lambda functions in 5 different programming languages
+can be found in <a href="https://github.com/mikhailshilkov/pulumi-aws-serverless-examples">my github repository</a>.</p>
+<p>Running <code>pulumi update</code> provisions 25 AWS resources in a matter of 1 minute,
+so I can start playing with my test lambdas in no time.</p>
+<p>And the best part: when I don&#39;t need them anymore, I run <code>pulumi destroy</code> and
+my AWS Console is clean again!</p>
+<p>Happy serverless moments!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/aws/'>AWS</a>, <a href='/tags/aws-lambda/'>AWS Lambda</a>, <a href='/tags/pulumi/'>Pulumi</a>, <a href='/tags/serverless/'>Serverless</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jul 5th, 2018</div>
     
     <h1><a href='/2018/07/monads-explained-in-csharp-again/'>Monads explained in C# (again)</a></h1>
@@ -1210,73 +1419,6 @@ Please leave a comment below or ping me on twitter, and let&#39;s sort it all ou
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/cold-start/'>Cold Start</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Apr 7th, 2018</div>
-    
-    <h1><a href='/2018/04/fsharp-exchange-2018/'>Awesome F# Exchange 2018</a></h1>
-    
-
-    
-
-    <div class="post-content">
-        <p>I&#39;m writing this post in the train to London Stensted, on my way back from F# Exchange 2018
-conference.</p>
-<p>F# Exchange is a yearly conference taking place in London, and 2018 edition was the first one
-for me personally. I also had an honour to speak there about creating Azure Functions with
-F#.</p>
-<h2 id="impression">Impression</h2>
-<p>F# is still relatively niche language, so the conference is not overcrowded, but that gives
-it a special feeling of family gathering. There were 162 participants this year, and I have an
-impression that every one of them is extremely friendly, enthusiastic and just plain awesome.</p>
-<p>The conference itself had 2 tracks of 45-minute talks and 60-minute keynotes. Most talks were
-of high quality, and the topics ranging from compiler internals to fun applications like 
-music generation, car racing and map drawing.</p>
-<p>Both Don Syme, the creator of F#, and Philip Carter, F# program manager, were there and gave
-keynotes, but they were careful enough not to draw too much attention on Microsoft and let
-the community speak loud.</p>
-<h2 id="corridor-track">Corridor Track</h2>
-<p>But the talks were just a part of the story. For me, the conference started in the evening
-before the first day at the speakers drinks party, and only finished at 1 a.m. after the 
-second day (the pubs in London are lovely).</p>
-<p>I spoke to so many great people, I learnt a lot, and had fun too. I&#39;ve never seen so many
-F# folks at the same place, and I guess there must be something about F# which attracts
-the right kind of people to it.</p>
-<p>And of course it&#39;s so much fun to meet face-to-face all those twitter, slack, github and 
-Channel 9 persona&#39;s and to see that they are actually real people :)</p>
-<h2 id="my-talk">My Talk</h2>
-<p>The talk I gave was called &quot;Azure F#unctions&quot;. It was not a hard-core F# talk, but people
-seemed to be genuinely interested in the topic.</p>
-<p>A decent amount of attendees are already familiar with Azure Functions, and many either run 
-them in production or plan to do so.</p>
-<p>The reference version conflict problem is very well known and raises a lots of questions
-or concerns. This even leads to workarounds like transpiling F# Functions to Javascript
-with Fable. Yikes.</p>
-<p>Durable Functions seem to be sparkling a lot of initial interest. I&#39;ll be definitely
-spending more time to play with them, and maybe to make F# story more smooth.</p>
-<p>Functions were mentioned in Philip&#39;s keynote as one of the important areas for F# 
-application, which is cool. We should spend some extra effort to make the documentation
-and onboarding story as smooth as possible.</p>
-<h2 id="call-to-action">Call to Action</h2>
-<p>Skills Matter is the company behind the conference. Carla, Nicole and others did a great
-job preparing the event; everything went smooth, informal and fun.</p>
-<p>The videos are already online at <a href="https://skillsmatter.com/conferences/9419-f-sharp-exchange-2018#skillscasts">Skillscasts</a> 
-(requires free signup).</p>
-<p><a href="https://skillsmatter.com/conferences/10869-f-sharp-exchange-2019">F# Exchange 2019</a> 
-super early bird tickets are for sale now and until Monday April 9, go 
-get one and join F# Exchange in London next year! </p>
-<p>I&#39;m already missing you all.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-exchange/'>F# Exchange</a>, <a href='/tags/talk/'>Talk</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
     </div>
     
 </article>

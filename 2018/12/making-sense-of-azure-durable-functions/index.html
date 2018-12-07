@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+
+    <title>Making Sense of Azure Durable Functions | Mikhail Shilkov</title>
+    <meta name="author" content="Mikhail Shilkov">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="twitter:card" content="summary_large_image"></meta>
+    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
+    <meta name="twitter:title" content="Making Sense of Azure Durable Functions"></meta>
+
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Making Sense of Azure Durable Functions" />
+    <meta property="og:url" content="https://mikhail.io/2018/12/making-sense-of-azure-durable-functions/" />
+
+    <meta property="og:image" content="https://mikhail.io/2018/12/making-sense-of-azure-durable-functions/teaser.jpg" />
+
+
+    <meta property="og:description" content="Why and How of Stateful Workflows on top of serverless functions" />
+
+
+
+    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
+    <link href="/favicon.ico?v=2" rel="shortcut icon">
+
+    <!-- Bootstrap -->
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
+    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
+
+    <meta name="generator" content="DocPad v6.80.6" />
+    
+</head>
+<body>
+
+<div class="navbar navbar-default navbar-static-top">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">
+                <span class="text-primary">Mikhail Shilkov</span><br />
+                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
+            </a>
+        </div>
+        <div class="collapse navbar-collapse navbar-right">
+            <ul class="nav navbar-nav">
+                <!--<li><a href="/">Blog</a></li>-->
+                
+                    <li><a href="/tags/">Topics</a></li>
+                
+                    <li><a href="/archives/">Archives</a></li>
+                
+                    <li><a href="/talks/">Talks</a></li>
+                
+                    <li><a href="/about/">About</a></li>
+                
+                <li class="hidden-xs">
+                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
+                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
+                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
+                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+                </li>
+            </ul>
+            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
+                  method="get">
+                <div class="form-group">
+                    <input type="search" name="q" class="form-control" placeholder="Search">
+                    <input type="hidden" name="q" value="site:mikhail.io">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <article class="post">
+    <div class="post-date">Dec 7th, 2018</div>
+    
+    <h1>Making Sense of Azure Durable Functions</h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>Stateful Workflows on top of Stateless Serverless Cloud Functions&mdash;this is the essence
+of the Azure Durable Functions library. That&#39;s a lot of fancy words in one sentence, and they
+might be hard for the majority of readers to understand.</p>
+<p>Please join me on the journey where I&#39;ll try to explain how those buzzwords fit
+together. I will do this in 3 steps:</p>
+<ul>
+<li>Describe the context of modern cloud applications relying on serverless architecture;</li>
+<li>Identify the limitations of basic approaches to composing applications out of the simple building blocks;</li>
+<li>Explain the solutions that Durable Functions offer for those problems.</li>
+</ul>
+<h2 id="microservices">Microservices</h2>
+<p>Traditionally, server-side applications were built in a style which is now referred to as
+<strong>Monolith</strong>. If multiple people and teams were developing parts of the same application, they
+mostly contributed to the same code base. If the code base were structured well, it would have
+some distinct modules or components, and a single team would typically own each module:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/monolith.png" alt="Monolith"></p>
+<center class="img-caption">Multiple components of a monolithic application</center>
+
+<p>Usually, the modules would be packaged together at build time and then deployed as a single
+unit, so a lot of communication between modules would stay inside the OS process.</p>
+<p>Although the modules could stay loosely coupled over time, the coupling almost always occurred
+on the level of the data store because all teams would use a single centralized database.</p>
+<p>This model works great for small- to medium-size applications, but it turns out that teams
+start getting in each other&#39;s way as the application grows since synchronization of contributions
+takes more and more effort.</p>
+<p>As a complex but viable alternative, the industry came up with a revised service-oriented
+approach commonly called <strong>Microservices</strong>. The teams split the big application into &quot;vertical slices&quot; 
+structured around the distinct business capabilities:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/microservices.png" alt="Microservices"></p>
+<center class="img-caption">Multiple components of a microservice-based application</center>
+
+<p>Each team then owns a whole vertical&mdash;from public communication contracts, or even UIs, down
+to the data storage. Explicitly shared databases are strongly discouraged. Services talk to each
+other via documented and versioned public contracts.</p>
+<p>If the borders for the split were selected well&mdash;and that&#39;s the most tricky part&mdash;the
+contracts stay stable over time, and thin enough to avoid too much chattiness. This gives
+each team enough autonomy to innovate at their best pace and to make independent technical decisions.</p>
+<p>One of the drawbacks of microservices is the change in deployment model. The services are now
+deployed to separate servers connected via a network:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/distributed-system.png" alt="Distributed Systems"></p>
+<center class="img-caption">Challenges of communication between distributed components</center>
+
+<p>Networks are fundamentally unreliable: they work just fine most of the time, but when they 
+fail, they fail in all kinds of unpredictable and least desirable manners. There are books
+written on the topic of distributed systems architecture. TL;DR: it&#39;s hard.</p>
+<p>A lot of the new adopters of microservices tend to ignore such complications. REST over HTTP(S) is the
+dominant style of connecting microservices. Like any other synchronous communication
+protocol, it makes the system brittle.</p>
+<p>Consider what happens when one service becomes temporary unhealthy: maybe its database goes offline, or it&#39;s struggling to 
+keep up with the request load, or a new version of the service is being deployed. All the requests to the problematic service start
+failing&mdash;or worse&mdash;become very slow. The dependent service waits for the response, and
+thus blocks all incoming requests of its own. The error propagates upstream very quickly causing cascading
+failures all over the place:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/cascading-failures.png" alt="Cascading Failures"></p>
+<center class="img-caption">Error in one component causes cascading failures</center>
+
+<p>The application is down. Everybody screams and starts the blame war.</p>
+<h2 id="event-driven-applications">Event-Driven Applications</h2>
+<p>While cascading failures of HTTP communication can be mitigated with patterns like a circuit breaker
+and graceful degradation, a better solution is to switch to the asynchronous style of communication
+as the default. Some kind of persistent queueing service is used as an intermediary.</p>
+<p>The style of application architecture which is based on sending events between services
+is known as <strong>Event-Driven</strong>. When a service does something useful, it publishes an event&mdash;a record 
+about the fact which happened to its business domain. Another service listens to the published events and 
+executes its own duty in response to those facts:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/event-driven.png" alt="Event-Driven Application"></p>
+<center class="img-caption">Communication in event-driven applications</center>
+
+<p>The service that produces events might not know about the consumers. New event subscribers can
+be introduced over time. This works better in theory than in practice, but the services tend to
+get coupled less.</p>
+<p>More importantly, if one service is down, other services don&#39;t catch fire immediately. The
+upstream services keep publishing the events, which build up in the queue but can be stored safely
+for hours or days. The downstream services might not be doing anything useful for this particular
+flow, but it can stay healthy otherwise.</p>
+<p>However, another potential issue comes hand-in-hand with loose coupling: low cohesion.
+As Martin Fowler notices in his essay
+<a href="https://martinfowler.com/articles/201701-event-driven.html">What do you mean by &quot;Event-Driven&quot;</a>:</p>
+<blockquote>
+<p>It&#39;s very easy to make nicely decoupled systems with event notification, without realizing 
+that you&#39;re losing sight of the larger-scale flow.</p>
+</blockquote>
+<p>Given many components that publish and subscribe to a large number of event types, it&#39;s easy to stop
+seeing the forest for the trees. Combinations of events usually constitute gradual workflows executed 
+in time. A workflow is more than the sum of its parts, and understanding of the high-level flow is 
+paramount to controlling the system behavior.</p>
+<p>Hold this thought for a minute; we&#39;ll get back to it later. Now it&#39;s time to talk <em>cloud</em>.</p>
+<h2 id="cloud">Cloud</h2>
+<p>The birth of public cloud changed the way we architect applications. It made many things
+much more straightforward: provisioning of new resources in minutes instead of months, scaling elastically
+based on demand, and resiliency and disaster recovery at the global scale.</p>
+<p>It made other things more complicated. Here is the picture of the global Azure network:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/azure-network.png" alt="Azure Network"></p>
+<center class="img-caption">Azure locations with network connections</center>
+
+<p>There are good reasons to deploy applications to more than one geographical location:
+among others, to reduce network latency by staying close to the customer, and to achieve resilience through 
+geographical redundancy. Public Cloud is the ultimate distributed system. As you remember,
+distributed systems are hard.</p>
+<p>There&#39;s more to that. Each cloud provider has dozens and dozens of managed services, which is
+the curse and the blessing. Specialized services are great to provide off-the-shelf solutions 
+to common complex problems. On the flip side, each service has distinct properties regarding 
+consistency, resiliency and fault tolerance.</p>
+<p>In my opinion, at this point developers have to embrace the public cloud and apply the distributed 
+system design on top of it. If you agree, there is an excellent way to approach it.</p>
+<h2 id="serverless">Serverless</h2>
+<p>The slightly provocative term <strong>serverless</strong> is used to describe cloud services that do not
+require provisioning of VMs, instances, workers, or any other fixed capacity to run
+custom applications on top of them. Resources are allocated dynamically and transparently,
+and the cost is based on their actual consumption, rather than on pre-purchased capacity.</p>
+<p>Serverless is more about operational and economical properties of the system than about the
+technology per se. Servers do exist, but they are someone else&#39;s concern. You don&#39;t manage
+the uptime of serverless applications: the cloud provider does.</p>
+<p>On top of that, you pay for what you use, similar to the consumption of other commodity resources
+like electricity. Instead of buying a generator to power up your house, you just purchase energy
+from the power company. You lose some control (e.g., no way to select the voltage), but this is fine
+in most cases. The great benefit is no need to buy and maintain the hardware.</p>
+<p>Serverless compute does the same: it supplies standard services on a pay-per-use basis.</p>
+<p>If we talk more specifically about Function-as-a-Service offerings like Azure Functions, they
+provide a standard model to run small pieces of code in the cloud.
+You zip up the code or binaries and send it to Azure; Microsoft takes care of all the
+hardware and software required to run it. The infrastructure automatically scales up or down based
+on demand, and you pay per request, CPU time and memory that the application consumed. 
+No usage&mdash;no bill.</p>
+<p>However, there&#39;s always a &quot;but&quot;. FaaS services come with an opinionated development model that
+applications have to follow:</p>
+<ul>
+<li><p><strong>Event-Driven</strong>: for each serverless function you have to define a specific trigger&mdash;the 
+event type which causes it to run, be it an HTTP endpoint or a queue message;</p>
+</li>
+<li><p><strong>Short-Lived</strong>: functions can only run up to several minutes, and preferably for a few seconds 
+or less;</p>
+</li>
+<li><p><strong>Stateless</strong>: as you don&#39;t control where and when function instances are provisioned or
+deprovisioned, there is no way to store data within the process between requests reliably;
+external storage has to be utilized.</p>
+</li>
+</ul>
+<p>Frankly speaking, the majority of existing applications don&#39;t really fit into this model.
+If you are lucky to work on a new application (or a new module of it), you are in better shape.</p>
+<p>A lot of the serverless applications may be designed to look somewhat similar to this example
+from <a href="https://www.serverless360.com/blog/building-reactive-solution-with-azure-event-grid">the Serverless360 blog</a>:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/serviceful-example.png" alt="Serviceful Serverless Application"></p>
+<center class="img-caption">Sample application utilizing "serviceful" serverless architecture</center>
+
+<p>There are 9 managed Azure services working together in this app. Most of them have a unique purpose, but
+the services are all glued together with Azure Functions. An image is uploaded to Blob Storage, an
+Azure Function calls Vision API to recognize the license plate and send the result to Event Grid, another 
+Azure Function puts that event to Cosmos DB, and so on.</p>
+<p>This style of cloud applications is sometimes referred to as <strong>Serviceful</strong> to emphasize the heavy usage
+of managed services &quot;glued&quot; together by serverless functions.</p>
+<p>Creating a comparable application without any managed services would be a much harder task,
+even more so, if the application has to run at scale. Moreover, there&#39;s no way to keep the pay-as-you-go 
+pricing model in the self-service world.</p>
+<p>The application pictured above is still pretty straightforward. The processes
+in enterprise applications are often much more sophisticated.</p>
+<p>Remember the quote from Martin Fowler about losing sight of the large-scale flow. That was
+true for microservices, but it&#39;s even more true for the &quot;nanoservices&quot; of cloud functions.</p>
+<p>I want to dive deeper and give you several examples of related problems.</p>
+<h2 id="challenges-of-serverless-composition">Challenges of Serverless Composition</h2>
+<p>For the rest of the article, I&#39;ll define an imaginary business application for booking trips to software
+conferences. In order to go to a conference, I need to buy tickets to the conference itself,
+purchase the flights, and book a room at a hotel.</p>
+<p>In this scenario, it makes sense to create three Azure Functions, each one responsible for one step
+of the booking process. As we prefer message passing, each Function emits an event which
+the next function can listen for:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/conference-booking.png" alt="Conference Booking Application"></p>
+<center class="img-caption">Conference booking application</center>
+
+<p>This approach works, however, problems do exist.</p>
+<h3 id="flexible-sequencing">Flexible Sequencing</h3>
+<p>As we need to execute the whole booking process in sequence, the Azure Functions are wired
+one after another by configuring the output of one function to match with the event source of
+the downstream function.</p>
+<p>In the picture above, the functions&#39; sequence is hard-defined. If we were to swap the order of booking 
+the flights and reserving the hotel, that would require a code change&mdash;at least of the 
+input/output wiring definitions, but probably also the functions&#39; parameter types.</p>
+<p>In this case, are the functions <em>really</em> decoupled?</p>
+<h3 id="error-handling">Error Handling</h3>
+<p>What happens if the Book Flight function becomes unhealthy, perhaps due to the
+outage of the third-party flight-booking service? Well, that&#39;s why we use asynchronous messaging:
+after the function execution fails, the message returns to the queue and is picked
+up again by another execution.</p>
+<p>However, such retries happen almost immediately for most event sources. This might not
+be what we want: an exponential back-off policy could be a smarter idea. At this point,
+the retry logic becomes <strong>stateful</strong>: the next attempt should &quot;know&quot; the history of previous attempts
+to make a decision about retry timing.</p>
+<p>There are more advanced error-handling patterns too. If executions failures are not
+intermittent, we may decide to cancel the whole process and run compensating actions
+against the already completed steps.</p>
+<p>An example of this is a fallback action: if the flight is not possible (e.g., no routes for this
+origin-destination combination), the flow could choose to book a train instead:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/fallback-on-error.png" alt="Fallback On Error"></p>
+<center class="img-caption">Fallback after 3 consecutive failures</center>
+
+<p>This scenario is not trivial to implement with stateless functions. We could wait until a
+message goes to the dead-letter queue and then route it from there, but this is brittle and
+not expressive enough.</p>
+<h3 id="parallel-actions">Parallel Actions</h3>
+<p>Sometimes the business process doesn&#39;t have to be sequential. In our reservation scenario,
+there might be no difference whether we book a flight before a hotel or vice versa. It could
+be desirable to run those actions in parallel.</p>
+<p>Parallel execution of actions is easy with the pub-sub capabilities of an event bus: both functions
+should subscribe to the same event and act on it independently.</p>
+<p>The problem comes when we need to reconcile the outcomes of parallel actions, e.g., calculate the
+final price for expense reporting purposes:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/fanout-fanin.png" alt="Fan-out / Fan-in"></p>
+<center class="img-caption">Fan-out / fan-in pattern</center>
+
+<p>There is no way to implement the Report Expenses block as a single Azure Function: functions
+can&#39;t be triggered by two events, let alone correlate two <em>related</em> events.</p>
+<p>The solution would probably include two functions, one per event, and the shared storage
+between them to pass information about the first completed booking to the one who
+completes last. All this wiring has to be implemented in custom code. The complexity grows
+if more than two functions need to run in parallel.</p>
+<p>Also, don&#39;t forget the edge cases. What if one of the function fails? How do you make sure there is
+no race condition when writing and reading to/from the shared storage?</p>
+<h3 id="missing-orchestrator">Missing Orchestrator</h3>
+<p>All these examples give us a hint that we need an additional tool to organize low-level
+single-purpose independent functions into high-level workflows.</p>
+<p>Such a tool can be called an <strong>Orchestrator</strong> because its sole mission is to delegate work
+to stateless actions while maintaining the big picture and history of the flow.</p>
+<p>Azure Durable Functions aims to provide such a tool.</p>
+<h2 id="introducing-azure-durable-functions">Introducing Azure Durable Functions</h2>
+<h3 id="azure-functions">Azure Functions</h3>
+<p>Azure Functions is the serverless compute service from Microsoft. Functions are event-driven:
+each function defines a <strong>trigger</strong>&mdash;the exact definition of the event source, for instance,
+the name of a storage queue.</p>
+<p>Azure Functions can be programmed in <a href="https://docs.microsoft.com/en-us/azure/azure-functions/supported-languages">several languages</a>. 
+A basic Function with a
+<a href="https://docs.microsoft.com/azure/azure-functions/functions-bindings-storage-queue">Storage Queue trigger</a>
+implemented in C# would look like this: </p>
+<pre><code class="language-csharp">[FunctionName(&quot;MyFirstFunction&quot;)]
+public static void QueueTrigger(
+    [QueueTrigger(&quot;myqueue-items&quot;)] string myQueueItem, 
+    ILogger log)
+{
+    log.LogInformation($&quot;C# function processed: {myQueueItem}&quot;);
+}</code></pre>
+<p>The <code>FunctionName</code> attribute exposes the C# static method as an Azure Function named <code>MyFirstFunction</code>. 
+The <code>QueueTrigger</code> attribute defines the name of the storage queue to listen to. The function body
+logs the information about the incoming message.</p>
+<h3 id="durable-functions">Durable Functions</h3>
+<p><a href="https://docs.microsoft.com/azure/azure-functions/durable/durable-functions-overview">Durable Functions</a>
+is a library that brings workflow orchestration abstractions to
+Azure Functions. It introduces a number of idioms and tools to define stateful,
+potentially long-running operations, and manages a lot of mechanics of reliable communication 
+and state management behind the scenes.</p>
+<p>The library records the history of all actions in Azure Storage services, enabling durability 
+and resilience to failures.</p>
+<p>Durable Functions is 
+<a href="https://github.com/Azure/azure-functions-durable-extension">open source</a>, 
+Microsoft accepts external contributions, and the community is quite active.</p>
+<p>Currently, you can write Durable Functions in 3 programming languages: C#, F#, and
+Javascript (Node.js). All my examples are going to be in C#. For Javascript,
+check <a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable/quickstart-js-vscode">this quickstart</a>
+and <a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/javascript">these samples</a>.
+For F# see <a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/fsharp">the samples</a>, 
+<a href="https://mikhail.io/2018/02/azure-durable-functions-in-fsharp/">my walkthrough</a> and stay
+tuned for another article soon.</p>
+<p>Workflow building functionality is achieved by the introduction of two additional types
+of triggers: Activity Functions and Orchestrator Functions.</p>
+<h3 id="activity-functions">Activity Functions</h3>
+<p>Activity Functions are simple stateless single-purpose building blocks
+that do just one task and have no awareness of the bigger workflow. 
+A new trigger type,
+<code>ActivityTrigger</code>, was introduced to expose functions as workflow steps, as
+I explain below.</p>
+<p>Here is a simple Activity Function implemented in C#:</p>
+<pre><code class="language-csharp">[FunctionName(&quot;BookConference&quot;)]
+public static ConfTicket BookConference([ActivityTrigger] string conference)
+{
+    var ticket = BookingService.Book(conference);
+    return new ConfTicket { Code = ticket };
+}</code></pre>
+<p>It has a common <code>FunctionName</code> attribute to expose the C# static method as an
+Azure Function named <code>BookConference</code>. The name is important because it is used to
+invoke the activity from orchestrators.</p>
+<p>The <code>ActivityTrigger</code> attribute defines the trigger type and points to the input
+parameter <code>conference</code> which the activity expects to get for each invocation.</p>
+<p>The function can return a result of any serializable type; my sample function
+returns a simple property bag called <code>ConfTicket</code>.</p>
+<p>Activity Functions can do pretty much anything: call other services, load and
+save data from/to databases, and use any .NET libraries.</p>
+<h3 id="orchestrator-functions">Orchestrator Functions</h3>
+<p>The Orchestrator Function is a unique concept introduced by Durable Functions. Its sole
+purpose is to manage the flow of execution and data among several activity functions.</p>
+<p>Its most basic form chains multiple independent activities into a single
+sequential workflow.</p>
+<p>Let&#39;s start with an example which books a conference ticket, a flight itinerary, and
+a hotel room one-by-one:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/sequential-workflow.png" alt="Sequential Workflow"></p>
+<center class="img-caption">3 steps of a workflow executed in sequence</center>
+
+<p>The implementation of this workflow is defined by another C# Azure Function, this time with
+<code>OrchestrationTrigger</code>:</p>
+<pre><code class="language-csharp">[FunctionName(&quot;SequentialWorkflow&quot;)]
+public static async Task Sequential([OrchestrationTrigger] DurableOrchestrationContext context)
+{
+    var conference = await context.CallActivityAsync&lt;ConfTicket&gt;(&quot;BookConference&quot;, &quot;ServerlessDays&quot;);
+    var flight = await context.CallActivityAsync&lt;FlightTickets&gt;(&quot;BookFlight&quot;, conference.Dates);
+    await context.CallActivityAsync(&quot;BookHotel&quot;, flight.Dates);
+}</code></pre>
+<p>Again, attributes are used to describe the function for the Azure runtime.</p>
+<p>The only input parameter has type <code>DurableOrchestrationContext</code>. This context is the tool that
+enables the orchestration operations.</p>
+<p>In particular, the <code>CallActivityAsync</code> method is used three times to invoke three activities one after the other.
+The method body looks very typical for any C# code working with a <code>Task</code>-based API. However,
+the behavior is entirely different. Let&#39;s have a look at the implementation details.</p>
+<h2 id="behind-the-scenes">Behind the Scenes</h2>
+<p>Let&#39;s walk through the lifecycle of one execution of the sequential workflow above.</p>
+<p>When the orchestrator starts running, the first <code>CallActivityAsync</code> invocation is made to book the
+conference ticket. What actually happens here is that a queue message is sent from the orchestrator
+to the activity function. </p>
+<p>The corresponding activity function gets triggered by the queue message. It does its job (books the 
+ticket) and returns the result. The activity function serializes the result and sends it as a queue 
+message back to the orchestrator:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/durable-messaging.png" alt="Durable Functions: Message Passing"></p>
+<center class="img-caption">Messaging between the orchestrator and the activity</center>
+
+<p>When the message arrives, the orchestrator gets triggered again and can proceed to the second
+activity. The cycle repeats&mdash;a message gets sent to Book Flight activity, it gets triggered, does its
+job, and sends a message back to the orchestrator.
+The same message flow happens for the third call.</p>
+<h3 id="stop-resume-behavior">Stop-resume behavior</h3>
+<p>As discussed earlier, message passing is intended to decouple the sender and receiver in time.
+For every message in the scenario above, no immediate response is expected. </p>
+<p>On the C# level, when the <code>await</code> operator is executed, the code doesn&#39;t block the execution of the whole
+orchestrator. Instead, it just quits: the orchestrator stops being active and its current step completes.</p>
+<p>Whenever a return message arrives from an activity, the orchestrator code restarts. It always starts
+with the first line. Yes, this means that the same line is executed multiple times: up to the number of
+messages to the orchestrator.</p>
+<p>However, the orchestrator stores the history of its past executions in Azure Storage, so the effect of the second pass
+of the first line is different: instead of sending a message to the activity it already knows
+the result of that activity, so <code>await</code> returns this result back and assigns it to the <code>conference</code> variable.</p>
+<p>Because of these &quot;replays&quot;, the orchestrator&#39;s implementation has to be deterministic: don&#39;t use
+<code>DateTime.Now</code>, random numbers or multi-thread operations; more details
+<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable/durable-functions-checkpointing-and-replay#orchestrator-code-constraints">here</a>.</p>
+<h3 id="event-sourcing">Event Sourcing</h3>
+<p>Azure Functions are stateless, while workflows require a state to keep track of their progress. Every time a new
+action towards the workflow&#39;s execution happens, the framework automatically records an event in table storage.</p>
+<p>Whenever an orchestrator restarts the execution because a new message arrives from its activity,
+it loads the complete history of this particular execution from storage. Durable Context uses
+this history to make decisions whether to call the activity or return the previously stored result.</p>
+<p>The pattern of storing the complete history of state changes as an append-only event store is
+known as Event Sourcing. Event store provides several benefits:</p>
+<ul>
+<li><strong>Durability</strong>&mdash;if a host running an orchestration fails, the history is retained in
+persistent storage and is loaded by the new host where the orchestration restarts;</li>
+<li><strong>Scalability</strong>&mdash;append-only writes are fast and easy to spread over multiple storage servers;</li>
+<li><strong>Observability</strong>&mdash;no history is ever lost, so it&#39;s straightforward to inspect and
+analyze even after the workflow is complete.</li>
+</ul>
+<p>Here is an illustration of the notable events that get recorded during our sequential workflow:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/event-sourcing.png" alt="Durable Functions: Event Sourcing"></p>
+<center class="img-caption">Log of events in the course of orchestrator progression</center>
+
+<h3 id="billing">Billing</h3>
+<p>Azure Functions on the serverless consumption-based plan are billed per execution + per duration of
+execution.</p>
+<p>The stop-replay behavior of durable orchestrators causes the single workflow &quot;instance&quot; to execute
+the same orchestrator function multiple times. This also means paying for several short
+executions.</p>
+<p>However, the total bill usually ends up being much lower compared to the potential cost of blocking
+synchronous calls to activities. The price of 5 executions of 100 ms each is significantly lower
+than the cost of 1 execution of 30 seconds.</p>
+<p>By the way, the first million executions per month are 
+<a href="https://azure.microsoft.com/en-us/pricing/details/functions/">at no charge</a>,
+so many scenarios incur no cost at all from Azure Functions service.</p>
+<p>Another cost component to keep in mind is Azure Storage. Queues and Tables that are used behind the
+scenes are charged to the end customer. In my experience, this charge remains close to zero for
+low- to medium-load applications.</p>
+<p>Beware of unintentional eternal loops or indefinite recursive fan-outs in your orchestrators. Those
+can get expensive if you leave them out of control.</p>
+<h2 id="error-handling-and-retries">Error-handling and retries</h2>
+<p>What happens when an error occurs somewhere in the middle of the workflow? For instance, a third-party
+flight booking service might not be able to process the request:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/error-handling.png" alt="Error Handling"></p>
+<center class="img-caption">One activity is unhealthy</center>
+
+<p>This situation is expected by Durable Functions. Instead of silently failing, the activity function
+sends a message containing the information about the error back to the orchestrator.</p>
+<p>The orchestrator deserializes the error details and, at the time of replay, throws a .NET exception
+from the corresponding call. The developer is free to put a <code>try .. catch</code> block around the call
+and handle the exception:</p>
+<pre><code class="language-csharp">[FunctionName(&quot;SequentialWorkflow&quot;)]
+public static async Task Sequential([OrchestrationTrigger] DurableOrchestrationContext context)
+{
+    var conf = await context.CallActivityAsync&lt;ConfTicket&gt;(&quot;BookConference&quot;, &quot;ServerlessDays&quot;);
+    try
+    {
+        var itinerary = MakeItinerary(/* ... */);
+        await context.CallActivityAsync(&quot;BookFlight&quot;, itinerary);
+    }
+    catch (FunctionFailedException)
+    {
+        var alternativeItinerary = MakeAnotherItinerary(/* ... */);
+        await context.CallActivityAsync(&quot;BookFlight&quot;, alternativeItinerary);
+    }
+    await context.CallActivityAsync(&quot;BookHotel&quot;, flight.Dates);
+}</code></pre>
+<p>The code above falls back to a &quot;backup plan&quot; of booking another itinerary. Another typical pattern
+would be to run a compensating activity to cancel the effects of any previous actions (un-book the
+conference in our case) and leave the system in a clean state.</p>
+<p>Quite often, the error might be transient, so it might make sense to retry the failed operation
+after a pause. It&#39;s a such a common scenario that Durable Functions provides a dedicated API:</p>
+<pre><code class="language-csharp">var options = new RetryOptions(
+    firstRetryInterval: TimeSpan.FromMinutes(1),                    
+    maxNumberOfAttempts: 5);
+options.BackoffCoefficient = 2.0;
+
+await context.CallActivityWithRetryAsync(&quot;BookFlight&quot;, options, itinerary);</code></pre>
+<p>The above code instructs the library to</p>
+<ul>
+<li>Retry up to 5 times</li>
+<li>Wait for 1 minute before the first retry</li>
+<li>Increase delays before every subsequent retry by the factor of 2 (1 min, 2 min, 4 min, etc.)</li>
+</ul>
+<p>The significant point is that, once again, the orchestrator does not block while
+awaiting retries. After a failed call, a message is scheduled for the moment in the future
+to re-run the orchestrator and retry the call.</p>
+<h2 id="sub-orchestrators">Sub-orchestrators</h2>
+<p>Business processes may consist of numerous steps. To keep the code of orchestrators manageable,
+Durable Functions allows nested orchestrators. A &quot;parent&quot; orchestrator can call out to child
+orchestrators via the <code>context.CallSubOrchestratorAsync</code> method:</p>
+<pre><code class="language-csharp">[FunctionName(&quot;CombinedOrchestrator&quot;)]
+public static async Task CombinedOrchestrator([OrchestrationTrigger] DurableOrchestrationContext context)
+{
+    await context.CallSubOrchestratorAsync(&quot;BookTrip&quot;, serverlessDaysAmsterdam);
+    await context.CallSubOrchestratorAsync(&quot;BookTrip&quot;, serverlessDaysHamburg);
+}</code></pre>
+<p>The code above books 2 conferences, one after the other.</p>
+<h2 id="fan-out-fan-in">Fan-out / Fan-in</h2>
+<p>What if we want to run multiple activities in parallel?</p>
+<p>For instance, in the example above, we could wish to book two conferences, but the
+booking order might not matter. Still, when both bookings are completed, we want to combine the results
+to produce an expense report for the finance department:</p>
+<p><img src="/2018/12/making-sense-of-azure-durable-functions/parallel-calls.png" alt="Parallel Calls"></p>
+<center class="img-caption">Parallel calls followed by a final step</center>
+
+<p>In this scenario, the <code>BookTrip</code> orchestrator accepts an input parameter with the name of the 
+conference and returns the expense information. <code>ReportExpenses</code> needs to receive both
+expenses combined.</p>
+<p>This goal can be easily achieved by scheduling two tasks (i.e., sending two messages) without
+awaiting them separately. We use the familiar <code>Task.WhenAll</code> method to await both and combine
+the results:</p>
+<pre><code class="language-csharp">[FunctionName(&quot;ParallelWorkflow&quot;)]
+public static async Task Parallel([OrchestrationTrigger] DurableOrchestrationContext context)
+{
+    var amsterdam = context.CallSubOrchestratorAsync(&quot;BookTrip&quot;, serverlessDaysAmsterdam);
+    var hamburg   = context.CallSubOrchestratorAsync(&quot;BookTrip&quot;, serverlessDaysHamburg);
+
+    var expenses = await Task.WhenAll(amsterdam, hamburg);
+
+    await context.CallActivityAsync(&quot;ReportExpenses&quot;, expenses);
+}</code></pre>
+<p>Remember that awaiting the <code>WhenAll</code> method doesn&#39;t synchronously block the orchestrator. It quits
+the first time and then restarts two times on reply messages received from activities.
+The first restart quits again, and only the second restart makes it past the <code>await</code>.</p>
+<p><code>Task.WhenAll</code> returns an array of results (one result per each input task), which is then
+passed to the reporting activity.</p>
+<p>Another example of parallelization could be a workflow sending e-mails to hundreds of
+recipients. Such fan-out wouldn&#39;t be hard with normal queue-triggered functions: simply send
+hundreds of messages. However, combining the results, if required for the next step
+of the workflow, is quite challenging.</p>
+<p>It&#39;s straightforward with a durable orchestrator:</p>
+<pre><code class="language-csharp">var emailSendingTasks =
+    recepients
+    .Select(to =&gt; context.CallActivityAsync&lt;bool&gt;(&quot;SendEmail&quot;, to))
+    .ToArray();
+
+var results = await Task.WhenAll(emailSendingTasks);
+
+if (results.All(r =&gt; r)) { /* ... */ }</code></pre>
+<p>Making hundreds of roundtrips to activities and back could cause numerous replays
+of the orchestrator. As an optimization, if multiple activity functions complete around the same 
+time, the orchestrator may internally process several messages as a batch and restart 
+the orchestrator function only once per batch.</p>
+<h2 id="other-concepts">Other Concepts</h2>
+<p>There are many more patterns enabled by Durable Functions. Here is a quick list to give you some perspective:</p>
+<ul>
+<li>Waiting for the <em>first</em> completed task in a collection (rather than <em>all</em> of them) using the <code>Task.WhenAny</code>
+method. Useful for scenarios like timeouts or competing actions.</li>
+<li>Pausing the workflow for a given period or until a deadline.</li>
+<li>Waiting for external events, e.g., bringing human interaction into the workflow.</li>
+<li>Running recurring workflows, when the flow repeats until a certain condition is met.</li>
+</ul>
+<p>Further explanation and code samples are in 
+<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable/durable-functions-overview">the docs</a>.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>I firmly believe that serverless applications utilizing a broad range of managed cloud services
+are highly beneficial to many companies, due to both rapid development process and
+the properly aligned billing model.</p>
+<p>Serverless tech is still young; more high-level architectural patterns need to emerge
+to enable expressive and composable implementations of large business systems.</p>
+<p>Azure Durable Functions suggests some of the possible answers. It combines the clarity and readability
+of sequential RPC-style code with the power and resilience of event-driven architecture.</p>
+<p><a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable/durable-functions-overview">The documentation</a>
+for Durable Functions is excellent, with plenty of examples and how-to guides.
+Learn it, try it for your real-life scenarios, and let me know your opinion&mdash;I&#39;m
+excited about the serverless future!</p>
+<h2 id="acknowledgments">Acknowledgments</h2>
+<p>Many thanks to <a href="https://twitter.com/kashimizMSFT">Katy Shimizu</a>, <a href="https://twitter.com/cgillum">Chris Gillum</a>,
+<a href="https://twitter.com/efleming18">Eric Fleming</a>, <a href="https://twitter.com/KevinJonesD">KJ Jones</a>,
+<a href="https://twitter.com/William_DotNet">William Liebenberg</a>, <a href="https://twitter.com/ATosato86">Andrea Tosato</a>
+for reviewing the draft of this article and their valuable contributions and suggestions. The community 
+around Azure Functions and Durable Functions is superb!</p>
+
+    </div>
+
+    
+    <p>
+      Like this post? Please share it!<br />
+      <table>
+        <tr>
+          <td>
+            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
+            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+          </td>
+          <td>
+            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
+            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
+          </td>
+          <td style="vertical-align: top; padding-top: 3px">
+            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
+          </td>
+        </tr>
+      </table>
+    </p>
+
+    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2018/12/making-sense-of-azure-durable-functions//index.html.md">Edit this post!</a><br />
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/workflows/'>Workflows</a>, <a href='/tags/azure-durable-functions/'>Azure Durable Functions</a>
+    </div>
+    
+</article>
+    <div id="me">
+    <p itemscope itemtype="http://data-vocabulary.org/Person">
+        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
+        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer</span>. I enjoy F#, C#, Javascript and SQL development, reasoning about distributed systems, data processing pipelines, cloud and web apps. I blog about my experience on this website.
+    </p>
+    <p>
+        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
+        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
+        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
+        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
+    </p>
+</div>
+    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
+<script type="text/javascript">
+    var disqus_shortname = 'mikhailio';
+    var disqus_url = 'https://mikhail.io/2018/12/making-sense-of-azure-durable-functions/';
+    var disqus_identifier = disqus_url;
+    var disqus_title = 'Making Sense of Azure Durable Functions';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+</div>
+<div class="container">
+    <div class="navbar navbar-footer">
+        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+    </div>
+</div>
+
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
+<script src="/vendor/prism.js"></script>
+<script src="/site.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-59218480-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
