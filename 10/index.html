@@ -26,8 +26,8 @@
     <link href="/favicon.ico?v=2" rel="shortcut icon">
 
     <!-- Bootstrap -->
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.80.6" />
     
@@ -78,6 +78,177 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">May 13th, 2016</div>
+    
+    <h1><a href='/2016/05/tweaking-immutable-objects-with-csharp-and-fody/'>Tweaking immutable objects with C# and Fody</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>Immutable data structures provide a lot of benefits
+to programmers, especially when representing domain 
+<a href="https://lostechies.com/joeocampo/2007/04/23/a-discussion-on-domain-driven-design-value-objects/">value objects</a>. 
+Immutability is an essential part of functional programming paradigm.
+The concept is useful in object-oriented languages too, but you have
+to pay some price to get this advantage.</p>
+<p>In C# immutable classes are usually implemented with read-only
+properties which are populated from constructor parameters. One of the 
+disadvantages of this approach is the verbosity of creating a copy of an object
+with one property value modified.</p>
+<h2 id="example">Example</h2>
+<p>Let&#39;s have a look at an illustration of this problem. Let&#39;s say we have a value
+type representing poker player statistics:</p>
+<pre><code class="language-csharp">public class PlayerStats
+{
+    public PlayerStats(
+        int hands, 
+        int daysOnline,
+        Money won, 
+        Money expectedValue)
+    {
+        this.Hands = hands;
+        this.DaysOnline = daysOnline;
+        this.Won = won;
+        this.ExpectedValue = expectedValue;
+    }
+
+    public int Hands { get; }
+    public int DaysOnline { get; }
+    public Money Won { get; }
+    public Money ExpectedValue { get; }
+}</code></pre>
+<p>We already see that it&#39;s quite verbose: basically we repeat each property name
+five times. But the issue I&#39;m discussing today is related to how we create 
+a new object based on another object. Let&#39;s say we need to make a copy of 
+a given statistics, but with <code>Hands</code> property increased by 1:</p>
+<pre><code class="language-csharp">var increasedHands = new PlayerStats(
+    existing.Hands + 1,
+    existing.DaysOnline,
+    existing.Won,
+    existing.ExpectedValue);</code></pre>
+<p>Not as simple as we could hope. Also, there is some room for mistakes here. For 
+instance, we could swap <code>Won</code> and <code>ExpectedValue</code> property calls
+and compiler won&#39;t let us know because the types are the same. So we probably
+want to use explicit constructor parameter names:</p>
+<pre><code class="language-csharp">var increasedHands = new PlayerStats(
+    hands: existing.Hands + 1,
+    daysOnline: existing.DaysOnline,
+    won: existing.Won,
+    expectedValue: existing.ExpectedValue);</code></pre>
+<p>But that leads to even more typing and repetition...</p>
+<h2 id="inspiration">Inspiration</h2>
+<p>F# is a functional-first language with immutability as first-class concept.
+In F# value objects are usually modelled with Records, here is our example
+reimplemented:</p>
+<pre><code class="language-fsharp">type PlayerStats = {
+    Hands: int
+    DaysOnline: int
+    Won: Money
+    ExpectedValue: Money
+}</code></pre>
+<p>Creation of new objects based on other objects is also solved properly in F#,
+thanks to the <strong><code>with</code></strong> keyword :</p>
+<pre><code class="language-fsharp">let increasedHands = { existing with Hands = existing.Hands + 1 }</code></pre>
+<p>All the properties are copied from the source record except for the ones
+explicitly mentioned in the expression.</p>
+<h2 id="defining-with-in-c-">Defining With in C#</h2>
+<p>There&#39;s no <strong><code>with</code></strong> operator in C#, but we can try to come up with an
+alternative. We can define some fluent methods which would change
+property values one by one (they don&#39;t change the original object, but
+return a copy with changed value):</p>
+<pre><code class="language-csharp">public PlayerStats WithHands(int hands) 
+{
+    return new PlayerStats(
+        hands: hands,
+        daysOnline: existing.DaysOnline,
+        won: existing.Won,
+        expectedValue: existing.ExpectedValue);
+}
+
+public PlayerStats WithDaysOnline(int daysOnline) { ... }
+public PlayerStats WithWon(Money won) { ... }
+public PlayerStats WithExpectedValue (Money expectedValue) { ... }</code></pre>
+<p>The method implementation is very tedious but the usage gets much cleaner:</p>
+<pre><code class="language-csharp">var increasedHands = existing.WithHands(existing.Hands + 1);</code></pre>
+<p>One way to avoid repetitive code is to generate it.</p>
+<h2 id="with-fody-plugin">With.Fody Plugin</h2>
+<p>In <a href="https://mikhail.io/2015/12/weaving-your-domain-classes-with-fody/">one of my previous posts</a>
+I described how C# value objects can be made less painful with 
+<a href="https://github.com/Fody/Fody">Fody</a> - a tool which changes your assembly at
+compilation time to provide some desired properties in automated and reliable
+fashion.</p>
+<p>Please welcome the new Fody plugin <a href="https://github.com/mikhailshilkov/With.Fody"><strong>With.Fody</strong></a> 
+which auto-implements <code>With</code> method bodies for C# immutable classes.</p>
+<p>Here is how to use this plugin for our imaginary example.</p>
+<p>First, add a reference to NuGet pakages <code>Fody</code> and <code>With.Fody</code>.</p>
+<p>Then, keep the <code>PlayerStats</code> class definition, but get rid of the bodies
+of <code>WithXyz</code> methods. Keep the signature but return something trivial like
+<code>null</code> or <code>this</code>:</p>
+<pre><code class="language-csharp">public PlayerStats WithHands(int hands) =&gt; this;
+public PlayerStats WithDaysOnline(int daysOnline) =&gt; this;
+public PlayerStats WithWon(Money won) =&gt; this;
+public PlayerStats WithExpectedValue (Money expectedValue) =&gt; this;</code></pre>
+<p>Compile the project and you will see the following line in Build Output:</p>
+<pre><code>&gt;      Fody/With:   Added method &#39;With&#39; to type &#39;PlayerStats&#39;.</code></pre><p>It means that the method bodies were re-implemented with calls to 
+class constructor with proper parameter values.</p>
+<p>The method stubs are needed to satisfy code completion tools like 
+IntelliSense and Resharper, otherwise we could skip them altogether.</p>
+<h2 id="single-with-for-multiple-properties">Single With() for Multiple Properties</h2>
+<p>In case you avoid <a href="https://mikhail.io/2015/08/units-of-measurement-in-domain-design/">Primitive Obsession</a>
+antipattern, you will often end up with classes which have unique types of 
+properties, e.g.</p>
+<pre><code class="language-csharp">public class TripProfile
+{
+    public TripProfile(
+        Distance totalDistance,
+        Speed averageSpeed,
+        Volume fuelConsumed)
+    {
+        this.TotalDistance = totalDistance;
+        this.AverageSpeed = averageSpeed;
+        this.FuelConsumed = fuelConsumed;
+    }
+
+    public Distance TotalDistance { get; }
+    public Speed AverageSpeed { get; }
+    public Volume FuelConsumed { get; }
+}</code></pre>
+<p>In this case, the plugin can be smart enough to figure out which property
+you want to modify just by looking at the type of the argument. The single stub
+method can look like this:</p>
+<pre><code class="language-csharp">public TripProfile With&lt;T&gt;(T value) =&gt; this;</code></pre>
+<p>This would get compiled into 3 strongly typed <code>With</code> methods with <code>Distance</code>,
+<code>Speed</code> and <code>Volume</code> arguments respectively. Resharper is still happy. And
+if you make a mistake and try to call the generic <code>With</code> method with an
+argument of wrong type (say <code>int</code>), the compiler will give you an error.</p>
+<p>It is safe to call <code>With</code> methods in the same assembly where the class is defined:
+the calls get adapted to the real implementation automatically.</p>
+<h2 id="how-to-get-started-with-your-classes">How to Get Started with Your Classes</h2>
+<p>Here are the requirements for the classes to be picked up by <strong><code>Fody.With</code></strong>:</p>
+<ol>
+<li>Have a single constructor.</li>
+<li>The constructor should have more than one argument.</li>
+<li>For each constructor agrument, there must be a gettable property with
+same name (case insensitive).</li>
+<li>At least one <code>With</code> stub must be defined as described above.</li>
+</ol>
+<p>You can check out more examples, look at the source code or raise an issue in
+<a href="https://github.com/mikhailshilkov/With.Fody">With.Fody github repository</a>.</p>
+<p>Give it a try and let me know what your think!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/immutability/'>Immutability</a>, <a href='/tags/code-generation/'>Code Generation</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Apr 15th, 2016</div>
     
@@ -781,124 +952,6 @@ into your <code>bundles.json</code>:</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/leaflet/'>Leaflet</a>, <a href='/tags/typescript/'>Typescript</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/maps/'>Maps</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Mar 1st, 2016</div>
-    
-    <h1><a href='/2016/03/building-a-poker-bot-mouse-movements/'>Building a Poker Bot: Mouse Movements</a></h1>
-    
-
-    
-
-    <div class="post-content">
-        <p><em>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software 
-to play in online poker rooms. I&#39;m building the bot with .NET framework and F# language which makes the task relatively 
-easy and very enjoyable. Here are the previous parts:</em></p>
-<ul>
-<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
-<li><a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
-</ul>
-<p>In this short post I write about the last step of the poker bot flow: clicking
-the buttons. So, the screen is already recognized, the hand is understood,
-the decisions are made and now the bot needs to execute the actions. Except for
-the bet sizing, this simply means clicking the right button at the poker table.</p>
-<p>The stealthiness of such clicks is a valid concern here. Ideally, we want all
-the mouse movements to look as similar as possible to the movements produced
-by a human being. For this post, I will simplify the task to the following steps:</p>
-<ul>
-<li>Identify where the mouse cursor is right now</li>
-<li>Decide where the mouse should be moved to</li>
-<li>Gradually move the mouse cursor</li>
-<li>Click the button</li>
-</ul>
-<h2 id="cursor-position">Cursor Position</h2>
-<p>It&#39;s really easy to understand where the mouse cursor currently is: just
-use <code>Control.MousePosition</code> property from the standard library:</p>
-<pre><code class="language-fsharp">let currentPosition () = 
-  let mp = System.Windows.Forms.Control.MousePosition
-  (mp.X, mp.Y)</code></pre>
-<p>Note that your application doesn&#39;t have to be based on WinForms, just reference
-the required assembly.</p>
-<h2 id="move-the-cursor">Move the Cursor</h2>
-<p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a> 
-library to control the mouse and the keyboard programmatically. It uses some
-weird coordinate system, so the function to move the mouse cursor looks like this:</p>
-<pre><code class="language-fsharp">let simulator = new InputSimulator()
-
-let moveTo x y =
-  let toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; float)
-  let toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; float)
-  simulator.Mouse.MoveMouseTo(toX, toY)</code></pre>
-<p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at 
-the top-left corner of the screen.</p>
-<h2 id="move-it-smoothly">Move It Smoothly</h2>
-<p>Now we want to simulate the human-like movements. It won&#39;t be perfect, but
-at least it should look decent. For this gradual movement function I used
-a nice F# feature called asynchronous workflows. Effectively, it looks like
-a loop with async sleep statements inside.</p>
-<pre><code class="language-fsharp">let moveToWorkflow step (toX, toY) = async {
-  let (fromX, fromY) = currentPosition()
-  let count = Math.Max(10, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / 20)
-  for i = 0 to count do
-    let x = step fromX toX count i |&gt; float
-    let y = step fromY toY count i |&gt; float
-    moveTo x y
-    do! Async.Sleep 3
-  }</code></pre>
-<p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
-Basically, it calculates a coordinate for n-th step of the movement. We can
-plug different implementations of this function to find the right balance of
-the movement style. Here is the simplest linear implementation:</p>
-<pre><code class="language-fsharp">let linearStep from until max i =
-  from + (until - from) * i / max</code></pre>
-<p>The sinus-based implementation is a bit more verbose because of float-int 
-conversions:</p>
-<pre><code class="language-fsharp">let sinStep (from:int) (until:int) (max:int) (index:int) =
-  let fromf = from |&gt; float
-  let untilf = until |&gt; float
-  let maxf = max |&gt; float
-  let indexf = index |&gt; float
-  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int</code></pre>
-<p>The following animation illustrates the concept: </p>
-<svg width="778" height="190" viewbox="0 0 500 190">
-  <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
-  <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
-  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png"></image>
-
-  <animate xlink:href="#mouse1" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" calcmode="discrete" id="img-anim1"></animate>
-  <animate xlink:href="#mouse2" attributename="x" from="0" to="0" values="0;450;0" keytimes="0;0.5;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"></animate>
-  <animate xlink:href="#mouse3" attributename="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keytimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatcount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"></animate>  
-</svg>
-
-<p>The top mouse cursor just
-jumps from left to right and back (no animation). The middle cursor moves with
-linear speed (<code>linearStep</code> function above). The bottom cursor moves based on
-the <code>sinStep</code> function derived from sinus of time.</p>
-<h2 id="click-the-button">Click the Button</h2>
-<p>A button is a rectangle and we want to click a random point inside it. So, all
-we need is to pick random coordinates, move the mouse there and send a 
-click event via the simulator:</p>
-<pre><code class="language-fsharp">let clickButton (minX, minY, maxX, maxY) =
-  let r = new Random()
-  let p = (r.Next(minX, maxX), r.Next(minY, maxY))
-  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
-  simulator.Mouse.LeftButtonClick()</code></pre>
-<h2 id="demo-time">Demo Time</h2>
-<p>Here is the demo of the mouse movements:</p>
-<p><img src="/2016/03/building-a-poker-bot-mouse-movements//mouseclicking.gif" alt="Mouse clicking the button"></p>
-<p>It looks fun, doesn&#39;t it? The full code for the mouse movements can be found in 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/poker-bot/'>Poker Bot</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/human-like-behavior/'>Human-like Behavior</a>
     </div>
     
 </article>

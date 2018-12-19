@@ -3,13 +3,326 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2018-12-10T13:01:58.664Z</updated>
+    <updated>2018-12-19T21:31:36.905Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>A Fairy Tale of F# and Durable Functions</title>
+        <link href="https://mikhail.io/2018/12/fairy-tale-of-fsharp-and-durable-functions/"/>
+        <updated>2018-12-20T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2018-12-20,/2018/12/fairy-tale-of-fsharp-and-durable-functions/</id>
+        <content type="html"><![CDATA[<p><em>The post is a part of 
+<a href="https://sergeytihon.com/2018/10/22/f-advent-calendar-in-english-2018/">F# Advent Calendar 2018</a>.
+It&#39;s Christmas time!</em></p>
+<p>This summer I was hired by the office of Santa Claus. Santa is not just a fairy tale
+character on his own&mdash;he leads a large organization that supplies gifts and happiness to millions of 
+children around the globe. Like any large organization, Santa&#39;s office employs an impressive number of 
+IT systems. </p>
+<p>As part of its IT modernization
+effort, North Pole HQ restructured the whole supply chain of Christmas gifts. Many legacy components were moved from
+a self-managed data center at the North Pole&mdash;although the cooling is quite cheap there&mdash;to 
+Azure cloud. Azure was an easy sell since Santa&#39;s techy elves use Office 365, SharePoint and
+the .NET development stack.</p>
+<p>One of the goals of the redesign was to leverage managed cloud services and serverless architecture
+wherever possible. Santa has no spare elves to keep reinventing IT wheels.</p>
+<h2 id="wish-fulfillment-service">Wish Fulfillment Service</h2>
+<p>My assignment was to redesign the <strong>Wish Fulfillment</strong> service. The service receives
+wish lists from clients (they call children &quot;clients&quot;):</p>
+<p><img src="https://mikhail.io/2018/12/fairy-tale-of-fsharp-and-durable-functions/wish-list.png" alt="Christmas Wish List"></p>
+<center class="img-caption">Christmas Card with a Wish List &copy; my son Tim</center>
+
+<p>Luckily, the list is already parsed by some other service, and also contains the metadata about
+the kid&#39;s background (age, gender, and so on) and preferences.</p>
+<p>For each item in the list, our service calls the <strong>Matching</strong> service, which uses machine learning,
+Azure Cognitive services, and a bit of magic to determine the actual products (they call gifts &quot;products&quot;)
+that best fit the client&#39;s expressed desire and profile. For instance, my son&#39;s wish for &quot;LEGO Draak&quot; matches
+to &quot;LEGO NINJAGO Masters of Spinjitzu Firstbourne Red Dragon&quot;. You get the point.</p>
+<p>There might be several matches for each desired item, and each result has an estimate of how
+likely it is to fulfill the original request and make the child happy.</p>
+<p>All the matching products are combined and sent over to the <strong>Gift Picking</strong> service. Gift Picking selects one
+of the options based on its price, demand, confidence level, and the Naughty-or-Nice score of the client.</p>
+<p>The last step of the workflow is to <strong>Reserve</strong> the selected gift in the warehouse and shipping system
+called &quot;Santa&#39;s Archive of Products&quot;, also referred to as SAP.</p>
+<p>Here is the whole flow in one picture:</p>
+<p><img src="https://mikhail.io/2018/12/fairy-tale-of-fsharp-and-durable-functions/gift-fulfillment-service.png" alt="Gift Fulfillment Workflow"></p>
+<center class="img-caption">Gift Fulfillment Workflow</center>
+
+<p>How should we implement this service?</p>
+<h2 id="original-design">Original Design</h2>
+<p>The Wish Fulfillment service should run in the cloud and integrate with other services. It
+should be able to process millions of requests in December and stay very cheap to run during the
+rest of the year. We decided to leverage serverless architecture with 
+<a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-overview">Azure Functions</a> on the 
+<a href="https://azure.microsoft.com/en-us/pricing/details/functions/">Consumption Plan</a>. Serverless
+Functions are:</p>
+<ul>
+<li><p><strong>Fully Managed</strong>: the cloud provider provisions resources, scales them based on the load, takes
+care of uptime and reliability;</p>
+</li>
+<li><p><strong>Event-Driven</strong>: for each serverless Function you have to define a specific trigger&mdash;the 
+event type which causes it to run, be it an HTTP endpoint or a queue message;</p>
+</li>
+<li><p><strong>Changed per Execution</strong>: it costs nothing to run the application if there is no usage,
+and the cost of busy applications is proportional to the actual resource utilization.</p>
+</li>
+</ul>
+<p>Here is the diagram of the original design:</p>
+<p><img src="https://mikhail.io/2018/12/fairy-tale-of-fsharp-and-durable-functions/azure-functions-diagram.png" alt="Workflow Design with Azure Functions and Storage Queues"></p>
+<center class="img-caption">Workflow Design with Azure Functions and Storage Queues</center>
+
+<p>We used Azure Storage Queues to keep the whole flow asynchronous and more resilient to failures
+and load fluctuation.</p>
+<p>This design would mostly work, but we found a couple of problems with it:</p>
+<ul>
+<li><p>The Functions were manually wired via storage queues and corresponding bindings. The workflow
+was spread over infrastructure definition and thus was hard to grasp.</p>
+</li>
+<li><p>We had to pass all items of each wish list into a single invocation of Matching Function,
+otherwise combining the matching results from multiple queue messages would be tricky. </p>
+</li>
+<li><p>Although not in scope for the initial release, there were plans to add manual elf 
+intervention for poorly matched items. This feature would require a change in the flow design:
+it&#39;s not trivial to fit long-running processes into the pipeline.</p>
+</li>
+</ul>
+<p>To improve on these points, we decided to try 
+<a href="https://docs.microsoft.com/azure/azure-functions/durable/durable-functions-overview">Durable Functions</a>&mdash;a library 
+that brings workflow orchestration to Azure Functions. It introduces several tools to define stateful,
+potentially long-running operations, and handles a lot of the mechanics of reliable communication 
+and state management behind the scenes.</p>
+<p>If you want to know more about what Durable Functions are and why they might be a good idea,
+I invite you to read my article 
+<a href="https://mikhail.io/2018/12/making-sense-of-azure-durable-functions/">Making Sense of Azure Durable Functions</a>
+(20 minutes read).</p>
+<p>For the rest of this post, I will walk you through the implementation of the Wish Fulfillment workflow
+with Azure Durable Functions.</p>
+<h2 id="domain-model">Domain Model</h2>
+<p>A good design starts with a decent domain model. Luckily, the project was built with F#&mdash;the language with
+the richest domain modeling capabilities in the .NET ecosystem.</p>
+<h3 id="types">Types</h3>
+<p>Our service is invoked with a wish list as the input parameter, so let&#39;s start with the type <code>WishList</code>:</p>
+<pre><code class="language-fsharp">type WishList = 
+{
+    Kid: Customer
+    Wishes: string list
+}</code></pre>
+<p>It contains information about the author of the list and recognized &quot;order&quot; items. <code>Customer</code> is a custom type;
+for now, it&#39;s not important what&#39;s in it.</p>
+<p>For each wish we want to produce a list of possible matches:</p>
+<pre><code class="language-fsharp">type Match = 
+{
+    Product: Product
+    Confidence: Probability
+}</code></pre>
+<p>The product is a specific gift option from Santa&#39;s catalog, and the confidence is a number 
+from <code>0.0</code> to <code>1.0</code> of how strong the match is.</p>
+<p>The end goal of our service is to produce a <code>Reservation</code>:</p>
+<pre><code class="language-fsharp">type Reservation = 
+{
+    Kid: Customer
+    Product: Product
+}</code></pre>
+<p>It represents the exact product selection for the specific kid.</p>
+<h3 id="functions">Functions</h3>
+<p>The Wish Fulfillment service needs to perform three actions, which can be
+modeled with three strongly-typed asynchronous functions.</p>
+<p><em>Note: I use lowercase &quot;function&quot; for F# functions and capitalize &quot;Function&quot; for Azure Functions
+throughout the article to minimize confusion.</em></p>
+<p>The <strong>first action</strong> finds matches for each wish:</p>
+<pre><code class="language-fsharp">// string -&gt; Async&lt;Match list&gt;
+let findMatchingGift (wish: string) = async {
+    // Call a custom machine learning model
+    // The real implementation uses the Customer profile to adjust decisions by age, etc.
+    // but we&#39;ll keep the model simple for now.
+}</code></pre>
+<p>The first line of all my function snippets shows the function type. In this case, it&#39;s a mapping 
+from the text of the child&#39;s wish (<code>string</code>) to a list of matches (<code>Match list</code>).</p>
+<p>The <strong>second action</strong> takes the <em>combined</em> list of all matches of all wishes and picks one. Its
+real implementation is Santa&#39;s secret sauce, but my model just picks the one with the highest
+confidence level:</p>
+<pre><code class="language-fsharp">// Match list -&gt; Product
+let pickGift (candidates: Match list) =
+    candidates
+    |&gt; List.sortByDescending (fun x -&gt; x.Confidence)
+    |&gt; List.head
+    |&gt; (fun x -&gt; x.Product)</code></pre>
+<p>Given the picked <code>gift</code>, the reservation is merely <code>{ Kid = wishlist.Kid; Product = gift }</code>,
+not worthy of a separate action.</p>
+<p>The <strong>third action</strong> registers a reservation in the SAP system:</p>
+<pre><code class="language-fsharp">// Reservation -&gt; Async&lt;unit&gt;
+let reserve (reservation: Reservation) = async {
+    // Call Santa&#39;s Archive of Products
+}</code></pre>
+<h3 id="workflow">Workflow</h3>
+<p>The fulfillment service combines the three actions into one workflow:</p>
+<pre><code class="language-fsharp">// WishList -&gt; Async&lt;Reservation&gt;
+let workflow (wishlist: WishList) = async {
+
+    // 1. Find matches for each wish 
+    let! matches = 
+        wishlist.Wishes
+        |&gt; List.map findMatchingGift
+        |&gt; Async.Parallel
+
+    // 2. Pick one product from the combined list of matches
+    let gift = pickGift (List.concat matches)
+
+    // 3. Register and return the reservation
+    let reservation = { Kid = wishlist.Kid; Product = gift }
+    do! reserve reservation
+    return reservation
+}</code></pre>
+<p>The workflow implementation is a nice and concise summary of the actual domain flow.</p>
+<p>Note that the Matching service is called multiple times in parallel, and then
+the results are easily combined by virtue of the <code>Async.Parallel</code> F# function.</p>
+<p>So how do we translate the domain model to the actual implementation on top of
+serverless Durable Functions?</p>
+<h2 id="classic-durable-functions-api">Classic Durable Functions API</h2>
+<p>C# was the first target language for Durable Functions; Javascript is now fully supported too.</p>
+<p>F# wasn&#39;t initially declared as officially supported, but since F# runs on top of the same .NET runtime
+as C#, it has always worked. I have a blog post about
+<a href="https://mikhail.io/2018/02/azure-durable-functions-in-fsharp/">Azure Durable Functions in F#</a> and
+have added <a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/fsharp">F# samples</a>
+to the official repository.</p>
+<p>Here are two examples from that old F# code of mine (they have nothing to do with our 
+gift fulfillment domain):</p>
+<pre><code class="language-fsharp">// 1. Simple sequencing of activities
+let Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
+  let! hello1 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Tokyo&quot;)
+  let! hello2 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;Seattle&quot;)
+  let! hello3 = context.CallActivityAsync&lt;string&gt;(&quot;E1_SayHello&quot;, &quot;London&quot;)
+  return [hello1; hello2; hello3]
+}     
+
+// 2. Parallel calls snippet
+let tasks = Array.map (fun f -&gt; context.CallActivityAsync&lt;int64&gt;(&quot;E2_CopyFileToBlob&quot;, f)) files
+let! results = Task.WhenAll tasks</code></pre>
+<p>This code works and does its job, but doesn&#39;t look like idiomatic F# code:</p>
+<ul>
+<li>No strong typing: Activity Functions are called by name and with types manually specified</li>
+<li>Functions are not curried, so partial application is hard</li>
+<li>The need to pass the <code>context</code> object around for any Durable operation</li>
+</ul>
+<p>Although not shown here, the other samples read input parameters, handle errors, and enforce
+timeouts&mdash;all look too C#-y.</p>
+<h2 id="better-durable-functions">Better Durable Functions</h2>
+<p>Instead of following the sub-optimal route, we implemented the service with a more F#-idiomatic API.
+I&#39;ll show the code first, and then I&#39;ll explain its foundation.</p>
+<p>The implementation consists of three parts:</p>
+<ul>
+<li><strong>Activity</strong> Functions&mdash;one per action from the domain model</li>
+<li><strong>Orchestrator</strong> Function defines the workflow</li>
+<li><strong><a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-triggers-bindings">Azure Functions bindings</a></strong> 
+to instruct how to run the application in the cloud</li>
+</ul>
+<h3 id="activity-functions">Activity Functions</h3>
+<p>Each Activity Function defines one step of the workflow: Matching, Picking, and Reserving. We
+simply reference the F# functions of those actions in one-line definitions:</p>
+<pre><code class="language-fsharp">let findMatchingGiftActivity = Activity.defineAsync &quot;FindMatchingGift&quot; findMatchingGift
+let pickGiftActivity = Activity.define &quot;PickGift&quot; pickGift
+let reserveActivity = Activity.defineAsync &quot;Reserve&quot; reserve</code></pre>
+<p>Each activity is defined by a name and a function.</p>
+<h3 id="orchestrator">Orchestrator</h3>
+<p>The Orchestrator calls Activity Functions to produce the desired outcome of the service. The code
+uses a custom computation expression:</p>
+<pre><code class="language-fsharp">let workflow wishlist = orchestrator {
+    let! matches = 
+        wishlist.Wishes
+        |&gt; List.map (Activity.call findMatchingGiftActivity)
+        |&gt; Activity.all
+
+    let! gift = Activity.call pickGiftActivity (List.concat matches)
+
+    let reservation = { Kid = wishlist.Kid; Product = gift }
+    do! Activity.call reserveActivity reservation
+    return reservation
+}</code></pre>
+<p>Notice how closely it matches the workflow definition from our domain model:</p>
+<p><img src="https://mikhail.io/2018/12/fairy-tale-of-fsharp-and-durable-functions/durable-orchestrator-vs-async.png" alt="Async Function vs. Durable Orchestrator"></p>
+<center class="img-caption">Async function vs. Durable Orchestrator</center>
+
+<p>The only differences are:</p>
+<ul>
+<li><code>orchestrator</code> computation expression is used instead of <code>async</code> because multi-threading is
+not allowed in Orchestrators</li>
+<li><code>Activity.call</code> replaces of direct invocations of functions</li>
+<li><code>Activity.all</code> substitutes <code>Async.Parallel</code></li>
+</ul>
+<h3 id="hosting-layer">Hosting layer</h3>
+<p>An Azure Function trigger needs to be defined to host any piece of code as a cloud Function. This can
+be done manually in <code>function.json</code>, or via trigger generation from .NET attributes. In my case
+I added the following four definitions:</p>
+<pre><code class="language-fsharp">[&lt;FunctionName(&quot;FindMatchingGift&quot;)&gt;]
+let FindMatchingGift([&lt;ActivityTrigger&gt;] wish) = 
+    Activity.run findMatchingGiftActivity wish
+
+[&lt;FunctionName(&quot;PickGift&quot;)&gt;]
+let PickGift([&lt;ActivityTrigger&gt;] matches) = 
+    Activity.run pickGiftActivity matches
+
+[&lt;FunctionName(&quot;Reserve&quot;)&gt;]
+let Reserve([&lt;ActivityTrigger&gt;] wish) = 
+    Activity.run reserveActivity wish
+
+[&lt;FunctionName(&quot;WishlistFulfillment&quot;)&gt;]
+let Workflow ([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) =
+    Orchestrator.run (workflow, context)</code></pre>
+<p>The definitions are very mechanical and, again, strongly typed (apart from Functions&#39; names).</p>
+<h3 id="ship-it-">Ship It!</h3>
+<p>These are all the bits required to get our Durable Wish Fulfillment service up and running.
+From this point, we can leverage all the existing tooling of Azure Functions:</p>
+<ul>
+<li>Visual Studio and Visual Studio Code for development and debugging</li>
+<li><a href="https://github.com/Azure/azure-functions-core-tools">Azure Functions Core Tools</a> to run
+the application locally and deploy it to Azure</li>
+<li>The latest version of the Core Tools has dedicated commands to 
+<a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable/durable-functions-instance-management">manage instances of Durable Functions</a></li>
+</ul>
+<p>There is a learning curve in the process of adopting the serverless architecture. However, a small
+project like ours is a great way to do the learning. It sets Santa&#39;s IT department on the road
+to success, and children will get better gifts more reliably!</p>
+<h2 id="durablefunctions-fsharp">DurableFunctions.FSharp</h2>
+<p>The above code was implemented with the library 
+<a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp">DurableFunctions.FSharp</a>. I created
+this library as a thin F#-friendly wrapper around Durable Functions.</p>
+<p>Frankly speaking, the whole purpose of this article is to introduce the library and make you curious
+enough to give it a try. DurableFunctions.FSharp has several pieces in the toolbox:</p>
+<ul>
+<li><p><code>OrchestratorBuilder</code> and <code>orchestrator</code> computation expression which encapsulates proper 
+usage of <code>Task</code>-based API of <code>DurableOrchestrationContext</code></p>
+</li>
+<li><p><code>Activity</code> generic type to define activities as first-class values</p>
+</li>
+<li><p><code>Activity</code> module with helper functions to call activities</p>
+</li>
+<li><p>Adapters for Azure Functions definition for <code>Async</code> and <code>Orchestrator</code></p>
+</li>
+<li><p>API of the original Durable Extensions is still available, so you can fall back to them if needed</p>
+</li>
+</ul>
+<p>In my opinion, F# is a great language to develop serverless Functions. The simplicity of working with functions,
+immutability by default, strong type system, focus on data pipelines are all useful in the world of
+event-driven cloud applications.</p>
+<p>Azure Durable Functions brings higher-level abstractions to compose workflows out of simple building
+blocks. The goal of DurableFunctions.FSharp is to make such composition natural and enjoyable for F#
+developers.</p>
+<p><a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp#getting-started">Getting Started</a> 
+is as easy as creating a new .NET Core project and referencing a NuGet package. </p>
+<p>I&#39;d love to get as much feedback as possible! Leave comments below, create issues
+on the <a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp">GitHub repository</a>, or open a PR. 
+This would be super awesome!</p>
+<p>Happy coding, and Merry Christmas!</p>
+<h2 id="acknowledgments">Acknowledgments</h2>
+<p>Many thanks to <a href="https://twitter.com/kashimizMSFT">Katy Shimizu</a>, <a href="https://twitter.com/DevonBurriss">Devon Burriss</a>,
+<a href="https://twitter.com/iwasdavid">Dave Lowe</a>, <a href="https://twitter.com/cgillum">Chris Gillum</a>
+for reviewing the draft of this article and their valuable contributions and suggestions.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Making Sense of Azure Durable Functions</title>
@@ -2439,98 +2752,6 @@ provisioning of cold ones. </p>
 <p>If such optimizations happen, I&#39;ll be glad to re-run my tests and report any noticeable
 improvements.</p>
 <p>Stay tuned for more serverless perf goodness!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Azure Functions: Cold Starts in Numbers</title>
-        <link href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/"/>
-        <updated>2018-04-24T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2018-04-24,/2018/04/azure-functions-cold-starts-in-numbers/</id>
-        <content type="html"><![CDATA[<p>Auto-provisioning and auto-scalability are the killer features of Function-as-a-Service
-cloud offerings, and Azure Functions in particular.</p>
-<p>One drawback of such dynamic provisioning is a phenomenon called &quot;Cold Start&quot;. Basically,
-applications that haven&#39;t been used for a while take longer to startup and to handle the
-first request.</p>
-<p>The problem is nicely described in 
-<a href="https://blogs.msdn.microsoft.com/appserviceteam/2018/02/07/understanding-serverless-cold-start/">Understanding Serverless Cold Start</a>,
-so I won&#39;t repeat it here. I&#39;ll just copy a picture from that article:</p>
-<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstart.jpg" alt="Cold Start"></p>
-<p>Based on the 4 actions which happen during a cold start, we may guess that the following factors
-might affect the cold start duration:</p>
-<ul>
-<li>Language / execution runtime</li>
-<li>Azure Functions runtime version</li>
-<li>Application size including dependencies</li>
-</ul>
-<p>I ran several sample functions and tried to analyze the impact of these factors on cold start time.</p>
-<h2 id="methodology">Methodology</h2>
-<p>All tests were run against HTTP Functions, because that&#39;s where cold start matters the most.</p>
-<p>All the functions were just returning &quot;Hello, World&quot; taking the &quot;World&quot; value from the query string.
-Some functions were also loading extra dependencies, see below.</p>
-<p>I did not rely on execution time reported by Azure. Instead, I measured end-to-end duration from
-client perspective. All calls were made from within the same Azure region, so network latency should 
-have minimal impact:</p>
-<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//test-setup.png" alt="Test Setup"></p>
-<h2 id="when-does-cold-start-happen-">When Does Cold Start Happen?</h2>
-<p>Obviously, cold start happens when the very first request comes in. After that request is processed,
-the instance is kept alive in case subsequent requests arrive. But for how long?</p>
-<p>The following chart gives the answer. It shows values of normalized request durations across
-different languages and runtime versions (Y axis) depending on the time since the previous
-request in minutes (X axis):</p>
-<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstart-threshold.png" alt="Cold Start Threshold"></p>
-<p>Clearly, an idle instance lives for 20 minutes and then gets recycled. All requests after 20 minutes
-threshold hit another cold start.</p>
-<h2 id="how-do-languages-compare-">How Do Languages Compare?</h2>
-<p>I&#39;ll start with version 1 of Functions runtime, which is the production-ready GA version as of today.</p>
-<p>I&#39;ve written Hello World HTTP function in all GA languages: C#, F# and Javascript, and I added Python
-for comparison. C#/F# were executed both in the form of script, and as a precompiled .NET assembly.</p>
-<p>The following chart shows some intuition about the cold start duration per language. The languages
-are ordered based on mean response time, from lowest to highest. 65% of request
-durations are inside the vertical bar (1-sigma interval) and 95% are inside the vertical line (2-sigma):</p>
-<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v1.png" alt="Cold Start V1 per Language"></p>
-<p>Somewhat surprisingly, precompiled .NET is exactly on par with Javascript. Javascript &quot;Hello World&quot; 
-is really lightweight, so I expected it to win, but I was wrong.</p>
-<p>C# Script is slower but somewhat comparable. F# Script presented a really negative surprise though: it&#39;s much
-slower. It&#39;s even slower than experimental Python support where no performance optimization would
-be expected at all!</p>
-<h2 id="functions-runtime-v1-vs-v2">Functions Runtime: V1 vs V2</h2>
-<p>Version 2 of Functions runtime is currently in preview and not suitable for production load. That
-probably means they haven&#39;t done too much performance optimization, especially from cold start
-standpoint.</p>
-<p>Can we see this on the chart? We sure can:</p>
-<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v2.png" alt="Cold Start V1 vs V2"></p>
-<p>V2 is massively slower. The fastest cold starts are around 6 seconds, but the slowest can come
-up to 40-50 seconds.</p>
-<p>Javascript is again on-par with precompiled .NET. </p>
-<p>Java is noticeably slower, even though the
-deployment package is just 33kB, so I assume I didn&#39;t overblow it.</p>
-<h2 id="does-size-matter-">Does Size Matter?</h2>
-<p>OK, enough of Hello World. A real-life function might be more heavy, mainly because it would
-depend on other third-party libraries.</p>
-<p>To simulate such scenario, I&#39;ve measured cold starts for a .NET function with references to 
-Entity Framework, Automapper, Polly and Serilog.</p>
-<p>For Javascript I did the same, but referenced Bluebird, lodash and AWS SDK.</p>
-<p>Here are the results:</p>
-<p><img src="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-dependencies.png" alt="Cold Start Dependencies"></p>
-<p>As expected, the dependencies slow the loading down. You should keep your Functions lean,
-otherwise you will pay in seconds for every cold start.</p>
-<p>An important note for Javascript developers: the above numbers are for Functions deployed
-after <a href="https://github.com/Azure/azure-functions-pack"><code>Funcpack</code></a> preprocessor. The package
-contained the single <code>js</code> file with Webpack-ed dependency tree. Without that, the mean
-cold start time of the same function is 20 seconds!</p>
-<h2 id="conclusions">Conclusions</h2>
-<p>Here are some lessons learned from all the experiments above:</p>
-<ul>
-<li>Be prepared for 1-3 seconds cold starts even for the smallest Functions</li>
-<li>Stay on V1 of runtime until V2 goes GA unless you don&#39;t care about perf</li>
-<li>.NET precompiled and Javascript Functions have roughly same cold start time</li>
-<li>Minimize the amount of dependencies, only bring what&#39;s needed</li>
-</ul>
-<p>Do you see anything weird or unexpected in my results? Do you need me to dig deeper on other aspects?
-Please leave a comment below or ping me on twitter, and let&#39;s sort it all out.</p>
-<p>There is a follow-up post available: 
-<a href="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load/">Cold Starts Beyond First Request in Azure Functions</a></p>
 ]]></content>
     </entry>
     

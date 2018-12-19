@@ -26,8 +26,8 @@
     <link href="/favicon.ico?v=2" rel="shortcut icon">
 
     <!-- Bootstrap -->
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
     <link href="/vendor/prism.css" rel="stylesheet" media="screen">
+    <link href="/styles/site.css" rel="stylesheet" media="screen">
 
     <meta name="generator" content="DocPad v6.80.6" />
     
@@ -78,6 +78,154 @@
 </div>
 <div class="container">
     
+    <article class="post">
+    <div class="post-date">Aug 2nd, 2018</div>
+    
+    <h1><a href='/2018/08/aws-lambda-warmer-as-pulumi-component/'>AWS Lambda Warmer as Pulumi Component</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>Out of curiosity, I&#39;m currently investigating cold starts of Function-as-a-Service platforms of major cloud providers. Basically,
+if a function is not called for several minutes, the cloud instance behind it might be recycled, and then the next request will
+take longer because a new instance will need to be provisioned.</p>
+<p>Recently, Jeremy Daly <a href="https://www.jeremydaly.com/lambda-warmer-optimize-aws-lambda-function-cold-starts/">posted</a> a nice
+article about the proper way to keep AWS Lambda instances &quot;warm&quot; to (mostly) prevent cold starts with minimal overhead.
+Chris Munns <a href="https://twitter.com/chrismunns/status/1017777028274294784">endorsed</a> the article, so we know it&#39;s the right way.</p>
+<p>The amount of actions to be taken is quite significant:</p>
+<ul>
+<li>Define a CloudWatch event which would fire every 5 minutes</li>
+<li>Bind this event as another trigger for your Lambda</li>
+<li>Inside the Lambda, detect whether current invocation is triggered by our CloudWatch event</li>
+<li>If so, short-circuit the execution and return immediately; otherwise, run the normal workload</li>
+<li>(Bonus point) If you want to keep multiple instances alive, do some extra dancing with calling itself N times in parallel,
+provided by an extra permission to do so.</li>
+</ul>
+<h2 id="pursuing-reusability">Pursuing Reusability</h2>
+<p>To simplify this for his readers, Jeremy was so kind to</p>
+<ul>
+<li>Create an NPM package which you can install and then call from a function-to-be-warmed</li>
+<li>Provide SAM and Serverless Framework templates to automate Cloud Watch integration</li>
+</ul>
+<p>Those are still two distinct steps: writing the code (JS + NPM) and provisioning the cloud resources (YAML + CLI). There are some
+drawbacks to that:</p>
+<ul>
+<li>You need to change two parts, which don&#39;t look like each other</li>
+<li>They have to work in sync, e.g. Cloud Watch event must provide the right payload for the handler</li>
+<li>There&#39;s still some boilerplate for every new Lambda</li>
+</ul>
+<h2 id="pulumi-components">Pulumi Components</h2>
+<p>Pulumi takes a different approach. You can blend the application code and infrastructure management code
+into one cohesive cloud application.</p>
+<p>Related resources can be combined together into reusable components, which hide repetitive stuff behind code abstractions.</p>
+<p>One way to define an AWS Lambda with Typescript in Pulumi is the following:</p>
+<pre><code class="language-typescript">const handler = (event: any, context: any, callback: (error: any, result: any) =&gt; void) =&gt; {
+    const response = {
+        statusCode: 200,
+        body: &quot;Cheers, how are things?&quot;
+      };
+
+    callback(null, response);
+};
+
+const lambda = new aws.serverless.Function(&quot;my-function&quot;, { /* options */ }, handler);</code></pre>
+<p>The processing code <code>handler</code> is just passed to infrastructure code as a parameter.</p>
+<p>So, if I wanted to make reusable API for an &quot;always warm&quot; function, how would it look like?</p>
+<p>From the client code perspective, I just want to be able to do the same thing:</p>
+<pre><code class="language-typescript">const lambda = new mylibrary.WarmLambda(&quot;my-warm-function&quot;, { /* options */ }, handler);</code></pre>
+<p>CloudWatch? Event subscription? Short-circuiting? They are implementation details!</p>
+<h2 id="warm-lambda">Warm Lambda</h2>
+<p>Here is how to implement such component. The declaration starts with a Typescript class:</p>
+<pre><code class="language-typescript">export class WarmLambda extends pulumi.ComponentResource {
+    public lambda: aws.lambda.Function;
+
+    // Implementation goes here...
+}</code></pre>
+<p>We expose the raw Lambda Function object, so that it could be used for further bindings and retrieving outputs.</p>
+<p>The constructor accepts the same parameters as <code>aws.serverless.Function</code> provided by Pulumi:</p>
+<pre><code class="language-typescript">constructor(name: string,
+        options: aws.serverless.FunctionOptions,
+        handler: aws.serverless.Handler,
+        opts?: pulumi.ResourceOptions) {
+
+    // Subresources are created here...
+}</code></pre>
+<p>We start resource provisioning by creating the CloudWatch rule to be triggered every 5 minutes:</p>
+<pre><code class="language-typescript">const eventRule = new aws.cloudwatch.EventRule(`${name}-warming-rule`, 
+    { scheduleExpression: &quot;rate(5 minutes)&quot; },
+    { parent: this, ...opts }
+);</code></pre>
+<p>Then goes the cool trick. We substitute the user-provided handler with our own &quot;outer&quot; handler. This handler closes
+over <code>eventRule</code>, so it can use the rule to identify the warm-up event coming from CloudWatch. If such is identified,
+the handler short-circuits to the callback. Otherwise, it passes the event over to the original handler:</p>
+<pre><code class="language-typescript">const outerHandler = (event: any, context: aws.serverless.Context, callback: (error: any, result: any) =&gt; void) =&gt;
+{
+    if (event.resources &amp;&amp; event.resources[0] &amp;&amp; event.resources[0].includes(eventRule.name.get())) {
+        console.log(&#39;Warming...&#39;);
+        callback(null, &quot;warmed!&quot;);
+    } else {
+        console.log(&#39;Running the real handler...&#39;);
+        handler(event, context, callback);
+    }
+};</code></pre>
+<p>That&#39;s a great example of synergy enabled by doing both application code and application infrastructure in a
+single program. I&#39;m free to mix and match objects from both worlds.</p>
+<p>It&#39;s time to bind both <code>eventRule</code> and <code>outerHandler</code> to a new serverless function:</p>
+<pre><code class="language-typescript">const func = new aws.serverless.Function(
+    `${name}-warmed`, 
+    options, 
+    outerHandler, 
+    { parent: this, ...opts });
+this.lambda = func.lambda;            </code></pre>
+<p>Finally, I create an event subscription from CloudWatch schedule to Lambda:</p>
+<pre><code class="language-typescript">this.subscription = new serverless.cloudwatch.CloudwatchEventSubscription(
+    `${name}-warming-subscription`, 
+    eventRule,
+    this.lambda,
+    { },
+    { parent: this, ...opts });</code></pre>
+<p>And that&#39;s all we need for now! See the full code 
+<a href="https://github.com/mikhailshilkov/pulumi-serverless-examples/blob/master/WarmedLambda-TypeScript/warmLambda.ts">here</a>.</p>
+<p>Here is the output of <code>pulumi update</code> command for my sample &quot;warm&quot; lambda application:</p>
+<pre><code>     Type                                                      Name                            Plan
+ +   pulumi:pulumi:Stack                                       WarmLambda-WarmLambda-dev       create
+ +    samples:WarmLambda                                       i-am-warm                       create
+ +      aws-serverless:cloudwatch:CloudwatchEventSubscription  i-am-warm-warming-subscription  create
+ +        aws:lambda:Permission                                i-am-warm-warming-subscription  create
+ +        aws:cloudwatch:EventTarget                           i-am-warm-warming-subscription  create
+ +      aws:cloudwatch:EventRule                               i-am-warm-warming-rule          create
+ +      aws:serverless:Function                                i-am-warm-warmed                create
+ +         aws:lambda:Function                                 i-am-warm-warmed                create</code></pre><p>7 Pulumi components and 4 AWS cloud resources are provisioned by one <code>new WarmLambda()</code> line.</p>
+<h2 id="multi-instance-warming">Multi-Instance Warming</h2>
+<p>Jeremy&#39;s library supports warming several instances of Lambda by issuing parallel self-calls.</p>
+<p>Reproducing the same with Pulumi component should be fairly straightforward:</p>
+<ul>
+<li>Add an extra constructor option to accept the number of instances to keep warm</li>
+<li>Add a permission to call Lambda from itself</li>
+<li>Fire N calls when warming event is triggered</li>
+<li>Short-circuit those calls in each instance</li>
+</ul>
+<p>Note that only the first item would be visible to the client code. That&#39;s the power of componentization
+and code reuse.</p>
+<p>I didn&#39;t need multi-instance warming, so I&#39;ll leave the implementation as exercise for the reader.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Obligatory note: most probably, you don&#39;t need to add warming to your AWS Lambdas.</p>
+<p>But whatever advanced scenario you might have, it&#39;s likely that it is easier to express the scenario
+in terms of general-purpose reusable component, rather than a set of guidelines or templates.</p>
+<p>Happy hacking!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/aws/'>AWS</a>, <a href='/tags/aws-lambda/'>AWS Lambda</a>, <a href='/tags/pulumi/'>Pulumi</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/cold-starts/'>Cold Starts</a>
+    </div>
+    
+</article>
+
     <article class="post">
     <div class="post-date">Jul 12th, 2018</div>
     
@@ -1306,111 +1454,6 @@ provisioning of cold ones. </p>
 <p>If such optimizations happen, I&#39;ll be glad to re-run my tests and report any noticeable
 improvements.</p>
 <p>Stay tuned for more serverless perf goodness!</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/serverless/'>Serverless</a>, <a href='/tags/performance/'>Performance</a>, <a href='/tags/cold-start/'>Cold Start</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Apr 24th, 2018</div>
-    
-    <h1><a href='/2018/04/azure-functions-cold-starts-in-numbers/'>Azure Functions: Cold Starts in Numbers</a></h1>
-    
-
-    
-
-    <div class="post-content">
-        <p>Auto-provisioning and auto-scalability are the killer features of Function-as-a-Service
-cloud offerings, and Azure Functions in particular.</p>
-<p>One drawback of such dynamic provisioning is a phenomenon called &quot;Cold Start&quot;. Basically,
-applications that haven&#39;t been used for a while take longer to startup and to handle the
-first request.</p>
-<p>The problem is nicely described in 
-<a href="https://blogs.msdn.microsoft.com/appserviceteam/2018/02/07/understanding-serverless-cold-start/">Understanding Serverless Cold Start</a>,
-so I won&#39;t repeat it here. I&#39;ll just copy a picture from that article:</p>
-<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstart.jpg" alt="Cold Start"></p>
-<p>Based on the 4 actions which happen during a cold start, we may guess that the following factors
-might affect the cold start duration:</p>
-<ul>
-<li>Language / execution runtime</li>
-<li>Azure Functions runtime version</li>
-<li>Application size including dependencies</li>
-</ul>
-<p>I ran several sample functions and tried to analyze the impact of these factors on cold start time.</p>
-<h2 id="methodology">Methodology</h2>
-<p>All tests were run against HTTP Functions, because that&#39;s where cold start matters the most.</p>
-<p>All the functions were just returning &quot;Hello, World&quot; taking the &quot;World&quot; value from the query string.
-Some functions were also loading extra dependencies, see below.</p>
-<p>I did not rely on execution time reported by Azure. Instead, I measured end-to-end duration from
-client perspective. All calls were made from within the same Azure region, so network latency should 
-have minimal impact:</p>
-<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//test-setup.png" alt="Test Setup"></p>
-<h2 id="when-does-cold-start-happen-">When Does Cold Start Happen?</h2>
-<p>Obviously, cold start happens when the very first request comes in. After that request is processed,
-the instance is kept alive in case subsequent requests arrive. But for how long?</p>
-<p>The following chart gives the answer. It shows values of normalized request durations across
-different languages and runtime versions (Y axis) depending on the time since the previous
-request in minutes (X axis):</p>
-<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstart-threshold.png" alt="Cold Start Threshold"></p>
-<p>Clearly, an idle instance lives for 20 minutes and then gets recycled. All requests after 20 minutes
-threshold hit another cold start.</p>
-<h2 id="how-do-languages-compare-">How Do Languages Compare?</h2>
-<p>I&#39;ll start with version 1 of Functions runtime, which is the production-ready GA version as of today.</p>
-<p>I&#39;ve written Hello World HTTP function in all GA languages: C#, F# and Javascript, and I added Python
-for comparison. C#/F# were executed both in the form of script, and as a precompiled .NET assembly.</p>
-<p>The following chart shows some intuition about the cold start duration per language. The languages
-are ordered based on mean response time, from lowest to highest. 65% of request
-durations are inside the vertical bar (1-sigma interval) and 95% are inside the vertical line (2-sigma):</p>
-<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v1.png" alt="Cold Start V1 per Language"></p>
-<p>Somewhat surprisingly, precompiled .NET is exactly on par with Javascript. Javascript &quot;Hello World&quot; 
-is really lightweight, so I expected it to win, but I was wrong.</p>
-<p>C# Script is slower but somewhat comparable. F# Script presented a really negative surprise though: it&#39;s much
-slower. It&#39;s even slower than experimental Python support where no performance optimization would
-be expected at all!</p>
-<h2 id="functions-runtime-v1-vs-v2">Functions Runtime: V1 vs V2</h2>
-<p>Version 2 of Functions runtime is currently in preview and not suitable for production load. That
-probably means they haven&#39;t done too much performance optimization, especially from cold start
-standpoint.</p>
-<p>Can we see this on the chart? We sure can:</p>
-<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-v2.png" alt="Cold Start V1 vs V2"></p>
-<p>V2 is massively slower. The fastest cold starts are around 6 seconds, but the slowest can come
-up to 40-50 seconds.</p>
-<p>Javascript is again on-par with precompiled .NET. </p>
-<p>Java is noticeably slower, even though the
-deployment package is just 33kB, so I assume I didn&#39;t overblow it.</p>
-<h2 id="does-size-matter-">Does Size Matter?</h2>
-<p>OK, enough of Hello World. A real-life function might be more heavy, mainly because it would
-depend on other third-party libraries.</p>
-<p>To simulate such scenario, I&#39;ve measured cold starts for a .NET function with references to 
-Entity Framework, Automapper, Polly and Serilog.</p>
-<p>For Javascript I did the same, but referenced Bluebird, lodash and AWS SDK.</p>
-<p>Here are the results:</p>
-<p><img src="/2018/04/azure-functions-cold-starts-in-numbers//coldstarts-dependencies.png" alt="Cold Start Dependencies"></p>
-<p>As expected, the dependencies slow the loading down. You should keep your Functions lean,
-otherwise you will pay in seconds for every cold start.</p>
-<p>An important note for Javascript developers: the above numbers are for Functions deployed
-after <a href="https://github.com/Azure/azure-functions-pack"><code>Funcpack</code></a> preprocessor. The package
-contained the single <code>js</code> file with Webpack-ed dependency tree. Without that, the mean
-cold start time of the same function is 20 seconds!</p>
-<h2 id="conclusions">Conclusions</h2>
-<p>Here are some lessons learned from all the experiments above:</p>
-<ul>
-<li>Be prepared for 1-3 seconds cold starts even for the smallest Functions</li>
-<li>Stay on V1 of runtime until V2 goes GA unless you don&#39;t care about perf</li>
-<li>.NET precompiled and Javascript Functions have roughly same cold start time</li>
-<li>Minimize the amount of dependencies, only bring what&#39;s needed</li>
-</ul>
-<p>Do you see anything weird or unexpected in my results? Do you need me to dig deeper on other aspects?
-Please leave a comment below or ping me on twitter, and let&#39;s sort it all out.</p>
-<p>There is a follow-up post available: 
-<a href="https://mikhail.io/2018/05/azure-functions-cold-starts-beyond-first-load/">Cold Starts Beyond First Request in Azure Functions</a></p>
 
     </div>
 
