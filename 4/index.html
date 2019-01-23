@@ -79,6 +79,476 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Jan 23rd, 2018</div>
+    
+    <h1><a href='/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/'>Tic-Tac-Toe with F#, Azure Functions, HATEOAS and Property-Based Testing</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>This post describes a toy application that I&#39;ve built with F# and Azure Functions
+in about 1 day of work. It shows a simple end-to-end implementation with some 
+useful techniques applied, and can be used as a reference point for anyone interested in
+one of the topics mentioned in the title.</p>
+<p>The requirements for my application are quite simple:</p>
+<ul>
+<li>Implement the game of Tic-Tac-Toe for a human player to play against the computer</li>
+<li>The field is 3x3, the player to have three-in-a-row wins</li>
+<li>After the game, the score is calculated based on the number of moves combined 
+with the duration of the game</li>
+<li>The history of players&#39; scores is persisted and presented as the leaderboard</li>
+</ul>
+<p>Below I go through the code step by step. Feel free to jump to the part which interests
+you the most: 
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#DomainModelling">Domain Modelling</a>, 
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#AzureFunctions">Azure Functions</a>, 
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">HATEOAS</a>,
+<a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#PropertyBasedTesting">Property-Based Testing</a>.</p>
+<p>The game is online, so you can play it <a href="https://tictactoefs.azurewebsites.net/home">here</a>.</p>
+<p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
+<p><a name="DomainModelling" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="modeling-the-game-with-types">Modeling the Game with Types</h2>
+<p>I start with a domain model. The model is composed of immutable F# types (records and discriminated
+unions) and pure functions.</p>
+<p>We have two players, so we need a type for them:</p>
+<pre><code class="language-fsharp">type Player = X | O</code></pre>
+<p>In addition, there is a useful function to return the other player based on the given one.
+Simple pattern-matching will do:</p>
+<pre><code class="language-fsharp">module Player =
+  let other = function | X -&gt; O | O -&gt; X</code></pre>
+<p>The domain code is the most important part of the application, so I want it to be covered
+by unit tests. Of course, the above function doesn&#39;t really warrant testing, but it&#39;s a nice
+and simple way to try out <a href="https://fsharpforfunandprofit.com/posts/property-based-testing/">Property-Based Testing</a>. 
+That is, instead of defining specific tests, we define properties which hold for any valid input.</p>
+<p>For <code>other</code> function, I came up with two properties:</p>
+<ul>
+<li>Other player is not equal to original player</li>
+<li>Other player of other player is the player itself</li>
+</ul>
+<p>Here is the code with <a href="https://github.com/haf/expecto">Expecto</a> and <a href="https://github.com/fscheck/FsCheck">FsCheck</a>:</p>
+<pre><code class="language-fsharp">testProperty &quot;Other player is not equal to player&quot; &lt;| fun x -&gt;
+  Expect.notEqual x (Player.other x) &quot;Other should be different from original&quot;
+
+testProperty &quot;Other player of other player is the player itself&quot; &lt;| fun x -&gt;
+  Expect.equal x (Player.other (Player.other x)) &quot;Other other should be equal to original&quot;</code></pre>
+<p>Let&#39;s move on to modelling the game. I decided to define a union type to be used for
+horizontal and vertical positions of the cells:</p>
+<pre><code class="language-fsharp">type Position = One | Two | Three</code></pre>
+<p>I could use the normal integers instead, but I don&#39;t want to be worried about validating
+the ranges all the time.</p>
+<p>My first record type models the move, or action done by a player: it has <code>X</code> and <code>Y</code>
+positions of the chosen cell, plus the player information:</p>
+<pre><code class="language-fsharp">type Move = {
+  X: Position
+  Y: Position
+  By: Player
+}</code></pre>
+<p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
+design of the whole application:</p>
+<pre><code class="language-fsharp">type RunningGame = {
+  MovesDone: Move list
+  PossibleMoves: Move list
+}</code></pre>
+<p>This type models any state of the game which is not finished yet. </p>
+<p><code>MovesDone</code> represents the ordered log of all moves, so we have the complete history 
+of actions at any time. Event Sourcing in small.</p>
+<p>Equally importantly, there is a list of all possible moves at this point of the game.
+I could get away without this property: in the end, it can always be derived from
+the history of done moves and 3x3 size of the field.</p>
+<p>However, having the list of possible moves simplifies the design of all the decision
+maker (client) code:</p>
+<ul>
+<li>Clients don&#39;t have to search for remaining cells based on move log</li>
+<li>Validation of a move received from clients gets trivial: just check that it&#39;s in
+the list of possible moves</li>
+<li>Bot implementation gets easy: it just needs to pick one of the valid moves. The
+most trivial bot is a one-liner: it picks a random move from the collection</li>
+<li>Tests take advantage of this in a similar way, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#PropertyBasedTesting">Game Tests</a> below</li>
+<li>We build a nice bridge into HATEOAS-style API, where links provided in the response
+correspond to possible moves, see <a href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/#HATEOAS">REST API</a> below</li>
+</ul>
+<p>Now, we can model a game which is already finished:</p>
+<pre><code class="language-fsharp">type GameOutcome = Won of Player | Tie
+
+type FinishedGame = {
+  MovesDone: Move list
+  Outcome: GameOutcome
+}</code></pre>
+<p>Each finished game has a list of moves and the outcome: either one player won, or there
+was a tie.</p>
+<p>Each state of a game can be described by the union of the previous two states:</p>
+<pre><code class="language-fsharp">type GameState = 
+  | Finished of FinishedGame
+  | InProgress of RunningGame</code></pre>
+<h2 id="modeling-game-flow">Modeling Game Flow</h2>
+<p>Now, when all the types are in place, we can model the game flow. The flow is a sequence
+of transitions between game states, implemented with pure functions.</p>
+<p>First, each game starts at the same state, which is an empty field, and X turn. Here
+is the value which represents this initial state:</p>
+<pre><code class="language-fsharp">module Game =
+  let initialState = 
+    let positions = [One; Two; Three]
+    let cells = seq { 
+      for x in positions do
+         for y in positions do
+            yield { X = x; Y = y; By = X }
+      }
+    { MovesDone = []; PossibleMoves = List.ofSeq cells }</code></pre>
+<p>After each move is made, we need a function to evaluate move outcome: whether current
+game is finished or is still in progress. I defined a function <code>evaluate</code> for that:</p>
+<pre><code class="language-fsharp">let private evaluate (history: Move list): GameOutcome option = ...</code></pre>
+<p>I don&#39;t show the full body here, since it&#39;s quite boring in evaluating rows, columns
+and diagonals for three-in-a-row. See the <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe/Game.fs#L42-L56">full code</a> 
+if you want to.</p>
+<p>The following function is even more important: that&#39;s the main domain function called 
+<code>makeMove</code>. Its type is <code>RunningGame -&gt; Move -&gt; GameState</code> which perfectly communicates
+its intent: given a running game and a move, it returns the game state after the move.
+Note that</p>
+<ul>
+<li>You can&#39;t pass a finished game as an argument, because making a move on finished game
+doesn&#39;t make sense</li>
+<li>The result <em>can</em> be a finished game</li>
+</ul>
+<p>Here is the function implementation:</p>
+<pre><code class="language-fsharp">let makeMove (game: RunningGame) (move: Move): GameState =
+  let movesDone = move :: game.MovesDone
+  match evaluate movesDone with
+  | Some result -&gt; Finished { MovesDone = movesDone; Outcome = result }
+  | None -&gt;
+    let possibleMoves = 
+      List.except [move] game.PossibleMoves
+      |&gt; List.map (fun m -&gt; { m with By = Player.other m.By })
+    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }</code></pre>
+<p>It works like this:</p>
+<ul>
+<li>Prepend the new move to moves done</li>
+<li>Evaluate the game result of these combined moves</li>
+<li>If the result is known, return a <code>Finished</code> game with calculated outcome</li>
+<li>If the result is not clear yet, return <code>InProgress</code> game with possible
+moves same as before, but excluding the move and assigned to the other player</li>
+</ul>
+<p>Tic-Tic-Toe is two-player game, so I defined another function which runs
+a turn of 2 moves by 2 players, given the decision making functions of both
+players (so it&#39;s a higher-order function):</p>
+<pre><code class="language-fsharp">let makeRound player1 player2 gameState =
+  let newGameState = player1 gameState |&gt; makeMove gameState
+  match newGameState with
+  | Finished _ -&gt; newGameState
+  | InProgress p -&gt; player2 p |&gt; makeMove p  </code></pre>
+<p>Looks almost like monadic <code>bind</code> operation...</p>
+<p><a name="PropertyBasedTesting" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="property-based-testing">Property-Based Testing</h2>
+<p>I&#39;ve already shown two simplistic properties for <code>other</code> function.</p>
+<p>It&#39;s a bit more challenging to come up with invariant properties when it
+comes to testing the game itself. After some brainstorming, I&#39;ve made the
+following list:</p>
+<ul>
+<li>The game is never finished after 4 moves</li>
+<li>The game is always finished after 9 moves</li>
+<li>X and 0 have to make moves in turns</li>
+<li>Player wins by filling one column</li>
+<li>Player wins by filling one row</li>
+<li>Player wins by filling diagonal</li>
+<li>Evaluate a known tie</li>
+</ul>
+<p>Each property-based test should accept some input from the testing framework.
+It should then evaluate the test against this input and assert the invariants.
+If the property holds for any possible valid input, the test is green.</p>
+<p>I decided to structure my property tests in the following way:</p>
+<ul>
+<li>Each test accepts a list of non-negative integers</li>
+<li>Each integer is interpreted as an index of a possible move to select at turn <code>i</code>.
+That means that the test receives a sequence which uniquely identifies the moves
+to be made</li>
+<li>We can restrict this sequence to a scenario under test, e.g. make it less
+than 4 moves, or exactly 9 moves, or pick moves from a limited subset of all
+possible moves</li>
+<li>We apply the moves to calculate the end result</li>
+<li>We assert that the result confirms the property under test</li>
+</ul>
+<p>Now, it&#39;s the responsibility of property based testing framework to generate
+all kinds of input lists to try to break our property. If it succeeds, it will
+print the exact input which causes the test to fail.</p>
+<p>Here is how one such test is implemented.</p>
+<p>A helper function plays a sequence of indexes as moves:</p>
+<pre><code class="language-fsharp">let playSequence moves = 
+  let playOne s i =
+    match s with
+    | InProgress p -&gt; Game.makeMove p (p.PossibleMoves.[i % p.PossibleMoves.Length])
+    | _ -&gt; s
+  List.fold playOne (InProgress Game.initialState) moves</code></pre>
+<p>Then the property &quot;The game is always finished after 9 moves&quot; is simply:</p>
+<pre><code class="language-fsharp">testProp &quot;The game is always finished after 9 moves&quot; &lt;| fun (Gen.ListOf9 xs) -&gt;
+  let result = playSequence xs
+  Expect.isTrue (Game.isFinished result) &quot;Game should be finished&quot;</code></pre>
+<p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&#39;s a
+generator that I <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/Gen.fs#L31-L32">defined</a>, 
+so that the list always contains exactly 9 elements.</p>
+<p>Other property tests follow a similar pattern, you can see them 
+<a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/GameTests.fs">here</a>.</p>
+<p><a name="HATEOAS" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="rest-api">REST API</h2>
+<p>Now, when I&#39;m done with Game domain model, I want to define API that our HTTP
+service will expose to the clients. I define my API in REST model.</p>
+<p>The main resource is <code>/game</code> resource. To start a new game, a client has to send
+<code>POST</code> command:</p>
+<pre><code>POST /game
+Content-Type: application/json
+
+{ &quot;name&quot;: &quot;Mikhail&quot; }</code></pre><p>And the response body is JSON which denotes a new game created:</p>
+<pre><code class="language-json">{
+    &quot;id&quot;: &quot;5d7b2261&quot;,
+    &quot;busyCells&quot;: [],
+    &quot;links&quot;: [
+        {
+            &quot;rel&quot;: &quot;x1y1&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/0&quot;
+        },
+        {
+            &quot;rel&quot;: &quot;x1y2&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/1&quot;
+        },
+        // ... 7 more links follow
+    ]
+}</code></pre>
+<p>The response contains a game ID and the list of occupied cells, empty for now,
+because no moves have been made.</p>
+<p>More importantly, it contains a list of links, each one of which has a <code>rel</code>
+field representing a cell, and a link. The client should <code>POST</code> to this link
+if it wants to make a move on the corresponding cell:</p>
+<pre><code>POST /game/5d7b2261/move/1</code></pre><p>And the response is:</p>
+<pre><code class="language-json">{
+    &quot;id&quot;: &quot;5d7b2261&quot;,
+    &quot;result&quot;: null,
+    &quot;busyCells&quot;: [
+        {
+            &quot;name&quot;: &quot;x2y3&quot;,
+            &quot;value&quot;: &quot;O&quot;
+        },
+        {
+            &quot;name&quot;: &quot;x1y2&quot;,
+            &quot;value&quot;: &quot;X&quot;
+        }
+    ],
+    &quot;links&quot;: [
+        {
+            &quot;rel&quot;: &quot;x1y1&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/0&quot;
+        },
+        {
+            &quot;rel&quot;: &quot;x1y3&quot;,
+            &quot;href&quot;: &quot;/game/5d7b2261/move/1&quot;
+        },
+        // ... 5 more links follow
+    ]
+}</code></pre>
+<p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
+list of links now has only 7 links, based on the count of free cells.</p>
+<p>The client keeps navigating the links until it gets non-empty <code>result</code> field:</p>
+<pre><code class="language-json">{
+    &quot;id&quot;: &quot;5d7b2261&quot;,
+    &quot;result&quot;: &quot;You Win!&quot;,
+    &quot;busyCells&quot;: [
+        {
+            &quot;name&quot;: &quot;x3y1&quot;,
+            &quot;value&quot;: &quot;X&quot;
+        },
+        {
+            &quot;name&quot;: &quot;x3y2&quot;,
+            &quot;value&quot;: &quot;O&quot;
+        },
+        // ... more cells here
+    ],
+    &quot;links&quot;: [],
+    &quot;score&quot;: 401
+}</code></pre>
+<p>This denotes the end of the game. There&#39;s no more links to navigate, so the client knows it
+has to stop playing.</p>
+<p>This API is designed in HATEOAS-style (Hypermedia as the Engine of Application State). The
+clients only need to know the initial URL, while all the other URLs are received from the
+previous responses. It resembles the way a human navigates websites.</p>
+<p><a name="AzureFunctions" href="/2018/01/tictactoe-with-fsharp-azurefunctions-hateoas-and-property-based-testing/undefined"></a></p>
+<h2 id="azure-functions">Azure Functions</h2>
+<p>I implemented the above API with Azure Functions. I used .NET Standard based v2 runtime
+with precompiled F# functions.</p>
+<p>The initial <code>POST /game</code> request is handled by <code>Start</code> function:</p>
+<pre><code class="language-fsharp">type GameRequest = { Name: string }
+
+type Cell = { Name: string; Value: string }
+type Link = { Rel:  string; Href:  string }
+
+type GameDTO = {
+  Id: string
+  Result: string
+  BusyCells: Cell list
+  Links: Link list
+  Score: int
+}
+
+[&lt;FunctionName(&quot;Start&quot;)&gt;]
+let start([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game&quot;)&gt;] req: GameRequest,
+          [&lt;Table(&quot;TicTacToe&quot;)&gt;] store: ICollector&lt;GameEntity&gt;) =
+  let gameid = Guid.NewGuid().ToString()
+  let state = InProgress Game.initialState
+  let serializedState = JsonConvert.SerializeObject state
+  store.Add(GameEntity(PartitionKey = &quot;default&quot;, RowKey = gameid, Name = req.Name, State = serializedState))
+  ObjectResult(Api.serialize gameid state 0)</code></pre>
+<p>The outline of this function:</p>
+<ul>
+<li>It&#39;s triggered by HTTP POST request, as configured for <code>req</code> parameter</li>
+<li>The request body is parsed to <code>GameRequest</code> type containing player name</li>
+<li>It generates a new game ID</li>
+<li>It creates initial game state of empty field</li>
+<li>It serializes the state and saves it to Table Storage with <code>store</code> output binding</li>
+<li>It returns HTTP body with 
+<a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Functions/Api.fs#L30-L51">serialized</a> game response of type <code>GameDTO</code></li>
+</ul>
+<p>The second Function <code>Play</code> handles the moves:</p>
+<pre><code class="language-fsharp">[&lt;FunctionName(&quot;Play&quot;)&gt;]
+let play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, &quot;POST&quot;, Route = &quot;game/{gameid}/move/{index}&quot;)&gt;] 
+         req: HttpRequest, gameid: string, index: int,
+         [&lt;Table(&quot;TicTacToe&quot;, &quot;default&quot;, &quot;{gameid}&quot;)&gt;] entity: GameEntity) =
+  let state = JsonConvert.DeserializeObject&lt;GameState&gt; entity.State
+  match state with
+  | Finished _ -&gt; BadRequestResult() :&gt; IActionResult
+  | InProgress p when index &lt; 0 || index &gt;= p.PossibleMoves.Length -&gt; BadRequestResult() :&gt; IActionResult
+  | InProgress p -&gt; 
+    let result = Game.makeRound (fun _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
+    entity.State &lt;- JsonConvert.SerializeObject result
+    entity.Score &lt;- Scoring.calculateScore (DateTime.UtcNow - entity.StartedAt).TotalMilliseconds result
+    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult</code></pre>
+<p>The outline is very similar:</p>
+<ul>
+<li>It&#39;s triggered by a <code>POST</code> request with a URL template containing game ID and move index</li>
+<li>It has an in/out Table Storage binding which reads the serialized state saved after previous
+game and move requests</li>
+<li>It validates the state: if the game is already finished, or if the move index is not in the valid range,
+<code>Bad Request</code> HTTP status is returned</li>
+<li>If the move is valid, it runs the round, including bot play</li>
+<li>It also calculates the score, which is going to be non-zero only for finished games</li>
+<li>The game state and the score are saved to Table Storage entity (that&#39;s the only mutation in the whole
+application)</li>
+</ul>
+<h2 id="bot">Bot</h2>
+<p>Azure Function above used a <code>Bot.pickMove</code> function which I haven&#39;t described yet.</p>
+<p>This function has the type <code>RunningGame -&gt; Move</code>, exactly what is expected by <code>makeRound</code> game
+function. Its goal is to pick the <code>O</code> move for any given game-in-progress.</p>
+<p>Obviously, 3x3 Tic-Tac-Toe is a very simple game and it&#39;s quite easy to make a perfectly
+playing bot. This wasn&#39;t the goal though: it&#39;s more fun for a human to win.</p>
+<p>So, actually, the only property test that I ended up implementing is the following:</p>
+<pre><code class="language-fsharp">testProp &quot;Bot is able to play O at any possible position&quot; &lt;| fun (Gen.ListOfNonNegative xs) -&gt;
+  let human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
+  let round s i =
+    match s with
+    | InProgress p -&gt; Game.makeRound (human i p) Bot.pickMove p
+    | _ -&gt; s
+  List.fold round (InProgress Game.initialState) xs |&gt; ignore     </code></pre>
+<p>It makes sure that for any possible sequence of human moves, bot is actually able to make
+<em>any</em> move of its own. Bot just shouldn&#39;t crash :)</p>
+<p>My very first implementation of the bot was just picking a random move. Such bot is fine,
+but it&#39;s too boring to play against.</p>
+<p>So, my current bot implementation has 3 rules:</p>
+<ul>
+<li>If there is a move that immediately wins the game, do that move</li>
+<li>If possible, don&#39;t pick a move which leads to immediate loss after the next human move</li>
+<li>Otherwise, pick a random move</li>
+</ul>
+<p>I implemented the bot using the approach described in my 
+<a href="https://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Functional Fold as Decision Tree Pattern</a>
+post:</p>
+<pre><code class="language-fsharp">let pickMove (game: RunningGame) = 
+  [winNow O; notLoseNow; pickRandom]
+  |&gt; Seq.ofList
+  |&gt; Seq.choose (fun x -&gt; x game)
+  |&gt; Seq.head</code></pre>
+<p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
+decision will be promoted to final decision.</p>
+<p>And here are those functions:</p>
+<pre><code class="language-fsharp">let winNow player (game: RunningGame) =
+  let isWin = function | Finished { Outcome = Won x } when x = player -&gt; true | _ -&gt; false
+  game.PossibleMoves
+  |&gt; List.tryFind (fun move -&gt; Game.makeMove game move |&gt; isWin)
+
+let notLoseNow (game: RunningGame) =
+  let canLose = function 
+    | InProgress p -&gt; match winNow X p with | Some _ -&gt; true | None -&gt; false
+    | _ -&gt; false
+  let notLosingMoves =
+    game.PossibleMoves
+    |&gt; List.filter (fun move -&gt; Game.makeMove game move |&gt; canLose |&gt; not)
+  if List.isEmpty notLosingMoves &amp;&amp; notLosingMoves.Length &lt; game.PossibleMoves.Length then None
+  else Some (notLosingMoves.[random.Next notLosingMoves.Length])
+
+let pickRandom (game: RunningGame) = 
+  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])</code></pre>
+<p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
+<h2 id="score-calculation">Score Calculation</h2>
+<p>Last twist to the application is the scoring system. If a human player wins or gets a tie,
+they are assigned a numeric score, which can be then compared to the historic leaderboard
+of all players.</p>
+<p>The score is calculated based on two principles: the less moves you make, and the faster
+you play, the higher the score is. Move count is more important than timing.</p>
+<p>These principles are nicely expressed as property tests:</p>
+<pre><code class="language-fsharp">testProp &quot;The score of faster game is not lower than slower game&quot; 
+  &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
+  let (slower, faster) = maxmin id duration1 duration2
+  let scoreFaster = Scoring.calculateScore faster game
+  let scoreSlower = Scoring.calculateScore slower game
+  Expect.isGreaterThanOrEqual scoreFaster scoreSlower &quot;Bigger duration has lower score (or same)&quot;
+
+testProp &quot;The score of won game in less moves is greater than game with more moves&quot; 
+  &lt;| fun (Gen.Positive duration1) (Gen.Positive duration2) game1 game2 -&gt;
+  let (slower, faster) = maxmin id duration1 duration2
+  let (moreMoves, lessMoves) = maxmin List.length game1 game2
+  let score1 = Scoring.calculateScore slower (Finished { Outcome = Won X; MovesDone = lessMoves })
+  let score2 = Scoring.calculateScore faster (Finished { Outcome = Won X; MovesDone = moreMoves })
+  if moreMoves.Length = lessMoves.Length then
+    Expect.isGreaterThanOrEqual score1 score2 &quot;Bigger duration has lower score (or same)&quot;
+  else
+    Expect.isGreaterThan score1 score2 &quot;More moves have lower score&quot;</code></pre>
+<p>Note that tests are parameterized for durations and game states. We don&#39;t have to come up with specific
+scenarios: the framework should take care of those.</p>
+<p>One of the possible implementations for scoring is:</p>
+<pre><code class="language-fsharp">let calculateScore duration (state: GameState) =
+  let durationScore = (100.0 * (1.0 - duration / (duration + 10000.0))) |&gt; int
+  match state with
+  | Finished { Outcome = Won X; MovesDone = ms } -&gt; (11 - ms.Length) * 100 + durationScore
+  | Finished { Outcome = Tie } -&gt; durationScore
+  | _ -&gt; 0</code></pre>
+<p>Now, the leaderboard piece. You&#39;ve already seen the bits of this functionality in Azure Functions: 
+they store the game state into Azure Table Storage.</p>
+<p>There is another Azure Function which handles <code>GET</code> requests to <code>/leaderboard</code> resource. It
+loads all the past games from Table Storage, and then passes them to leaderboard calculation
+function below:</p>
+<pre><code class="language-fsharp">let calculateLeaderboard top ns =
+  ns
+  |&gt; Seq.filter (fun entity -&gt; snd entity &gt; 0 &amp;&amp; not (String.IsNullOrEmpty (fst entity)))
+  |&gt; Seq.sortByDescending snd
+  |&gt; Seq.truncate top
+  |&gt; Seq.mapi (fun index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })</code></pre>
+<h2 id="wrapping-up">Wrapping Up</h2>
+<p>Ok, the application is simple, but the blog post ended up being quite long. Thank you if you
+made it so far.</p>
+<p>I touched base on several important concepts and tools, which can be useful apart or in
+combination.</p>
+<p>Please leave a comment if such kind of articles is useful, and which part you found most
+inspirational or boring.</p>
+<p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
+<p>Happy coding!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/hateoas/'>HATEOAS</a>, <a href='/tags/property-based-testing/'>Property-Based Testing</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Dec 13th, 2017</div>
     
     <h1><a href='/2017/12/azure-functions-get-more-scalable-and-elastic/'>Azure Functions Get More Scalable and Elastic</a></h1>
@@ -685,140 +1155,6 @@ invocation logs.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/azure-event-grid/'>Azure Event Grid</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Sep 25th, 2017</div>
-    
-    <h1><a href='/2017/09/wanted-effectively-once-processing-in-azure/'>Wanted: Effectively-Once Processing in Azure</a></h1>
-    
-
-    
-
-    <div class="post-content">
-        <p><em>This experimental post is a question. The question
-is too broad for StackOverflow, so I&#39;m posting it here. Please engage in the
-comments section, or forward the link to subject experts.</em></p>
-<p>TL;DR: Are there any known patterns / tools / frameworks to provide 
-scalable, stateful, effectively-once, end-to-end processing of messages, 
-to be hosted in Azure, preferably on PaaS-level of service?</p>
-<h2 id="motivational-example">Motivational Example</h2>
-<p>Let&#39;s say we are making a TODO app. There is a constant flow of requests
-to create a TODO in the system. Each request contains just two fields:
-a title and a project ID which TODO should belong to. Here is the definition:</p>
-<pre><code class="language-fsharp">type TodoRequest = {
-  ProjectId: int
-  Title: string
-}</code></pre>
-<p>Now, we want to process the request and assign each TODO an identifier,
-which should be an auto-incremented integer. Numeration is unique per project,
-so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
-<pre><code class="language-fsharp">type Todo = {
-  ProjectId: int
-  Id: int
-  Title: string
-}</code></pre>
-<p>Now, instead of relying on some database sequences, I want to describe this
-transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
-(Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
-state (last generated ID) to a tuple of a TODO and post-processing state:</p>
-<pre><code class="language-fsharp">let create (request: TodoRequest, state: int) =
-  let nextId = state + 1
-  let todo = {
-    ProjectId = request.ProjectId
-    Id = nextId
-    Title = request.Title
-  }
-  todo, nextId</code></pre>
-<p>This is an extremely simple function, and I can use it to great success to
-process local, non-durable data.</p>
-<p>But if I need to make a reliable distributed application out of it, I need
-to take care of lots of things:</p>
-<ol>
-<li><p>No request should be lost. I need to persist all the requests into 
-a durable storage in case of processor crash. </p>
-</li>
-<li><p>Similarly, I need to persist TODO&#39;s too. Presumably, some downstream 
-logic will use the persisted data later on in TODO&#39;s lifecycle.</p>
-</li>
-<li><p>The state (the counter) must be durable too. In case of crash of processing
-function, I want to be able to restart processing after recovery. </p>
-</li>
-<li><p>Processing of the requests should be sequential per project ID. Otherwise
-I might get a clash of ID&#39;s in case two requests belonging to the same 
-project are processed concurrently.</p>
-</li>
-<li><p>I still want requests to different projects to be processed in parallel,
-to make sure the system scales up with the growth of project count.</p>
-</li>
-<li><p>There must be no holes or duplicates in TODO numbering per project, even
-in face of system failures. In worst case, I agree to tolerate a duplicated
-entry in the output log, but it must be exactly the same entry (i.e. two 
-entries with same project id, id and title).</p>
-</li>
-<li><p>The system should tolerate a permanent failure of any single hardware
-dependency and automatically fail-over within reasonable time.</p>
-</li>
-</ol>
-<p>It&#39;s not feasible to meet all of those requirements without relying on some
-battle-tested distributed services or frameworks.</p>
-<p>Which options do I know of?</p>
-<h2 id="transactions">Transactions</h2>
-<p>Traditionally, this kind of requirements were solved by using transactions
-in something like SQL Server. If I store requests, TODO&#39;s and current ID per
-project in the same relational database, I can make each processing step a
-single atomic transaction. </p>
-<p>This addresses all the concerns, as long as we can stay inside the single 
-database. That&#39;s probably a viable option for the TODO app, but less of so
-if I convert my toy example to some real applications like IoT data 
-processing.</p>
-<p>Can we do the same for distributed systems at scale?</p>
-<h2 id="azure-event-hubs">Azure Event Hubs</h2>
-<p>Since I touched IoT space, the logical choice would be to store our entries
-in Azure Event Hubs. That works for many criteria, but I don&#39;t see any available
-approach to make such processing consistent in the face of failures.</p>
-<p>When processing is done, we need to store 3 pieces: generated TODO event,
-current processing offset and current ID. Event goes to another event hub,
-processing offset is stored in Blob Storage and ID can be saved to something
-like Table Storage. </p>
-<p>But there&#39;s no way to store those 3 pieces atomically. Whichever order we 
-choose, we are bound to get anomalies in some specific failure modes.</p>
-<h2 id="azure-functions">Azure Functions</h2>
-<p>Azure Functions don&#39;t solve those problems. But I want to mention this
-Function-as-a-Service offering because they provide an ideal programming
-model for my use case.</p>
-<p>I need to take just one step from my domain function to Azure Function: 
-to define bindings for e.g. Event Hubs and Table Storage.</p>
-<p>However, reliability guarantees will stay poor. I won&#39;t get neither sequential
-processing per Event Hub partition key, nor atomic state commit.</p>
-<h2 id="azure-service-fabric">Azure Service Fabric</h2>
-<p>Service Fabric sounds like a good candidate service for reliable processing. 
-Unfortunately, I don&#39;t have much experience with it to judge.</p>
-<p>Please leave a comment if you do.</p>
-<h2 id="jvm-world">JVM World</h2>
-<p>There are products in JVM world which claim to solve my problem perfectly.</p>
-<p>Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
-Kafka release provides effectively-once processing semantics as long as
-data stay inside Kafka. Kafka does that with atomic publishing to multiple
-topics, and state storage based on compacted topics.</p>
-<p>Apache Flink has similar guarantees for its stream processing APIs.</p>
-<p>Great, but how do I get such awesomeness in .NET code, and without installing 
-expensive ZooKeeper-managed clusters?</p>
-<h2 id="call-for-feedback">Call for Feedback</h2>
-<p>Do you know a solution, product or service?</p>
-<p>Have you developed effectively-once processing on .NET / Azure stack?</p>
-<p>Are you in touch with somebody who works on such framework?</p>
-<p>Please leave a comment, or ping me on Twitter.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/architecture/'>Architecture</a>, <a href='/tags/data-processing/'>Data Processing</a>, <a href='/tags/stream-processing/'>Stream Processing</a>
     </div>
     
 </article>

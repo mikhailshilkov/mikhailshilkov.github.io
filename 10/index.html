@@ -79,6 +79,252 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">May 27th, 2016</div>
+    
+    <h1><a href='/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules/'>Dependency Inversion Implies Interfaces Are Owned by High-level Modules</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>Dependency Inversion is one of the five principles of widely known and 
+acknowledged S.O.L.I.D. design guidelines. This principle is very powerful
+and useful when applied consistently. But in my experience, it&#39;s actually
+quite easy to misunderstand the idea, or at least to mentally simplify it
+to somewhat less profound technique of Dependency Injection.</p>
+<p>In this post I will try to give my understanding of the principle, and 
+the difference between <em>Inversion</em> and <em>Injection</em>.</p>
+<p>Let&#39;s start with the Dependency Inversion principle definition. It was given
+by Uncle Bob Martin, and consists of two parts.</p>
+<h2 id="part-1-abstractions">Part 1: Abstractions</h2>
+<blockquote>
+<p>High-level modules should not depend on low-level modules. 
+Both should depend on abstractions.</p>
+</blockquote>
+<p>Ok, this is easy to understand. High-level modules are also high-importance
+modules, they are about the business domain and are not specific about
+technical details. Low-level modules are about wiring those high-level
+functions to execution environment, tools and third parties. </p>
+<p>Thus, the implementation of high level policy should not depend on 
+implementation of low level code, but rather on interfaces (or other
+abstractions).</p>
+<p>Let&#39;s take a look at an example. Our high-level business domain is about
+planning and executing trips from geographical point A to point B. Our
+low-level code talks to a service which knows how to calculate the time 
+required for a vehicle to go from A to B:</p>
+<p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion-violated.png" alt="UML: dependency inversion violated"></p>
+<p>So the following code <strong>violates</strong> the first part of the Dependency Inversion:</p>
+<pre><code class="language-csharp">namespace Mapping
+{
+    public class RouteCalculator
+    {
+        public TimeSpan CalculateDuration(
+            double fromLat, double fromLng, double toLat, double toLng)
+        {
+            // Call a 3rd party web service
+        }
+    }
+}
+
+namespace Planning
+{
+    public class TripPlanner
+    {
+        public DateTime ExpectedArrival(Trip trip)
+        {
+            var calculator = new RouteCalculator();
+            var duration = calculator.CalculateDuration(
+                trip.Origin.Latitude, 
+                trip.Origin.Longitude, 
+                trip.Destination.Latitude, 
+                trip.Destination.Longitude);
+            return trip.Start.Add(duration);
+        }
+    }
+}</code></pre>
+<p>It&#39;s not compliant to the principle because the high-level code (<code>TripPlanner</code>)
+explicitly depends on low-level service (<code>RouteCalculator</code>). Note that I&#39;ve put
+them to distinct namespaces to emphasize the required separation.</p>
+<p>To improve on that, we might introduce an interface to decouple the 
+implementations:</p>
+<p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion-with-dependency-injection.png" alt="UML: dependency inversion with dependency injection"></p>
+<p>In Trip Planner we accept the interface as constructor parameter, and we&#39;ll get the 
+specific implementation at run time:</p>
+<pre><code class="language-csharp">namespace Mapping
+{
+    public class IRouteCalculator
+    {
+        TimeSpan CalculateDuration(
+            double fromLat, double fromLng, double toLat, double toLng);
+    }
+
+    public class RouteCalculator : IRouteCalculator
+    {
+        // Same implementation as before...
+    }
+}
+
+namespace Planning
+{
+    public class TripPlanner
+    {
+        private IRouteCalculator calculator;
+
+        public TripPlanner(IRouteCalculator calculator)
+        {
+            this.calculator = calculator;
+        }
+
+        public DateTime ExpectedArrival(Trip trip)
+        {
+            var duration = this.calculator.CalculateDuration(
+                trip.Origin.Latitude, 
+                trip.Origin.Longitude, 
+                trip.Destination.Latitude, 
+                trip.Destination.Longitude);
+            return trip.Start.Add(duration);
+        }
+    }
+}</code></pre>
+<p>This technique is called <em>dependency 
+injection</em> or, more specifically, <em>constructor injection</em>. This way 
+we can easily substitute the implementation later or inject a test 
+double while unit testing.</p>
+<p>But that&#39;s just one part of the principle. Let&#39;s move on to part 2.</p>
+<h2 id="part-2-details">Part 2: Details</h2>
+<p>The second part of the principle says</p>
+<blockquote>
+<p>Abstractions should not depend upon details. 
+Details should depend upon abstractions.</p>
+</blockquote>
+<p>I find this wording unfortunate because it might be confusing. There are 
+some valid examples which explain it with base and derived classes. 
+But in our example we solved the part 1 with an interface. So now we are told that
+the abstraction (interface) should not depend upon details (implementation).</p>
+<p>That probably means that the interface should not leak any entities which
+are specific to the given implementation, to make other implementation
+equally possible.</p>
+<p>While this is try, this second part of the principle may seem to be subordinate
+to part one, reducing to an idea &quot;design your interfaces well&quot;. So 
+many people tend to leave the part 2 out (
+<a href="https://scotch.io/bar-talk/s-o-l-i-d-the-first-five-principles-of-object-oriented-design#dependency-inversion-principle">example 1</a>,
+<a href="http://www.codeproject.com/Articles/495019/Dependency-Inversion-Principle-and-the-Dependency">example 2</a>), focusing 
+solely on part 1 - the Dependency Injection.</p>
+<h2 id="interface-ownership">Interface Ownership</h2>
+<p>But Dependency Inversion is <strong>not</strong> just Dependency Injection. So, to revive
+the part 2 I would add the following statement to make it clearer:</p>
+<blockquote>
+<p><strong>Abstractions should be owned by higher-level modules and implemented by
+lower-level modules.</strong></p>
+</blockquote>
+<p>This rule is violated in our last example. The interface is defined together
+with implementation, and is basically just extracted from it. It&#39;s <strong>owned</strong>
+by the mapping namespace. </p>
+<p>To improve the design, we can transfer the interface ownership to domain
+level:</p>
+<p><img src="/2016/05/dependency-inversion-implies-interfaces-are-owned-by-high-level-modules//uml-dependency-inversion.png" alt="UML: dependency inversion"></p>
+<p>As you can see, I also renamed the interface. The name should reflect the way
+how the domain experts would think of this abstraction. Here is the result:</p>
+<pre><code class="language-csharp">namespace Planning
+{
+    public class IDurationCalculator
+    {
+        TimeSpan CalculateDuration(Hub origin, Hub destination);
+    }
+
+    public class TripPlanner
+    {
+        private IDurationCalculator calculator;
+
+        public TripPlanner(IDurationCalculator calculator)
+        {
+            this.calculator = calculator;
+        }
+
+        public DateTime ExpectedArrival(Trip trip)
+        {
+            var duration = this.calculator.CalculateDuration(
+                trip.Origin, trip.Destination);
+            return trip.Start.Add(duration);
+        }
+    }
+}
+
+namespace Mapping
+{
+    public class RouteCalculator : IRouteCalculator
+    {
+        public TimeSpan CalculateDuration(Hub origin, Hub destination)
+        {
+            // Extract latitude and longitude from Hubs
+            // Call a 3rd party web service
+        }
+    }
+}</code></pre>
+<p>Now, the interface is defined in <code>Planning</code> namespace, close to its <em>Client</em>,
+not its <em>Implementation</em>. That&#39;s the dependency inversion in action. Even
+more importantly, it&#39;s defined in terms of our domain - notice the use of
+<code>Hub</code> in the interface instead of low-level <code>double</code>.</p>
+<h2 id="why-high-level-code-should-own-interfaces">Why High Level Code Should Own Interfaces</h2>
+<p>There are multiple benefits to this approach, here are the most important
+advantages:</p>
+<h3 id="concise-readable-high-level-code">Concise, readable high-level code</h3>
+<p>The high-level domain code has the highest value, so the ultimate goal
+is to keep it as clean as possible. The interface ownership enables us to
+design the most concise interfaces to achieve this goal. We avoid any kind
+of adaptation of domain entities to whatever lower-level details.</p>
+<h3 id="better-abstractions">Better abstractions</h3>
+<p>The interfaces themselves get better as well. They are closer to business,
+so abstractions get more ubiquitous and better understood by everyone.</p>
+<p>They tend to live longer, just because they are born from the domain side, 
+not the infrastructure side.</p>
+<h3 id="dependencies-in-outer-layers">Dependencies in outer layers</h3>
+<p>Code organization tends to improve too. If an interface is defined in the 
+same module as the implementation, the domain module now has
+to reference the infrastructure module just to use the interface.</p>
+<p>With domain-level interface, the reference goes in the other direction, so
+dependencies are pushed up to the outer layers of application. </p>
+<p>This principle is the foundation of domain-centric architectures
+<a href="https://blog.8thlight.com/uncle-bob/2012/08/13/the-clean-architecture.html">Clean architecture</a>,
+<a href="http://alistair.cockburn.us/Hexagonal+architecture">Ports and Adapters</a> and the likes.</p>
+<h3 id="less-cross-domain-dependencies">Less cross-domain dependencies</h3>
+<p>In large systems, the business domains should be split into smaller sub-domains, or
+bounded contexts. Still, sub-domains are not totally isolated and must 
+cooperate to achieve the ultimate business goal. </p>
+<p>It might be compelling to reference the interfaces of one sub-domain 
+from another sub-domain and then say that the dependency is minimal because
+they are hidden behind abstractions.</p>
+<p>But coupling with abstractions is still coupling. Instead, each domain should
+operate its own abstractions at the high level, and then different abstractions
+should be wired together on lower level with techniques like adapters, facades,
+context mapping etc.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Here is my working definition of Dependency Inversion principle:</p>
+<blockquote>
+<p>High-level modules should not depend on low-level modules. 
+Both should depend on abstractions.</p>
+</blockquote>
+<blockquote>
+<p>Abstractions should not depend upon details. 
+Details should depend upon abstractions.</p>
+</blockquote>
+<blockquote>
+<p>Abstractions should be owned by higher-level modules and implemented by
+lower-level modules.</p>
+</blockquote>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/solid/'>SOLID</a>, <a href='/tags/dependency-inversion/'>Dependency Inversion</a>, <a href='/tags/dependency-injection/'>Dependency Injection</a>, <a href='/tags/clean-code/'>Clean Code</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">May 13th, 2016</div>
     
     <h1><a href='/2016/05/tweaking-immutable-objects-with-csharp-and-fody/'>Tweaking immutable objects with C# and Fody</a></h1>
@@ -831,127 +1077,6 @@ code.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/f#/'>F#</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/actor-model/'>Actor Model</a>, <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/patterns/'>Patterns</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Mar 11th, 2016</div>
-    
-    <h1><a href='/2016/03/aurelia-map-component-with-leaflet/'>Aurelia Map Component with Leaflet</a></h1>
-    
-
-    
-
-    <div class="post-content">
-        <p>This is a short tutorial on how to create a map control in <a href="http://aurelia.io">Aurelia.js</a> 
-application. I am using the <a href="http://leafletjs.com">Leaflet</a> library with custom tile
-source and I also show the way to implement your own overlay layer. Here is what
-my map looks like:</p>
-<p><img src="/2016/03/aurelia-map-component-with-leaflet//map.png" alt="Map"></p>
-<p>So, I assume you already have an existing Aurelia application, and let&#39;s start.</p>
-<h2 id="install-leaflet">Install Leaflet</h2>
-<p>The following command will install Leaflet module to the application:</p>
-<pre><code>jspm install leaflet</code></pre><p>If you are using TypeScript, don&#39;t forget to add type definitions</p>
-<pre><code>tsd install leaflet</code></pre><h2 id="define-a-map-component">Define a Map Component</h2>
-<p>Create a new <code>map.html</code> file and put the following contents there:</p>
-<pre><code class="language-html">&lt;template&gt;
-  &lt;require from=&quot;leaflet/dist/leaflet.css&quot;&gt;&lt;/require&gt;
-  &lt;div id=&quot;mapid&quot; style=&quot;height: 100%&quot;&gt;&lt;/div&gt;
-&lt;/template&gt;</code></pre>
-<p>We import the CSS required by leaflet and define the <code>div</code> element to host
-the map in. Then, create a new <code>map.js</code> file (or <code>map.ts</code> for typescript),
-here is the minimum code:</p>
-<pre><code class="language-js">export class Map {
-}</code></pre>
-<h2 id="load-the-map-with-tiles">Load the Map with Tiles</h2>
-<p>First, import the leaflet module in your codebehind:</p>
-<pre><code class="language-js">import * as L from &#39;leaflet&#39;;</code></pre>
-<p>Now, define the <code>attached</code> function, which would be called by Aurelia when
-control&#39;s HTML is loaded, and make a map there:</p>
-<pre><code class="language-js">export class Map {
-  attached() {
-    let map = L.map(&#39;mapid&#39;).setView([51.505, -0.09], 13);
-
-    let urlTemplate = &#39;http://{s}.tile.osm.org/{z}/{x}/{y}.png&#39;;
-    map.addLayer(L.tileLayer(urlTemplate, { minZoom: 4 }));
-  }
-}</code></pre>
-<p>The example above uses the URL template of Open Street Maps as per the Leaflet&#39;s
-tutorial, but I needed to use our privately hosted maps, so I changed it to
-something like:</p>
-<pre><code class="language-js">let urlTemplate = &#39;http://www.mysite.com/tiles?layer=background&amp;level={z}&amp;x={x}&amp;y={y}&#39;;
-map.addLayer(L.tileLayer(urlTemplate, { minZoom: 4, zoomOffset: 8 }));</code></pre>
-<p>The <code>zoomOffset</code> parameter was required to fix impedance mismatch of zoom levels.</p>
-<h2 id="custom-overlay-layer">Custom Overlay Layer</h2>
-<p>For our custom maps we needed to show two layers on top of each other:</p>
-<ul>
-<li>The usual tile layer for the map background</li>
-<li>The overlay layer for the map labels and additional information</li>
-</ul>
-<p>The overlay layer can&#39;t be broken down into tiles (not supported by our map provider),
-so we need to show the whole layer as a single picture and then refresh it every
-time user pans or zooms the map.</p>
-<p>The overlay layer can be implemented with <code>onAdd</code> and <code>onRemove</code> functions
-and then feeding an image element to the Leaflet as a layer. Here is the code:</p>
-<pre><code class="language-js">import * as L from &#39;leaflet&#39;;
-
-export class LabelOverlayLayer {
-  map;
-  image;
-
-  onAdd(map) {
-    this.map = map;
-
-    this.image = L.DomUtil.create(&#39;img&#39;, &#39;leaflet-tile-loaded&#39;);
-    map.getPanes().overlayPane.appendChild(this.image);
-
-    map.on(&#39;moveend&#39;, this.render, this);
-    this.render();
-  }
-
-  onRemove (map) {
-    map.getPanes().overlayPane.removeChild(this.image);
-    map.off(&#39;moveend&#39;, this.render, this);
-  }
-
-  render() {
-    let bounds = this.map.getBounds(), mapSize = this.map.getSize();
-    let se = bounds.getSouthEast(), nw = bounds.getNorthWest();
-
-    let tileUrl = `http://www.mysite.com/tiles?layer=labels&amp;lonmin=${nw.lng}&amp;latmin=${se.lat}&amp;lonmax=${se.lng}&amp;latmax=${nw.lat}&amp;width=${Math.floor(mapSize.x)}&amp;height=${Math.floor(mapSize.y)}`;
-    this.image.src = tileUrl;
-
-    let pos = this.map.latLngToLayerPoint(nw);
-    L.DomUtil.setPosition(this.image, pos, false);
-  }
-};</code></pre>
-<p>The usage of this layer in the map component is trivial:</p>
-<pre><code class="language-js">this.map.addLayer(new LabelOverlayLayer());</code></pre>
-<h2 id="use-the-map-component">Use the Map Component</h2>
-<p>The map component is ready to be used in the application:</p>
-<pre><code class="language-html">&lt;require from=&quot;./components/map&quot;&gt;&lt;/require&gt;
-&lt;div  style=&quot;height: 700px&quot;&gt;
-  &lt;map&gt;&lt;/map&gt;
-&lt;/div&gt;</code></pre>
-<p>The container around the map should have a non-zero height, so I made it fixed
-in the example above.</p>
-<p>Don&#39;t forget to bundle the leaflet assets by including the following lines
-into your <code>bundles.json</code>:</p>
-<pre><code class="language-json">&quot;includes&quot;: [
-  &quot;aurelia-framework&quot;,
-  // ...
-  &quot;leaflet&quot;,
-  &quot;leaflet/dist/leaflet.css!text&quot;
-],</code></pre>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/aurelia/'>Aurelia</a>, <a href='/tags/leaflet/'>Leaflet</a>, <a href='/tags/typescript/'>Typescript</a>, <a href='/tags/javascript/'>Javascript</a>, <a href='/tags/maps/'>Maps</a>
     </div>
     
 </article>
