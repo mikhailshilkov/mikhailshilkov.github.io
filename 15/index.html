@@ -79,6 +79,98 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Oct 16th, 2014</div>
+    
+    <h1><a href='/2014/10/16/nice-way-to-kill-your-sql-server/'>Nice way to kill your SQL Server</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>Are you getting enormous amount of </p>
+<pre><code>The activated proc &#39;...&#39; running on queue &#39;...&#39; output the following:
+&#39;The service queue &quot;...&quot; is currently disabled.</code></pre><p>errors from SQL Server? Keep on reading!</p>
+<p>Yesterday, when I came back from my lunch, I got a heads-up from Windows:
+<img src="/2014/10/16/nice-way-to-kill-your-sql-server//low-disk-space.gif" alt="Low disk space"></p>
+<p>And it was literally out of space: 0 (zero) bytes available on C: drive. Wow...</p>
+<p>I cleaned up the binary files from my developments, which gave me 3 GB of free space and some time to do the investigation. A short time, because disk space was counting down at about 300 MB per minute.</p>
+<p>It appeared that the SQL Server error log files grew up to 53 GB and were still growing. Here is the default folder where you can find them:</p>
+<p><img src="/2014/10/16/nice-way-to-kill-your-sql-server//errorlog.png" alt="SQL Server error log"></p>
+<p>To gain more time, I executed the command</p>
+<pre><code>exec sp_cycle_error</code></pre><p>is Management Studio. It renames current ERRORLOG file to ERRORLOG.1 and starts the new current. So now it was safe to delete all .1/.2/etc files and get those 53 GB back. Huh...</p>
+<p>Now it&#39;s time to figure out the actual issue. Go to Management Studio -&gt; your server -&gt; Management -&gt; SQL Server Logs -&gt; Current -&gt; (right click) -&gt; View SQL Server Log</p>
+<p>I saw millions of the following messages there (let&#39;s say my queue is named XQueue for simplicity):</p>
+<pre><code>The activated proc &#39;[dbo].[XQueueProcessor]&#39; running 
+on queue &#39;dbo.XQueue&#39; output the following:
+&#39;The service queue &quot;XQueue&quot; is currently disabled.</code></pre><p>So, it looks like there is a problem with SQL Server Service Broker, which is constantly trying to read something from disabled queue. Isn&#39;t it supposed to stop after 5 attempts (a.k.a. poison messages)? Ok, keep on troubleshooting.</p>
+<p>First, let check if the queue is actually disabled</p>
+<pre><code>SELECT Name, is_receive_enabled, is_enqueue_enabled
+  FROM sys.service_queues 
+ WHERE Name = &#39;XQueue&#39;  </code></pre><p>Yep, it&#39;s disabled:
+<img src="/2014/10/16/nice-way-to-kill-your-sql-server//qdisabled.png" alt="XQueue disabled"></p>
+<p>Do we have anything queued?</p>
+<pre><code>SELECT TOP 1000 *
+  FROM [XQueue] WITH(NOLOCK) </code></pre><p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
+<p>So, let&#39;s have a look at the processor. We had something like that:</p>
+<pre><code>CREATE PROCEDURE [dbo].[XQueueProcessor]
+AS
+BEGIN
+    DECLARE 
+        @queuing_order BIGINT
+        ,@conversation_handle UNIQUEIDENTIFIER
+        ,@message_enqueue_time DATETIME
+        ,@message_type_name VARCHAR(156)
+        ,@message_body VARBINARY(MAX);
+
+    WHILE(1=1) -- MAIN WHILE LOOP RECEIVING THE MESSAGE BATCHES
+    BEGIN
+        BEGIN TRANSACTION
+        BEGIN TRY
+            WAITFOR(RECEIVE TOP(1)
+                        @queuing_order = [queuing_order],
+                        @conversation_handle = [conversation_handle],
+                        @message_enqueue_time = message_enqueue_time,
+                        @message_type_name = message_type_name,
+                        @message_body = message_body
+                    FROM [dbo].[XQueue]), TIMEOUT 10
+
+            IF (@@ROWCOUNT = 0)
+            BEGIN
+                ROLLBACK TRANSACTION
+                BREAK
+            END    
+
+            -- SOME CRUD OPERATIONS HAPPEN HERE        
+
+            COMMIT TRANSACTION
+        END TRY
+        BEGIN CATCH            
+            DECLARE @Error varchar(4000) = ERROR_MESSAGE()
+            PRINT @Error
+            ROLLBACK TRANSACTION
+        END CATCH        
+    END
+END</code></pre><p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back... But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &quot;The service queue is currently disabled&quot; and voila, CPU is busy and error logs are floating the disk.</p>
+<p>The fix is pretty trivial, just change the CATCH block to</p>
+<pre><code>BEGIN CATCH            
+    DECLARE @Error varchar(4000) = ERROR_MESSAGE()
+    PRINT @Error
+    ROLLBACK TRANSACTION
+    RETURN
+END CATCH        </code></pre><p>Be careful!</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/bugs/'>Bugs</a>, <a href='/tags/error-log/'>Error log</a>, <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/sql-server-service broker/'>SQL Server Service Broker</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Jun 3rd, 2014</div>
     
     <h1><a href='/2014/06/03/sql-produce-resultset-with-n-rows/'>SQL: produce resultset with N rows</a></h1>
@@ -221,32 +313,6 @@ Have a nice application start-up boost!</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Nov 1st, 2012</div>
-    
-    <h1><a href='/2012/11/01/finance-class-at-coursera/'>Introduction to Finance class at Coursera</a></h1>
-    
-
-    
-
-    <div class="post-content">
-        <p>I&#39;ve recently received a statement of accomplishment document for <a href="https://www.coursera.org/" title="Coursera">Coursera</a>&#39;s online <a href="https://www.coursera.org/course/introfinance" title="Introduction to Finance class">Introduction to Finance class</a> that I took in July-September this year.</p>
-<p><img src="/2012/11/01/finance-class-at-coursera//finance.jpg" alt="Finance"></p>
-<p>The course was lead by prof. Gautam Kaul from University of Michigan. The level of lectures was really introductory, the pace was very slow (too slow for me, even watching x1.5 speed). You could learn about basic finance principles like time value of money, calculating cash flows and discounted values, about stocks and bonds, and risk/return relations.</p>
-<p>I liked a lot the assignment tests, which were much stronger and solid then the examples in lectures. They were challenging most of the time, so I&#39;m glad I managed to get 100% score in the end :)</p>
-<p>Recommended for anyone who has no idea about what finance is about, but not for experienced students.</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/coursera/'>Coursera</a>, <a href='/tags/finance/'>finance</a>, <a href='/tags/online-classes/'>Online Classes</a>, <a href='/tags/online-learning/'>Online Learning</a>, <a href='/tags/statement-of-accomplishment/'>Statement of Accomplishment</a>
     </div>
     
 </article>

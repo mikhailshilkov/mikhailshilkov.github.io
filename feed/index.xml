@@ -3,13 +3,390 @@
     <title>Mikhail Shilkov</title>
     <link href="https://mikhail.io/feed/" rel="self"/>
     <link href="https://mikhail.io"/>
-    <updated>2019-01-23T21:42:08.169Z</updated>
+    <updated>2019-02-14T05:46:44.455Z</updated>
     <id>https://mikhail.io/</id>
     <author>
         <name>Mikhail Shilkov</name>
         <email></email>
     </author>
 
+    
+    <entry>
+        <title>From YAML to TypeScript: Developer's View on Cloud Automation</title>
+        <link href="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/"/>
+        <updated>2019-02-14T00:00:00.000Z</updated>
+        <id>tag:mikhail.io,2019-02-14,/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/</id>
+        <content type="html"><![CDATA[<p>The rise of managed cloud services, cloud-native and serverless applications brings both new possibilities and challenges. More and more practices from software development process like version control, code review, continuous integration, and automated testing are applied to the cloud infrastructure provisioning.</p>
+<p>Most existing tools suggest defining infrastructure in text-based markup formats. In this article, I&#39;m making a case for using real programming languages like TypeScript instead. Such a change makes even more software development practices applicable to the infrastructure realm.</p>
+<h2 id="sample-application">Sample Application</h2>
+<p>It&#39;s easier to make a case given a specific example. For this article, I define a URL Shortener application, a basic clone of tinyurl.com or bit.ly. There is an administrative page where one can define short aliases for long URLs:</p>
+<p><img src="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/url-shortener.png" alt="URL Shortener sample app"></p>
+<figcaption>URL Shortener sample app</figcaption>
+
+<p>Now, whenever somebody goes to the base URL of the application + an existing alias, they get redirected to the full URL.</p>
+<p>This app is simple to describe but involves enough moving parts to be representative of some real-world issues. As a bonus, there are many existing implementations on the web to compare with.</p>
+<h2 id="serverless-url-shortener">Serverless URL Shortener</h2>
+<p>I&#39;m a big proponent of the serverless architecture: the style of cloud applications being a combination of serverless functions and managed cloud services. They are fast to develop, effortless to run and cost pennies unless the application gets lots of users. However, even serverless applications require infrastructure provisioning, like databases, queues, and other sources of events and destinations of data.</p>
+<p>My examples are going to use Amazon AWS, but this could be Microsoft Azure or Google Cloud Platform too.</p>
+<p>So, the gist is to store URLs with short names as key-value pairs in Amazon DynamoDB and use AWS Lambdas to run the application code. Here is the initial sketch:</p>
+<p><img src="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/lambda-dynamodb.png" alt="URL Shortener with AWS Lambda and DynamoDB"></p>
+<figcaption>URL Shortener with AWS Lambda and DynamoDB</figcaption>
+
+<p>The Lambda on the top receives an event when somebody decides to add a new URL. It extracts the name and the URL from the request and saves them as an item in the DynamoDB table.</p>
+<p>The Lambda at the bottom is called when a user navigates to a short URL. The code reads the full URL based on the requested path and returns a 301 response with the corresponding location.</p>
+<p>Here is the implementation of the <code>Open URL</code> Lambda in JavaScript:</p>
+<pre><code class="language-javascript">const aws = require(&#39;aws-sdk&#39;);
+const table = new aws.DynamoDB.DocumentClient();
+
+exports.handler = async (event) =&gt; {
+  const name = event.path.substring(1);
+
+  const params = { TableName: &quot;urls&quot;, Key: { &quot;name&quot;: name } };
+  const value = await table.get(params).promise();
+
+  const url = value &amp;&amp; value.Item &amp;&amp; value.Item.url;
+  return url 
+    ? { statusCode: 301, body: &quot;&quot;, headers: { &quot;Location&quot;: url } }
+    : { statusCode: 404, body: name + &quot; not found&quot; };
+};</code></pre>
+<p>That&#39;s 11 lines of code. I&#39;ll skip the implementation of <code>Add URL</code> function because it&#39;s very similar. Considering a third function to list the existing URLs for UI, we might have 30-40 lines of JavaScript in total.</p>
+<p>So, how do we deploy the application?</p>
+<p>Well, before we do that, we should realize that the above picture was an over-simplification.</p>
+<ul>
+<li>AWS Lambda can&#39;t handle HTTP requests directly, so we need to add AWS API Gateway in front of it.</li>
+<li>We also need to serve some static files for the UI, which we&#39;ll put into AWS S3 and front it with the same API Gateway.</li>
+</ul>
+<p>Here is the updated diagram:</p>
+<p><img src="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/apigateway-lambda-dynamodb-s3.png" alt="API Gateway, Lambda, DynamoDB, and S3"></p>
+<figcaption>API Gateway, Lambda, DynamoDB, and S3</figcaption>
+
+<p>This is a viable design, but the details are even more complicated:</p>
+<ul>
+<li>API Gateway is a complex beast which needs Stages, Deployments, and REST Endpoints to be appropriately configured.</li>
+<li>Permissions and policies need to be defined so that API Gateway could call Lambda and Lambda could access DynamoDB.</li>
+<li>Static Files should go to S3 Bucket Objects.</li>
+</ul>
+<p>So, the actual setup involves a couple of dozen objects to be configured in AWS:</p>
+<p><img src="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/apigateway-lambda-dynamodb-s3-details.png" alt="Cloud resources to be provisioned"></p>
+<figcaption>Cloud resources to be provisioned</figcaption>
+
+<p>How do we approach this task?</p>
+<h2 id="options-to-provision-the-infrastructure">Options to Provision the Infrastructure</h2>
+<p>There are many options to provision a cloud application, each one has its trade-offs. Let&#39;s quickly go through the list of possibilities to understand the landscape.</p>
+<h2 id="aws-web-console">AWS Web Console</h2>
+<p>AWS, like any other cloud, has a <a href="https://console.aws.amazon.com">web user interface</a> to configure its resources:</p>
+<p><img src="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/aws-web-console.png" alt="AWS Web Console"></p>
+<figcaption>AWS Web Console</figcaption>
+
+<p>That&#39;s a decent place to start&mdash;good for experimenting, figuring out the available options, following the tutorials, i.e., for exploration.</p>
+<p>However, it doesn&#39;t suit particularly well for long-lived ever-changing applications developed in teams. A manually clicked deployment is pretty hard to reproduce in the exact manner, which becomes a maintainability issue pretty fast.</p>
+<h2 id="aws-command-line-interface">AWS Command Line Interface</h2>
+<p>The <a href="https://aws.amazon.com/cli/">AWS Command Line Interface</a> (CLI) is a unified tool to manage all AWS services from a command prompt. You write the calls like</p>
+<pre><code class="language-console">aws apigateway create-rest-api --name &#39;My First API&#39; --description &#39;This is my first API&#39;
+
+aws apigateway create-stage --rest-api-id 1234123412 --stage-name &#39;dev&#39; --description &#39;Development stage&#39; --deployment-id a1b2c3</code></pre>
+<p>The initial experience might not be as smooth as clicking buttons in the browser, but the huge benefit is that you can <em>reuse</em> commands that you once wrote. You can build scripts by combining many commands into cohesive scenarios. So, your colleague can benefit from the same script that you created. You can provision multiple environments by parameterizing the scripts.</p>
+<p>Frankly speaking, I&#39;ve never done that for several reasons:</p>
+<ul>
+<li>CLI scripts feel too imperative to me. I have to describe &quot;how&quot; to do things, not &quot;what&quot; I want to get in the end.</li>
+<li>There seems to be no good story for updating existing resources. Do I write small delta scripts for each change? Do I have to keep them forever and run the full suite every time I need a new environment?</li>
+<li>If a failure occurs mid-way through the script, I need to manually repair everything to a consistent state. This gets messy real quick, and I have no desire to exercise this process, especially in production.</li>
+</ul>
+<p>To overcome such limitations, the notion of the <strong>Desired State Configuration</strong> (DSC) was invented. Under this paradigm, one describes the desired layout of the infrastructure, and then the tooling takes care of either provisioning it from scratch or applying the required changes to an existing environment.</p>
+<p>Which tool provides DSC model for AWS? There are legions.</p>
+<h2 id="aws-cloudformation">AWS CloudFormation</h2>
+<p><a href="https://aws.amazon.com/cloudformation/">AWS CloudFormation</a> is the first-party tool for Desired State Configuration management from Amazon. CloudFormation templates use YAML to describe all the infrastructure resources of AWS.</p>
+<p>Here is a snippet from <a href="https://aws.amazon.com/blogs/compute/build-a-serverless-private-url-shortener/">a private URL shortener example</a> kindly provided at AWS blog:</p>
+<pre><code class="language-yaml">Resources:
+  S3BucketForURLs:
+    Type: &quot;AWS::S3::Bucket&quot;
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !If [ &quot;CreateNewBucket&quot;, !Ref &quot;AWS::NoValue&quot;, !Ref S3BucketName ]
+      WebsiteConfiguration:
+        IndexDocument: &quot;index.html&quot;
+      LifecycleConfiguration:
+        Rules:
+          -
+            Id: DisposeShortUrls
+            ExpirationInDays: !Ref URLExpiration
+            Prefix: &quot;u&quot;
+            Status: Enabled</code></pre>
+<p>This is just a very short fragment: the complete example consists of 317 lines YAML. That&#39;s an order of magnitude more than the actual JavaScript code that we have in the application!</p>
+<p>CloudFormation is a powerful tool, but it demands quite some learning to be done to master it. Moreover, it&#39;s specific to AWS: you won&#39;t be able to transfer the skill to other cloud providers.</p>
+<p>Wouldn&#39;t it be great if there was a universal DSC format? Meet Terraform.</p>
+<h2 id="terraform">Terraform</h2>
+<p><a href="https://www.terraform.io/">HashiCorp Terraform</a> is an open source tool to define infrastructure in declarative configuration files. It has a pluggable architecture, so the tool supports all major clouds and even hybrid scenarios.</p>
+<p>The custom text-based Terraform <code>.tf</code> format is used to define the configurations. The templating language is quite powerful, and once you learn it, you can use it for different cloud providers.</p>
+<p>Here is a snippet from <a href="https://github.com/jamesridgway/aws-lambda-short-url">AWS Lambda Short URL Generator</a> example:</p>
+<pre><code class="language-tf">resource &quot;aws_api_gateway_rest_api&quot; &quot;short_urls_api_gateway&quot; {
+  name        = &quot;Short URLs API&quot;
+  description = &quot;API for managing short URLs.&quot;
+}
+resource &quot;aws_api_gateway_usage_plan&quot; &quot;short_urls_admin_api_key_usage_plan&quot; {
+  name         = &quot;Short URLs admin API key usage plan&quot;
+  description  = &quot;Usage plan for the admin API key for Short URLS.&quot;
+  api_stages {
+    api_id = &quot;${aws_api_gateway_rest_api.short_urls_api_gateway.id}&quot;
+    stage  = &quot;${aws_api_gateway_deployment.short_url_api_deployment.stage_name}&quot;
+  }
+}</code></pre>
+<p>This time, the complete example is around 450 lines of textual templates. Are there ways to reduce the size of the infrastructure definition?</p>
+<p>Yes, by raising the level of abstraction. It&#39;s possible with Terraform&#39;s modules, or by using other, more specialized tools.</p>
+<h2 id="serverless-framework-and-sam">Serverless Framework and SAM</h2>
+<p><a href="https://serverless.com/">The Serverless Framework</a> is an infrastructure management tool focused on serverless applications. It works across cloud providers (AWS support is the strongest though) and only exposes features related to building applications with cloud functions.</p>
+<p>The benefit is that it&#39;s much more concise. Once again, the tool is using YAML to define the templates, here is the snippet from <a href="https://github.com/danielireson/serverless-url-shortener">Serverless URL Shortener</a> example:</p>
+<pre><code class="language-yaml">functions:
+  store:
+    handler: api/store.handle
+    events:
+      - http:
+          path: /
+          method: post
+          cors: true</code></pre>
+<p>The domain-specific language yields a shorter definition: this example has 45 lines of YAML + 123 lines of JavaScript functions.</p>
+<p>However, the conciseness has a flip side: as soon as you veer outside of the fairly &quot;thin&quot; golden path&mdash;the cloud functions and an incomplete list of event sources&mdash;you have to fall back to more generic tools like CloudFormation. As soon as your landscape includes lower-level infrastructure work or some container-based components, you&#39;re stuck using multiple config languages and tools again.</p>
+<p>Amazon&#39;s <a href="https://docs.aws.amazon.com/serverless-application-model/index.html">AWS Serverless Application Model</a> (SAM) looks very similar to the Serverless Framework but tailored to be AWS-specific.</p>
+<p>Is that the end game? I don&#39;t think so.</p>
+<h2 id="desired-properties-of-infrastructure-definition-tool">Desired Properties of Infrastructure Definition Tool</h2>
+<p>So what have we learned while going through the existing landscape? The perfect infrastructure tools should:</p>
+<ul>
+<li>Provide <strong>reproducible</strong> results of deployments</li>
+<li>Be <strong>scriptable</strong>, i.e., require no human intervention after the definition is complete</li>
+<li>Define <strong>desired state</strong> rather than exact steps to achieve it</li>
+<li>Support <strong>multiple cloud providers</strong> and hybrid scenarios</li>
+<li>Be <strong>universal</strong> in the sense of using the same tool to define any type of resource</li>
+<li>Be <strong>succinct</strong> and <strong>concise</strong> to stay readable and manageable</li>
+<li><del>Use YAML-based format</del></li>
+</ul>
+<p>Nah, I crossed out the last item. YAML seems to be the most popular language among this class of tools (and I haven&#39;t even touched Kubernetes yet!), but I&#39;m not convinced it works well for me. <a href="https://noyaml.com/">YAML has many flaws, and I just don&#39;t want to use it</a>.</p>
+<p>Have you noticed that I haven&#39;t mentioned <strong>Infrastructure as code</strong> a single time yet? Well, here we go (from <a href="https://en.wikipedia.org/wiki/Infrastructure_as_code">Wikipedia</a>):</p>
+<blockquote>
+<p>Infrastructure as code (IaC) is the process of managing and provisioning computer data centers through machine-readable definition files, rather than physical hardware configuration or interactive configuration tools.</p>
+</blockquote>
+<p>Shouldn&#39;t it be called &quot;Infrastructure as definition files&quot;, or &quot;Infrastructure as YAML&quot;?</p>
+<p>As a software developer, what I really want is &quot;Infrastructure as actual code, you know, the program thing&quot;. I want to use <strong>the same language</strong> that I already know. I want to stay in the same editor. I want to get IntelliSense <strong>auto-completion</strong> when I type. I want to see the <strong>compilation errors</strong> when what I typed is not syntactically correct. I want to reuse the <strong>developer skills</strong> that I already have. I want to come up with <strong>abstractions</strong> to generalize my code and create <strong>reusable components</strong>. I want to <strong>leverage open-source community</strong> who would create much better components than I ever could. I want to <strong>combine the code and infrastructure</strong> in one code project.</p>
+<p>If you are with me on that, keep reading. You get all of that with <a href="https://pulumi.io/">Pulumi</a>.</p>
+<h2 id="pulumi">Pulumi</h2>
+<p><a href="https://pulumi.io/">Pulumi</a> is a tool to build cloud-based software using real programming languages. They support all major cloud providers, plus Kubernetes.</p>
+<p>Pulumi programming model supports Go and Python too, but I&#39;m going to use TypeScript for the rest of the article.</p>
+<p>While prototyping a URL shortener, I explain the fundamental way of working and illustrate the benefits and some trade-offs. If you want to follow along, <a href="https://pulumi.io/quickstart/install.html">install Pulumi</a>.</p>
+<h2 id="how-pulumi-works">How Pulumi Works</h2>
+<p>Let&#39;s start defining our URL shortener application in TypeScript. I installed <code>@pulumi/pulumi</code> and <code>@pulumi/aws</code> NPM modules so that I can start the program. The first resource to create is a DynamoDB table:</p>
+<pre><code class="language-typescript">import * as aws from &quot;@pulumi/aws&quot;;
+
+// A DynamoDB table with a single primary key
+let counterTable = new aws.dynamodb.Table(&quot;urls&quot;, {
+    name: &quot;urls&quot;,
+    attributes: [
+        { name: &quot;name&quot;, type: &quot;S&quot; },
+    ],
+    hashKey: &quot;name&quot;,
+    readCapacity: 1,
+    writeCapacity: 1
+});</code></pre>
+<p>I use <code>pulumi</code> CLI to run this program to provision the actual resource in AWS:</p>
+<pre><code class="language-console">&gt; pulumi up
+
+Previewing update (urlshortener):
+
+     Type                   Name             Plan
+ +   pulumi:pulumi:Stack    urlshortener     create
+ +    aws:dynamodb:Table    urls             create
+
+Resources:
+    + 2 to create
+
+Do you want to perform this update? yes
+Updating (urlshortener):
+
+     Type                   Name             Status
+ +   pulumi:pulumi:Stack    urlshortener     created
+ +    aws:dynamodb:Table    urls             created
+
+Resources:
+    + 2 created</code></pre>
+<p>The CLI first shows the preview of the changes to be made, and when I confirm, it creates the resource. It also creates a <em>stack</em>&mdash;a container for all the resources of the application.</p>
+<p>This code might look like an imperative command to create a DynamoDB table, but it actually isn&#39;t. If I go ahead and change <code>readCapacity</code> to <code>2</code> and then re-run <code>pulumi up</code>, it produces a different outcome:</p>
+<pre><code class="language-console">&gt; pulumi up
+
+Previewing update (urlshortener):
+
+     Type                   Name             Plan
+     pulumi:pulumi:Stack    urlshortener        
+ ~   aws:dynamodb:Table     urls             update  [diff: ~readCapacity]
+
+Resources:
+    ~ 1 to update
+    1 unchanged</code></pre>
+<p>It detects the exact change that I made and suggests an update. The following picture illustrates how Pulumi works:</p>
+<p><img src="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/how-pulumi-works.png" alt="How Pulumi works"></p>
+<figcaption>How Pulumi works</figcaption>
+
+<p><code>index.ts</code> in the red square is my program. Pulumi&#39;s language host understands TypeScript and translates the code to commands to the internal engine. As a result, the engine builds a tree of resources-to-be-provisioned, the desired state of the infrastructure.</p>
+<p>The end state of the last deployment is persisted in the storage (can be in pulumi.com backend or a file on disk). The engine then compares the current state of the system with the desired state of the program and calculates the delta in terms of create-update-delete commands to the cloud provider.</p>
+<h2 id="help-of-types">Help Of Types</h2>
+<p>Now I can proceed to the code that defines a Lambda function:</p>
+<pre><code class="language-typescript">// Create a Role giving our Lambda access.
+let policy: aws.iam.PolicyDocument = { /* Redacted for brevity */ };
+let role = new aws.iam.Role(&quot;lambda-role&quot;, {
+    assumeRolePolicy: JSON.stringify(policy),
+});
+let fullAccess = new aws.iam.RolePolicyAttachment(&quot;lambda-access&quot;, {
+    role: role,
+    policyArn: aws.iam.AWSLambdaFullAccess,
+});
+
+// Create a Lambda function, using code from the `./app` folder.
+let lambda = new aws.lambda.Function(&quot;lambda-get&quot;, {
+    runtime: aws.lambda.NodeJS8d10Runtime,
+    code: new pulumi.asset.AssetArchive({
+        &quot;.&quot;: new pulumi.asset.FileArchive(&quot;./app&quot;),
+    }),
+    timeout: 300,
+    handler: &quot;read.handler&quot;,
+    role: role.arn,
+    environment: { 
+        variables: {
+            &quot;COUNTER_TABLE&quot;: counterTable.name
+        }
+    },
+}, { dependsOn: [fullAccess] });</code></pre>
+<p>You can see that the complexity kicked in and the code size is growing. However, now I start to gain real benefits from using a typed programming language:</p>
+<ul>
+<li>I&#39;m using objects in the definitions of other object&#39;s parameters. If I misspell their name, I don&#39;t get a runtime failure but an immediate error message from the editor.</li>
+<li>If I don&#39;t know which options I need to provide, I can go to the type definition and look it up (or use IntelliSense).</li>
+<li>If I forget to specify a mandatory option, I get a clear error.</li>
+<li>If the type of the input parameter doesn&#39;t match the type of the object I&#39;m passing, I get an error again.</li>
+<li>I can use language features like <code>JSON.stringify</code> right inside my program. In fact, I can reference and use any NPM module.</li>
+</ul>
+<p>You can see the code for API Gateway <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/1-raw/index.ts#L60-L118">here</a>. It looks too verbose, doesn&#39;t it? Moreover, I&#39;m only half-way through with only one Lambda function defined.</p>
+<h2 id="reusable-components">Reusable Components</h2>
+<p>We can do better than that. Here is the improved definition of the same Lambda function:</p>
+<pre><code class="language-typescript">import { Lambda } from &quot;./lambda&quot;;
+
+const func = new Lambda(&quot;lambda-get&quot;, {
+    path: &quot;./app&quot;,
+    file: &quot;read&quot;,
+    environment: { 
+       &quot;COUNTER_TABLE&quot;: counterTable.name
+    },
+});</code></pre>
+<p>Now, isn&#39;t that beautiful? Only the essential options remained, while all the machinery is gone. Well, it&#39;s not completely gone, it&#39;s been hidden behind an <em>abstraction</em>.</p>
+<p>I defined a <strong>custom component</strong> called <code>Lambda</code>:</p>
+<pre><code class="language-typescript">export interface LambdaOptions {
+    readonly path: string;
+    readonly file: string;
+
+    readonly environment?:  pulumi.Input&lt;{
+        [key: string]: pulumi.Input&lt;string&gt;;
+    }&gt;;    
+}
+
+export class Lambda extends pulumi.ComponentResource {
+    public readonly lambda: aws.lambda.Function;
+
+    constructor(name: string,
+        options: LambdaOptions,
+        opts?: pulumi.ResourceOptions) {
+
+        super(&quot;my:Lambda&quot;, name, opts);
+
+        const role = //... Role as defined in the last snippet
+        const fullAccess = //... RolePolicyAttachment as defined in the last snippet
+
+        this.lambda = new aws.lambda.Function(`${name}-func`, {
+            runtime: aws.lambda.NodeJS8d10Runtime,
+            code: new pulumi.asset.AssetArchive({
+                &quot;.&quot;: new pulumi.asset.FileArchive(options.path),
+            }),
+            timeout: 300,
+            handler: `${options.file}.handler`,
+            role: role.arn,
+            environment: {
+                variables: options.environment
+            }
+        }, { dependsOn: [fullAccess], parent: this });
+    }
+}</code></pre>
+<p>The interface <code>LambdaOptions</code> defines options that are important for my abstraction. The class <code>Lambda</code> derives from <code>pulumi.ComponentResource</code> and creates all the child resources in its constructor. </p>
+<p>A nice effect is that one can see the structure in <code>pulumi</code> preview:</p>
+<pre><code class="language-console">Previewing update (fosdem-component-urlshortener):
+
+     Type                                Name                  Plan
+ +   pulumi:pulumi:Stack                 urlshortener          create
+ +     my:Lambda                         lambda-get            create
+ +       aws:iam:Role                    lambda-get-role       create
+ +       aws:iam:RolePolicyAttachment    lambda-get-access     create
+ +       aws:lambda:Function             lambda-get-func       create
+ +     aws:dynamodb:Table                urls                  create</code></pre>
+<p>The <code>Endpoint</code> component simplifies definition of API Gateway (see <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/2-components/endpoint.ts">the source</a>):</p>
+<pre><code class="language-typescript">const api = new Endpoint(&quot;urlapi&quot;, {
+    path: &quot;/{proxy+}&quot;,
+    lambda: func.lambda
+});</code></pre>
+<p>The component hides the complexity from the clients; if the abstraction was selected correctly, that is. The component class can be reused in multiple places, in several projects, across teams, etc.</p>
+<h2 id="standard-component-library">Standard Component Library</h2>
+<p>In fact, Pulumi team came up with lots of high-level components that build abstractions on top of raw resources. The components from <code>@pulumi/cloud-aws</code> package are particularly useful for serverless applications.</p>
+<p>Here is the full URL shortener application with DynamoDB table, Lambdas, API Gateway, and S3-based static files:</p>
+<pre><code class="language-typescript">import * as aws from &quot;@pulumi/cloud-aws&quot;;
+
+// Create a table `urls`, with `name` as primary key.
+let urlTable = new aws.Table(&quot;urls&quot;, &quot;name&quot;);
+
+// Create a web server.
+let endpoint = new aws.API(&quot;urlshortener&quot;);
+
+// Serve all files in the www directory to the root.
+endpoint.static(&quot;/&quot;, &quot;www&quot;);
+
+// GET /url/{name} redirects to the target URL based on a short-name.
+endpoint.get(&quot;/url/{name}&quot;, async (req, res) =&gt; {
+    let name = req.params[&quot;name&quot;];
+    let value = await urlTable.get({name});
+    let url = value &amp;&amp; value.url;
+
+    // If we found an entry, 301 redirect to it; else, 404.
+    if (url) {
+        res.setHeader(&quot;Location&quot;, url);
+        res.status(301);
+        res.end(&quot;&quot;);
+    }
+    else {
+        res.status(404);
+        res.end(&quot;&quot;);
+    }
+});
+
+// POST /url registers a new URL with a given short-name.
+endpoint.post(&quot;/url&quot;, async (req, res) =&gt; {
+    let url = req.query[&quot;url&quot;];
+    let name = req.query[&quot;name&quot;];
+    await urlTable.insert({ name, url });
+    res.json({ shortenedURLName: name });
+});
+
+export let endpointUrl = endpoint.publish().url;</code></pre>
+<p>The coolest thing here is that the actual <em>implementation code</em> of AWS Lambdas is <a href="https://blog.pulumi.com/lambdas-as-lambdas-the-magic-of-simple-serverless-functions">intertwined</a> with the <em>definition of resources</em>. The code looks very similar to an Express application. AWS Lambdas are defined as TypeScript lambdas. All strongly typed and compile-time checked.</p>
+<p>It&#39;s worth noting that at the moment such high-level components only exist in TypeScript. One could create their custom components in Python or Go, but there is no standard library available. Pulumi folks <a href="https://github.com/pulumi/pulumi/issues/2430">are actively trying to figure out a way to bridge this gap</a>.</p>
+<h2 id="avoiding-vendor-lock-in-">Avoiding Vendor Lock-in?</h2>
+<p>If you look closely at the previous code block, you notice that only one line is AWS-specific: the <code>import</code> statement. The rest is just naming. </p>
+<p>We can get rid of that one too: just change the import to <code>import * as cloud from &quot;@pulumi/cloud&quot;;</code> and replace <code>aws.</code> with <code>cloud.</code> everywhere. Now, we&#39;d have to go to the stack configuration file and specify the cloud provider there:</p>
+<pre><code class="language-yaml">config:
+  cloud:provider: aws</code></pre>
+<p>Which is enough to make the application work again!</p>
+<p>Vendor lock-in seems to be a big concern among many people when it comes to cloud architectures heavily relying on managed cloud services, including serverless applications. While I don&#39;t necessarily share those concerns and am not sure if generic abstractions are the right way to go, Pulumi Cloud library can be one direction for the exploration.</p>
+<p>The following picture illustrates the choice of the level of abstraction that Pulumi provides:</p>
+<p><img src="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/pulumi-layers.png" alt="Pulumi abstraction layers"></p>
+<figcaption>Pulumi abstraction layers</figcaption>
+
+<p>Working on top of the cloud provider&#39;s API and internal resource provider, you can choose to work with raw components with maximum flexibility, or opt-in for higher-level abstractions. Mix-and-match in the same program is possible too.</p>
+<h2 id="infrastructure-as-real-code">Infrastructure as Real Code</h2>
+<p>Designing applications for the modern cloud means utilizing multiple cloud services which have to be configured to play nicely together. The Infrastructure as Code approach is almost a requirement to keep the management of such applications reliable in a team setting and over the extended period.</p>
+<p>Application code and supporting infrastructure become more and more blended, so it&#39;s natural that software developers take the responsibility to define both. The next logical step is to use the same set of languages, tooling, and practices for both software and infrastructure.</p>
+<p>Pulumi exposes cloud resources as APIs in several popular general-purpose programming languages. Developers can directly transfer their skills and experience to define, build, compose, and deploy modern cloud-native and serverless applications more efficiently than ever.</p>
+]]></content>
+    </entry>
     
     <entry>
         <title>Serverless at Scale: Serving StackOverflow-like Traffic</title>
@@ -2486,295 +2863,6 @@ said that, it&#39;s also true that C# is lacking some powerful ways to combine
 and generalize monads that are available in functional programming
 languages.</p>
 <p>Go learn some more Functional Programming!</p>
-]]></content>
-    </entry>
-    
-    <entry>
-        <title>Programmable Cloud: Provisioning Azure App Service with Pulumi</title>
-        <link href="https://mikhail.io/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi/"/>
-        <updated>2018-06-22T00:00:00.000Z</updated>
-        <id>tag:mikhail.io,2018-06-22,/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi/</id>
-        <content type="html"><![CDATA[<p>Modern Cloud providers offer a wide variety of services of different types
-and levels. A modern cloud application would leverage multiple services
-in order to be efficient in terms of developer experience, price, operations
-etc.</p>
-<p>For instance, a very simple Web Application deployed to Azure PaaS services
-could use</p>
-<ul>
-<li>App Service - to host the application</li>
-<li>App Service Plan - to define the instance size, price, scaling and other
-hosting parameters</li>
-<li>Azure SQL Database - to store relational data</li>
-<li>Application Insights - to collect telemetry and logs</li>
-<li>Storage Account - to store the binaries and leverage Run-as-Zip feature</li>
-</ul>
-<p>Provisioning such environment becomes a task on its own:</p>
-<ul>
-<li>How do we create the initial setup?</li>
-<li>How do we make changes?</li>
-<li>What if we need multiple environments?</li>
-<li>How do we apply settings?</li>
-<li>How do we recycle resources which aren&#39;t needed anymore?</li>
-</ul>
-<p>Well, there are several options.</p>
-<h2 id="manually-in-azure-portal">Manually in Azure Portal</h2>
-<p>We all start doing this in Azure Portal. User Interface is great for
-discovering new services and features, and it&#39;s a quick way to make a single
-change.</p>
-<p><img src="https://mikhail.io/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//azureportal.png" alt="Azure Portal"></p>
-<p><em>Creating an App Service in Azure Portal</em></p>
-<p>Clicking buttons manually doesn&#39;t scale though. After the initial setup is
-complete, maintaining the environment over time poses significant challenges:</p>
-<ul>
-<li>Every change requires going back to the portal, finding the right resource
-and doing the right change</li>
-<li>People make mistakes, so if you have multiple environments, they are likely
-to be different in subtle ways</li>
-<li>Naming gets messy over time</li>
-<li>There is no easily accessible history of environment changes</li>
-<li>Cleaning up is hard: usually some leftovers will remain unnoticed</li>
-<li>Skills are required from everybody involved in provisioning</li>
-</ul>
-<p>So, how do we streamline this process?</p>
-<h2 id="azure-powershell-cli-and-management-sdks">Azure PowerShell, CLI and Management SDKs</h2>
-<p>Azure comes with a powerful set of tools to manage resources with code.</p>
-<p>You can use PowerShell, CLI scripts or custom code like C# to do with code
-whatever is possible to do via portal.</p>
-<pre><code class="language-csharp">var webApp = azure.WebApps.Define(appName)
-    .WithRegion(Region.WestEurope)
-    .WithNewResourceGroup(rgName)
-    .WithNewFreeAppServicePlan()
-    .Create();</code></pre>
-<p><em>Fluent C# code creating an App Service</em></p>
-<p>However, those commands are usually expressed in imperative style of 
-CRUD operations. You can run the commands once, but it&#39;s hard to modify
-existing resources from an arbitrary state to the desired end state.</p>
-<h2 id="azure-resource-manager-templates">Azure Resource Manager Templates</h2>
-<p>All services in Azure are managed by Azure Resource Manager (ARM). ARM 
-has a special JSON-based format for templates. </p>
-<p>Once a template is defined,
-it&#39;s relatively straightforward to be deployed to Azure environment. So, if
-resources are defined in JSON, they will be created automatically via
-PowerShell or CLI commands.</p>
-<p>It is also possible to deploy templates in incremental mode, when the tool
-will compare existing environment with desired configuration and will deploy
-the difference.</p>
-<p>Templates can be parametrized, which enables multi-environment deployments.</p>
-<p>There&#39;s a problem with templates though: they are JSON files. They get
-very large very fast, they are hard to reuse, it&#39;s easy to make a typo.</p>
-<p><img src="https://mikhail.io/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//armtemplate.png" alt="ARM Template"></p>
-<p><em>A fragment of auto-generated ARM Template for App Service, note the 
-line numbers</em></p>
-<p>Terraform is another templating tool to provision cloud resources but it uses
-YAML instead of JSON. I don&#39;t have much experience with it, but the problems 
-seem to be very similar.</p>
-<p>Can we combine the power of SDKs and the power of JSON-/YAML-based desired state
-configuration tools?</p>
-<h2 id="pulumi">Pulumi</h2>
-<p>One potential solution has just arrived.
-A startup called Pulumi <a href="http://joeduffyblog.com/2018/06/18/hello-pulumi/">just went out of private beta to open source</a>.</p>
-<p><img src="https://mikhail.io/2018/06/programmable-cloud-provisioning-azure-app-service-with-pulumi//pulumi.jpg" alt="Pulumi"></p>
-<p>Pulumi wants to be much more than a better version of ARM templates, aiming
-to become the tool to build cloud-first distributed systems. But for today I&#39;ll 
-focus on lower level of resource provisioning task.</p>
-<p>With Pulumi cloud infrastructure is defined in code using full-blown general 
-purpose programming languages.</p>
-<p>The workflow goes like this:</p>
-<ul>
-<li>Define a Stack, which is a container for a group of related resources</li>
-<li>Write a program in one of supported languages (I&#39;ll use TypeScript) which
-references <code>pulumi</code> libraries and constructs all the resources as objects</li>
-<li>Establish connection with your Azure account</li>
-<li>Call <code>pulumi</code> CLI to create, update or destroy Azure resources based on
-the program</li>
-<li>Pulumi will first show the preview of changes, and then apply them as
-requested</li>
-</ul>
-<h2 id="pulumi-program">Pulumi Program</h2>
-<p>I&#39;m using TypeScript to define my Azure resources in Pulumi. So, the program
-is a normal Node.js application with <code>index.ts</code> file, package references in 
-<code>package.json</code> and one extra file <code>Pulumi.yaml</code> to define the program:</p>
-<pre><code class="language-yaml">name: azure-appservice
-runtime: nodejs</code></pre>
-<p>Our <code>index.js</code> is as simple as a bunch of <code>import</code> statements followed by
-creating TypeScript objects per desired resource. The simplest program can
-look like this:</p>
-<pre><code class="language-ts">import * as pulumi from &quot;@pulumi/pulumi&quot;;
-import * as azure from &quot;@pulumi/azure&quot;;
-
-const resourceGroup = new azure.core.ResourceGroup(&quot;myrg&quot;, {
-    location: &quot;West Europe&quot;
-});</code></pre>
-<p>When executed by <code>pulumi update</code> command, this program will create a new
-Resource Group in your Azure subscription.</p>
-<h2 id="chaining-resources">Chaining Resources</h2>
-<p>When multiple resources are created, the properties of one resource will
-depend on properties of the others. E.g. I&#39;ve defined the Resource Group
-above, and now I want to create an App Service Plan under this Group:</p>
-<pre><code class="language-ts">const resourceGroupArgs = {
-    resourceGroupName: resourceGroup.name,
-    location: resourceGroup.location
-};
-
-const appServicePlan = new azure.appservice.Plan(&quot;myplan&quot;, {
-    ...resourceGroupArgs,
-
-    kind: &quot;App&quot;,
-
-    sku: {
-        tier: &quot;Basic&quot;,
-        size: &quot;B1&quot;,
-    },
-});</code></pre>
-<p>I&#39;ve assigned <code>resourceGroupName</code> and <code>location</code> of App Service Plan to
-values from the Resource Group. It looks like a simple assignment of
-strings but in fact it&#39;s more complicated.</p>
-<p>Property <code>resourceGroup.name</code> has the type of <code>pulumi.Output&lt;string&gt;</code>.
-Constructor argument <code>resourceGroupName</code> of <code>Plan</code> has the type of
-<code>pulumi.Input&lt;string&gt;</code>.</p>
-<p>We assigned <code>&quot;myrg&quot;</code> value to Resource Group name, but during the actual 
-deployment it will change. Pulumi will append a unique identifier to the name,
-so the actually provisioned group will be named e.g. <code>&quot;myrg65fb103e&quot;</code>.</p>
-<p>This value will materialize inside <code>Output</code> type only at deployment time, 
-and then it will get propagated to <code>Input</code> by Pulumi.</p>
-<p>There is also a nice way to return the end values of <code>Output</code>&#39;s from Pulumi
-program. Let&#39;s say we define an App Service:</p>
-<pre><code class="language-ts">const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
-    ...resourceGroupArgs,
-
-    appServicePlanId: appServicePlan.id
-});</code></pre>
-<p>First, notice how we used TypeScript spread operator to reuse
-properties from <code>resourceGroupArgs</code>.</p>
-<p>Second, <code>Output</code>-<code>Input</code> assignment got used again to propagate App Service
-Plan ID.</p>
-<p>Lastly, we can now export App Service host name from our program, e.g.
-for the user to be able to go to the web site immediately after deployment:</p>
-<pre><code class="language-ts">exports.hostname = app.defaultSiteHostname;</code></pre>
-<p><code>Output</code> can also be transformed with <code>apply</code> function. Here is the code to
-format output URL:</p>
-<pre><code class="language-ts">exports.endpoint = app.defaultSiteHostname.apply(n =&gt; `https://${n}`);</code></pre>
-<p>Running <code>pulumi update</code> from CLI will then print the endpoint for us:</p>
-<pre><code class="language-sh">---outputs:---
-endpoint: &quot;https://mywebsiteb76260b5.azurewebsites.net&quot;</code></pre>
-<p>Multiple outputs can be combined with <code>pulumi.all</code>, e.g. given SQL Server
-and Database, we could make a connection string:</p>
-<pre><code class="language-ts">const connectionString = 
-    pulumi.all([sqlServer, database]).apply(([server, db]) =&gt; 
-        `Server=tcp:${server}.database.windows.net;initial catalog=${db};user ID=${username};password=${pwd};Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`)</code></pre>
-<h2 id="using-the-power-of-npm">Using the Power of NPM</h2>
-<p>Since our program is just a TypeScript application, we are free to use any
-3rd party package which exists out there in NPM.</p>
-<p>For instance, we can install Azure Storage SDK. Just</p>
-<pre><code class="language-sh">npm install azure-storage@2.9.0-preview</code></pre>
-<p>and then we can write a function to produce SAS token for a Blob in Azure
-Storage:</p>
-<pre><code class="language-ts">import * as azurestorage from &quot;azure-storage&quot;;
-
-// Given an Azure blob, create a SAS URL that can read it.
-export function signedBlobReadUrl(
-    blob: azure.storage.Blob | azure.storage.ZipBlob,
-    account: azure.storage.Account,
-    container: azure.storage.Container,
-): pulumi.Output&lt;string&gt; {
-    const signatureExpiration = new Date(2100, 1);
-
-    return pulumi.all([
-        account.primaryConnectionString,
-        container.name,
-        blob.name,
-    ]).apply(([connectionString, containerName, blobName]) =&gt; {
-        let blobService = new azurestorage.BlobService(connectionString);
-        let signature = blobService.generateSharedAccessSignature(
-            containerName,
-            blobName,
-            {
-                AccessPolicy: {
-                    Expiry: signatureExpiration,
-                    Permissions: azurestorage.BlobUtilities.SharedAccessPermissions.READ,
-                },
-            }
-        );
-
-        return blobService.getUrl(containerName, blobName, signature);
-    });
-}</code></pre>
-<p>I took this function from <a href="https://github.com/pulumi/examples/tree/master/azure-ts-functions">Azure Functions</a>
-example, and it will probably move to Pulumi libraries at some point, but until
-then you are free to leverage the package ecosystem.</p>
-<h2 id="deploying-application-files">Deploying Application Files</h2>
-<p>So far we provisioned Azure App Service, but we can also deploy the application
-files as part of the same workflow.</p>
-<p>The code below is using <a href="https://github.com/Azure/app-service-announcements/issues/84">Run from Zip</a>
-feature of App Service:</p>
-<ol>
-<li><p>Define Storage Account and Container</p>
-<pre><code class="language-ts"> const storageAccount = new azure.storage.Account(&quot;mystorage&quot;, {
-     ...resourceGroupArgs,
-
-     accountKind: &quot;StorageV2&quot;,
-     accountTier: &quot;Standard&quot;,
-     accountReplicationType: &quot;LRS&quot;,
- });
-
- const storageContainer = new azure.storage.Container(&quot;mycontainer&quot;, {
-     resourceGroupName: resourceGroup.name,
-     storageAccountName: storageAccount.name,
-     containerAccessType: &quot;private&quot;,
- });</code></pre>
-</li>
-<li><p>Create a folder with application files, e.g. <code>wwwroot</code>. It may contain
-some test HTML, ASP.NET application, or anything supported by App Service.</p>
-</li>
-<li><p>Produce a zip file from that folder in Pulumi program:</p>
-<pre><code class="language-ts"> const blob = new azure.storage.ZipBlob(&quot;myzip&quot;, {
-     resourceGroupName: resourceGroup.name,
-     storageAccountName: storageAccount.name,
-     storageContainerName: storageContainer.name,
-     type: &quot;block&quot;,
-
-     content: new pulumi.asset.FileArchive(&quot;wwwroot&quot;)
- });</code></pre>
-</li>
-<li><p>Produce SAS Blob URL and assign it to App Service Run-as-Zip setting:</p>
-<pre><code class="language-ts"> const codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
-
- const app = new azure.appservice.AppService(&quot;mywebsite&quot;, {
-     ...resourceGroupArgs,
-
-     appServicePlanId: appServicePlan.id,
-
-     appSettings: {
-         &quot;WEBSITE_RUN_FROM_ZIP&quot;: codeBlobUrl
-     }
- });</code></pre>
-</li>
-</ol>
-<p>Run the program, and your Application will start as soon as <code>pulumi update</code>
-is complete.</p>
-<h2 id="determinism">Determinism</h2>
-<p>Pulumi programs should strive to be deterministic.
-That means you should avoid using things like current date/time or random numbers.</p>
-<p>The reason is incremental updates. Every time you run <code>pulumi update</code>, it
-will execute the program from scratch. If your resources depend on random
-values, they will not match the existing resources and thus the false
-delta will be detected and deployed.</p>
-<p>In the SAS generation example above we used a fixed date in the future
-instead of doing today + 1 year kind of calculation.</p>
-<p>Should Pulumi provide some workaround for this?</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>My code was kindly merged to 
-<a href="https://github.com/pulumi/examples/tree/master/azure-ts-appservice">Pulumi examples</a>, 
-go there for the complete runnable program that provisions App Service with
-Azure SQL Database and Application Insights.</p>
-<p>I really see high potential in Cloud-as-Code approach suggested by Pulumi.
-Today we just scratched the surface of the possibilities. We were working
-with cloud services on raw level: provisioning specific services with
-given parameters.</p>
-<p>Pulumi&#39;s vision includes providing higher-level components to blur the line
-between infrastructure and code, and to enable everybody to create such
-components on their own.</p>
-<p>Exciting future ahead!</p>
 ]]></content>
     </entry>
     

@@ -79,6 +79,342 @@
 <div class="container">
     
     <article class="post">
+    <div class="post-date">Feb 8th, 2016</div>
+    
+    <h1><a href='/2016/02/akka-net-style-actors-in-service-fabric/'>Akka.NET-style actors in Service Fabric</a></h1>
+    
+
+    
+
+    <div class="post-content">
+        <p>Akka.NET and Service Fabric are the two actor frameworks that emerged in .NET world in the last year.
+The two implementations of actor models are quite different. These differences are multi-faceted but
+today I want to focus on API to define an actor and to communicate to it.</p>
+<h2 id="service-fabric-actors">Service Fabric Actors</h2>
+<p>Every actor in Service Fabric has a public interface which describes its behaviour. For this article
+I&#39;m going to use a toy example based on weather reports. Our actor will be able to get whether reports
+and then return the maximum temperature for a given period. An instance of actor will be created
+for each city (geo partitioning). Here is our interface in Service Fabric:</p>
+<pre><code class="language-csharp">public interface IWeatherActor : IActor
+{
+    Task AddWeatherReport(WeatherReport report);
+
+    Task&lt;int?&gt; GetMaxTemperature(Period period);
+}</code></pre>
+<p>We have two operations: a command and a query. They are both async (return <code>Task</code>). The data classes
+are required to be mutable DTOs based on <code>DataContract</code>:</p>
+<pre><code class="language-csharp">[DataContract]
+public class WeatherReport
+{
+    [DataMember]
+    public DateTime Moment { get; set; }
+    [DataMember]
+    public int Temperature { get; set; }
+    [DataMember]
+    public int Humidity { get; set; }
+}
+
+[DataContract]
+public class Period
+{
+    [DataMember]
+    public DateTime From { get; set; }
+    [DataMember]
+    public DateTime Until { get; set; }
+}</code></pre>
+<p>And here is the implementation of the weather actor:</p>
+<pre><code class="language-csharp">internal class WeatherActor : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
+{
+    public Task AddWeatherReport(WeatherReport report)
+    {
+        this.State = this.State ?? new List&lt;WeatherReport&gt;();
+        this.State.Add(report);
+        return Task.FromResult(0);
+    }
+
+    public Task&lt;int?&gt; GetMaxTemperature(Period period)
+    {
+        return Task.FromResult(
+            (this.State ?? Enumerable.Empty&lt;WeatherReport&gt;())
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (int?)r.Temperature));
+    }
+}</code></pre>
+<p>Service Fabric provides reliable storage out of the box, so we are using it to
+store our reports. There&#39;s no code required to instantiate an actor. Here is the
+code to use it:</p>
+<pre><code class="language-csharp">// Submit a new report
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(new ActorId(&quot;Amsterdam&quot;));
+actor.AddWeatherReport(
+    new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 });
+
+// Make a query somewhere else
+IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(new ActorId(&quot;Amsterdam&quot;));
+var result = actor.GetMaxTemperature(new Period { From = monthAgo, Until = now });</code></pre>
+<h2 id="akka-net-actors">Akka.NET Actors</h2>
+<p>Actors in Akka.NET are message-based. The messages are immutable POCOs, which 
+is a great design decision. Here are the messages for our scenario:</p>
+<pre><code class="language-csharp">public class WeatherReport
+{
+    public WeatherReport(DateTime moment, int temperature, int humidity)
+    {
+        this.Moment = moment;
+        this.Temperature = temperature;
+        this.Humidity = humidity;
+    }
+
+    public DateTime Moment { get; }
+    public int Temperature { get; }
+    public int Humidity { get; }
+}
+
+public class Period
+{
+    public Period(DateTime from, DateTime until)
+    {
+        this.From = from;
+        this.Until = until;
+    }
+
+    public DateTime From { get; }
+    public DateTime Until { get; }
+}
+</code></pre>
+<p>There&#39;s no need to define any interfaces. The basic actor implementation derives from
+<code>ReceiveActor</code> and calls <code>Receive</code> generic method to setup a callback which is called
+when a message of specified type is received:</p>
+<pre><code class="language-csharp">public class WeatherActor : ReceiveActor
+{
+    private List&lt;WeatherReport&gt; state = new List&lt;WeatherReport&gt;();
+
+    public WeatherActor()
+    {
+        Receive&lt;WeatherReport&gt;(this.AddWeatherReport);
+        Receive&lt;Period&gt;(this.GetMaxTemperature);
+    }
+
+    public void AddWeatherReport(WeatherReport report)
+    {
+        this.state.Add(report);
+    }
+
+    public void GetMaxTemperature(Period period)
+    {
+        var response = this.state
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (int?)r.Temperature);
+        Sender.Tell(response, Self);
+    }
+}</code></pre>
+<p>Note a couple more differences in this implementation comparing to Fabric style:</p>
+<ul>
+<li><p>State is stored in a normal class field and is not persistent or replicated
+by default. This can be solved by Akka.NET Persistence, which would save all
+messages (and potentially snapshots) to the external database. Still, it won&#39;t
+be the same level of convenience as in-built Service Fabric statefullness.</p>
+</li>
+<li><p><code>GetMaxTemperature</code> method does not return anything, because nobody would look
+at the returned value. Instead, it sends yet another message to the sender actor.
+So, <code>Request-Response</code> workflow is supported but is a bit less convenient and
+explicit.</p>
+</li>
+</ul>
+<p>Let&#39;s have a look at the client code. <code>ActorSelection</code> is the closest notion to
+Fabric&#39;s <code>ActorProxy</code>: it does not create an actor, but just gets an endpoint
+based on the name. Note that Akka.NET actor needs to be explicitly created by
+another actor, but lifetime management is a separate discussion, so we&#39;ll skip 
+it for now. Here is the report sender:</p>
+<pre><code class="language-csharp">// Submit a new report
+var msg = new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 };
+Context.ActorSelection(&quot;/user/weather/Amsterdam&quot;).Tell(msg);</code></pre>
+<p>Asking <code>ActorSelection</code> is not directly possible, we would need to setup an
+inbox and receive callback messages. We&#39;ll pretend that we have an <code>ActorRef</code>
+for the sake of simplicity:</p>
+<pre><code class="language-csharp">// Make a query somewhere else
+ActoRef actor = ... ; // we have it
+var result = await actor.Ask(new Period { From = monthAgo, Until = now });</code></pre>
+<h2 id="the-best-of-two-worlds">The Best of Two Worlds</h2>
+<p>Now my goals is to come up with an implementation of Service Fabric actors with
+the properties that combine the good parts of both frameworks (without explicitly
+using Akka.NET), i.e.</p>
+<ul>
+<li>Use the full power of Service Fabric actors, including lifetime management,
+cluster management and reliable state</li>
+<li>Use the simplicity of Request-Response pattern implementation of Service Fabric</li>
+<li>Support immutable POCO messages instead of <code>DataContract</code> DTOs</li>
+<li>Use <code>ReceiveActor</code>-like API for message processing</li>
+</ul>
+<p>Here is the third implementation of our Weather Actor (the definitions of messages
+from Akka.NET example are intact):</p>
+<pre><code class="language-csharp">[ActorService(Name = &quot;WeatherActor&quot;)]
+public class WeatherActor : StetefulReceiveActor&lt;List&lt;WeatherReport&gt;&gt;
+{
+    public WeatherActor()
+    {
+        Receive&lt;WeatherReport&gt;(this.AddWeatherReport);
+        Receive&lt;Period, int&gt;(this.GetMaxTemperature);
+    }
+
+    public Task&lt;List&lt;WeatherReport&gt;&gt; AddWeatherReport(
+        List&lt;WeatherReport&gt; state, WeatherReport report)
+    {
+        state = state ?? new List&lt;WeatherReport&gt;();
+        state.Add(report);
+        return Task.FromResult(state);
+    }
+
+    public Task&lt;int?&gt; GetMaxTemperature(List&lt;WeatherReport&gt; state, Period period)
+    {
+        return Task.FromResult(
+            (state ?? Enumerable.Empty&lt;WeatherReport&gt;())
+            .Where(r =&gt; r.Moment &gt; period.From &amp;&amp; r. Moment &lt;= period.Until)
+            .Max(r =&gt; (int?)r.Temperature));
+    }
+}</code></pre>
+<p>The base <code>ReceiveActor</code> class is not defined yet, we&#39;ll do it in the next section. Here is
+how it&#39;s being used:</p>
+<ul>
+<li>The base class is generic and it accepts the type of the state (similar to normal Fabric actors)</li>
+<li>Constructor registers two <code>Receive</code> handlers: message handler and request handler. Note
+that the later one accepts two type parameters: request type and response type</li>
+<li>Both handlers get the current state as the first argument instead of pulling it from the property of
+the base class</li>
+<li>The both return <code>Task</code>&#39;ed data. Message handler is allowed to change the state, while
+request handler does  not change the state but just returns the response back</li>
+<li><code>ServiceName</code> attribute is required because there are (may be) multiple classes implementing
+the same interface</li>
+</ul>
+<p>The client code uses our own <code>MessageActorProxy</code> class to create non-generic proxies which
+are capable to <code>Tell</code> (send a message one way) and <code>Ask</code> (do request and wait for response):</p>
+<pre><code class="language-csharp">// Submit a new report
+var actor = MessageActorProxy.Create(new ActorId(&quot;Amsterdam&quot;), &quot;WeatherActor&quot;);
+actor.Tell(new WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 });
+
+// Make a query somewhere else
+var actor = MessageActorProxy.Create(new ActorId(&quot;Amsterdam&quot;), &quot;WeatherActor&quot;);
+var result = actor.Ask(new Period { From = monthAgo, Until = now });</code></pre>
+<h2 id="implementation-of-receiveactor">Implementation of ReceiveActor</h2>
+<p>Let&#39;s start with the interface definition:</p>
+<pre><code class="language-csharp">public interface IReceiveActor : IActor
+{
+    Task Tell(string typeName, byte[] message);
+
+    [Readonly]
+    Task&lt;byte[]&gt; Ask(string typeName, byte[] message);
+}</code></pre>
+<p>The two methods for <code>Tell</code> and <code>Ask</code> accept serializes data together with fully qualified
+type name. This will allow passing any kind of objects which can be handled by a serializer
+of choice (I used Newtonsoft JSON serializer).</p>
+<p>Actor implementation derives from <code>StatefulActor</code> and uses another type/bytes pair to store
+the serialized state:</p>
+<pre><code class="language-csharp">    public abstract class StatefulReceiveActor : StatefulActor&lt;StateContainer&gt;, 
+                                                 IReceiveActor
+    {
+        // ...
+    }
+
+    [DataContract]
+    public class StateContainer
+    {
+        [DataMember]
+        public string TypeName { get; set; }
+
+        [DataMember]
+        public byte[] Data { get; set; }
+    }</code></pre>
+<p>The simplistic implementation of <code>Receive</code> generic methods uses two dictionaries
+to store the handlers:</p>
+<pre><code class="language-csharp">private Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt; handlers;
+private Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt; askers;
+
+public ReceiveActor()
+{
+    this.handlers = new Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt;();
+    this.askers = new Dictionary&lt;Type, Func&lt;object, object, Task&lt;object&gt;&gt;&gt;();
+}
+
+protected void Receive&lt;T&gt;(Func&lt;object, T, Task&lt;object&gt;&gt; handler)
+    =&gt; this.handlers.Add(typeof(T), async (s, m) =&gt; await handler(s, (T)m));
+
+protected void Receive&lt;TI, TO&gt;(Func&lt;object, TI, Task&lt;TO&gt;&gt; asker)
+    =&gt; this.askers.Add(typeof(TI), async (s, m) =&gt; await asker(s, (TI)m));
+</code></pre>
+<p>The <code>Tell</code> method deserializes the message and state, then picks a handler based on
+the message type, executes it and serializes the produced state back:</p>
+<pre><code class="language-csharp">public async Task Tell(string typeName, byte[] message)
+{
+    var type = Type.GetType(typeName);
+    var typedMessage = this.serializer.Deserialize(message, type);
+
+    var typedState = this.State != null
+        ? this.serializer.Deserialize(this.State.Data, Type.GetType(this.State.TypeName))
+        : null;
+    var handler = this.handlers.FirstOrDefault(t =&gt; t.Key.IsAssignableFrom(type)).Value;
+    if (handler != null)
+    {
+        var newState = await handler(typedState, typedMessage);
+        this.State =
+            newState != null
+            ? new StateContainer 
+              { 
+                  Data = this.serializer.Serialize(newState), 
+                  TypeName = newState.GetType().AssemblyQualifiedName 
+              }
+            : null;
+    }
+}</code></pre>
+<p>The implementation of <code>Ask</code> is almost identical, so I&#39;ll skip it. <code>MessageActorProxy</code> 
+encapsulates the serialization around passing data to normal <code>ActorProxy</code> class:</p>
+<pre><code class="language-csharp">public class MessageActorProxy
+{
+    private readonly IStatefulMessageActor proxy;
+    private readonly ISerializer serializer = new JsonByteSerializer();
+
+    private MessageActorProxy(ActorId actorId, string serviceName)
+    {
+        this.proxy = ActorProxy.Create&lt;IReceiveActor&gt;(actorId, serviceName: serviceName);
+    }
+
+    public async Task Tell(object message)
+    {
+        var serialized = this.serializer.Serialize(message);
+        await this.proxy.Send(message.GetType().AssemblyQualifiedName, serialized);
+    }
+
+    public async Task&lt;T&gt; Ask&lt;T&gt;(object message)
+    {
+        var serialized = this.serializer.Serialize(message);
+        var fullName = message.GetType().AssemblyQualifiedName;
+        var response = await this.proxy.Ask(fullName, serialized);
+        return (T)this.serializer.Deserialize(response, typeof(T));
+    }
+
+    public static MessageActorProxy Create(ActorId actorId, string serviceType)
+    {
+        return new MessageActorProxy(actorId, serviceType);
+    }
+}</code></pre>
+<p>Let&#39;s briefly wrap it up.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>At this stage Azure Service Fabric lacks support of some actor model best practices
+like message-based API and immutable POCO classes. At the same time, it provides
+super powerful setup regarding cluster resource management, state replication, fault
+tolerance and reliable communication. We can borrow some approaches that are used in Akka.NET
+framework to improve the developer experience who wants to leverage the power
+of Service Fabric.</p>
+
+    </div>
+
+    
+
+    
+    <div class="post-tags">
+        Posted In: <a href='/tags/service-fabric/'>Service Fabric</a>, <a href='/tags/akka-net/'>Akka.NET</a>, <a href='/tags/actor-model/'>Actor Model</a>
+    </div>
+    
+</article>
+
+    <article class="post">
     <div class="post-date">Feb 1st, 2016</div>
     
     <h1><a href='/2016/02/building-a-poker-bot-card-recognition/'>Building a Poker Bot: Card Recognition</a></h1>
@@ -678,204 +1014,6 @@ validation may fail.</p>
     
     <div class="post-tags">
         Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/clean-code/'>Clean Code</a>
-    </div>
-    
-</article>
-
-    <article class="post">
-    <div class="post-date">Dec 22nd, 2015</div>
-    
-    <h1><a href='/2015/12/weaving-your-domain-classes-with-fody/'>Weaving your domain classes with Fody</a></h1>
-    
-
-    
-
-    <div class="post-content">
-        <p>When I model the business domain with C#, the resulting data structures tend to contain a lot of boilerplate code. It&#39;s repeated from class to class and it gets more difficult to see the essence of the model behind the repetitive cruft. Here is a simplistic example, which illustrates the problem. Let&#39;s say we are modelling Trips, and for each <code>Trip</code> we need to keep track of <code>Origin</code>, <code>Destination</code> and <code>Vehicle</code> which executes the <code>Trip</code>, nothing else. Here is a code to create an sample trip:</p>
-<pre><code class="language-csharp">var trip = new Trip(
-    origin: new Location(&quot;Paris&quot;, geoParis), 
-    destination: new Location(&quot;Amsterdam&quot;, geoAmsterdam),
-    vehicle: new Vehicle(&quot;TBL-12-H&quot;, Type.HeavyTruck)</code></pre>
-<p>Let&#39;s include these requirements as parts of our trip model:</p>
-<ul>
-<li>It has a constructor which accepts three arguments (see above)</li>
-<li>It has 3 read-only properties which are assigned from constructor parameters</li>
-<li>It should not allow null values to be assigned to these properties via constructor</li>
-<li>It should be a Value object, that is two objects with same properties should be equal</li>
-</ul>
-<h2 id="initial-version">Initial version</h2>
-<p>First, let&#39;s implement these requirement in a usual way:</p>
-<pre><code class="language-csharp">public class Trip : IEquatable&lt;Trip&gt;
-{
-    public Trip(Location origin, Location destination, Vehicle vehicle)
-    {
-        if (origin == null) throw new ArgumentNullException(nameof(origin));
-        if (destination == null) throw new ArgumentNullException(nameof(destination));
-        if (vehicle == null) throw new ArgumentNullException(nameof(vehicle));
-
-        this.Origin = origin;
-        this.Destination = destination;
-        this.Vehicle = vehicle;
-    }
-
-    public Location Origin { get; }
-    public Location Destination { get; }
-    public Vehicle Vehicle { get; }
-
-    public bool Equals(Trip other)
-    {
-        return Equals(this.Origin, other.Origin) 
-            &amp;&amp; Equals(this.Destination, other.Destination) 
-            &amp;&amp; Equals(this.Vehicle, other.Vehicle);
-    }
-
-    public override bool Equals(object obj)
-    {
-        if (ReferenceEquals(null, obj))
-        {
-            return false;
-        }
-        if (ReferenceEquals(this, obj))
-        {
-            return true;
-        }
-        if (obj.GetType() != this.GetType())
-        {
-            return false;
-        }
-        return Equals((Trip)obj);
-    }
-
-    public override int GetHashCode()
-    {
-        unchecked
-        {
-            var hashCode = this.Origin.GetHashCode();
-            hashCode = (hashCode * 397) ^ this.Destination.GetHashCode();
-            hashCode = (hashCode * 397) ^ this.Vehicle.GetHashCode();
-            return hashCode;
-        }
-    }
-
-    public static bool operator ==(Trip tripA, Trip tripB)
-    {
-        return object.Equals(tripA, tripB);
-    }
-
-    public static bool operator !=(Trip tripA, Trip tripB)
-    {
-        return !object.Equals(tripA, tripB);
-    }
-}</code></pre>
-<p>That&#39;s a lot of code! It&#39;s very repetitive but it&#39;s also tricky: you can implement it incorrectly in some slight way that wouldn&#39;t be easy to catch until it silently fails one day. So imagine how many tests you need to validate it.</p>
-<p>I implemented this code with help of Resharper, which makes it so much easier, but the code is still a heavy luggage to carry on. This class is hard to read and hard to change - every time you add a property you should not forget to update all the corresponding methods. </p>
-<p>Are there other options?</p>
-<h2 id="introducing-fody">Introducing Fody</h2>
-<p><a href="https://github.com/Fody/Fody">Fody</a> is an extensible tool for weaving .NET assemblies. It means that you can use it to improve your code automatically at the time of compilation. Fody itself doesn&#39;t do much to the code, but it has a collection of plugins to actually change it. For this example I will use two of them: </p>
-<ul>
-<li><a href="https://github.com/Fody/NullGuard"><strong>NullGuard</strong></a> - guards all the input parameters, output parameters and return values of all types in a current assembly not to be null. If null value is passed or returned, the weaved code with throw an exception.</li>
-<li><a href="https://github.com/Fody/Equals"><strong>Equals</strong></a> - you can mark a class with <code>[Equals]</code> attribute and Fody will implement <code>Equals()</code> and <code>GetHashCode()</code> methods and <code>==</code> operator for you by comparing all public properties of the annotated class.</li>
-</ul>
-<p>To install them just execute </p>
-<pre><code class="language-ps">PM&gt; Install-Package NullGuard.Fody
-PM&gt; Install-Package Equals.Fody</code></pre>
-<p>The root of your project will now contain the following configuration file:</p>
-<pre><code class="language-xml">&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;
-&lt;Weavers&gt;
-  &lt;NullGuard IncludeDebugAssert=&quot;false&quot; /&gt;
-  &lt;Equals /&gt;
-&lt;/Weavers&gt;</code></pre>
-<p>(I&#39;ve added <code>IncludeDebugAssert</code> attribute manually to disable assert statements in debug mode)</p>
-<p>Let&#39;s adjust our class to make use of the plugins:</p>
-<pre><code class="language-csharp">[Equals]
-public class Trip
-{
-    public Trip(Location origin, Location destination, Vehicle vehicle)
-    {
-        this.Origin = origin;
-        this.Destination = destination;
-        this.Vehicle = vehicle;
-    }
-
-    public Location Origin { get; }
-    public Location Destination { get; }
-    public Vehicle Vehicle { get; }
-}</code></pre>
-<p>And that&#39;s it! We still get the same functionality but the code is just trivial. Let&#39;s see how it works:</p>
-<ul>
-<li><code>Equals</code> attribute means that we want Fody plugin to implement all the equality-related boilerplate code for this class, including operators and <code>IEquatable&lt;T&gt;</code> implementation. So this plugin is in <em>opt-in</em> mode.</li>
-<li>I used no attributes from <code>NullGuard</code> plugin. This plugin works in <em>opt-out</em> mode, i.e. it changes all the classes by default, and if you don&#39;t want it for some piece of code - you can always opt out. This default makes a lot of sense to me: I don&#39;t want any nulls in my code unless I really need them due to some external contracts.</li>
-</ul>
-<p>Let&#39;s open the resulting assembly in <a href="http://ilspy.net/">ILSpy</a> to see what it compiles to. Here is the constructor:</p>
-<pre><code class="language-csharp">public Trip(Location origin, Location destination, Vehicle vehicle)
-{
-    bool flag = origin == null;
-    if (flag)
-    {
-        throw new ArgumentNullException(&quot;origin&quot;);
-    }
-    bool flag2 = destination == null;
-    if (flag2)
-    {
-        throw new ArgumentNullException(&quot;destination&quot;);
-    }
-    bool flag3 = vehicle == null;
-    if (flag3)
-    {
-        throw new ArgumentNullException(&quot;vehicle&quot;);
-    }
-    this.&lt;Origin&gt;k__BackingField = origin;
-    this.&lt;Destination&gt;k__BackingField = destination;
-    this.&lt;Vehicle&gt;k__BackingField = vehicle;
-}</code></pre>
-<p>It&#39;s bit more verbose but essentially equivalent to what I did manually before. By default null guard will be very strict, so you will see that even auto-property&#39;s return values are checked:</p>
-<pre><code class="language-csharp">public Location Origin
-{
-    [CompilerGenerated]
-    get
-    {
-        Location expr_06 = this.&lt;Origin&gt;k__BackingField;
-        if (expr_06 == null)
-        {
-            throw new InvalidOperationException(&quot;[NullGuard] Return value of property &#39;ETA.Domain.Location ETA.Domain.Trip::Origin()&#39; is null.&quot;);
-        }
-        return expr_06;
-    }
-}</code></pre>
-<p>It doesn&#39;t make much sense to me, so I configured Fody on assembly level to check only arguments and return values:</p>
-<pre><code class="language-csharp">[assembly: NullGuard(ValidationFlags.Arguments | ValidationFlags.ReturnValues)]</code></pre>
-<p>Here is a set of operations related to equality (I&#39;ll skip the body in sake of brevity):</p>
-<pre><code class="language-csharp">public class Trip : IEquatable&lt;Trip&gt;
-{
-    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
-    private static bool EqualsInternal(Trip left, Trip right) { ... }
-    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
-    public override bool Equals(Trip other) { ... }
-    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
-    public override bool Equals(object obj) { ... }
-    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
-    public override int GetHashCode() { ... }
-    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
-    public static bool operator ==(Trip left, Trip right) { ... }
-    [GeneratedCode(&quot;Equals.Fody&quot;, &quot;1.4.6.0&quot;), DebuggerNonUserCode]
-    public static bool operator !=(Trip left, Trip right) { ... }
-}</code></pre>
-<p>There is a catch (at least at the time of writing): the auto-generated <code>==</code> and <code>!=</code> operators won&#39;t work properly if you use them inside the same assembly where the type is defined. That&#39;s because the C# compiler will only use these operators properly if they are defined at compile time, and they only get defined after the compilation (weaving takes place after IL is produced). See <a href="https://github.com/Fody/Equals/issues/10">the issue on GitHub</a> for details.</p>
-<h2 id="bonus-a-proper-solution">Bonus - a proper solution</h2>
-<p>Here is how you actually should define similar types:</p>
-<pre><code class="language-fsharp">type Trip = 
-  { Origin : Location
-    Destination : Location
-    Vehicle : Vehicle }</code></pre>
-<p>No nulls are possible here and equality works out of the box. There&#39;s just one major detail: it&#39;s F#...</p>
-
-    </div>
-
-    
-
-    
-    <div class="post-tags">
-        Posted In: <a href='/tags/fody/'>Fody</a>, <a href='/tags/ddd/'>DDD</a>, <a href='/tags/code-generation/'>Code Generation</a>
     </div>
     
 </article>
