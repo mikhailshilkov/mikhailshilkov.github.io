@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en-us"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Cold Starts in Google Cloud Functions | Mikhail Shilkov</title>
+	
+	
+	
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+	<meta property="og:title" content="Cold Starts in Google Cloud Functions" />
+<meta property="og:description" content="Running GA and Beta languages on different instance sizes" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://mikhail.io/serverless/coldstarts/gcp/" />
+
+<meta property="og:image" content="https://mikhail.io/coldgcp.jpg" />
+
+<meta property="og:updated_time" content="2019-02-24T00:00:00&#43;00:00"/>
+
+	<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="https://mikhail.io/coldgcp.jpg"/>
+
+<meta name="twitter:title" content="Cold Starts in Google Cloud Functions"/>
+<meta name="twitter:description" content="Running GA and Beta languages on different instance sizes"/>
+
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=Cold%20Starts%20in%20Google%20Cloud%20Functions%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2fgcp%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2fgcp%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">Cold Starts in Google Cloud Functions</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            <span class="post-date">Last updated on Feb 24, 2019
+                            
+                            &nbsp;&middot;&nbsp; 3 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                    
+                </div>
+            </div>
+            <div class="row">
+                    <div class="col-lg-11 offset-lg-1 flex-first flex-lg-unordered">
+                    <img class="featured-image img-fluid" src="coldgcp.jpg" alt="thumbnail for this post">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-lg-2 pl-0">      
+                </div>
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+                    
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        
+
+<p>This article describes Google Cloud Functions&mdash;the dynamically scaled and billed-per-execution compute service. Instances of Cloud Functions are added and removed dynamically. When a new instance handles its first request, the response time suffers, which is called a <strong>cold start</strong>.</p>
+
+<p>Learn more: <a href="/serverless/coldstarts/define">Cold Starts in Serverless Functions</a>.</p>
+
+<h2 id="when-does-cold-start-happen">When Does Cold Start Happen?</h2>
+
+<p>The very first cold start happens when the first request comes in after deployment.</p>
+
+<p>After that request is processed, the instance stays alive to be reused for subsequent requests. There is no predefined threshold for instance recycling: the empiric data show a high variance of idle-but-alive periods.</p>
+
+<p>The following chart estimates the probability of an instance to be recycled after the given period of inactivity:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'Time');
+  data.addColumn('number', 'Probability');
+  data.addRows([[0,0],[20,0.05434782608695652],[40,0.19753086419753085],[60,0.2768361581920904],[80,0.4968944099378882],[100,0.5942028985507246],[120,0.7128112936964913],[140,0.7128112936964913],[160,0.7128112936964913],[180,0.7128112936964913],[200,0.8402777777777778],[220,0.8402777777777778],[240,0.8573666308628715],[260,0.8573666308628715],[280,0.8573666308628715],[300,0.8573666308628715]]);
+
+  options.lineWidth = 3;
+  options.hAxis = {
+    title: 'Time since the previous invocation (minutes)'
+  };
+  options.vAxis = {
+    title: 'probability'
+  };
+
+  return new google.visualization.AreaChart(document.getElementById('chart_div_coldstart_gcp_interval'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_gcp_interval"></div>
+  <figcaption class="imageCaption"><h4>Probability of a cold start happening before minute X</h4></figcaption>
+</figure>
+
+<p>The instance can die after several minutes or stay alive for several hours. Most probably, Google makes the decision based on the current demand/supply ratio in the given resource pool.</p>
+
+<p>Read more: <a href="/serverless/coldstarts/gcp/intervals">When Does Cold Start Happen on Google Cloud Functions?</a></p>
+
+<h2 id="how-slow-are-cold-starts">How Slow Are Cold Starts?</h2>
+
+<p>The following chart shows the typical range of cold starts in Google Cloud Functions, broken down per language. The darker ranges are the most common 67% of durations, and lighter ranges include 95%.</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["JavaScript",1.1582324999999998,0.8857387333333332,1.7931422266666663,1.0317367653333331,1.4403767986666665,"{color: #F1E05A; fill-color: #F1E05A}"],["Go (beta)",1.0135258906666667,0.7419691256666667,1.696737899,0.8771824533333332,1.3412195466666665,"{color: #375EAB; fill-color: #375EAB}"],["Python (beta)",2.423216392,1.129887247000001,4.314114307,2.0890661479999997,2.9706788013333334,"{color: #3572A5; fill-color: #3572A5}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_gcp_bylanguage'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_gcp_bylanguage"></div>
+  <figcaption class="imageCaption"><h4>Typical cold start durations per language</h4></figcaption>
+</figure>
+
+<p>JavaScript and Go functions load within <strong>1-2 seconds</strong>. Python functions are currently slower, but they might improve towards the GA release date.</p>
+
+<p>View detailed distributions: <a href="/serverless/coldstarts/gcp/languages">Cold Start Duration per Language</a>.</p>
+
+<h2 id="does-package-size-matter">Does Package Size Matter?</h2>
+
+<p>The above charts show the statistics for tiny &ldquo;Hello World&rdquo;-style functions. Adding dependencies and thus increasing the deployed package size will further increase the cold start durations.</p>
+
+<p>The following chart compares three JavaScript functions with the various number of referenced NPM packages:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([[" 1 KB",1.1582324999999998,0.8857387333333332,1.7931422266666663,1.0317367653333331,1.4403767986666665,"{color: #5BA3F1; fill-color: #5BA3F1}"],[" 14 MB",3.887161306666666,3.1161227566666665,5.256229356666668,3.504540326666666,4.519593746666667,"{color: #2870BE; fill-color: #2870BE}"],[" 35 MB",7.560532854,6.1631657765,9.983386565666672,6.8330495146666665,8.401314644000001,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_gcp_bydependencies'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_gcp_bydependencies"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per deployment size (zipped)</h4></figcaption>
+</figure>
+
+<p>Indeed, the functions with many dependencies can be 5-10 times slower to start.</p>
+
+<h2 id="does-instance-size-matter">Does Instance Size Matter?</h2>
+
+<p>Google Cloud Functions have a setting to define the memory size that gets allocated to a single instance of a function. Are larger instances faster to load?</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["128 MB",1.2373553013333334,1.0136621680000002,2.668321134666667,1.0864899546666666,1.5539504013333334,"{color: #5BA3F1; fill-color: #5BA3F1}"],["256 MB",1.2881466026666666,1.0964116359999998,1.8641257426666622,1.1524376866666666,1.4895185319999997,"{color: #428AD8; fill-color: #428AD8}"],["512 MB",1.1517934026666667,0.9734630126666665,1.859163276,1.061167964,1.4779722213333333,"{color: #2870BE; fill-color: #2870BE}"],["1024 MB",1.1060802173333333,0.9153290973333332,1.5826937906666656,1.0079504533333334,1.3262453173333333,"{color: #0F57A5; fill-color: #0F57A5}"],["2048 MB",1.0090626066666666,0.7471284966666667,1.665561565,0.8970814546666666,1.2069672879999997,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_gcp_bymemory'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_gcp_bymemory"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per instance size</h4></figcaption>
+</figure>
+
+<p>There seems to be no significant speed-up of the cold start as the instance size grows.</p>
+
+<p>Same comparison for larger functions: <a href="/serverless/coldstarts/gcp/instances">Cold Start Duration per Instance Size</a>.</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/serverless/coldstarts/">Cold Starts</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/gcp">GCP</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/google-cloud-functions">Google Cloud Functions</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div id="gh-comments-list" style="display: none">4</div>    
+        </div>
+    </div>
+</div>
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>

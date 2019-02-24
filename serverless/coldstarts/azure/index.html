@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en-us"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Cold Starts in Azure Functions | Mikhail Shilkov</title>
+	
+	
+	
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+	<meta property="og:title" content="Cold Starts in Azure Functions" />
+<meta property="og:description" content="Influence of dependecies, language, runtime selection on Consumption Plan" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://mikhail.io/serverless/coldstarts/azure/" />
+
+<meta property="og:image" content="https://mikhail.io/coldazure.jpg" />
+
+<meta property="og:updated_time" content="2019-02-24T00:00:00&#43;00:00"/>
+
+	<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="https://mikhail.io/coldazure.jpg"/>
+
+<meta name="twitter:title" content="Cold Starts in Azure Functions"/>
+<meta name="twitter:description" content="Influence of dependecies, language, runtime selection on Consumption Plan"/>
+
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=Cold%20Starts%20in%20Azure%20Functions%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2fazure%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2fazure%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">Cold Starts in Azure Functions</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            <span class="post-date">Last updated on Feb 24, 2019
+                            
+                            &nbsp;&middot;&nbsp; 3 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                    
+                </div>
+            </div>
+            <div class="row">
+                    <div class="col-lg-11 offset-lg-1 flex-first flex-lg-unordered">
+                    <img class="featured-image img-fluid" src="coldazure.jpg" alt="thumbnail for this post">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-lg-2 pl-0">      
+                </div>
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+                    
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        
+
+<p>This article describes Azure Functions running on Consumption Plan&mdash;the dynamically scaled and billed-per-execution compute service. Consumption Plan adds and removes instances dynamically. When a new instance handles its first request, the response time increases, which is called a <strong>cold start</strong>.</p>
+
+<p>Learn more: <a href="/serverless/coldstarts/define/">Cold Starts in Serverless Functions</a>.</p>
+
+<h2 id="when-does-cold-start-happen">When Does Cold Start Happen?</h2>
+
+<p>The very first cold start happens when the first request comes in after deployment.</p>
+
+<p>After that request is processed, the instance stays alive for about <strong>20 minutes</strong> to be reused for subsequent requests:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'Time');
+  data.addColumn('number', 'Probability');
+  data.addRows([[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0],[10,0],[11,0],[12,0],[13,0],[14,0],[15,0],[16,0.014285714285714285],[17,0.014285714285714285],[18,0.014285714285714285],[19,0.014285714285714285],[20,0.014285714285714285],[21,0.8620689655172413],[22,1],[23,1],[24,1],[25,1],[26,1],[27,1],[28,1],[29,1],[30,1]]);
+
+  options.lineWidth = 3;
+  options.hAxis = {
+    title: 'Time since the previous invocation (minutes)'
+  };
+  options.vAxis = {
+    title: 'probability'
+  };
+
+  return new google.visualization.AreaChart(document.getElementById('chart_div_coldstart_azure_interval'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_azure_interval"></div>
+  <figcaption class="imageCaption"><h4>Probability of a cold start happening before minute X</h4></figcaption>
+</figure>
+
+<p>Read more: <a href="/serverless/coldstarts/azure/intervals/">When Does Cold Start Happen on Azure Functions?</a></p>
+
+<h2 id="how-slow-are-cold-starts">How Slow Are Cold Starts?</h2>
+
+<p>The following chart shows the typical range of cold starts in Azure Functions V2, broken down per language. The darker ranges are the most common 67% of durations, and lighter ranges include 95%.</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["C#",4.940131306,2.7356900059999996,13.512611980999992,3.5689002093333335,8.574869002666652,"{color: #178600; fill-color: #178600}"],["JavaScript",7.546261614666666,4.551468156333333,15.797547888833346,5.676060145333333,11.99859984266667,"{color: #F1E05A; fill-color: #F1E05A}"],["Java (preview)",4.739893267999999,3.378628653,15.491379759666666,3.8822586986666665,7.197396258666666,"{color: #B07219; fill-color: #B07219}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_azure_bylanguagewindows'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_azure_bylanguagewindows"></div>
+  <figcaption class="imageCaption"><h4>Typical cold start durations per language</h4></figcaption>
+</figure>
+
+<p>A typical cold start latency spans from 3 to 15 seconds. It seems to be consistent between the 3 supported languages.</p>
+
+<p>View detailed distributions: <a href="/serverless/coldstarts/azure/languages/">Cold Start Duration per Language</a>.</p>
+
+<h2 id="is-v2-faster-than-v1">Is V2 Faster Than V1?</h2>
+
+<p>There are currently two generally available versions of Azure Functions runtime: V1 runs on top of .NET Framework 4.x, while V2 runs on .NET Core 2.x.</p>
+
+<p>Even though .NET Core is supposed to be faster and more lightweight, Functions V2 still experience longer cold starts:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["V1 C#",3.09869666,1.8367610291666665,11.914654549166674,2.3635318666666665,6.33084832,"{color: #005300; fill-color: #005300}"],["V2 C#",4.940131306,2.7356900059999996,13.512611980999992,3.5689002093333335,8.574869002666652,"{color: #178600; fill-color: #178600}"],["V1 JavaScript",3.313097118,1.9887938138333334,8.61480980466668,2.263460878666667,6.7185338533333345,"{color: #D8C741; fill-color: #D8C741}"],["V2 JavaScript",7.546261614666666,4.551468156333333,15.797547888833346,5.676060145333333,11.99859984266667,"{color: #F1E05A; fill-color: #F1E05A}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_azure_byversion'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_azure_byversion"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations across runtime versions</h4></figcaption>
+</figure>
+
+<p>The difference is especially noticeable for JavaScript functions.</p>
+
+<h2 id="does-package-size-matter">Does Package Size Matter?</h2>
+
+<p>The above charts show the statistics for tiny &ldquo;Hello World&rdquo;-style functions. Adding dependencies and thus increasing the deployed package size will further increase the cold start durations.</p>
+
+<p>The following chart compares three JavaScript functions with the various number of referenced NPM packages:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([[" 1 KB",7.546261614666666,4.551468156333333,15.797547888833346,5.676060145333333,11.99859984266667,"{color: #5BA3F1; fill-color: #5BA3F1}"],[" 14 MB",15.577492404,8.236504337333333,19.381636039,9.787848149333334,18.091023374666666,"{color: #2870BE; fill-color: #2870BE}"],[" 35 MB",19.808290150666664,14.581226423999999,28.437263377333323,16.018525654666664,23.90958429333333,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_azure_bydependencies'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_azure_bydependencies"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per deployment size (zipped)</h4></figcaption>
+</figure>
+
+<p>Indeed, the functions with many dependencies can be several times slower to start.</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/serverless/coldstarts/">Cold Starts</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure">Azure</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure-functions">Azure Functions</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div id="gh-comments-list" style="display: none">3</div>    
+        </div>
+    </div>
+</div>
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en-us"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>AWS Lambda: Cold Start Duration per Instance Size | Mikhail Shilkov</title>
+	
+	
+	
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+	<meta property="og:title" content="AWS Lambda: Cold Start Duration per Instance Size" />
+<meta property="og:description" content="AWS Lambda has a setting to define the memory size that gets allocated to a single instance of a function. The CPU resources are allocated proportionally to the memory." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://mikhail.io/serverless/coldstarts/aws/instances/" />
+<meta property="article:published_time" content="2019-02-24T00:00:00&#43;00:00"/>
+<meta property="article:modified_time" content="2019-02-24T00:00:00&#43;00:00"/>
+
+	<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="AWS Lambda: Cold Start Duration per Instance Size"/>
+<meta name="twitter:description" content="AWS Lambda has a setting to define the memory size that gets allocated to a single instance of a function. The CPU resources are allocated proportionally to the memory."/>
+
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=AWS%20Lambda%3a%20Cold%20Start%20Duration%20per%20Instance%20Size%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2faws%2finstances%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2faws%2finstances%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">AWS Lambda: Cold Start Duration per Instance Size</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            <span class="post-date">Last updated on Feb 24, 2019
+                            
+                            &nbsp;&middot;&nbsp; 2 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        <p>AWS Lambda has a setting to define the memory size that gets allocated to a single instance of a function. The CPU resources are allocated proportionally to the memory. So, in theory, larger instances could start faster.</p>
+
+<p>However, there seems to be no significant speed-up of the cold start as the instance size grows.</p>
+
+<p>Here is the comparison for a &ldquo;Hello-World&rdquo; JavaScript function:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["128 MB",0.257390888,0.08541182133333333,0.8995711546666696,0.17018446400000004,0.48376352266666667,"{color: #5BA3F1; fill-color: #5BA3F1}"],["256 MB",0.23643894866666665,0.13198747116666665,1.0610562536666674,0.17245871333333332,0.45978933600000005,"{color: #428AD8; fill-color: #428AD8}"],["512 MB",0.24151418866666666,0.11764135449999999,0.5625342053333334,0.16467311066666665,0.47268490266666663,"{color: #2870BE; fill-color: #2870BE}"],["1024 MB",0.36094660599999995,0.10411323600000001,1.0152807643333335,0.18125752266666664,0.6413357226666666,"{color: #0F57A5; fill-color: #0F57A5}"],["2048 MB",0.40253904733333334,0.11423974399999999,1.198865244,0.19497158399999998,0.7912644066666665,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_aws_bymemory'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_bymemory"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per instance size, no dependencies</h4></figcaption>
+</figure>
+
+<p>Here is the same comparison for a JavaScript function with <strong>14 MB</strong> (zipped) of NPM packages:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["128 MB",1.9319322533333332,1.5271530766666668,2.4713971541666666,1.67301572,2.121457332,"{color: #5BA3F1; fill-color: #5BA3F1}"],["256 MB",2.023575109333333,1.5493587093333332,2.695062909333333,1.7642455853333332,2.4378579919999996,"{color: #428AD8; fill-color: #428AD8}"],["512 MB",1.8555340353333332,1.4212219853333332,2.612676785333333,1.6637513493333334,2.1586356746666664,"{color: #2870BE; fill-color: #2870BE}"],["1024 MB",1.8920879459999997,0.926970196,2.482880196,1.6422532306666664,2.1491443306666667,"{color: #0F57A5; fill-color: #0F57A5}"],["2048 MB",1.79508848,1.3830180799999998,2.17463778,1.531650424,2.038021172,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_aws_bymemoryxl'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_bymemoryxl"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per instance size, 14 MB (zipped) of dependencies</h4></figcaption>
+</figure>
+
+<p>Here is the same comparison for a JavaScript function with <strong>35 MB</strong> (zipped) of NPM packages:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["128 MB",3.635801298666667,1.8377474653333334,5.664044798666668,3.026646858666666,4.227735092,"{color: #5BA3F1; fill-color: #5BA3F1}"],["256 MB",4.350756246666666,3.64441383,5.349978993333334,4.001055918666666,4.791682726666667,"{color: #428AD8; fill-color: #428AD8}"],["512 MB",4.035268030666667,3.134989329,4.844844354833336,3.6980853839999996,4.405607570666667,"{color: #2870BE; fill-color: #2870BE}"],["1024 MB",4.15510473,3.6899520199999998,5.749905326666667,3.820951564,4.5750804359999995,"{color: #0F57A5; fill-color: #0F57A5}"],["2048 MB",3.966843181333333,2.965462231333333,5.071379571333333,3.4202264506666666,4.289446273333333,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_aws_bymemoryxxxl'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_bymemoryxxxl"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per instance size, 35 MB (zipped) of dependencies</h4></figcaption>
+</figure>
+
+<p>None of the charts shows a considerable advantage of larger instance sizes for the cold starts.</p>
+
+<p>Go back to <a href="/serverless/coldstarts/aws/">Cold Starts in AWS Lambda</a>.</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/serverless/coldstarts/">Cold Starts</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/aws">AWS</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/javascript">JavaScript</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/aws-lambda">AWS Lambda</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en-us"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Comparison of Cold Starts in Serverless Functions across AWS, Azure, and GCP | Mikhail Shilkov</title>
+	
+	
+	
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+	<meta property="og:title" content="Comparison of Cold Starts in Serverless Functions across AWS, Azure, and GCP" />
+<meta property="og:description" content="AWS Lambda, Azure Functions, and Google Cloud Functions compared in terms of cold starts across all supported languages" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://mikhail.io/serverless/coldstarts/big3/" />
+
+<meta property="og:image" content="https://mikhail.io/big3.jpg" />
+<meta property="article:published_time" content="2019-02-24T00:00:00&#43;00:00"/>
+<meta property="article:modified_time" content="2019-02-24T00:00:00&#43;00:00"/>
+
+	<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="https://mikhail.io/big3.jpg"/>
+
+<meta name="twitter:title" content="Comparison of Cold Starts in Serverless Functions across AWS, Azure, and GCP"/>
+<meta name="twitter:description" content="AWS Lambda, Azure Functions, and Google Cloud Functions compared in terms of cold starts across all supported languages"/>
+
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=Comparison%20of%20Cold%20Starts%20in%20Serverless%20Functions%20across%20AWS%2c%20Azure%2c%20and%20GCP%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2fbig3%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2fbig3%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">Comparison of Cold Starts in Serverless Functions across AWS, Azure, and GCP</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            <span class="post-date">Last updated on Feb 24, 2019
+                            
+                            &nbsp;&middot;&nbsp; 3 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                    
+                </div>
+            </div>
+            <div class="row">
+                    <div class="col-lg-11 offset-lg-1 flex-first flex-lg-unordered">
+                    <img class="featured-image img-fluid" src="big3.jpg" alt="thumbnail for this post">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-lg-2 pl-0">      
+                </div>
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+                    
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        
+
+<p>This article compares Function-as-a-Service offerings of Big-3 cloud providers in terms of cold starts. AWS Lambda, Azure Functions (Consumption Plan), and Google Cloud Functions are all dynamically scaled and billed-per-execution compute services. Instances of cloud functions are added and removed dynamically. When a new instance handles its first request, the response time increases, which is called a <strong>cold start</strong>.</p>
+
+<p>Read more: <a href="/serverless/coldstarts/define/">Cold Starts in Serverless Functions</a>.</p>
+
+<h2 id="when-does-cold-start-happen">When Does Cold Start Happen?</h2>
+
+<p>The very first cold start happens when the first request comes in after deployment.</p>
+
+<p>After that request is processed, the instance stays alive to be reused for subsequent requests.</p>
+
+<p>The strategy for reuse differs very between the cloud vendors:</p>
+
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Idle instance lifetime</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>AWS Lambda</td>
+<td>Mostly between 25 and 65 minutes</td>
+</tr>
+
+<tr>
+<td>Azure Functions</td>
+<td>20 minutes</td>
+</tr>
+
+<tr>
+<td>Google Cloud Functions</td>
+<td>Anywhere between 3 minutes and 5+ hours</td>
+</tr>
+</tbody>
+</table>
+
+<p>Only Azure has the policy to recycle an idle instance after a fixed period. AWS, and especially GCP, employ some other strategies to determine the threshold, potentially based on the current demand-supply balance of their resource pools.</p>
+
+<p>Learn more about lifetime: <a href="/serverless/coldstarts/aws/intervals/">AWS Lambda</a>, <a href="/serverless/coldstarts/azure/intervals/">Azure Functions</a>, <a href="/serverless/coldstarts/gcp/intervals/">Google Cloud Functions</a>.</p>
+
+<h2 id="how-slow-are-cold-starts">How Slow Are Cold Starts?</h2>
+
+<p>The following chart shows the comparison of typical cold start durations across all generally available languages of the three clouds. The darker ranges are the most common 67% of durations, and lighter ranges include 95%.</p>
+
+</div></div></div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["AWS JavaScript",0.2918788506666667,0.11813574066666667,0.9692951123333299,0.17510927999999998,0.5428548906666666,"{color: #F1E05A; fill-color: #F1E05A}"],["AWS Python",0.2456291273333333,0.16381748483333333,0.5990757389999978,0.204396312,0.2996906253333333,"{color: #3572A5; fill-color: #3572A5}"],["AWS Go",0.37807495666666663,0.12224950666666666,0.6188423483333333,0.26809125066666667,0.4612387746666667,"{color: #375EAB; fill-color: #375EAB}"],["AWS Java",0.39245124066666665,0.24812760316666665,0.6622538248333323,0.31160902533333334,0.487351992,"{color: #B07219; fill-color: #B07219}"],["AWS Ruby",0.32907357466666665,0.13795142466666666,0.9675809246666663,0.19495340799999997,0.5278552079999999,"{color: #701516; fill-color: #701516}"],["AWS C#",1.700326236,0.686674946,4.828908529333334,0.9546511626666666,3.962314376000001,"{color: #178600; fill-color: #178600}"],["GCP JavaScript",1.1582324999999998,0.8857387333333332,1.7931422266666663,1.0317367653333331,1.4403767986666665,"{color: #F1E05A; fill-color: #F1E05A}"],["Azure JavaScript",7.546261614666666,4.551468156333333,15.797547888833346,5.676060145333333,11.99859984266667,"{color: #F1E05A; fill-color: #F1E05A}"],["Azure C#",4.940131306,2.7356900059999996,13.512611980999992,3.5689002093333335,8.574869002666652,"{color: #178600; fill-color: #178600}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_all_bylanguage'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_all_bylanguage"></div>
+  <figcaption class="imageCaption"><h4>Typical cold start durations per language</h4></figcaption>
+</figure>
+
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+            <div class="article-post">
+
+<p>AWS clearly leads with all languages but C# being <strong>below 1 second</strong>. GCP start-up usually takes <strong>between 1 and 2 seconds</strong>, while Azure is far slower.</p>
+
+<p>Read the detailed statistics: <a href="/serverless/coldstarts/aws/languages/">AWS Lambda</a>, <a href="/serverless/coldstarts/azure/languages/">Azure Functions</a>, <a href="/serverless/coldstarts/gcp/languages/">Google Cloud Functions</a>.</p>
+
+<h2 id="does-package-size-matter">Does Package Size Matter?</h2>
+
+<p>The above charts show the statistics for tiny &ldquo;Hello World&rdquo;-style functions. Adding dependencies and thus increasing the deployment package size will further increase the cold start latency.</p>
+
+<p>The following chart compares three JavaScript functions with the various number of referenced NPM packages:</p>
+
+</div></div></div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["AWS 1 KB",0.2918788506666667,0.11813574066666667,0.9692951123333299,0.17510927999999998,0.5428548906666666,"{color: #5BA3F1; fill-color: #5BA3F1}"],["AWS 14 MB",1.909546445333333,1.3960068436666666,2.5045880453333327,1.6677528039999998,2.16727562,"{color: #2870BE; fill-color: #2870BE}"],["AWS 35 MB",4.210858573333334,3.2747947866666665,5.431364771666661,3.8141871239999996,4.653071712,"{color: #003D8B; fill-color: #003D8B}"],["GCP 1 KB",1.1582324999999998,0.8857387333333332,1.7931422266666663,1.0317367653333331,1.4403767986666665,"{color: #5BA3F1; fill-color: #5BA3F1}"],["GCP 14 MB",3.887161306666666,3.1161227566666665,5.256229356666668,3.504540326666666,4.519593746666667,"{color: #2870BE; fill-color: #2870BE}"],["GCP 35 MB",7.560532854,6.1631657765,9.983386565666672,6.8330495146666665,8.401314644000001,"{color: #003D8B; fill-color: #003D8B}"],["Azure 1 KB",7.546261614666666,4.551468156333333,15.797547888833346,5.676060145333333,11.99859984266667,"{color: #5BA3F1; fill-color: #5BA3F1}"],["Azure 14 MB",15.577492404,8.236504337333333,19.381636039,9.787848149333334,18.091023374666666,"{color: #2870BE; fill-color: #2870BE}"],["Azure 35 MB",19.808290150666664,14.581226423999999,28.437263377333323,16.018525654666664,23.90958429333333,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_all_bydependencies'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_all_bydependencies"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per deployment size (zipped)</h4></figcaption>
+</figure>
+
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+            <div class="article-post">
+
+<p>The trend is quite consistent: larger packages cause a significant slowdown of the cold start. Once again, AWS outperforms its competitors.</p>
+
+<p>Details per provider: <a href="/serverless/coldstarts/aws/">AWS Lambda</a>, <a href="/serverless/coldstarts/azure/">Azure Functions</a>, <a href="/serverless/coldstarts/gcp/">Google Cloud Functions</a>.</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/serverless/coldstarts/">Cold Starts</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/aws-lambda">AWS Lambda</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure-functions">Azure Functions</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/google-cloud-functions">Google Cloud Functions</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/aws">AWS</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure">Azure</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/gcp">GCP</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div id="gh-comments-list" style="display: none">1</div>    
+        </div>
+    </div>
+</div>
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>

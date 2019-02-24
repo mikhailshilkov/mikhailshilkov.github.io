@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en-us"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Cold Starts in AWS Lambda | Mikhail Shilkov</title>
+	
+	
+	
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+	<meta property="og:title" content="Cold Starts in AWS Lambda" />
+<meta property="og:description" content="Selection of languages, instance sizes, dependencies, VPC, and more" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://mikhail.io/serverless/coldstarts/aws/" />
+
+<meta property="og:image" content="https://mikhail.io/coldlambda.jpg" />
+
+<meta property="og:updated_time" content="2019-02-24T00:00:00&#43;00:00"/>
+
+	<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="https://mikhail.io/coldlambda.jpg"/>
+
+<meta name="twitter:title" content="Cold Starts in AWS Lambda"/>
+<meta name="twitter:description" content="Selection of languages, instance sizes, dependencies, VPC, and more"/>
+
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=Cold%20Starts%20in%20AWS%20Lambda%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2faws%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2fserverless%2fcoldstarts%2faws%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">Cold Starts in AWS Lambda</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            <span class="post-date">Last updated on Feb 24, 2019
+                            
+                            &nbsp;&middot;&nbsp; 4 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                    
+                </div>
+            </div>
+            <div class="row">
+                    <div class="col-lg-11 offset-lg-1 flex-first flex-lg-unordered">
+                    <img class="featured-image img-fluid" src="coldlambda.jpg" alt="thumbnail for this post">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-lg-2 pl-0">      
+                </div>
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+                    
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        
+
+<p>This article describes AWS Lambda&mdash;the dynamically scaled and billed-per-execution compute service. Instances of Lambdas are added and removed dynamically. When a new instance handles its first request, the response time increases, which is called a <strong>cold start</strong>.</p>
+
+<p>Read more: <a href="/serverless/coldstarts/define/">Cold Starts in Serverless Functions</a>.</p>
+
+<h2 id="when-does-cold-start-happen">When Does Cold Start Happen?</h2>
+
+<p>The very first cold start happens when the first request comes in after deployment.</p>
+
+<p>After that request is processed, the instance stays alive to be reused for subsequent requests. There is no predefined threshold after the instance gets recycled, the empiric data show some variance of the idle period.</p>
+
+<p>The following chart estimates the probability of an instance to be recycled after the given period of inactivity:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'Time');
+  data.addColumn('number', 'Probability');
+  data.addRows([[0,0],[1,0.003616636528028933],[2,0.0054249547920434],[3,0.0054249547920434],[4,0.007233273056057866],[5,0.009041591320072333],[6,0.009041591320072333],[7,0.0108499095840868],[8,0.0108499095840868],[9,0.014466546112115732],[10,0.014466546112115732],[11,0.014466546112115732],[12,0.014466546112115732],[13,0.014466546112115732],[14,0.014466546112115732],[15,0.014466546112115732],[16,0.0162748643761302],[17,0.0162748643761302],[18,0.0162748643761302],[19,0.0162748643761302],[20,0.0162748643761302],[21,0.0162748643761302],[22,0.0162748643761302],[23,0.018083182640144666],[24,0.018083182640144666],[25,0.018083182640144666],[26,0.027124773960216998],[27,0.054249547920433995],[28,0.0650994575045208],[29,0.081374321880651],[30,0.10488245931283906],[31,0.12839059674502712],[32,0.13924050632911392],[33,0.15732368896925858],[34,0.17540687160940324],[35,0.19529837251356238],[36,0.2206148282097649],[37,0.2423146473779385],[38,0.2730560578661845],[39,0.3092224231464738],[40,0.32730560578661844],[41,0.352622061482821],[42,0.37613019891500904],[43,0.4104882459312839],[44,0.4376130198915009],[45,0.484629294755877],[46,0.515370705244123],[47,0.5569620253164557],[48,0.5822784810126582],[49,0.6148282097649186],[50,0.6419529837251357],[51,0.6636528028933092],[52,0.7034358047016275],[53,0.7269439421338155],[54,0.7540687160940326],[55,0.786618444846293],[56,0.810126582278481],[57,0.8372513562386981],[58,0.8661844484629295],[59,0.8933092224231465],[60,0.9240506329113924],[61,0.945750452079566],[62,0.969258589511754],[63,0.9801084990958409],[64,0.9909584086799277],[65,0.9963833634719711],[66,0.9963833634719711],[67,0.9963833634719711],[68,0.9963833634719711],[69,0.9963833634719711],[70,0.9963833634719711],[71,0.9963833634719711],[72,0.9963833634719711],[73,0.9963833634719711],[74,0.9963833634719711],[75,0.9963833634719711],[76,0.9963833634719711],[77,0.9963833634719711],[78,0.9963833634719711],[79,0.9963833634719711],[80,0.9981916817359855],[81,0.9981916817359855],[82,0.9981916817359855],[83,0.9981916817359855],[84,0.9981916817359855],[85,0.9981916817359855],[86,0.9981916817359855],[87,0.9981916817359855],[88,0.9981916817359855],[89,0.9981916817359855],[90,0.9981916817359855]]);
+
+  options.lineWidth = 3;
+  options.hAxis = {
+    title: 'Time since the previous invocation (minutes)'
+  };
+  options.vAxis = {
+    title: 'probability'
+  };
+
+  return new google.visualization.AreaChart(document.getElementById('chart_div_coldstart_aws_interval'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_interval"></div>
+  <figcaption class="imageCaption"><h4>Probability of a cold start happening before minute X</h4></figcaption>
+</figure>
+
+<p>An idle instance almost always stays alive for at least <strong>25 minutes</strong>. Then, the probability of it being disposed slowly starts to grow and reaches 100% somewhere after <strong>1 hour</strong> since the last request.</p>
+
+<p>Read more: <a href="/serverless/coldstarts/aws/intervals/">When Does Cold Start Happen on AWS Lambda?</a></p>
+
+<h2 id="how-slow-are-cold-starts">How Slow Are Cold Starts?</h2>
+
+<p>The following chart shows the typical range of cold starts in AWS Lambda, broken down per language. The darker ranges are the most common 67% of durations, and lighter ranges include 95%.</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["JavaScript",0.2918788506666667,0.11813574066666667,0.9692951123333299,0.17510927999999998,0.5428548906666666,"{color: #F1E05A; fill-color: #F1E05A}"],["Python",0.2456291273333333,0.16381748483333333,0.5990757389999978,0.204396312,0.2996906253333333,"{color: #3572A5; fill-color: #3572A5}"],["Go",0.37807495666666663,0.12224950666666666,0.6188423483333333,0.26809125066666667,0.4612387746666667,"{color: #375EAB; fill-color: #375EAB}"],["Java",0.39245124066666665,0.24812760316666665,0.6622538248333323,0.31160902533333334,0.487351992,"{color: #B07219; fill-color: #B07219}"],["Ruby",0.32907357466666665,0.13795142466666666,0.9675809246666663,0.19495340799999997,0.5278552079999999,"{color: #701516; fill-color: #701516}"],["C#",1.700326236,0.686674946,4.828908529333334,0.9546511626666666,3.962314376000001,"{color: #178600; fill-color: #178600}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_aws_bylanguage'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_bylanguage"></div>
+  <figcaption class="imageCaption"><h4>Typical cold start durations per language</h4></figcaption>
+</figure>
+
+<p>Python seems to be the fastest with most cold starts completed within <strong>300 ms</strong>. JavaScript, Go, Java, and Ruby are all comparable and almost always start within <strong>1 second</strong>. C# is a distinct underdog with cold starts spanning between <strong>1 and 5 seconds</strong>.</p>
+
+<p>View detailed distributions: <a href="/serverless/coldstarts/aws/languages/">Cold Start Duration per Language</a>.</p>
+
+<h2 id="does-package-size-matter">Does Package Size Matter?</h2>
+
+<p>The above charts show the statistics for tiny &ldquo;Hello World&rdquo;-style functions. Adding dependencies and thus increasing the deployed package size will further increase the cold start durations.</p>
+
+<p>The following chart compares three JavaScript functions with the various number of referenced NPM packages:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([[" 1 KB",0.2918788506666667,0.11813574066666667,0.9692951123333299,0.17510927999999998,0.5428548906666666,"{color: #5BA3F1; fill-color: #5BA3F1}"],[" 14 MB",1.909546445333333,1.3960068436666666,2.5045880453333327,1.6677528039999998,2.16727562,"{color: #2870BE; fill-color: #2870BE}"],[" 35 MB",4.210858573333334,3.2747947866666665,5.431364771666661,3.8141871239999996,4.653071712,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_aws_bydependencies'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_bydependencies"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per deployment size (zipped)</h4></figcaption>
+</figure>
+
+<p>Indeed, the functions with many dependencies can be 5-10 times slower to start.</p>
+
+<h2 id="does-instance-size-matter">Does Instance Size Matter?</h2>
+
+<p>AWS Lambda has a setting to define the memory size that gets allocated to a single instance of a function. Are larger instances faster to load?</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["128 MB",0.257390888,0.08541182133333333,0.8995711546666696,0.17018446400000004,0.48376352266666667,"{color: #5BA3F1; fill-color: #5BA3F1}"],["256 MB",0.23643894866666665,0.13198747116666665,1.0610562536666674,0.17245871333333332,0.45978933600000005,"{color: #428AD8; fill-color: #428AD8}"],["512 MB",0.24151418866666666,0.11764135449999999,0.5625342053333334,0.16467311066666665,0.47268490266666663,"{color: #2870BE; fill-color: #2870BE}"],["1024 MB",0.36094660599999995,0.10411323600000001,1.0152807643333335,0.18125752266666664,0.6413357226666666,"{color: #0F57A5; fill-color: #0F57A5}"],["2048 MB",0.40253904733333334,0.11423974399999999,1.198865244,0.19497158399999998,0.7912644066666665,"{color: #003D8B; fill-color: #003D8B}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_aws_bymemory'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_bymemory"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations per instance size</h4></figcaption>
+</figure>
+
+<p>There is no visible difference in cold start duration of different instance sizes.</p>
+
+<p>Same comparison for larger functions: <a href="/serverless/coldstarts/aws/instances/">Cold Start Duration per Instance Size</a>.</p>
+
+<h2 id="what-is-the-effect-of-vpc-access">What Is The Effect Of VPC Access?</h2>
+
+<p>AWS Lambda might need to access resources inside Amazon Virtual Private Cloud (Amazon VPC). Configuring VPC access slows down the cold starts significantly:</p>
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([["No VPC",0.2918788506666667,0.11813574066666667,0.9692951123333299,0.17510927999999998,0.5428548906666666,"{color: green; fill-color: green}"],["VPC",5.9213362133333325,0.15294243,16.508879860833318,0.20777829066666662,8.90926332133333,"{color: red; fill-color: red}"]]);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds'
+  };
+
+  return new google.visualization.LineChart(document.getElementById('chart_div_coldstart_aws_byvpc'));
+});
+</script>
+<figure>
+  <div id="chart_div_coldstart_aws_byvpc"></div>
+  <figcaption class="imageCaption"><h4>Comparison of cold start durations of the same Lambda with and without VPC access</h4></figcaption>
+</figure>
+
+<p>Some VPC-enabled cold starts are still fast, but very often they are much slower and can get up to <strong>17 seconds</strong>.</p>
+
+<p>View detailed distributions: <a href="/serverless/coldstarts/aws/vpc/">Cold Start Duration of VPC-connected Lambda</a>.</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/serverless/coldstarts/">Cold Starts</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/aws">AWS</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/aws-lambda">AWS Lambda</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div id="gh-comments-list" style="display: none">2</div>    
+        </div>
+    </div>
+</div>
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>
