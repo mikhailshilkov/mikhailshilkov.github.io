@@ -12,6 +12,150 @@
 
     
         <entry>
+            <title type="html"><![CDATA[Visualizing Cold Starts]]></title>
+            <link href="https://mikhail.io/2019/03/visualizing-cold-starts/"/>
+            <id>https://mikhail.io/2019/03/visualizing-cold-starts/</id>
+            
+            <published>2019-03-14T00:00:00+00:00</published>
+            <updated>2019-03-14T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Serverless cold starts illustrated with animated GIFs.</blockquote>
+
+<p>I <a href="/serverless/coldstarts/">wrote a lot</a> about cold starts of serverless functions. The articles are full of charts and numbers which are hopefully useful but might be hard to internalize. I decided to come up with a way to represent colds starts visually.</p>
+
+<p>I created HTTP functions that serve geographic maps (map credit <a href="https://www.openstreetmap.org">Open Street Map</a>). The map is a combination of small square tiles; each tile is 256 by 256 pixels. My selected map view consists of 12 tiles, so 12 requests are made to the serverless function to load a single view.</p>
+
+<p>During each experiment, I load the map and then zoom-in three times. The very first view hits  the function in a cold state. Subsequently, the zoomed views are loaded from the warm function. There is a timer next to the map which shows the total time elapsed since the beginning until the last tile arrives.</p>
+
+<h2 id="cold-starts-visualized">Cold Starts Visualized</h2>
+
+<p>All functions are implemented in Node.js and run in the geographically closest region to me (West Europe).</p>
+
+<p>The functions load map tiles from the cloud storage (AWS S3, Google Cloud Storage, and Azure Blob Storage). So the duration is increased by loading SDK at startup and the storage read latency.</p>
+
+<h3 id="aws-lambda">AWS Lambda</h3>
+
+<p>The following GIF movie is a recording of the experiment against an AWS Lambda:</p>
+
+
+
+
+
+<figure style="cursor: pointer">
+    <img src="aws.png" alt="Map loads from AWS Lambda backend" data-alt="aws.gif">
+    <figcaption><h4>Map loads from AWS Lambda backend (click to play or replay)</h4></figcaption>
+</figure>
+
+<p>The cold view took 1.9 seconds to load, while the warm views were between 200 and 600 milliseconds. The distinction is fairly visible but not extremely annoying: the first load feels like a small network glitch.</p>
+
+<h3 id="google-cloud-functions">Google Cloud Functions</h3>
+
+<p>This GIF shows the experiment against a Google Cloud Function:</p>
+
+
+
+
+
+<figure style="cursor: pointer">
+    <img src="gcp.png" alt="Map loads from Google Cloud Functions backend" data-alt="gcp.gif">
+    <figcaption><h4>Map loads from Google Cloud Functions backend (click to play or replay)</h4></figcaption>
+</figure>
+
+<p>Loading the initial view took an extra second compared to AWS. It&rsquo;s not a dealbreaker, but the delay of 3 seconds is often quoted as psychologically important.</p>
+
+<p>The tiles seem to appear more gradually; read more on that below.</p>
+
+<h3 id="azure-functions">Azure Functions</h3>
+
+<p>Here is another movie, this time for an Azure Function:</p>
+
+
+
+
+
+<figure style="cursor: pointer">
+    <img src="azure.png" alt="Map loads from Azure Functions backend" data-alt="azure.gif">
+    <figcaption><h4>Map loads from Azure Functions backend (click to play or replay)</h4></figcaption>
+</figure>
+
+<p>As expected from my previously published measurements, Azure Functions take significantly longer to start. A user has enough time to start wondering whether the map is broken.</p>
+
+<p>I expect better results from Functions implemented in C#, but that would not be an apples-to-apples comparison.</p>
+
+<h2 id="how-do-providers-handle-parallel-requests">How do providers handle parallel requests?</h2>
+
+<p>The map control fires 12 requests in parallel. All functions talk HTTP/2, so the old limit on the number of connections does not apply. Let&rsquo;s compare how those parallel requests are processed.</p>
+
+<h3 id="aws-lambda-1">AWS Lambda</h3>
+
+<p>Each instance of AWS Lambda can handle a single request at a time. So, instead of hitting just one cold start, we hit 12 cold starts in parallel. To illustrate this, I’ve modified the function to color-code each tile based on the Lambda instance ID and to print that ID on the image:</p>
+
+<p><img src="aws-colored.png" alt="AWS Map Colored" /></p>
+
+<figcaption><h4>AWS Lambda provisioned 12 instances to serve 12 requests in parallel</h4></figcaption>
+
+<p>Effectively, the measured durations represent the roundtrip time for <em>the slowest out of 12 parallel requests</em>. It&rsquo;s not the average or median duration of the cold start.</p>
+
+<h3 id="google-cloud-functions-1">Google Cloud Functions</h3>
+
+<p>Google uses the same one-execution-per-instance model, so I expected GCP Cloud Functions to behave precisely the same as AWS Lambda. However, I was wrong:</p>
+
+<p><img src="gcp-colored.png" alt="GCP Map Colored" /></p>
+
+<figcaption><h4>Google Cloud Function provisioned 3 instances to serve 12 parallel requests</h4></figcaption>
+
+<p>Only three instances were created, and two of them handled multiple requests. It looks like GCP serializes the incoming requests and spreads them through a limited set of instances.</p>
+
+<h3 id="azure-functions-1">Azure Functions</h3>
+
+<p>Azure Functions have a different design: each instance of a function can handle multiple parallel requests at the same time. Thus, in theory, all 12 tiles could be served by the first instance created after the cold start.</p>
+
+<p>In practice, multiple instances are created. The picture looks very similar to GCP:</p>
+
+<p><img src="azure-colored.png" alt="Azure Map Colored" /></p>
+
+<figcaption><h4>Azure Function provisioned 4 instances to serve 12 parallel requests</h4></figcaption>
+
+<p>There were four active instances, but the same one handled 9 out of 12 requests. This behavior seems to be quite consistent between multiple runs.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>I hope that these visualizations are useful to get a better feel of the cold starts in serverless functions.</p>
+
+<p>However, they are just examples. Don&rsquo;t treat the numbers as exact statistics for a given cloud provider. If you are curious, you can learn more in <a href="/serverless/coldstarts/">Serverless Cold Starts</a> series of articles.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/cold-starts" term="cold-starts" label="Cold Starts" />
+                             
+                                <category scheme="https://mikhail.io/tags/aws-lambda" term="aws-lambda" label="AWS Lambda" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-functions" term="azure-functions" label="Azure Functions" />
+                             
+                                <category scheme="https://mikhail.io/tags/google-cloud-functions" term="google-cloud-functions" label="Google Cloud Functions" />
+                             
+                                <category scheme="https://mikhail.io/tags/aws" term="aws" label="AWS" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/gcp" term="gcp" label="GCP" />
+                             
+                                <category scheme="https://mikhail.io/tags/maps" term="maps" label="Maps" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
             <title type="html"><![CDATA[Cold Starts in AWS Lambda]]></title>
             <link href="https://mikhail.io/serverless/coldstarts/aws/"/>
             <id>https://mikhail.io/serverless/coldstarts/aws/</id>
