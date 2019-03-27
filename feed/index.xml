@@ -12,6 +12,280 @@
 
     
         <entry>
+            <title type="html"><![CDATA[Reducing Cold Start Duration in Azure Functions]]></title>
+            <link href="https://mikhail.io/2019/03/reducing-azure-functions-cold-start-time/"/>
+            <id>https://mikhail.io/2019/03/reducing-azure-functions-cold-start-time/</id>
+            
+            <published>2019-03-27T00:00:00+00:00</published>
+            <updated>2019-03-27T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>The influence of the deployment method, application insights, and more on Azure Functions cold starts.</blockquote>
+
+<p>Back in February, I published the first version of <a href="/serverless/coldstarts/azure/">Cold Starts in Azure Functions</a>&mdash;the detailed analysis of cold start durations in serverless Azure. The article showed the following numbers for C# and JavaScript functions:</p>
+
+
+
+
+
+
+  
+
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  const points = [["C#",4.940131306,"Median: 4.9s",3.5689002093333335,8.574869002666652,3.5689002093333335,8.574869002666652,"{color: #178600; fill-color: #178600}"],["JavaScript",7.546261614666666,"Median: 7.5s",5.676060145333333,11.99859984266667,5.676060145333333,11.99859984266667,"{color: #F1E05A; fill-color: #F1E05A}"]];
+
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  
+  
+  data.addColumn({type: 'string', role: 'tooltip'});
+  
+  
+  
+  options.series[0].tooltip = true;
+  
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i3', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows(points);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds',
+    viewWindow: { min: 0 }
+  };
+
+  
+  return new google.visualization.ScatterChart(document.getElementById('chart_div_reducing-azure-functions-cold-start-time\/languages'));
+  
+});
+</script>
+<figure>
+  <div id="chart_div_reducing-azure-functions-cold-start-time/languages"></div>
+  <figcaption class="imageCaption"><h4>Typical cold start durations per language (February 2019)</h4></figcaption>
+</figure>
+
+<p>Note that I amended the format of the original chart: the range shows the most common 67% of values, and the dot shows the median value. This change makes the visual comparison easier for the rest of today&rsquo;s post.</p>
+
+<p>My numbers triggered several discussions on twitter. In one of them, Jeff Hollan (a program manager on Functions team) responded:</p>
+
+<blockquote class="twitter-tweet" data-conversation="none"><p lang="en" dir="ltr">The numbers in <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw">@MikhailShilkov</a> blog are significantly higher than what I see in our automated reports.  I&#39;m following up as well with <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw">@MikhailShilkov</a> to validate all settings.  But the rest of convo is valid :)</p>&mdash; Jeff Hollan (@jeffhollan) <a href="https://twitter.com/jeffhollan/status/1100474640026132480?ref_src=twsrc%5Etfw">February 26, 2019</a></blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+
+<p>The team collects the stats of cold starts internally, and their numbers were lower than mine. We started an e-mail thread to reconcile the results. I won&rsquo;t publish any messages from the private thread, but I&rsquo;m posting the main findings below.</p>
+
+<h2 id="check-the-deployment-method">Check the deployment method</h2>
+
+<p>For my tests, I&rsquo;ve been using &ldquo;Run from external package&rdquo; deployment method, where the function deployment artifact is stored as a zip file on blob storage. This method is the most friendly for automation and infrastructure-as-code pipelines.</p>
+
+<p>Apparently, it also increases the cold start duration. I believe the situation already improved since my original article, but here are the current numbers from mid-March.</p>
+
+<p>.NET:</p>
+
+
+
+
+
+
+  
+
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  const points = [["No Zip",2.3750335866666665,"Median: 2.4s",2.1337158226666664,2.673247721333334,2.1337158226666664,2.673247721333333,"{color: #008F95; fill-color: #008F95}"],["Local Zip",2.6825472653333335,"Median: 2.7s",2.4944191559999997,2.9249525773333334,2.4944191559999997,2.9249525773333334,"{color: #E9B000; fill-color: #E9B000}"],["External Zip",3.089673053333333,"Median: 3.1s",2.6488860746666667,3.755905496,2.6488860746666667,3.755905496,"{color: #E24E42; fill-color: #E24E42}"]];
+
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  
+  
+  data.addColumn({type: 'string', role: 'tooltip'});
+  
+  
+  
+  options.series[0].tooltip = true;
+  
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i3', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows(points);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds',
+    viewWindow: { min: 0 }
+  };
+
+  
+  return new google.visualization.ScatterChart(document.getElementById('chart_div_reducing-azure-functions-cold-start-time\/deploymentcs'));
+  
+});
+</script>
+<figure>
+  <div id="chart_div_reducing-azure-functions-cold-start-time/deploymentcs"></div>
+  <figcaption class="imageCaption"><h4>Cold start durations per deployment method for C# functions (March 2019)</h4></figcaption>
+</figure>
+
+<p>Node.js:</p>
+
+
+
+
+
+
+  
+
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  const points = [["No Zip",3.9645696746666665,"Median: 4.0s",3.0125055733333332,5.792564922666666,3.0125055733333332,5.792564922666666,"{color: #008F95; fill-color: #008F95}"],["Local Zip",4.180329562666666,"Median: 4.2s",3.302554292,5.856474070666667,3.302554292,5.856474070666667,"{color: #E9B000; fill-color: #E9B000}"],["External Zip",5.0813236066666665,"Median: 5.1s",3.8377469759999996,7.825438031999999,3.8377469759999996,7.825438031999999,"{color: #E24E42; fill-color: #E24E42}"]];
+
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  
+  
+  data.addColumn({type: 'string', role: 'tooltip'});
+  
+  
+  
+  options.series[0].tooltip = true;
+  
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i3', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows(points);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds',
+    viewWindow: { min: 0 }
+  };
+
+  
+  return new google.visualization.ScatterChart(document.getElementById('chart_div_reducing-azure-functions-cold-start-time\/deploymentjs'));
+  
+});
+</script>
+<figure>
+  <div id="chart_div_reducing-azure-functions-cold-start-time/deploymentjs"></div>
+  <figcaption class="imageCaption"><h4>Cold start durations per deployment method for JavaScript functions (March 2019)</h4></figcaption>
+</figure>
+
+<p>Run-from-external-zip deployment increases the cold start by approximately 1 second.</p>
+
+<h2 id="application-insights">Application Insights</h2>
+
+<p>I always configured my Function Apps to write telemetry to Application Insights. However, this adds a second to the cold start:</p>
+
+
+
+
+
+
+  
+
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  const points = [["No AppInsights",2.6825472653333335,"Median: 2.7s",2.4944191559999997,2.9249525773333334,2.4944191559999997,2.9249525773333334,"{color: #5BA3F1; fill-color: #5BA3F1}"],["With AppInsights",3.488305096666666,"Median: 3.5s",3.0500858440000003,4.097649741333333,3.0500858440000003,4.097649741333333,"{color: #003D8B; fill-color: #003D8B}"]];
+
+  data.addColumn('string', 'x');
+  data.addColumn('number', 'values');
+  
+  
+  data.addColumn({type: 'string', role: 'tooltip'});
+  
+  
+  
+  options.series[0].tooltip = true;
+  
+  data.addColumn({id:'i0', type:'number', role:'interval'});
+  data.addColumn({id:'i1', type:'number', role:'interval'});
+  data.addColumn({id:'i2', type:'number', role:'interval'});
+  data.addColumn({id:'i3', type:'number', role:'interval'});
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows(points);
+
+  options.lineWidth = 0;
+  options.intervals = { 'style':'boxes' };
+  options.vAxis = {
+    title: 'seconds',
+    viewWindow: { min: 0 }
+  };
+
+  
+  return new google.visualization.ScatterChart(document.getElementById('chart_div_reducing-azure-functions-cold-start-time\/appinsights'));
+  
+});
+</script>
+<figure>
+  <div id="chart_div_reducing-azure-functions-cold-start-time/appinsights"></div>
+  <figcaption class="imageCaption"><h4>Cold start durations with and without Application Insights integration</h4></figcaption>
+</figure>
+
+<p>I can&rsquo;t really recommend &ldquo;Don&rsquo;t use Application Insights&rdquo; because the telemetry service is vital in most scenarios. Anyway, keep this fact in mind and watch <a href="https://github.com/Azure/azure-functions-host/issues/4183">the corresponding issue</a>.</p>
+
+<h2 id="keep-bugging-the-team">Keep bugging the team</h2>
+
+<p>While you can use the information above, the effect is still going to be limited. Obviously, the power to reduce the cold starts lies within the Azure Functions engineering team.</p>
+
+<p>Coincidence or not, the numbers have already significantly improved since early February, and <a href="https://github.com/Azure/azure-functions-host/issues/4184">more work</a> is <a href="https://github.com/Azure/azure-functions-host/commit/792bb463b4bc48d67570d5b44b69c89b9d43f86d">in progress</a>.</p>
+
+<p>I consider this to be a part of my mission: spotlighting the issues in public gives that nudge to prioritize performance improvements over other backlog items.</p>
+
+<p>Meanwhile, the data in <a href="/serverless/coldstarts/azure/">Cold Starts in Azure Functions</a> and <a href="/serverless/coldstarts/big3/">Comparison of Cold Starts in Serverless Functions across AWS, Azure, and GCP</a> are updated: I&rsquo;m keeping them up-to-date as promised before.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/serverless" term="serverless" label="Serverless" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-functions" term="azure-functions" label="Azure Functions" />
+                             
+                                <category scheme="https://mikhail.io/tags/cold-starts" term="cold-starts" label="Cold Starts" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                            
+                        
+                    
+                
+            
+        </entry>
+
+        <entry>
             <title type="html"><![CDATA[Visualizing Cold Starts]]></title>
             <link href="https://mikhail.io/2019/03/visualizing-cold-starts/"/>
             <id>https://mikhail.io/2019/03/visualizing-cold-starts/</id>
