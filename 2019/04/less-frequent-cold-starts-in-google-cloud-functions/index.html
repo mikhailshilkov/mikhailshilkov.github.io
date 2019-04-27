@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Less Frequent Cold Starts in Google Cloud Functions | Mikhail Shilkov</title>
+	
+	
+	
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Less Frequent Cold Starts in Google Cloud Functions" />
+	<meta property="og:description" content="Google keeps idle instances of Cloud Functions alive for many hours." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2019/04/less-frequent-cold-starts-in-google-cloud-functions/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2019/04/less-frequent-cold-starts-in-google-cloud-functions/teaser.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Cold Starts" />
+	
+	<meta property="article:tag" content="GCP" />
+	
+	<meta property="article:tag" content="Google Cloud Functions" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2019/04/less-frequent-cold-starts-in-google-cloud-functions/teaser.png" />
+	
+	
+
+	<meta name="twitter:title" content="Less Frequent Cold Starts in Google Cloud Functions"/>
+	<meta name="twitter:description" content="Google keeps idle instances of Cloud Functions alive for many hours."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=Less%20Frequent%20Cold%20Starts%20in%20Google%20Cloud%20Functions%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2019%2f04%2fless-frequent-cold-starts-in-google-cloud-functions%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2f2019%2f04%2fless-frequent-cold-starts-in-google-cloud-functions%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">Less Frequent Cold Starts in Google Cloud Functions</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            
+                            <span class="post-date">Published on Apr 27, 2019
+                            
+                            
+                            &nbsp;&middot;&nbsp; 9 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        
+
+<p>Several days ago, I released an update to the <a href="/serverless/coldstarts/">Serverless Cold Starts</a> section of my website. The most significant change to the previous dataset seems to be in how GCP treats idle instances of Google Cloud Functions.</p>
+
+<p>Cold starts are expensive, so all cloud providers preserve a warm instance of a cloud function even when the application is idle. If the function stays unused for an extended period, such idle instance might eventually be recycled.</p>
+
+<p>Azure Functions recycles its instances after 20 minutes of idling. AWS Lambda has no fixed value, but in practice, it&rsquo;s between 25 and 65 minutes of idling.</p>
+
+<h2 id="recycling-of-idle-instances-in-google-cloud-functions">Recycling of Idle Instances in Google Cloud Functions</h2>
+
+<p>The behavior of Google Cloud Functions used to look quite random: an idle instance could survive for 5 hours or die after 5 minutes.</p>
+
+
+
+
+
+  
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'ID');
+  data.addColumn('number', 'Value');
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([[87.223692415,1.0566834,"point {fill-color: blue}"],[137.43873814833333,0.1484199,"point {fill-color: red}"],[74.57167498833333,1.1565178999999999,"point {fill-color: blue}"],[146.68497998166666,0.1531141,"point {fill-color: red}"],[139.61548119166667,0.1174578,"point {fill-color: red}"],[176.277201315,0.1454798,"point {fill-color: red}"],[24.758321308333333,0.41548179999999996,"point {fill-color: red}"],[249.36039055833334,0.11653999999999999,"point {fill-color: red}"],[43.489343070000004,0.19265649999999998,"point {fill-color: red}"],[43.41242365,0.15041849999999998,"point {fill-color: red}"],[76.81456954833334,0.16244519999999998,"point {fill-color: red}"],[169.590103985,1.228108,"point {fill-color: blue}"],[136.26404786,0.1420197,"point {fill-color: red}"],[242.24137742,1.4241983,"point {fill-color: blue}"],[95.82704468,0.1570009,"point {fill-color: red}"],[296.88630615333335,1.0368719,"point {fill-color: blue}"],[269.39025931000003,0.24895779999999998,"point {fill-color: red}"],[269.5663538983333,0.154046,"point {fill-color: red}"],[110.24344410333333,0.184665,"point {fill-color: red}"],[287.08118408,0.1465811,"point {fill-color: red}"],[182.57397214,0.1486031,"point {fill-color: red}"],[135.42568823666667,0.1216621,"point {fill-color: red}"],[56.938099396666665,0.1625989,"point {fill-color: red}"],[271.71979930000003,0.15939309999999998,"point {fill-color: red}"],[205.55865500000002,0.1577032,"point {fill-color: red}"],[108.23185526666667,0.1475897,"point {fill-color: red}"],[135.89114960166668,0.1184686,"point {fill-color: red}"],[169.26750183166666,0.1807258,"point {fill-color: red}"],[258.737404565,0.1196749,"point {fill-color: red}"],[226.63771318833335,0.2045243,"point {fill-color: red}"],[262.84643950000003,0.22819299999999998,"point {fill-color: red}"],[293.13809461166665,0.1507894,"point {fill-color: red}"],[182.968682575,0.22145299999999998,"point {fill-color: red}"],[34.215864195,0.1764276,"point {fill-color: red}"],[295.15763217,1.1933494999999998,"point {fill-color: blue}"],[150.96640485833333,0.199534,"point {fill-color: red}"],[207.39917468166666,0.15333259999999999,"point {fill-color: red}"],[118.16966400166667,0.3628223,"point {fill-color: red}"],[61.919341743333334,0.2657411,"point {fill-color: red}"],[181.75221923666666,0.36230989999999996,"point {fill-color: red}"],[68.03008951,1.3742744999999998,"point {fill-color: blue}"],[147.19282296166668,1.0319287,"point {fill-color: blue}"],[126.44732700833333,1.0576056999999999,"point {fill-color: blue}"],[256.82481317500003,1.0792119,"point {fill-color: blue}"],[82.73822200333333,0.9017957999999999,"point {fill-color: blue}"],[52.60437289,1.1126448,"point {fill-color: blue}"],[173.00318578833333,1.1043473,"point {fill-color: blue}"],[250.74365347666668,1.7999507,"point {fill-color: blue}"],[36.959685485,0.9355346,"point {fill-color: blue}"],[67.08367706166666,1.0031276999999998,"point {fill-color: blue}"],[214.060766645,1.0029251,"point {fill-color: blue}"],[274.704438615,1.5827122,"point {fill-color: blue}"],[297.27548389833333,1.0178862,"point {fill-color: blue}"],[288.79592982500003,1.3866809999999998,"point {fill-color: blue}"],[162.93987092166668,1.0028139,"point {fill-color: blue}"],[88.22329438833333,1.0690956999999999,"point {fill-color: blue}"],[252.26362830833335,1.7261803,"point {fill-color: blue}"],[43.80041404666667,1.135055,"point {fill-color: blue}"],[176.38321055,1.6311339,"point {fill-color: blue}"],[166.31704522333334,1.0412077,"point {fill-color: blue}"],[268.71009862333335,0.9906495,"point {fill-color: blue}"],[140.79376768666668,1.0657199,"point {fill-color: blue}"],[13.77464807,0.2530493,"point {fill-color: red}"],[49.03659896333333,1.1385117,"point {fill-color: blue}"],[227.057888775,1.0844878,"point {fill-color: blue}"],[96.44963171833334,1.1102583,"point {fill-color: blue}"],[28.147415018333334,0.2045428,"point {fill-color: red}"],[33.67353681833333,0.1552207,"point {fill-color: red}"],[194.540898155,1.2751652999999998,"point {fill-color: blue}"],[70.188071235,1.1101413,"point {fill-color: blue}"],[287.72277695,1.1031204,"point {fill-color: blue}"],[117.14435473833333,1.4884906999999998,"point {fill-color: blue}"],[146.13995391666666,1.1824472,"point {fill-color: blue}"],[134.848917125,1.1503706,"point {fill-color: blue}"],[6.198198615,0.1200643,"point {fill-color: red}"],[272.22082465833336,1.8174244,"point {fill-color: blue}"],[272.076837705,0.9099334,"point {fill-color: blue}"],[254.25126218333335,1.4116381999999998,"point {fill-color: blue}"],[3.5562576150000003,0.20559239999999998,"point {fill-color: red}"],[241.24663554666668,1.0376678,"point {fill-color: blue}"],[36.133117425,0.1855914,"point {fill-color: red}"],[127.88293258,1.1324634999999998,"point {fill-color: blue}"],[72.64254592,1.1979092999999998,"point {fill-color: blue}"],[239.33737744166666,1.5689089999999999,"point {fill-color: blue}"],[17.293930013333334,0.1762161,"point {fill-color: red}"],[259.06780773,1.0922498,"point {fill-color: blue}"],[153.27434680333334,1.0615386,"point {fill-color: blue}"],[30.384787253333332,0.1454522,"point {fill-color: red}"],[68.49212499666667,1.4926811,"point {fill-color: blue}"],[74.86667819166667,0.18071959999999998,"point {fill-color: red}"],[116.54087381333333,1.0320007,"point {fill-color: blue}"],[72.80991923833334,1.1393955,"point {fill-color: blue}"],[36.416669435,0.116703,"point {fill-color: red}"],[280.0228915416667,0.9303334,"point {fill-color: blue}"],[175.68889323,1.0084794,"point {fill-color: blue}"],[212.01485436333334,1.0117771,"point {fill-color: blue}"],[193.552334275,0.1980939,"point {fill-color: red}"],[164.46697412833333,1.0523803,"point {fill-color: blue}"],[209.78850674333333,1.4035106,"point {fill-color: blue}"],[204.98935508833333,1.4994581999999999,"point {fill-color: blue}"],[138.03401118666667,0.7861942,"point {fill-color: blue}"],[33.46733526166667,1.1454414,"point {fill-color: blue}"],[172.42431594833334,0.9291914,"point {fill-color: blue}"],[29.078624281666666,0.11532049999999999,"point {fill-color: red}"],[154.01439743666668,1.572323,"point {fill-color: blue}"],[167.65361145166668,1.236796,"point {fill-color: blue}"],[137.95378280833333,1.3952571999999999,"point {fill-color: blue}"],[28.3963188,0.1842472,"point {fill-color: red}"],[297.96170652166666,1.2337631999999998,"point {fill-color: blue}"],[269.0737857266667,1.053574,"point {fill-color: blue}"],[19.886915153333334,0.176781,"point {fill-color: red}"],[130.82699470666668,1.066201,"point {fill-color: blue}"],[284.098351775,1.2528922,"point {fill-color: blue}"],[178.32934875166666,1.6881826,"point {fill-color: blue}"],[85.90160536500001,0.1221119,"point {fill-color: red}"],[97.33458936666666,0.2349732,"point {fill-color: red}"],[21.844685518333335,0.1500091,"point {fill-color: red}"],[289.79008637,1.2539475,"point {fill-color: blue}"],[74.59488160833334,0.1467291,"point {fill-color: red}"],[244.024279135,1.3677051,"point {fill-color: blue}"],[227.55774270333333,1.443601,"point {fill-color: blue}"],[256.68853661833333,1.1714261,"point {fill-color: blue}"],[222.25834139333332,1.2432119,"point {fill-color: blue}"],[238.951189995,0.1795877,"point {fill-color: red}"],[226.38173262666666,1.5045482,"point {fill-color: blue}"],[294.67955841,1.8456959,"point {fill-color: blue}"],[99.18901662166667,0.12764129999999999,"point {fill-color: red}"],[278.0834623466667,1.741083,"point {fill-color: blue}"],[7.885343441666667,0.1728361,"point {fill-color: red}"],[132.85020800833334,0.1453505,"point {fill-color: red}"],[291.766222225,1.1987883,"point {fill-color: blue}"],[60.31657987166667,0.1488767,"point {fill-color: red}"],[204.11946903,1.4050178,"point {fill-color: blue}"],[148.49542282666667,1.2760323999999998,"point {fill-color: blue}"],[205.053457925,1.1489859999999998,"point {fill-color: blue}"],[275.93359578166667,0.2407251,"point {fill-color: red}"],[289.6393913283333,1.1696649,"point {fill-color: blue}"],[252.21820598833335,1.177824,"point {fill-color: blue}"],[113.748031235,0.12556509999999999,"point {fill-color: red}"],[255.34628755666668,1.0744639999999999,"point {fill-color: blue}"],[36.74066517,0.17008189999999998,"point {fill-color: red}"],[65.204398995,0.1508945,"point {fill-color: red}"],[270.79117415,0.1551312,"point {fill-color: red}"],[274.1876650766667,0.23926399999999998,"point {fill-color: red}"],[149.2896922,0.1408284,"point {fill-color: red}"],[225.5523986,1.0925729,"point {fill-color: blue}"],[255.08454178166667,0.11930769999999999,"point {fill-color: red}"],[25.89336998,0.1916564,"point {fill-color: red}"],[53.060380305,0.1555498,"point {fill-color: red}"],[22.638511823333335,0.14676509999999998,"point {fill-color: red}"],[250.4308637,1.0357667,"point {fill-color: blue}"],[296.71878613166666,1.6848896,"point {fill-color: blue}"],[96.12677505666667,0.22341409999999998,"point {fill-color: red}"],[60.99219259833333,0.23702569999999998,"point {fill-color: red}"],[256.08434925333336,1.0510951,"point {fill-color: blue}"],[232.84060575,0.9961182,"point {fill-color: blue}"],[193.792260715,1.079712,"point {fill-color: blue}"],[227.11498299166666,0.13687349999999998,"point {fill-color: red}"],[205.03767552666667,0.17410679999999998,"point {fill-color: red}"],[208.71672330833334,1.4457699,"point {fill-color: blue}"],[49.20881353666667,0.15569439999999998,"point {fill-color: red}"],[26.572466488333333,0.1615075,"point {fill-color: red}"],[253.27134801833333,0.9896400999999999,"point {fill-color: blue}"],[14.550253915,0.22347689999999998,"point {fill-color: red}"],[251.430971375,1.023903,"point {fill-color: blue}"],[241.509584625,1.0028181999999999,"point {fill-color: blue}"],[50.858438168333336,0.1484766,"point {fill-color: red}"],[20.344326083333335,0.1212916,"point {fill-color: red}"],[185.39100854833333,0.9185295,"point {fill-color: blue}"],[191.149828305,0.9071406,"point {fill-color: blue}"],[262.28844481833335,1.1471826,"point {fill-color: blue}"],[237.73719925333333,0.205426,"point {fill-color: red}"],[231.25718542666667,1.2968628,"point {fill-color: blue}"],[257.90647813333334,1.0902935,"point {fill-color: blue}"],[178.65077327333333,1.2822594,"point {fill-color: blue}"],[11.301954238333334,0.1603836,"point {fill-color: red}"],[28.448314925000002,0.11855929999999999,"point {fill-color: red}"],[128.696263445,0.1841691,"point {fill-color: red}"],[163.056119335,0.1605257,"point {fill-color: red}"],[63.73438352666667,0.1544774,"point {fill-color: red}"],[176.20631566666668,1.0941598,"point {fill-color: blue}"],[165.77568253166666,0.16040089999999999,"point {fill-color: red}"],[234.37890517166667,0.1544748,"point {fill-color: red}"],[2.377874686666667,0.1444221,"point {fill-color: red}"],[135.08549020666666,0.37593279999999996,"point {fill-color: red}"],[19.96737894,0.1507161,"point {fill-color: red}"],[231.42486994,1.1990307,"point {fill-color: blue}"],[189.52361637,1.3003206999999999,"point {fill-color: blue}"],[73.909583905,0.1869411,"point {fill-color: red}"],[258.52357387666666,1.096418,"point {fill-color: blue}"],[81.82668368666667,0.21103159999999999,"point {fill-color: red}"],[46.96224949,0.1642302,"point {fill-color: red}"],[236.200729345,1.5489064,"point {fill-color: blue}"],[190.525326435,0.9660270999999999,"point {fill-color: blue}"],[152.95266797833332,1.4237691,"point {fill-color: blue}"],[146.73557154666668,1.0967350999999999,"point {fill-color: blue}"],[81.84676565333334,1.0320433,"point {fill-color: blue}"],[199.31243362,1.1142024,"point {fill-color: blue}"],[162.43113410333333,1.7961365,"point {fill-color: blue}"],[152.42296678166667,1.0829096,"point {fill-color: blue}"],[260.8737841016667,1.3939412,"point {fill-color: blue}"],[83.15109560833334,0.1481192,"point {fill-color: red}"],[4.754378658333334,0.1164431,"point {fill-color: red}"],[230.05418345666666,1.3426825,"point {fill-color: blue}"],[97.95829273833334,0.9152414,"point {fill-color: blue}"],[254.96736956666666,1.2632387,"point {fill-color: blue}"],[71.00711805333333,0.9282672,"point {fill-color: blue}"],[149.44824248333333,1.5421642,"point {fill-color: blue}"],[10.964756038333334,0.12348819999999999,"point {fill-color: red}"],[113.28522191333333,0.9677684999999999,"point {fill-color: blue}"],[111.04770184833333,0.8861671,"point {fill-color: blue}"],[90.77294012,1.0757079,"point {fill-color: blue}"],[162.21318272333335,2.2409909,"point {fill-color: blue}"],[280.9290627583333,1.0695527,"point {fill-color: blue}"],[207.02659628666666,1.3483219,"point {fill-color: blue}"],[201.39565389,1.6691806999999999,"point {fill-color: blue}"],[20.94819503,0.23510419999999999,"point {fill-color: red}"],[239.73240256333335,1.2233766,"point {fill-color: blue}"],[27.619186505000002,0.17290519999999998,"point {fill-color: red}"],[46.553182801666665,0.13262569999999999,"point {fill-color: red}"],[56.34648819833333,1.1173647,"point {fill-color: blue}"],[256.62954586666666,1.3539396,"point {fill-color: blue}"],[62.831499021666666,0.1505993,"point {fill-color: red}"],[275.6406538416667,1.0714481,"point {fill-color: blue}"],[45.538203165,0.2169278,"point {fill-color: red}"],[0.8791947266666666,0.1221535,"point {fill-color: red}"],[272.39604312166665,1.2284472,"point {fill-color: blue}"],[62.40914327,0.18116949999999998,"point {fill-color: red}"],[225.56585732833335,2.1722106,"point {fill-color: blue}"],[99.052418505,1.265823,"point {fill-color: blue}"],[16.871225671666668,0.1770967,"point {fill-color: red}"],[123.94542724333334,1.288328,"point {fill-color: blue}"],[18.31800064666667,0.14440429999999999,"point {fill-color: red}"],[263.280077865,1.3339486,"point {fill-color: blue}"],[21.436637155,0.18642889999999998,"point {fill-color: red}"],[94.34754320333333,1.4543393,"point {fill-color: blue}"],[117.11585929166667,1.579083,"point {fill-color: blue}"],[55.707697638333336,0.159154,"point {fill-color: red}"],[8.979015023333334,0.2419159,"point {fill-color: red}"],[103.80108434666667,1.2468008,"point {fill-color: blue}"],[64.35289877833334,1.4614425,"point {fill-color: blue}"],[60.88839642333333,1.6228939,"point {fill-color: blue}"],[58.26925609166667,1.260687,"point {fill-color: blue}"],[17.559311201666667,1.3031960999999999,"point {fill-color: blue}"],[29.71336813,1.5216835,"point {fill-color: blue}"],[68.59336281,1.3916693,"point {fill-color: blue}"],[49.31385596166667,0.1928222,"point {fill-color: red}"],[87.86838761833333,1.199423,"point {fill-color: blue}"],[20.8073951,0.18657579999999999,"point {fill-color: red}"],[9.728972058333333,0.1812152,"point {fill-color: red}"],[37.32750240166667,0.16315949999999999,"point {fill-color: red}"],[2.435776011666667,0.2014597,"point {fill-color: red}"],[98.49926338333333,1.3995349,"point {fill-color: blue}"],[3.312975311666667,0.1625811,"point {fill-color: red}"],[48.003949785,1.2099632,"point {fill-color: blue}"],[41.49195675666667,0.21326679999999998,"point {fill-color: red}"],[69.02042072500001,0.1828999,"point {fill-color: red}"],[42.921844271666664,1.5311708,"point {fill-color: blue}"],[11.416963851666667,0.4844766,"point {fill-color: red}"],[96.02089690166667,1.3422952,"point {fill-color: blue}"],[77.82533934,1.3206909999999998,"point {fill-color: blue}"],[41.08763415333333,0.21799559999999998,"point {fill-color: red}"],[72.87805657166666,0.1853696,"point {fill-color: red}"],[61.59633903666667,0.20174219999999998,"point {fill-color: red}"],[5.371281215,0.1731836,"point {fill-color: red}"],[103.329508625,1.2128503,"point {fill-color: blue}"],[7.731169465,0.1785291,"point {fill-color: red}"],[12.499948448333333,0.1760302,"point {fill-color: red}"],[27.205666341666667,0.1528651,"point {fill-color: red}"],[4.478275166666667,0.1201376,"point {fill-color: red}"],[90.247879785,1.2016961,"point {fill-color: blue}"],[17.030285595,0.1538317,"point {fill-color: red}"],[44.22267518333334,1.2068003,"point {fill-color: blue}"],[56.06800488166667,0.221573,"point {fill-color: red}"],[112.187806425,1.2410694,"point {fill-color: blue}"],[12.938699230000001,0.1768649,"point {fill-color: red}"],[78.61715465166667,1.2571913,"point {fill-color: blue}"],[57.56987962,0.170096,"point {fill-color: red}"],[107.38113058500001,1.2842683,"point {fill-color: blue}"],[114.92149421,1.4791484,"point {fill-color: blue}"],[85.92122537333333,0.2157517,"point {fill-color: red}"],[106.57325469,1.110651,"point {fill-color: blue}"],[95.087340755,1.6116157,"point {fill-color: blue}"],[58.16652578166667,0.1537105,"point {fill-color: red}"],[110.46850410666667,1.2520277,"point {fill-color: blue}"],[111.87444235166667,1.2963,"point {fill-color: blue}"],[83.92497317333334,1.2266662,"point {fill-color: blue}"],[24.970793208333333,0.1525029,"point {fill-color: red}"],[60.58494389166667,1.1332303,"point {fill-color: blue}"],[110.44966615666667,1.1732307,"point {fill-color: blue}"],[39.15555298833333,0.1905078,"point {fill-color: red}"],[74.14524927333333,1.3574221,"point {fill-color: blue}"],[44.85535599666667,0.2110926,"point {fill-color: red}"],[33.47827237166667,0.2085166,"point {fill-color: red}"],[26.261190368333335,0.22051959999999998,"point {fill-color: red}"],[23.586615993333332,0.151187,"point {fill-color: red}"],[108.43388421166667,1.2534212,"point {fill-color: blue}"],[117.38849716666667,0.1715093,"point {fill-color: red}"],[12.16588387,0.2208625,"point {fill-color: red}"],[290.60522265000003,0.1548714,"point {fill-color: red}"]]);
+  options.hAxis = {
+    title: 'minutes'
+  };
+  options.vAxis = {
+    title: 'seconds'
+  };
+  return new google.visualization.ScatterChart(document.getElementById('chart_div_less-frequent-cold-starts-in-google-cloud-functions\/old_scatter'));
+});
+</script>
+<figure>
+  <div id="chart_div_less-frequent-cold-starts-in-google-cloud-functions/old_scatter"></div>
+  <figcaption class="imageCaption"><h4>Examples of GCF idle instances lifecycle in February 2019</h4></figcaption>
+</figure>
+
+<p>This chart plots the response duration (Y-axis) by the interval since the previous requests (X-axis). Each point represents a single request in the dataset. Blue points are cold starts, and red points are responses from warm instances.</p>
+
+<p>The chart has changed in April:</p>
+
+
+
+
+
+  
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'ID');
+  data.addColumn('number', 'Value');
+  data.addColumn({ 'type': 'string', 'role': 'style' });
+  data.addRows([[105.81351983166667,0.0756384,"point {fill-color: red}"],[96.59532183333333,0.1220762,"point {fill-color: red}"],[82.52338920333334,0.030621699999999998,"point {fill-color: red}"],[92.53022229,0.037190299999999996,"point {fill-color: red}"],[49.42072908666667,0.1941552,"point {fill-color: red}"],[25.237515588333334,0.0778483,"point {fill-color: red}"],[113.05062448,0.1585164,"point {fill-color: red}"],[148.71092069333335,0.10826279999999999,"point {fill-color: red}"],[161.80196170166667,0.0821906,"point {fill-color: red}"],[61.79145604833334,0.0837918,"point {fill-color: red}"],[104.493495525,0.0686647,"point {fill-color: red}"],[267.7564307283333,0.1744695,"point {fill-color: red}"],[277.05766174166666,0.0600386,"point {fill-color: red}"],[48.45887947666667,0.06616659999999999,"point {fill-color: red}"],[28.87558840666667,0.10678259999999999,"point {fill-color: red}"],[17.322959245,0.0730233,"point {fill-color: red}"],[50.60919381666667,0.08554289999999999,"point {fill-color: red}"],[29.05453872,0.0727881,"point {fill-color: red}"],[194.61954192333334,0.1215207,"point {fill-color: red}"],[198.44057850333334,0.07615469999999999,"point {fill-color: red}"],[42.062566546666666,0.0598208,"point {fill-color: red}"],[99.04740697,0.1055122,"point {fill-color: red}"],[250.83990179,0.055309,"point {fill-color: red}"],[186.19912747166666,0.0986976,"point {fill-color: red}"],[174.37558632333332,0.1468729,"point {fill-color: red}"],[128.72715744333334,0.0805317,"point {fill-color: red}"],[9.008557521666667,0.0900523,"point {fill-color: red}"],[90.82616570500001,0.031956,"point {fill-color: red}"],[227.20806170666668,0.07217219999999999,"point {fill-color: red}"],[278.90462053833335,0.06417819999999999,"point {fill-color: red}"],[146.42299223333333,0.0648044,"point {fill-color: red}"],[128.49140270166666,0.08831399999999999,"point {fill-color: red}"],[11.661693435,0.0358562,"point {fill-color: red}"],[33.35804462833333,0.1572796,"point {fill-color: red}"],[13.464274306666667,0.08522819999999999,"point {fill-color: red}"],[65.31287226,0.17993779999999998,"point {fill-color: red}"],[89.57953647666668,0.09941599999999999,"point {fill-color: red}"],[89.44180861833334,0.0357816,"point {fill-color: red}"],[7.539028968333334,0.0741588,"point {fill-color: red}"],[19.235294858333333,0.0291206,"point {fill-color: red}"],[14.664884098333333,0.0339854,"point {fill-color: red}"],[4.666798855,6.980028099999999,"point {fill-color: blue}"],[256.80711591333335,0.09284329999999999,"point {fill-color: red}"],[254.14269916833334,0.1315284,"point {fill-color: red}"],[2.810462406666667,0.1026319,"point {fill-color: red}"],[91.52725614166667,0.0323332,"point {fill-color: red}"],[23.913188358333333,0.0982982,"point {fill-color: red}"],[239.61879878333335,0.0689915,"point {fill-color: red}"],[143.94349646666666,0.031173299999999998,"point {fill-color: red}"],[285.88628766666665,0.07416099999999999,"point {fill-color: red}"],[46.74573943833333,0.03362,"point {fill-color: red}"],[185.33489473166668,0.0900142,"point {fill-color: red}"],[131.54717144833333,0.0687513,"point {fill-color: red}"],[0.4547042333333333,0.0433171,"point {fill-color: red}"],[84.41282356833334,0.0642108,"point {fill-color: red}"],[20.79435291,0.0906395,"point {fill-color: red}"],[85.97549925,0.1084324,"point {fill-color: red}"],[28.659735068333333,0.079486,"point {fill-color: red}"],[52.35472729166667,0.1346619,"point {fill-color: red}"],[82.98398236,0.0371929,"point {fill-color: red}"],[1.3526582516666668,0.0913151,"point {fill-color: red}"],[54.75896879333334,0.19168249999999998,"point {fill-color: red}"],[293.9280581483333,0.0962229,"point {fill-color: red}"],[68.94369074333333,0.0978478,"point {fill-color: red}"],[75.60866382,0.07683269999999999,"point {fill-color: red}"],[202.33829910333333,0.081773,"point {fill-color: red}"],[121.30490491,0.18148599999999998,"point {fill-color: red}"],[37.13650702166667,0.1053168,"point {fill-color: red}"],[190.06912669833335,0.061008,"point {fill-color: red}"],[58.60327119166667,0.0332668,"point {fill-color: red}"],[2.8519092383333335,0.059394999999999996,"point {fill-color: red}"],[28.325070738333334,0.27229729999999996,"point {fill-color: red}"],[58.603558103333334,0.037759999999999995,"point {fill-color: red}"],[66.35570874833333,0.050254099999999996,"point {fill-color: red}"],[238.27509040666666,6.5182281,"point {fill-color: blue}"],[200.938462915,0.0299812,"point {fill-color: red}"],[65.55312997333334,0.029154,"point {fill-color: red}"],[190.12284801333334,0.1362965,"point {fill-color: red}"],[118.76757765333333,0.07271559999999999,"point {fill-color: red}"],[6.294241638333333,0.0368406,"point {fill-color: red}"],[167.25433674,0.06291519999999999,"point {fill-color: red}"],[33.319838510000004,0.0922081,"point {fill-color: red}"],[31.099837768333334,0.1234913,"point {fill-color: red}"],[50.805670795000005,0.095215,"point {fill-color: red}"],[74.38146856666667,0.0835172,"point {fill-color: red}"],[69.08117308666667,0.337584,"point {fill-color: red}"],[152.90356230833333,7.0634695999999995,"point {fill-color: blue}"],[281.59012889666667,2.7039446,"point {fill-color: blue}"],[39.28964179,0.09857819999999999,"point {fill-color: red}"],[265.620545325,0.0808412,"point {fill-color: red}"],[232.68172477666667,2.656344,"point {fill-color: blue}"],[69.8941448,6.5705288,"point {fill-color: blue}"],[89.23974576833334,0.09917559999999999,"point {fill-color: red}"],[0.11678145666666667,0.030070399999999997,"point {fill-color: red}"],[45.84248363333334,0.0748359,"point {fill-color: red}"],[62.602150665,0.038969199999999996,"point {fill-color: red}"],[291.207324705,0.030794,"point {fill-color: red}"],[89.33692783000001,0.0452252,"point {fill-color: red}"],[289.40809041833336,0.07129529999999999,"point {fill-color: red}"],[9.629405533333333,0.1372096,"point {fill-color: red}"],[87.47228188333334,0.0468071,"point {fill-color: red}"],[5.910260966666667,0.0381505,"point {fill-color: red}"],[34.517435375,0.0393636,"point {fill-color: red}"],[69.07650127166667,0.033339799999999996,"point {fill-color: red}"],[205.29608801666666,0.1650988,"point {fill-color: red}"],[125.51832391666667,0.031141099999999998,"point {fill-color: red}"],[121.45256027833334,0.0735676,"point {fill-color: red}"],[110.02986198666667,0.059318199999999995,"point {fill-color: red}"],[231.31997054333334,0.1615936,"point {fill-color: red}"],[74.23321002333333,0.049579899999999996,"point {fill-color: red}"],[36.708360685,0.0401793,"point {fill-color: red}"],[168.56717707,0.0903011,"point {fill-color: red}"],[55.10216827833334,0.0286761,"point {fill-color: red}"],[134.78821275833334,0.0861863,"point {fill-color: red}"],[83.05524857166667,0.0576843,"point {fill-color: red}"],[271.048924885,0.1313359,"point {fill-color: red}"],[214.3299092,0.0390118,"point {fill-color: red}"],[106.01154154166667,0.0725082,"point {fill-color: red}"],[159.82971452166666,0.10186469999999999,"point {fill-color: red}"],[43.648102978333334,0.0321774,"point {fill-color: red}"],[275.1847367666667,0.07704799999999999,"point {fill-color: red}"],[170.71661992166668,0.11647769999999999,"point {fill-color: red}"],[73.730849805,0.13615739999999998,"point {fill-color: red}"],[43.474220425,0.0817236,"point {fill-color: red}"],[106.73321274666667,0.2084662,"point {fill-color: red}"],[110.01190759833334,0.11550389999999999,"point {fill-color: red}"],[28.577336391666666,0.06347649999999999,"point {fill-color: red}"],[87.38391993,0.0876777,"point {fill-color: red}"],[53.46984533,0.1550376,"point {fill-color: red}"],[23.178145048333334,0.0749867,"point {fill-color: red}"],[255.28641159,0.0738566,"point {fill-color: red}"],[67.88033142500001,0.030962999999999997,"point {fill-color: red}"],[8.106229165,0.0616259,"point {fill-color: red}"],[43.638769276666665,0.07224599999999999,"point {fill-color: red}"],[218.93553511833335,0.2332842,"point {fill-color: red}"],[119.78381243,0.0319818,"point {fill-color: red}"],[2.3599741583333333,0.0670926,"point {fill-color: red}"],[108.38747658666666,0.11651009999999999,"point {fill-color: red}"],[70.59545352333333,0.0803028,"point {fill-color: red}"],[12.77326927,0.1274871,"point {fill-color: red}"],[64.41290596,0.0681489,"point {fill-color: red}"],[122.67954707166668,0.0865753,"point {fill-color: red}"],[145.48412965333333,0.13749609999999998,"point {fill-color: red}"],[152.58686381666666,0.1228137,"point {fill-color: red}"],[20.062284493333333,0.0743832,"point {fill-color: red}"],[46.22047467666667,0.0348724,"point {fill-color: red}"],[242.49706731,0.073849,"point {fill-color: red}"],[140.83951085833334,0.030178,"point {fill-color: red}"],[39.258356801666665,0.0796812,"point {fill-color: red}"],[21.402082025000002,0.0740144,"point {fill-color: red}"],[26.288567381666667,0.0338959,"point {fill-color: red}"],[129.705454585,0.10233239999999999,"point {fill-color: red}"],[28.582631195,0.1118455,"point {fill-color: red}"],[87.26183483333334,0.0603161,"point {fill-color: red}"],[71.37898861000001,0.0736233,"point {fill-color: red}"],[184.275699095,0.0336586,"point {fill-color: red}"],[89.53028749833334,0.0643133,"point {fill-color: red}"],[111.17367596333334,0.2814329,"point {fill-color: red}"],[88.51148966666666,0.0680727,"point {fill-color: red}"],[91.28765077666667,0.0327099,"point {fill-color: red}"],[90.21515986166666,0.0334349,"point {fill-color: red}"],[50.89858688166667,0.1992212,"point {fill-color: red}"],[112.94588925333333,0.0390063,"point {fill-color: red}"],[109.74530879833334,0.14959509999999998,"point {fill-color: red}"],[207.89940760000002,0.1019056,"point {fill-color: red}"],[83.06639447166667,0.031587,"point {fill-color: red}"],[27.896309353333333,0.07082809999999999,"point {fill-color: red}"],[294.96954953666665,0.0330855,"point {fill-color: red}"],[9.821824455,0.0336211,"point {fill-color: red}"],[108.79262868333333,0.031684199999999996,"point {fill-color: red}"],[57.92157143833334,0.1813988,"point {fill-color: red}"],[81.56983929666667,0.0928734,"point {fill-color: red}"],[197.52008209166667,0.19999229999999998,"point {fill-color: red}"],[4.2182380083333335,0.13001759999999998,"point {fill-color: red}"],[137.65967530166668,0.07651379999999999,"point {fill-color: red}"],[163.81422214666668,0.07674109999999999,"point {fill-color: red}"],[139.857681185,0.0337813,"point {fill-color: red}"],[78.58233377666667,0.10925359999999999,"point {fill-color: red}"],[60.320831160000004,0.1105591,"point {fill-color: red}"],[23.282000846666666,0.0864105,"point {fill-color: red}"],[174.62606653,0.0876941,"point {fill-color: red}"],[60.899337360000004,0.0912352,"point {fill-color: red}"],[111.52586705,0.0971148,"point {fill-color: red}"],[27.709486526666666,0.09527369999999999,"point {fill-color: red}"],[41.14815743333333,0.0693879,"point {fill-color: red}"],[87.26228773333334,0.0631099,"point {fill-color: red}"],[62.65977429666667,0.3168045,"point {fill-color: red}"],[268.7295370416667,0.032436,"point {fill-color: red}"],[234.550810375,0.1829933,"point {fill-color: red}"],[58.31415157166667,0.0716393,"point {fill-color: red}"],[90.18688921333333,0.0731839,"point {fill-color: red}"],[95.03349283333334,0.0384339,"point {fill-color: red}"],[51.45620064166667,0.039131,"point {fill-color: red}"],[41.723880065,0.1274523,"point {fill-color: red}"],[176.55088172833334,0.060309699999999994,"point {fill-color: red}"],[93.56903528833334,0.0623134,"point {fill-color: red}"],[78.03119414833334,0.0296536,"point {fill-color: red}"],[85.15402862333333,0.0334091,"point {fill-color: red}"],[73.89229103833334,0.059188399999999995,"point {fill-color: red}"],[118.84997997,0.063896,"point {fill-color: red}"],[142.58135959166668,6.0924115,"point {fill-color: blue}"],[137.46751286333333,0.0342234,"point {fill-color: red}"],[203.777611675,0.0738489,"point {fill-color: red}"],[236.29880228000002,6.3002049,"point {fill-color: blue}"],[55.065055156666666,0.0334912,"point {fill-color: red}"],[246.47420958666666,0.0662546,"point {fill-color: red}"],[173.37935109166668,0.0356946,"point {fill-color: red}"],[223.66577324666667,0.033801899999999996,"point {fill-color: red}"],[115.40981442666667,0.0327512,"point {fill-color: red}"],[64.06819050666667,0.0329217,"point {fill-color: red}"],[0.9286138583333333,0.0335447,"point {fill-color: red}"],[73.22287179166666,0.043589199999999995,"point {fill-color: red}"],[78.34373812,0.0695628,"point {fill-color: red}"],[94.09217755,0.0567748,"point {fill-color: red}"],[97.37234852666667,0.030153899999999997,"point {fill-color: red}"],[1.698437135,0.061472599999999995,"point {fill-color: red}"],[58.79156018333333,0.1026291,"point {fill-color: red}"],[98.97854800333333,0.0304702,"point {fill-color: red}"],[120.18787187833334,0.0305964,"point {fill-color: red}"],[194.53364270666668,0.1206409,"point {fill-color: red}"],[226.27955292000001,0.117092,"point {fill-color: red}"],[27.553007660000002,0.0607601,"point {fill-color: red}"],[57.903099553333334,0.0933208,"point {fill-color: red}"],[254.07820787166668,0.1338666,"point {fill-color: red}"],[24.944446166666665,0.0319367,"point {fill-color: red}"],[116.57615356333334,0.10434099999999999,"point {fill-color: red}"],[26.112880526666668,0.030970099999999997,"point {fill-color: red}"],[91.77510080333333,0.08029879999999999,"point {fill-color: red}"],[104.97564567333333,0.0717674,"point {fill-color: red}"],[84.70984694333333,0.0701931,"point {fill-color: red}"],[286.99773266166665,0.1295696,"point {fill-color: red}"],[2.486252855,0.0409411,"point {fill-color: red}"],[83.22916459333334,0.1168819,"point {fill-color: red}"],[108.305834295,0.0309126,"point {fill-color: red}"],[12.426002753333334,0.09964179999999999,"point {fill-color: red}"],[99.22689499,0.0663468,"point {fill-color: red}"],[287.7314649016667,0.0690353,"point {fill-color: red}"],[75.18027952166666,0.084482,"point {fill-color: red}"],[21.594071166666666,0.0317514,"point {fill-color: red}"],[232.58802146,0.082247,"point {fill-color: red}"],[259.43584583166665,0.06594169999999999,"point {fill-color: red}"],[35.609715625,0.074631,"point {fill-color: red}"],[232.028917645,0.1386652,"point {fill-color: red}"],[94.04295043,0.0821861,"point {fill-color: red}"],[176.30368083166667,0.0625462,"point {fill-color: red}"],[67.16896412166666,0.0312915,"point {fill-color: red}"],[70.81787476666666,0.5033162,"point {fill-color: red}"],[158.06874901833334,0.059058299999999994,"point {fill-color: red}"],[184.45501218500002,0.1037413,"point {fill-color: red}"],[39.86585632166667,0.0825002,"point {fill-color: red}"],[252.97296709,0.0618168,"point {fill-color: red}"],[130.48510006666666,0.2066771,"point {fill-color: red}"],[53.98758316,0.089819,"point {fill-color: red}"],[78.41117205,0.0321674,"point {fill-color: red}"],[155.796365075,3.444598,"point {fill-color: blue}"],[62.37979291166667,0.0435409,"point {fill-color: red}"],[36.828457155,0.09497219999999999,"point {fill-color: red}"],[107.28061628,0.0323972,"point {fill-color: red}"],[72.95397739,0.09296979999999999,"point {fill-color: red}"],[99.9561877,6.3112324,"point {fill-color: blue}"],[66.28731935666667,0.0317737,"point {fill-color: red}"],[14.904075666666667,0.08947469999999999,"point {fill-color: red}"],[64.45072178666666,0.0308092,"point {fill-color: red}"],[114.92463681,0.1229376,"point {fill-color: red}"],[274.20573200166666,0.1003845,"point {fill-color: red}"],[40.549934633333336,0.0434837,"point {fill-color: red}"],[145.70529646666668,0.0372578,"point {fill-color: red}"],[11.509618235,0.1150585,"point {fill-color: red}"],[68.15808847333334,0.19566599999999998,"point {fill-color: red}"],[85.93793673333333,0.0403523,"point {fill-color: red}"],[42.64762271833333,0.0314727,"point {fill-color: red}"],[243.59423202,0.9177206,"point {fill-color: blue}"],[156.29282349,0.10082819999999999,"point {fill-color: red}"],[116.76705087,0.032882999999999996,"point {fill-color: red}"],[39.818408555,0.063784,"point {fill-color: red}"],[259.16311091833336,0.10827869999999999,"point {fill-color: red}"],[62.44099923,0.0757595,"point {fill-color: red}"],[237.23580263333335,1.3148431999999999,"point {fill-color: blue}"],[299.5862769716667,0.06334,"point {fill-color: red}"],[230.721367455,0.1531416,"point {fill-color: red}"],[102.057633025,0.1124321,"point {fill-color: red}"],[268.4158676033333,0.0656916,"point {fill-color: red}"],[242.78164158166666,2.0297392,"point {fill-color: blue}"],[87.21862182166667,0.1239132,"point {fill-color: red}"],[234.23839701166668,6.368559599999999,"point {fill-color: blue}"],[127.67222922833334,0.15714999999999998,"point {fill-color: red}"],[1.4884433283333334,0.0300426,"point {fill-color: red}"],[88.98313027,0.0810384,"point {fill-color: red}"],[178.53583606,0.0954443,"point {fill-color: red}"],[102.22187692166666,0.0338313,"point {fill-color: red}"],[11.321818361666667,0.066672,"point {fill-color: red}"],[20.171261223333335,0.1244933,"point {fill-color: red}"],[243.64260562166666,0.10686029999999999,"point {fill-color: red}"],[32.73472273666667,0.0861528,"point {fill-color: red}"],[225.19487173000002,0.10225419999999999,"point {fill-color: red}"],[45.27914278,6.4535791,"point {fill-color: blue}"],[223.28896599666666,0.0844892,"point {fill-color: red}"],[39.470883595000004,0.0352363,"point {fill-color: red}"],[283.02859960333336,0.062008799999999996,"point {fill-color: red}"],[34.10210403166667,0.0335551,"point {fill-color: red}"]]);
+  options.hAxis = {
+    title: 'minutes'
+  };
+  options.vAxis = {
+    title: 'seconds'
+  };
+  return new google.visualization.ScatterChart(document.getElementById('chart_div_less-frequent-cold-starts-in-google-cloud-functions\/new_scatter'));
+});
+</script>
+<figure>
+  <div id="chart_div_less-frequent-cold-starts-in-google-cloud-functions/new_scatter"></div>
+  <figcaption class="imageCaption"><h4>Examples of GCF idle instances lifecycle in April 2019</h4></figcaption>
+</figure>
+
+<p>It seems that this chart shows fewer points, but that&rsquo;s deceptive: the points are just much denser and almost all of the responses are warm! Even after 4-5 hours of idling, the instance survives most of the time.</p>
+
+<p>The following chart estimates the probability (Y-axis) of a cold start by the interval between two subsequent requests (X-axis). A higher line means higher chances of an instance being recycled:</p>
+
+
+
+
+
+  
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'Time');
+
+  const points = [{"items":[[0,0],[20,0.05434782608695652],[40,0.19753086419753085],[60,0.2768361581920904],[80,0.4968944099378882],[100,0.5942028985507246],[120,0.7128112936964913],[140,0.7128112936964913],[160,0.7128112936964913],[180,0.7128112936964913],[200,0.8402777777777778],[220,0.8402777777777778],[240,0.8573666308628715],[260,0.8573666308628715],[280,0.8573666308628715],[300,0.8573666308628715]],"name":"February 2019"},{"items":[[0,0],[20,0.017605633802816902],[40,0.02041190237905736],[60,0.02041190237905736],[80,0.026619343389529725],[100,0.040280210157618214],[120,0.043941411451398134],[140,0.07396449704142012],[160,0.08843537414965986],[180,0.09942753945359485],[200,0.09942753945359485],[220,0.09942753945359485],[240,0.146006600660066],[260,0.146006600660066],[280,0.15975440222428175],[300,0.15975440222428175]],"name":"April 2019"}];
+  const seriesCount = points.length;
+  for (var j = 0; j < seriesCount; j++) {
+    data.addColumn('number', points[j].name);
+  }
+
+  const rows = [];
+  for (var i = 0; i < points[0].items.length; i++)
+  {
+    const item = [points[0].items[i][0]];
+    for (var j = 0; j < seriesCount; j++) {
+      item.push(points[j].items[i][1]);
+    }
+    rows.push(item);
+  }
+
+  data.addRows(rows);
+
+  options.lineWidth = 3;
+  options.hAxis = {
+    title: 'Time since the previous invocation (minutes)'
+  };
+  options.vAxis = {
+    title: 'probability',
+    maxValue: 1.0
+  };
+  options.legend = { position: 'top' };
+  options.series = [{"color":"#3572A5"},{"color":"#339933"}];
+  return new google.visualization.AreaChart(document.getElementById('chart_div_less-frequent-cold-starts-in-google-cloud-functions\/bytime_interval'));
+});
+</script>
+<figure>
+  <div id="chart_div_less-frequent-cold-starts-in-google-cloud-functions/bytime_interval"></div>
+  <figcaption class="imageCaption"><h4>Probability of a cold start happening before minute X in February vs. April</h4></figcaption>
+</figure>
+
+<p>While the chance of surviving 5 hours of inactivity used to be about 15%, now it&rsquo;s flipped, and an idle instance survives for 5 hours in almost 85% of cases.</p>
+
+<h2 id="what-are-the-other-factors">What Are The Other Factors?</h2>
+
+<p>It looks like larger instances in terms of provisioned memory are more likely to survive than smaller instances:</p>
+
+
+
+
+
+  
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'Time');
+
+  const points = [{"items":[[0,0],[20,0.0821917808219178],[40,0.0802936834335126],[60,0.0802936834335126],[80,0.0802936834335126],[100,0.12101449275362319],[120,0.12101449275362319],[140,0.21212121212121213],[160,0.2124637155297533],[180,0.2124637155297533],[200,0.2124637155297533],[220,0.2124637155297533],[240,0.26444927253197925],[260,0.26444927253197925],[280,0.26444927253197925],[300,0.26444927253197925]],"name":"128 MB"},{"items":[[0,0],[20,0],[40,0.004329004329004329],[60,0.00819672131147541],[80,0.013215859030837005],[100,0.029045643153526972],[120,0.045454545454545456],[140,0.05316606929510155],[160,0.05316606929510155],[180,0.13080886675657918],[200,0.13080886675657918],[220,0.13080886675657918],[240,0.1966800356506239],[260,0.1966800356506239],[280,0.1966800356506239],[300,0.1966800356506239]],"name":"256 MB"},{"items":[[0,0],[20,0],[40,0.00425531914893617],[60,0.00975609756097561],[80,0.012605042016806723],[100,0.02358490566037736],[120,0.037037037037037035],[140,0.03840508806262231],[160,0.03840508806262231],[180,0.06191417937953207],[200,0.06191417937953207],[220,0.06191417937953207],[240,0.06191417937953207],[260,0.06191417937953207],[280,0.15384615384615385],[300,0.15384615384615385]],"name":"512 MB"},{"items":[[0,0],[20,0.0044444444444444444],[40,0.0044444444444444444],[60,0.010275250265528774],[80,0.010275250265528774],[100,0.010275250265528774],[120,0.023809523809523808],[140,0.025],[160,0.05864696374971139],[180,0.05864696374971139],[200,0.06411201179071481],[220,0.06411201179071481],[240,0.10268317853457172],[260,0.10268317853457172],[280,0.1261904761904762],[300,0.1261904761904762]],"name":"1 GB"},{"items":[[0,0],[20,0],[40,0],[60,0.011192616660354416],[80,0.011192616660354416],[100,0.011875968992248062],[120,0.011875968992248062],[140,0.03076923076923077],[160,0.04830188679245283],[180,0.04830188679245283],[200,0.05616483881688268],[220,0.05616483881688268],[240,0.10339281266786597],[260,0.10339281266786597],[280,0.10339281266786597],[300,0.10339281266786597]],"name":"2 GB"}];
+  const seriesCount = points.length;
+  for (var j = 0; j < seriesCount; j++) {
+    data.addColumn('number', points[j].name);
+  }
+
+  const rows = [];
+  for (var i = 0; i < points[0].items.length; i++)
+  {
+    const item = [points[0].items[i][0]];
+    for (var j = 0; j < seriesCount; j++) {
+      item.push(points[j].items[i][1]);
+    }
+    rows.push(item);
+  }
+
+  data.addRows(rows);
+
+  options.lineWidth = 3;
+  options.hAxis = {
+    title: 'Time since the previous invocation (minutes)'
+  };
+  options.vAxis = {
+    title: 'probability',
+    maxValue: 1.0
+  };
+  options.legend = { position: 'top' };
+  options.series =  null ;
+  return new google.visualization.AreaChart(document.getElementById('chart_div_less-frequent-cold-starts-in-google-cloud-functions\/bymemory_interval'));
+});
+</script>
+<figure>
+  <div id="chart_div_less-frequent-cold-starts-in-google-cloud-functions/bymemory_interval"></div>
+  <figcaption class="imageCaption"><h4>Probability of a cold start by instance size</h4></figcaption>
+</figure>
+
+<p>After 5 hours of idling, an instance of 128 MB is 2.5x more likely to be recycled compared to a 2 GB instance.</p>
+
+<p>A similar effect is observed for language runtimes:</p>
+
+
+
+
+
+  
+
+
+
+
+
+<script type="text/javascript">
+addChart((data, options) => {
+  data.addColumn('number', 'Time');
+
+  const points = [{"items":[[0,0],[20,0],[40,0],[60,0.0199203187250996],[80,0.0211864406779661],[100,0.03769291053773812],[120,0.03769291053773812],[140,0.05],[160,0.11067193675889328],[180,0.11067193675889328],[200,0.14390851449275363],[220,0.14390851449275363],[240,0.14533799533799535],[260,0.14533799533799535],[280,0.1917808219178082],[300,0.23333333333333334]],"name":"Python"},{"items":[[0,0],[20,0],[40,0.004347826086956522],[60,0.010575341486090253],[80,0.010575341486090253],[100,0.01282051282051282],[120,0.04827586206896552],[140,0.07206273258904837],[160,0.07206273258904837],[180,0.07206273258904837],[200,0.09540318438623524],[220,0.09540318438623524],[240,0.13775780010576413],[260,0.13775780010576413],[280,0.16354723707664884],[300,0.16354723707664884]],"name":"JavaScript"},{"items":[[0,0],[20,0],[40,0.008620689655172414],[60,0.011042649465678251],[80,0.011042649465678251],[100,0.019982737425784006],[120,0.019982737425784006],[140,0.03115998952605394],[160,0.03115998952605394],[180,0.0573719885161873],[200,0.0573719885161873],[220,0.0573719885161873],[240,0.0573719885161873],[260,0.0573719885161873],[280,0.0573719885161873],[300,0.0573719885161873]],"name":"Go"}];
+  const seriesCount = points.length;
+  for (var j = 0; j < seriesCount; j++) {
+    data.addColumn('number', points[j].name);
+  }
+
+  const rows = [];
+  for (var i = 0; i < points[0].items.length; i++)
+  {
+    const item = [points[0].items[i][0]];
+    for (var j = 0; j < seriesCount; j++) {
+      item.push(points[j].items[i][1]);
+    }
+    rows.push(item);
+  }
+
+  data.addRows(rows);
+
+  options.lineWidth = 3;
+  options.hAxis = {
+    title: 'Time since the previous invocation (minutes)'
+  };
+  options.vAxis = {
+    title: 'probability',
+    maxValue: 1.0
+  };
+  options.legend = { position: 'top' };
+  options.series = [{"color":"#3572A5"},{"color":"#F1E05A"},{"color":"#339933"}];
+  return new google.visualization.AreaChart(document.getElementById('chart_div_less-frequent-cold-starts-in-google-cloud-functions\/bylanguage_interval'));
+});
+</script>
+<figure>
+  <div id="chart_div_less-frequent-cold-starts-in-google-cloud-functions/bylanguage_interval"></div>
+  <figcaption class="imageCaption"><h4>Probability of a cold start by instance size by language</h4></figcaption>
+</figure>
+
+<p>While Python and Javascript are in the same ballpark, Go functions seem to survive longer and more reliably.</p>
+
+<h2 id="practical-takeaway">Practical Takeaway</h2>
+
+<p>Cloud providers are fighting the cold starts on many fronts. Now, it seems that Google found a way to keep warm container instances idle for extended periods without too much overhead for their infrastructure.</p>
+
+<p>With this recent improvement, the practice of having a dummy timer-based trigger to keep function instances warm gets less useful. Which is a good thing: less hand-holding and management means more time on developing useful features! One tiny step closer to a serverless nirvana.</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/serverless/coldstarts/">Cold Starts</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/gcp">GCP</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/google-cloud-functions">Google Cloud Functions</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div class="mb-5">
+                <h6 class="float-left">Responses</h6>
+                <div class="float-right"><a href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/10'>Write a response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">10</div>
+            <div class="mt-4">Visit the <b><a href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/10'>Github Issue</a></b> to comment on this page</div>
+        </div>
+    </div>
+</div>
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>
