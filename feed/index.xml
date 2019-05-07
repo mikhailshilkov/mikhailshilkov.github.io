@@ -12,6 +12,367 @@
 
     
         <entry>
+            <title type="html"><![CDATA[Level up your Azure Platform as a Service applications with Pulumi]]></title>
+            <link href="https://mikhail.io/2019/05/level-up-your-azure-platform-as-a-service-applications-with-pulumi/"/>
+            <id>https://mikhail.io/2019/05/level-up-your-azure-platform-as-a-service-applications-with-pulumi/</id>
+            
+            <published>2019-05-06T00:00:00+00:00</published>
+            <updated>2019-05-06T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Leverage Pulumi for continuous delivery of code and infrastructure to Azure PaaS. An ASP.NET Core application running on App Service and DevOps pipelines.</blockquote>
+
+<p>Pulumi enables developers to define cloud infrastructure using general purpose programming languages. Pulumi works with multiple cloud providers and has first-class support for all services in Microsoft Azure.</p>
+
+<p>Today I want to guide you through the process of developing Pulumi programs to leverage Azure <a href="https://azure.microsoft.com/overview/what-is-paas/">Platform-as-a-Service</a> (PaaS) services. My language of choice is TypeScript&mdash;a powerful and expressive typed language, which is very familiar to many Azure users.</p>
+
+<h2 id="azure-platform-as-a-service">Azure Platform as a Service</h2>
+
+<p>Azure consists of dozens of cloud services, from VMs to Kubernetes to Serverless. In my experience, a lot of customers choose Azure for its strong portfolio of PaaS-level services.</p>
+
+<p><a href="https://azure.microsoft.com/services/app-service/">Azure App Service</a> is a well-established managed compute offering to run web applications, RESTful APIs, or background workers. <a href="https://azure.microsoft.com/services/sql-database/">Azure SQL Database</a> is a fully managed service to run relational databases with features like high availability and backups available out-of-the-box. Enriched by services like <a href="https://azure.microsoft.com/services/devops/">Azure DevOps</a> for CI/CD and <a href="https://docs.microsoft.com/azure/azure-monitor/app/app-insights-overview">Application Insights</a> for APM, PaaS is a powerful way to get the benefits of the cloud without the need to fully re-architect software solutions.</p>
+
+<p>The power of relying on PaaS is evidenced by significant customer adoption. App Service is among the most popular compute services in Azure:</p>
+
+<p><blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">If you use automation (ARM, scripts, TF, &hellip;) to define and deploy Azure infrastructure, which services are your primary target? Vote &amp; RT!</p>&mdash; Mikhail Shilkov (@MikhailShilkov) <a href="https://twitter.com/MikhailShilkov/status/1120592994351099904?ref_src=twsrc%5Etfw">April 23, 2019</a></blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script></p>
+
+<p>Nonetheless, PaaS services pose different challenges to application developers. In particular, the usage of multiple cloud services demands an investment in infrastructure automation. That&rsquo;s where Pulumi comes to the rescue.</p>
+
+<h2 id="a-sample-application">A Sample Application</h2>
+
+<p>For this walkthrough, I took an existing application from Azure Samples GitHub: <a href="https://github.com/azure-samples/dotnetcore-sqldb-tutorial">.NET Core MVC sample for Azure App Service</a>. Predictably enough, it&rsquo;s a Todo List application, and this time it is a web app built with ASP.NET Core, Entity Framework Core and a SQL database. <a href="https://docs.microsoft.com/en-us/azure/app-service/app-service-web-tutorial-dotnetcore-sqldb">Build an ASP.NET Core and SQL Database app in Azure App Service</a> describes how to deploy such application to Azure App Service by means of clicking buttons in the Azure portal.</p>
+
+<blockquote>
+<p>Friends don&rsquo;t let friends right-click publish</p>
+</blockquote>
+
+<p>Instead, I suggest relying on infrastructure as code. I built a Pulumi program and integrated it into a fully automated build and deployment pipeline in Azure DevOps.</p>
+
+<p>Here is a sketch of the solution:</p>
+
+<p><img src="pulumi-app-service.png" alt="Pulumi and Azure PaaS - Application Diagram" /></p>
+
+<figcaption><h4>Pulumi and Azure PaaS - Application Diagram</h4></figcaption>
+
+<p>Let&rsquo;s get started building together!</p>
+
+<h2 id="solution-structure">Solution Structure</h2>
+
+<p>The following snippet shows the essential elements of the solution:</p>
+
+<pre><code>\infra                   # Cloud infrastructure definition goes here
+   \index.ts             # Pulumi program in TypeScript
+\src
+   \Controllers          # \
+   \Models               #  ASP.NET Core web app
+   \Views                # /
+   \Data                 # EF Core Data Context
+   \wwwroot              # Static assets (JavaScript/CSS/Images)
+\azure-pipelines.yml     # Azure DevOps pipeline definition
+</code></pre>
+
+<p>As a first step, I cloned the <a href="https://github.com/azure-samples/dotnetcore-sqldb-tutorial">Todo List app</a> into the <code>src</code> folder. There&rsquo;s nothing specific to Pulumi here: it&rsquo;s just an ASP.NET Core app. It could be your application instead.</p>
+
+<h2 id="bootstrapping-a-pulumi-program">Bootstrapping a Pulumi Program</h2>
+
+<p>The Pulumi development experience is powered by the <a href="https://pulumi.io/reference/commands.html">Pulumi CLI</a>. After <a href="https://pulumi.io/quickstart/install.html">installing the CLI</a>, I jump into an empty <code>infra</code> folder and run <code>pulumi new azure-typescript</code> accepting all the default answers. The CLI bootstraps a skeleton of a TypeScript NodeJS application. The code looks like this:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> pulumi from <span style="color:#a31515">&#34;@pulumi/pulumi&#34;</span>;
+<span style="color:#00f">import</span> * <span style="color:#00f">as</span> azure from <span style="color:#a31515">&#34;@pulumi/azure&#34;</span>;
+
+<span style="color:#008000">// Create an Azure Resource Group
+</span><span style="color:#008000"></span><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;resourceGroup&#34;</span>, {
+   location: <span style="color:#a31515">&#34;WestUS&#34;</span>,
+});
+
+<span style="color:#008000">// Create an Azure resource (Storage Account)
+</span><span style="color:#008000"></span><span style="color:#00f">const</span> account = <span style="color:#00f">new</span> azure.storage.Account(<span style="color:#a31515">&#34;storage&#34;</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   location: <span style="color:#2b91af">resourceGroup.location</span>,
+   accountTier: <span style="color:#a31515">&#34;Standard&#34;</span>,
+   accountReplicationType: <span style="color:#a31515">&#34;LRS&#34;</span>,
+});
+
+<span style="color:#008000">// Export the connection string for the storage account
+</span><span style="color:#008000"></span><span style="color:#00f">export</span> <span style="color:#00f">const</span> connectionString = account.primaryConnectionString;</code></pre></div>
+<p>The infrastructure pieces are defined by instantiating objects of appropriate types: <code>ResourceGroup</code> and <code>Account</code> in this example.</p>
+
+<h2 id="stacks">Stacks</h2>
+
+<p>If an application is developed to run and evolve for months and years, it&rsquo;s smart to invest in practices like Continuous Integration and Deployment (CI/CD) and Infrastructure as Code (IaC). It&rsquo;s quite likely that such an application will run in multiple environments: production, staging, development, and so on.</p>
+
+<p>Pulumi comes with a handy concept of <a href="https://pulumi.io/reference/stack.html">stacks</a>&mdash; isolated, independently configurable instances of a Pulumi program. A separate stack can be designated for each deployment environment.</p>
+
+<p>We can take the notion of the stack into the program and apply the stack name to definitions of infrastructure resources:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#008000">// Use first 10 characters of the stackname as prefix for resource names
+</span><span style="color:#008000"></span><span style="color:#00f">const</span> prefix = pulumi.getStack().substring(0, 9);
+
+<span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-rg`</span>, {
+   location: <span style="color:#a31515">&#34;WestUS&#34;</span>,
+});
+
+<span style="color:#00f">const</span> resourceGroupArgs = {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   location: <span style="color:#2b91af">resourceGroup.location</span>,
+};
+
+<span style="color:#008000">// Storage Account name must be lowercase and cannot have any dash characters
+</span><span style="color:#008000"></span><span style="color:#00f">const</span> storageAccountName = <span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix.toLowerCase().replace(<span style="color:#a31515">/-/g</span>, <span style="color:#a31515">&#34;&#34;</span>)<span style="color:#a31515">}</span><span style="color:#a31515">sa`</span>;
+<span style="color:#00f">const</span> storageAccount = <span style="color:#00f">new</span> azure.storage.Account(storageAccountName, {
+   ...resourceGroupArgs,
+
+   accountKind: <span style="color:#a31515">&#34;StorageV2&#34;</span>,
+   accountTier: <span style="color:#a31515">&#34;Standard&#34;</span>,
+   accountReplicationType: <span style="color:#a31515">&#34;LRS&#34;</span>,
+});</code></pre></div>
+<p>Note how I use the power of the general purpose programming language to</p>
+
+<ul>
+<li>Interact with the environment by reading the stack name</li>
+<li>Encode custom rules for resource naming</li>
+<li>Work around the shortcomings of the cloud, namely, the restricted set of characters to use in Storage Accounts</li>
+<li>Extract the value <code>resourceGroupArgs</code> to reuse the same definition for upcoming resources.</li>
+</ul>
+
+<p>As a result, the stacks <code>production</code> and <code>dev</code> will be deployed to separate resource groups with clean and consistent naming throughout the resources.</p>
+
+<h2 id="deploying-the-application-to-app-service">Deploying the Application to App Service</h2>
+
+<p>Now, it&rsquo;s time to define the infrastructure to host my ASP.NET Core app. There are three pieces of the puzzle to fit together.</p>
+
+<h3 id="1-app-service-plan">1. App Service Plan</h3>
+
+<p>An App Service Plan defines the pricing tier, instance size and other parameters related to performance, scalability, and cost of the hosted application. My definition is relatively straightforward:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> appServicePlan = <span style="color:#00f">new</span> azure.appservice.Plan(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-asp`</span>, {
+   ...resourceGroupArgs,
+
+   kind: <span style="color:#a31515">&#34;App&#34;</span>,
+
+   sku: {
+       tier: <span style="color:#a31515">&#34;Basic&#34;</span>,
+       size: <span style="color:#a31515">&#34;B1&#34;</span>,
+   },
+});</code></pre></div>
+<p>In a more advanced scenario, I could provision different performance tiers based on the target environment identified by the stack name.</p>
+
+<h3 id="2-deployment-artifact">2. Deployment Artifact</h3>
+
+<p>App Service is a mature Azure service with a long history, so it has numerous options for deployment methods. Arguably, the newest <a href="https://github.com/Azure/app-service-announcements/issues/110">Run from Package</a> is the most friendly way to practice Infrastructure as Code automation.</p>
+
+<p>Essentially, I prepare a zip file with the published .NET Core assemblies and upload it to Azure Blob Storage:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> storageContainer = <span style="color:#00f">new</span> azure.storage.Container(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-c`</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
+   containerAccessType: <span style="color:#a31515">&#34;private&#34;</span>,
+});
+
+<span style="color:#00f">const</span> blob = <span style="color:#00f">new</span> azure.storage.ZipBlob(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-b`</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
+   storageContainerName: <span style="color:#2b91af">storageContainer.name</span>,
+   type: <span style="color:#a31515">&#34;block&#34;</span>,
+
+   content: <span style="color:#2b91af">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;../src/bin/Debug/netcoreapp2.1/publish.zip&#34;</span>)
+});</code></pre></div>
+<h3 id="3-app-service">3. App Service</h3>
+
+<p>Now, I can define an App Service and instruct it to use this package to run the website. I do so by linking its application settings to the shared access signature of the blob:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> codeBlobUrl = signedBlobReadUrl(blob, storageAccount, storageContainer);
+
+<span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.AppService(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-as`</span>, {
+   ...resourceGroupArgs,
+   appServicePlanId: <span style="color:#2b91af">appServicePlan.id</span>,
+
+   appSettings: {
+       <span style="color:#a31515">&#34;WEBSITE_RUN_FROM_PACKAGE&#34;</span>: codeBlobUrl,
+   },
+});</code></pre></div>
+<p>At startup, App Service downloads the zip and mounts it as a local read-only disk to store the application binaries.</p>
+
+<h2 id="adding-a-sql-database">Adding a SQL Database</h2>
+
+<p>The application host is now defined, but I also need a relational database to store and query Todo Items. Staying true to the PaaS path, I&rsquo;m using Azure SQL Database service.</p>
+
+<h3 id="reading-configuration-parameters">Reading Configuration Parameters</h3>
+
+<p>Setting up a SQL Server requires a couple of parameter values that might change between execution environments, for instance, a username and a password for the connection string. Pulumi provides <a href="https://pulumi.io/reference/config.html">a way to configure</a> the program&rsquo;s parameters per stack.</p>
+
+<p>The configuration itself will happen in my CI/CD pipeline. For now, I can query the values with <code>pulumi.Config</code> helper tool:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#008000">// Get the username and the password to use for SQL from config.
+</span><span style="color:#008000"></span><span style="color:#00f">const</span> config = <span style="color:#00f">new</span> pulumi.Config();
+<span style="color:#00f">const</span> username = config.require(<span style="color:#a31515">&#34;sqlUsername&#34;</span>);
+<span style="color:#00f">const</span> pwd = config.require(<span style="color:#a31515">&#34;sqlPassword&#34;</span>);</code></pre></div>
+<h3 id="azure-sql-server-and-database">Azure SQL Server and Database</h3>
+
+<p>I&rsquo;m all set to code the SQL infrastructure. Two resources need to be defined:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> sqlServer = <span style="color:#00f">new</span> azure.sql.SqlServer(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-sql`</span>, {
+   ...resourceGroupArgs,
+
+   administratorLogin: <span style="color:#2b91af">username</span>,
+   administratorLoginPassword: <span style="color:#2b91af">pwd</span>,
+   version: <span style="color:#a31515">&#34;12.0&#34;</span>,
+});
+
+<span style="color:#00f">const</span> database = <span style="color:#00f">new</span> azure.sql.Database(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-db`</span>, {
+   ...resourceGroupArgs,
+   serverName: <span style="color:#2b91af">sqlServer.name</span>,
+   requestedServiceObjectiveName: <span style="color:#a31515">&#34;S0&#34;</span>
+});</code></pre></div>
+<p>Note that <code>requestedServiceObjectiveName</code> defines the performance tier and the price of the Azure SQL Database.</p>
+
+<h3 id="wiring-app-service-to-the-database">Wiring App Service to the Database</h3>
+
+<p>By default, Azure SQL Database is configured to deny any incoming connections for security reasons. One approach is to allow access to all Azure services. However, a more secure method is to white-list the Outbound IPs of the App Service:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> firewallRules = app.outboundIpAddresses.apply(
+   ips =&gt; ips.split(<span style="color:#a31515">&#39;,&#39;</span>).map(
+       ip =&gt; <span style="color:#00f">new</span> azure.sql.FirewallRule(<span style="color:#a31515">`FR</span><span style="color:#a31515">${</span>ip<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+           endIpAddress: <span style="color:#2b91af">ip</span>,
+           resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+           serverName: <span style="color:#2b91af">sqlServer.name</span>,
+           startIpAddress: <span style="color:#2b91af">ip</span>,
+       })
+   ));</code></pre></div>
+<p>Note that the actual IPs of the service are unknown at the time of writing the program. Nonetheless, the combination of <code>apply</code>, <code>split</code>, and <code>map</code> functions enables me to wire the runtime value of IPs to the proper set of firewall rules.</p>
+
+<p>Additional firewall rules may be implemented to allow administrative access from outside the App Service.</p>
+
+<p>Finally, our ASP.NET Core application expects a connection string with <code>MyDbConnection</code>. To create one, I join the database server and the database name to produce the connection string and add it to the App Service configuration:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.AppService(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-as`</span>, {
+   <span style="color:#008000">// ... other parameters as defined above
+</span><span style="color:#008000"></span>
+   connectionStrings: [{
+       name: <span style="color:#a31515">&#34;MyDbConnection&#34;</span>,
+       value:
+           <span style="color:#2b91af">pulumi.all</span>([sqlServer.name, database.name]).apply(([server, db]) =&gt;
+               <span style="color:#a31515">`Server=tcp:</span><span style="color:#a31515">${</span>server<span style="color:#a31515">}</span><span style="color:#a31515">.database.windows.net;initial catalog=</span><span style="color:#a31515">${</span>db<span style="color:#a31515">}</span><span style="color:#a31515">;user ID=</span><span style="color:#a31515">${</span>username<span style="color:#a31515">}</span><span style="color:#a31515">;password=</span><span style="color:#a31515">${</span>pwd<span style="color:#a31515">}</span><span style="color:#a31515">;Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`</span>),
+       type: <span style="color:#a31515">&#34;SQLAzure&#34;</span>
+   }]
+});</code></pre></div>
+<h2 id="collecting-metrics-with-application-insights">Collecting Metrics with Application Insights</h2>
+
+<p>Application Insights is an Application Performance Management (APM) service to be used for collecting metrics from cloud applications.</p>
+
+<p>After adding Application Insights NuGet packages into my ASP.NET solution, I can go ahead and define the App Insights resource and link it to the App Service with an instrumentation key:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> appInsights = <span style="color:#00f">new</span> azure.appinsights.Insights(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-ai`</span>, {
+   ...resourceGroupArgs,
+
+   applicationType: <span style="color:#a31515">&#34;Web&#34;</span>
+});
+
+<span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.AppService(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>prefix<span style="color:#a31515">}</span><span style="color:#a31515">-as`</span>, {
+   <span style="color:#008000">// ... other parameters as defined above
+</span><span style="color:#008000"></span>
+   appSettings: {
+       <span style="color:#a31515">&#34;ApplicationInsights:InstrumentationKey&#34;</span>: appInsights.instrumentationKey,
+        <span style="color:#008000">// ... other settings as defined above
+</span><span style="color:#008000"></span>   },
+});</code></pre></div>
+<h2 id="continuous-deployment-with-azure-devops">Continuous Deployment with Azure DevOps</h2>
+
+<p>While Pulumi CLI works great during development; a production deployment should rather be executed in a CI/CD pipeline. This time I&rsquo;m using Azure DevOps&mdash;a managed CI/CD service to build, test, and deploy cloud applications.</p>
+
+<p>In particular, I defined an Azure Pipeline consisting of three steps:</p>
+
+<ul>
+<li>Build &amp; Publish the .NET Core application;</li>
+<li>Restore NPM packages for the infrastructure program;</li>
+<li>Provision the cloud infrastructure with Pulumi.</li>
+</ul>
+
+<h3 id="build-publish-the-net-application">Build &amp; Publish the .NET Application</h3>
+
+<p>The first step utilizes a built-in task which triggers the .NET Core CLI to build the source code in the <code>src</code> folder and publish the assemblies as a zip file.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yml" data-lang="yml">steps:
+- task: DotNetCoreCLI@2
+ inputs:
+   command: <span style="color:#a31515">&#39;publish&#39;</span>
+   projects: <span style="color:#a31515">&#39;src&#39;</span>
+ displayName: <span style="color:#a31515">&#39;Build and publish the ASP.NET Core app&#39;</span></code></pre></div>
+<h3 id="restore-npm-packages-for-the-infrastructure-program">Restore NPM packages for the infrastructure program</h3>
+
+<p>The second step is a simple <code>npm install</code> step to restore the NodeJS dependencies:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yml" data-lang="yml"> - task: Npm@1
+   inputs:
+     command: <span style="color:#a31515">&#39;install&#39;</span>
+     workingDir: <span style="color:#a31515">&#39;infra&#39;</span> 
+   displayName: <span style="color:#a31515">&#39;NPM install packages&#39;</span></code></pre></div>
+<h3 id="install-pulumi-and-run-infrastructure-code">Install Pulumi and Run Infrastructure Code</h3>
+
+<p>There is a Pulumi task available in Azure Marketplace: <a href="https://marketplace.visualstudio.com/items?itemName=pulumi.build-and-release-task">Pulumi Azure Pipelines Task</a>. After installing it to your organization, you should be able to utilize a simple task like this:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yml" data-lang="yml"> - task: Pulumi@0
+   inputs:
+     azureSubscription: <span style="color:#a31515">&#39;Your Azure Subscription(aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee)&#39;</span>
+     command: <span style="color:#a31515">&#39;up&#39;</span>
+     args: <span style="color:#a31515">&#39;--yes&#39;</span>
+     cwd: <span style="color:#a31515">&#39;infra&#39;</span>
+     stack: <span style="color:#a31515">&#39;dev&#39;</span>
+   displayName: <span style="color:#a31515">&#39;Install pulumi and run infra code&#39;</span>
+   name: pulumi</code></pre></div>
+<p>Alternatively, if you can&rsquo;t install third-party tasks from Azure Marketplace, you can call the Pulumi CLI from a custom shell script, see <a href="https://github.com/pulumi/examples/tree/master/azure-ts-appservice-devops/alternative-pipeline/">this pipeline definition</a>.</p>
+
+<p>When everything is wired correctly, I see this screen in Azure DevOps:</p>
+
+<p><img src="pulumi-devops-build.png" alt="Green Build of a Pulumi Program in DevOps" /></p>
+
+<figcaption><h4>Green Build of a Pulumi Program in Azure DevOps</h4></figcaption>
+
+<p>The newly created resource group contains six resources:</p>
+
+<p><img src="pulumi-resource-group.png" alt="Azure Resource created by Pulumi" /></p>
+
+<figcaption><h4>Azure Resources created by Pulumi</h4></figcaption>
+
+<p>The application is up and running:</p>
+
+<p><img src="pulumi-todo-app.png" alt="Todo List App deployed to Azure with Pulumi" /></p>
+
+<figcaption><h4>Application Screenshot</h4></figcaption>
+
+<p>The telemetry is flowing into Application Insights:</p>
+
+<p><img src="pulumi-application-map.png" alt="Application Map from App Insights" /></p>
+
+<figcaption><h4>Application Map from Azure App Insights</h4></figcaption>
+
+<p>You can find the full code of the application, infrastructure definition, and deployment pipeline in <a href="https://github.com/pulumi/examples/tree/master/azure-ts-appservice-devops/">Pulumi Examples repository</a>.</p>
+
+<h2 id="pulumi-azure-paas">Pulumi â¤ï¸ Azure PaaS</h2>
+
+<p>Azure App Service and friends are a great way to deploy web applications and APIs without worrying about the nitty-gritty details of the underlying hardware.</p>
+
+<p>Writing a TypeScript program to compose an application out of the cloud building blocks feels like a breeze to me. I can reuse all my skills and stay productive by defining cloud resources as code in a familiar language.</p>
+
+<p>You can get going with these resources:</p>
+
+<ul>
+<li><a href="https://pulumi.io/quickstart/">Getting Started with Pulumi</a></li>
+<li><a href="https://pulumi.io/quickstart/azure/setup.html">Setup Pulumi to work with Azure</a></li>
+<li><a href="https://pulumi.io/quickstart/azure/index.html">Walkthroughs and Examples</a></li>
+</ul>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/pulumi" term="pulumi" label="Pulumi" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-app-service" term="azure-app-service" label="Azure App Service" />
+                             
+                                <category scheme="https://mikhail.io/tags/infrastructure-as-code" term="infrastructure-as-code" label="Infrastructure-as-Code" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
             <title type="html"><![CDATA[Less Frequent Cold Starts in Google Cloud Functions]]></title>
             <link href="https://mikhail.io/2019/04/less-frequent-cold-starts-in-google-cloud-functions/"/>
             <id>https://mikhail.io/2019/04/less-frequent-cold-starts-in-google-cloud-functions/</id>
