@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Globally-distributed Serverless Application in 100 Lines of Code. Infrastructure Included! | Mikhail Shilkov</title>
+	
+	
+	
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	<link rel="canonical" href="https://blog.pulumi.com/globally-distributed-serverless-application-in-100-lines-of-code-infrastructure-included">
+	
+	
+	<meta property="og:title" content="Globally-distributed Serverless Application in 100 Lines of Code. Infrastructure Included!" />
+	<meta property="og:description" content="Building a serverless application on Azure with both the data store and the HTTP endpoint located close to end users for fast response time." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2019/07/globally-distributed-serverless-application-in-100-lines-of-code/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2019/07/globally-distributed-serverless-application-in-100-lines-of-code/teaser.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Pulumi" />
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Serverless" />
+	
+	<meta property="article:tag" content="Infrastructure as Code" />
+	
+	<meta property="article:tag" content="Azure Functions" />
+	
+	<meta property="article:tag" content="Azure Cosmos DB" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2019/07/globally-distributed-serverless-application-in-100-lines-of-code/teaser.png" />
+	
+	
+
+	<meta name="twitter:title" content="Globally-distributed Serverless Application in 100 Lines of Code. Infrastructure Included!"/>
+	<meta name="twitter:description" content="Building a serverless application on Azure with both the data store and the HTTP endpoint located close to end users for fast response time."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=Globally-distributed%20Serverless%20Application%20in%20100%20Lines%20of%20Code.%20Infrastructure%20Included%21%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2019%2f07%2fglobally-distributed-serverless-application-in-100-lines-of-code%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2f2019%2f07%2fglobally-distributed-serverless-application-in-100-lines-of-code%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">Globally-distributed Serverless Application in 100 Lines of Code. Infrastructure Included!</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            
+                            <span class="post-date">Originally published on the <a href='https://blog.pulumi.com/globally-distributed-serverless-application-in-100-lines-of-code-infrastructure-included'>Pulumi Blog</a> on Jul 2, 2019
+                            
+                            
+                            &nbsp;&middot;&nbsp; 0 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        
+
+<p>Pulumi is excellent at connecting multiple cloud components into a cohesive application. In my <a href="https://blog.pulumi.com/serverless-as-simple-callbacks-with-pulumi-and-azure-functions">previous post</a>, I introduced the way to mix JavaScript or TypeScript serverless functions directly into the cloud infrastructure programs.</p>
+
+<p>Today, I will build a serverless application with both the data store and the HTTP endpoint located close to end users to ensure prompt response time. The entire application runs on top of managed Azure services and is defined as a single Pulumi program in TypeScript.</p>
+
+<h2 id="baseline">Baseline</h2>
+
+<p>I&rsquo;m going to build a URL shortener: a simple HTTP endpoint which accepts a shortcode in the URL and then redirects a user to the full URL associated with the given short code.</p>
+
+<p>I start simple and make a non-distributed version of the application first. It consists of two main components: a Cosmos DB container to store URL mappings and two Azure Functions to handle HTTP requests:</p>
+
+<p><img src="pulumi-azure-url-shortener-basic.png" alt="The URL Shortener app deployed to a single location" /></p>
+
+<figcaption><h4>The URL Shortener app deployed to a single location</h4></figcaption>
+
+<p>Let&rsquo;s define this infrastructure in a Pulumi program.</p>
+
+<h3 id="cosmos-db-collection">Cosmos DB Collection</h3>
+
+<p>Arguably, Cosmos DB is overkill in such a simple scenario: we just need a key-value store, so Table Storage would suffice. However, Cosmos DB comes handy at the multi-region setup later on.</p>
+
+<p>Next to a standard resource group definition, I create a Cosmos DB account with location set to a single region and <code>Session</code> consistency level:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> pulumi from <span style="color:#a31515">&#34;@pulumi/pulumi&#34;</span>;
+<span style="color:#00f">import</span> * <span style="color:#00f">as</span> azure from <span style="color:#a31515">&#34;@pulumi/azure&#34;</span>;
+<span style="color:#00f">import</span> * <span style="color:#00f">as</span> cosmos from <span style="color:#a31515">&#34;@azure/cosmos&#34;</span>;
+
+<span style="color:#00f">const</span> location = <span style="color:#a31515">&#34;westus&#34;</span>; <span style="color:#008000">// To be changed to multiple configurable locations
+</span><span style="color:#008000"></span>
+<span style="color:#00f">let</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;UrlShorterner&#34;</span>, {
+   location,
+});
+
+<span style="color:#00f">let</span> cosmosdb = <span style="color:#00f">new</span> azure.cosmosdb.Account(<span style="color:#a31515">&#34;UrlStore&#34;</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   location,
+   geoLocations: [{ location, failoverPriority: <span style="color:#2b91af">0</span> }],
+   offerType: <span style="color:#a31515">&#34;Standard&#34;</span>,
+   consistencyPolicy: {
+       consistencyLevel: <span style="color:#a31515">&#34;Session&#34;</span>,
+       maxIntervalInSeconds: <span style="color:#2b91af">5</span>,
+       maxStalenessPrefix: <span style="color:#2b91af">100</span>,
+   },
+});</code></pre></div>
+<p>Cosmos DB has a hierarchical structure of Accounts, Databases, and Containers. Unfortunately, Cosmos DB containers can’t be defined as Pulumi resources yet. As a workaround, I defined a helper function <code>getContainer</code> to create a database and a container using Cosmos SDK, see <a href="https://github.com/pulumi/examples/blob/master/azure-ts-serverless-url-shortener-global/cosmosclient.ts">here</a>.</p>
+
+<h3 id="function-app">Function App</h3>
+
+<p>Serverless Azure Functions are going to handle the HTTP layer in my application. I use the technique of <a href="https://blog.pulumi.com/serverless-as-simple-callbacks-with-pulumi-and-azure-functions">serverless functions as callbacks</a> to define Azure Functions inline inside my Pulumi program:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> fn = <span style="color:#00f">new</span> azure.appservice.HttpEventSubscription(<span style="color:#a31515">&#34;GetUrl&#34;</span>, {
+   resourceGroup,
+   location,
+   route: <span style="color:#a31515">&#34;{key}&#34;</span>,
+   callback: <span style="color:#2b91af">async</span> (_, request: <span style="color:#2b91af">azure.appservice.HttpRequest</span>) =&gt; {
+       <span style="color:#00f">const</span> endpoint = cosmosdb.endpoint.get();
+       <span style="color:#00f">const</span> masterKey = cosmosdb.primaryMasterKey.get();
+
+       <span style="color:#00f">const</span> container = await getContainer(endpoint, masterKey);
+
+       <span style="color:#00f">const</span> key = request.params[<span style="color:#a31515">&#39;key&#39;</span>];
+       <span style="color:#00f">try</span> {
+           <span style="color:#00f">const</span> response = await container.item(key.toString()).read();
+           <span style="color:#00f">return</span> {
+               status: <span style="color:#2b91af">301</span>,
+               headers: { <span style="color:#a31515">&#34;location&#34;</span>: response.body.url },
+               body: <span style="color:#a31515">&#39;&#39;</span>,
+           };
+       } <span style="color:#00f">catch</span> (e) {
+           <span style="color:#00f">return</span> { status: <span style="color:#2b91af">404</span>, body: <span style="color:#a31515">&#39;Short URL not found&#39;</span> }
+       }
+   }
+});
+
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> url = fn.url;</code></pre></div>
+<p>I supply the template <code>{key}</code> as <code>route</code> parameter so that the function accepts wildcard URLs and extract the wildcard value as a <code>key</code> parameter available inside the <code>request</code> object. Then, I use the received key to look up the full URL. The URL is returned to the client as a header of the <code>301</code> Redirect response. <code>404</code> Not Found is returned in case the requested document does not exist&mdash;the naughty Cosmos SDK throws an error in this scenario.</p>
+
+<p>Note how the Cosmos DB parameters <code>endpoint</code> and <code>primaryMasterKey</code> are used directly inside the function. There is no need to manage the keys manually or explicitly put them into application settings: the generated keys are injected into the code at the time of deployment. In practice, a better idea is to store the key in a KeyVault and read it via application settings, but I&rsquo;ll leave this for a separate article.</p>
+
+<p>A function to add a URL to the database looks quite similar to the above:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> fn = <span style="color:#00f">new</span> azure.appservice.HttpEventSubscription(<span style="color:#a31515">&#34;AddUrl&#34;</span>, {
+   resourceGroup,
+   methods: [<span style="color:#a31515">&#34;POST&#34;</span>],
+   callback: <span style="color:#2b91af">async</span> (_, request: <span style="color:#2b91af">azure.appservice.HttpRequest</span>) =&gt; {
+       <span style="color:#00f">const</span> endpoint = cosmosdb.endpoint.get();
+       <span style="color:#00f">const</span> masterKey = cosmosdb.primaryMasterKey.get();
+       <span style="color:#00f">const</span> container = await getContainer(endpoint, masterKey, location);
+
+       await container.items.create(request.body);
+       <span style="color:#00f">return</span> { status: <span style="color:#2b91af">200</span>, body: <span style="color:#a31515">&#39;Short URL saved&#39;</span> };
+   }
+});
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> addEndpoint = fn.url;</code></pre></div>
+<p>The key differences are:</p>
+
+<ul>
+<li>Using <code>POST</code> as the accepted HTTP method</li>
+<li>Creating a new item in Cosmos DB</li>
+<li>Using <code>request.body</code> as the payload to save</li>
+</ul>
+
+<p>I might need to add some validation in a real application&mdash;skipped for now.</p>
+
+<h3 id="trying-it-out">Trying It Out</h3>
+
+<p>Now, when a user navigates to an address like <code>https://geturl-xyz.azurewebsites.net/api/URLKEY</code>, they get redirected to the full URL associated with the key. The URL is not quite short yet, but we could make it so with a custom domain configuration.</p>
+
+<p>Presumably, we expect our URL shortener to be popular around the world. Therefore, one key aspect is to make sure that the service responds fast and enables a smooth user experience. Let&rsquo;s measure the response time of our first version from different spots around the world:</p>
+
+<table class="table table-striped">
+<thead>
+<tr>
+<th>Location</th>
+<th>Response time</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>San Francisco</td>
+<td>133 ms</td>
+</tr>
+
+<tr>
+<td>New York</td>
+<td>272 ms</td>
+</tr>
+
+<tr>
+<td>London</td>
+<td>383 ms</td>
+</tr>
+
+<tr>
+<td>Frankfurt</td>
+<td>420 ms</td>
+</tr>
+
+<tr>
+<td>Tel-Aviv</td>
+<td>470 ms</td>
+</tr>
+
+<tr>
+<td>Hong-Kong</td>
+<td>437 ms</td>
+</tr>
+
+<tr>
+<td>Brisbane</td>
+<td>449 ms</td>
+</tr>
+</tbody>
+</table>
+
+<p>The further we get from the West US region, the slower the responses become.</p>
+
+<p>How can we do better?</p>
+
+<h2 id="bring-compute-and-data-closer-to-users">Bring Compute and Data Closer to Users</h2>
+
+<p>It&rsquo;s hard to beat the speed of light, so if we want to respond fast, we need to bring both code and data close to any target user.</p>
+
+<p>Luckily, the most involved aspect of that&mdash;the data distribution&mdash;can be handled by Cosmos DB multi-region accounts. We need to take care of deploying the code in multiple locations and routing the traffic to the nearest one. Here is the plan:</p>
+
+<p><img src="pulumi-azure-url-shortener-distributed.png" alt="The multi-region URL Shortener app" /></p>
+
+<figcaption><h4>The multi-region URL Shortener app</h4></figcaption>
+
+<p>I don&rsquo;t care too much about the latency of Add URL function, so I left it out of the picture.</p>
+
+<h3 id="configuring-the-locations">Configuring the locations</h3>
+
+<p>The above picture shows three Azure regions, but since I&rsquo;m using a general-purpose programming language, I can handle any number of locations in the same way. Actually, I put the list of target regions in Pulumi config file and read it at execution time:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> config = <span style="color:#00f">new</span> pulumi.Config();
+<span style="color:#00f">const</span> locations = config.require(<span style="color:#a31515">&#34;locations&#34;</span>).split(<span style="color:#a31515">&#39;,&#39;</span>);
+<span style="color:#00f">const</span> primaryLocation = locations[0];</code></pre></div>
+<p>The order of regions defines the priority.</p>
+
+<h3 id="multi-region-cosmos-db-account">Multi-region Cosmos DB Account</h3>
+
+<p>Since <code>locations</code> is a simple array, I can <code>map</code> this array to produce the array of <code>geoLocations</code> to be set for my Cosmos DB:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">let</span> cosmosdb = <span style="color:#00f">new</span> azure.cosmosdb.Account(<span style="color:#a31515">&#34;url-cosmos&#34;</span>, {
+   location: <span style="color:#2b91af">primaryLocation</span>,
+   geoLocations: <span style="color:#2b91af">locations.map</span>((location, failoverPriority) =&gt; ({
+       location,
+       failoverPriority
+   })),
+   <span style="color:#008000">/* ... other properties stay the same ... */</span></code></pre></div>
+<p>Right here, the full power of a programming language at my fingertips!</p>
+
+<h3 id="multi-region-serverless-app">Multi-region Serverless App</h3>
+
+<blockquote>
+<p>Azure Traffic Manager is a DNS-based traffic load balancer that enables you to distribute traffic optimally to services across global Azure regions while providing high availability and responsiveness.</p>
+</blockquote>
+
+<p>Sounds like what I need for my global application! Let&rsquo;s define a Traffic Manager profile:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> profile = <span style="color:#00f">new</span> azure.trafficmanager.Profile(<span style="color:#a31515">&#34;UrlShortEndpoint&#34;</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   trafficRoutingMethod: <span style="color:#a31515">&#39;Performance&#39;</span>,
+   dnsConfigs: [{
+       relativeName: <span style="color:#a31515">&#34;shorturls&#34;</span>,
+       ttl: <span style="color:#2b91af">60</span>,
+   }],
+   monitorConfigs: [{
+       protocol: <span style="color:#a31515">&#39;HTTP&#39;</span>,
+       port: <span style="color:#2b91af">80</span>,
+       path: <span style="color:#a31515">&#39;/api/ping&#39;</span>,
+   }]
+});</code></pre></div>
+<p>I set the routing method to Performance:</p>
+
+<blockquote>
+<p>Select Performance when you have endpoints in different geographic locations and you want end users to use the &ldquo;closest&rdquo; endpoint in terms of the lowest network latency.</p>
+</blockquote>
+
+<p>Now, I need to create a Function App in each of the target regions. That&rsquo;s easy to achieve with a <code>for..of</code> loop:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">for</span> (<span style="color:#00f">const</span> location of locations) {
+   <span style="color:#00f">const</span> fn = <span style="color:#00f">new</span> azure.appservice.HttpEventSubscription(<span style="color:#a31515">`GetUrl-</span><span style="color:#a31515">${</span>location<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+       resourceGroup,
+       location,
+       route: <span style="color:#a31515">&#34;{key}&#34;</span>,
+       callback: <span style="color:#008000">/* ... the function stays the same ... */</span>
+   });
+}</code></pre></div>
+<p>Finally, I set up an Endpoint for each Function App to bind them to the Traffic Manager. I do so in the same loop as above:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">for</span> (<span style="color:#00f">const</span> location of locations) {
+   <span style="color:#00f">const</span> fn = <span style="color:#00f">new</span> azure.appservice.HttpEventSubscription(<span style="color:#a31515">`GetUrl-</span><span style="color:#a31515">${</span>location<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+       <span style="color:#008000">/* ... function definition as shown above ... */</span>
+   });
+
+   <span style="color:#00f">const</span> app = fn.functionApp;
+
+   <span style="color:#00f">new</span> azure.trafficmanager.Endpoint(<span style="color:#a31515">`tme</span><span style="color:#a31515">${</span>location<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+       resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+       profileName: <span style="color:#2b91af">profile.name</span>,
+       type: <span style="color:#a31515">&#39;azureEndpoints&#39;</span>,
+       targetResourceId: <span style="color:#2b91af">app.id</span>,
+       target: <span style="color:#2b91af">app.defaultHostname</span>,
+       endpointLocation: <span style="color:#2b91af">app.location</span>,
+   });
+}</code></pre></div>
+<p>I assign the properties of each Function App to the corresponding Endpoint with a simple object initializer expression.</p>
+
+<p>Everything is in place. I can export the Traffic Manager endpoint:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">export</span> <span style="color:#00f">const</span> endpoint = pulumi.interpolate <span style="color:#a31515">`http://</span><span style="color:#a31515">${</span>profile.fqdn<span style="color:#a31515">}</span><span style="color:#a31515">/api/{key}`</span>;</code></pre></div>
+<p>Time to re-run the latency tests.</p>
+
+<h2 id="results">Results</h2>
+
+<p>I deployed the distributed infrastructure to five Azure regions: West US, East US, West Europe, East Asia, and Australia East. The results are shown in the table below, next to the values from the initial run:</p>
+
+<table class="table table-striped">
+<thead>
+<tr>
+<th>Location</th>
+<th>Single region</th>
+<th>Multiple regions</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>San Francisco</td>
+<td>133 ms</td>
+<td>140 ms</td>
+</tr>
+
+<tr>
+<td>New York</td>
+<td>272 ms</td>
+<td>152 ms</td>
+</tr>
+
+<tr>
+<td>London</td>
+<td>383 ms</td>
+<td>150 ms</td>
+</tr>
+
+<tr>
+<td>Frankfurt</td>
+<td>420 ms</td>
+<td>130 ms</td>
+</tr>
+
+<tr>
+<td>Tel-Aviv</td>
+<td>470 ms</td>
+<td>307 ms</td>
+</tr>
+
+<tr>
+<td>Hong-Kong</td>
+<td>437 ms</td>
+<td>149 ms</td>
+</tr>
+
+<tr>
+<td>Brisbane</td>
+<td>449 ms</td>
+<td>529 ms</td>
+</tr>
+</tbody>
+</table>
+
+<p>We got a much smoother distribution of response time. There&rsquo;s no region close enough to Tel-Aviv, so its latency is still high-ish. I checked Brisbane, and the traffic was somehow directed to the East US region, so the latency hasn&rsquo;t improved at all. For today, I guess I&rsquo;ll stick to the hypothesis &ldquo;Australian internet is slow&rdquo; and advise to always test your target scenarios without trusting the providers blindly.</p>
+
+<p>More importantly, I walked you through a scenario of developing an end-to-end application with Pulumi. I highlighted the power of leveraging familiar techniques coming from the TypeScript realm. You can find the full code in <a href="https://github.com/pulumi/examples/tree/master/azure-ts-serverless-url-shortener-global">Pulumi examples</a>.</p>
+
+<p>Cloud brings superpowers to developer&rsquo;s hands. You just need to use those efficiently.</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/tags/pulumi">Pulumi</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure">Azure</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/serverless">Serverless</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/infrastructure-as-code">Infrastructure as Code</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure-functions">Azure Functions</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure-cosmos-db">Azure Cosmos DB</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div class="mb-5">
+                <h6 class="float-left">Responses</h6>
+                <div class="float-right"><a href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/13'>Write a response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">13</div>
+            <div class="mt-4">Visit the <b><a href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/13'>Github Issue</a></b> to comment on this page</div>
+        </div>
+    </div>
+</div>
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>
