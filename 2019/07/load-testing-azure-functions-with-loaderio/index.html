@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Load-Testing Azure Functions with Loader.io | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" integrity="sha384-h7v7it1kAxAmspqXfYqmlWr/1mGypjnm4HFceYYmmnV+n18pA6hdfytpnRW46FHC" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Load-Testing Azure Functions with Loader.io" />
+	<meta property="og:description" content="Verifying your Function App as a valid target for the cloud load testing." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2019/07/load-testing-azure-functions-with-loaderio/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2019/07/load-testing-azure-functions-with-loaderio/teaser.jpg" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Azure Functions" />
+	
+	<meta property="article:tag" content="Performance" />
+	
+	<meta property="article:tag" content="Serverless" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2019/07/load-testing-azure-functions-with-loaderio/teaser.jpg" />
+	
+	
+
+	<meta name="twitter:title" content="Load-Testing Azure Functions with Loader.io"/>
+	<meta name="twitter:description" content="Verifying your Function App as a valid target for the cloud load testing."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+    <div class="main-content">
+        
+        <div class="container">
+            <div class="row">
+                
+                <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://twitter.com/intent/tweet?text=Load-Testing%20Azure%20Functions%20with%20Loader.io%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2019%2f07%2fload-testing-azure-functions-with-loaderio%2f" onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+        <i class="fab fa-twitter"></i>
+        </a>
+        </li>
+        
+        <li class="ml-1 mr-1">
+        <a target="_blank" href="https://facebook.com/sharer.php?u=https%3a%2f%2fmikhail.io%2f2019%2f07%2fload-testing-azure-functions-with-loaderio%2f" onclick="window.open(this.href, 'facebook-share', 'width=550,height=435');return false;">
+        <i class="fab fa-facebook-f"></i>
+        </a>
+        </li>        
+    </ul>
+
+    
+</div></div>
+                                
+                <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                    <div class="mainheading">
+                        
+                        <h1 class="posttitle">Load-Testing Azure Functions with Loader.io</h1> 
+                        	
+                        <div class="post-top-meta">
+                            <div>
+                            
+                            
+                            <span class="post-date">Published on Jul 4, 2019
+                            
+                            
+                            &nbsp;&middot;&nbsp; 4 min read</span></span>
+                            </div>
+                        </div>			
+                    </div>
+                
+                    
+                                        
+                
+                    
+                    <div class="article-post">
+                        
+
+<p>When Azure Functions team presented the new <a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-premium-plan">Premium plan</a>, they made a series of demos which compared the response time of a Function App running on the Consumption plan vs. an App running on the Premium plan. Both apps would receive a rapid growth of incoming requests, and then the percentiles of response latencies were compared.</p>
+
+<p>The demos used a tool called <a href="https://loader.io/">Loader</a>, also referred to as &ldquo;Loader.io&rdquo;. The tool is visual and easy-to-use, but there is one step which might be just a little bit tricky to go through: verification. To avoid DDoS-ing somebody else&rsquo;s site, Loader requires users to verify each Target host by placing a key on a given URL of that domain.</p>
+
+<p>If you want to follow along, it&rsquo;s time to create an account at <a href="https://loader.io/">loader.io</a>&mdash;they have a free plan. After signing in, go to <a href="https://loader.io/targets/new">New target host</a> and enter the URL of your Function App:</p>
+
+<p><img src="new-target-host.png" alt="Azure Function App as a new target host" /></p>
+
+<figcaption><h4>Azure Function App as a new target host</h4></figcaption>
+
+<p>Click &ldquo;Next: Verify&rdquo; button, and you are given a token to put inside your Function App to prove the ownership of it:</p>
+
+<p><img src="target-verification.png" alt="Target Verification of Azure Function App" /></p>
+
+<figcaption><h4>Target Verification of Azure Function App</h4></figcaption>
+
+<p>I know two ways to achieve verification.</p>
+
+<h2 id="option-1-function-proxies">Option 1: Function Proxies</h2>
+
+<p>With <a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-proxies">Azure Functions Proxies</a>, you can specify endpoints in your Function App which aren&rsquo;t handled by Functions directly but redirect the requests to other endpoints or respond with a hard-coded response.</p>
+
+<p>The later is exactly what we need. Create a <code>proxies.json</code> file in the root of your Function App, next to the <code>host.json</code> file, and put the following content in there:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
+    &#34;$schema&#34;: <span style="color:#a31515">&#34;http://json.schemastore.org/proxies&#34;</span>,
+    &#34;proxies&#34;: {
+        &#34;loaderio-verifier&#34;: {
+            &#34;matchCondition&#34;: {
+                &#34;methods&#34;: [ <span style="color:#a31515">&#34;GET&#34;</span> ],
+                &#34;route&#34;: <span style="color:#a31515">&#34;/loaderio-your-token-goes-here&#34;</span>
+            },
+            &#34;responseOverrides&#34;: {
+                &#34;response.body&#34;: <span style="color:#a31515">&#34;loaderio-your-token-goes-here&#34;</span>,
+                &#34;response.headers.Content-Type&#34;: <span style="color:#a31515">&#34;text/plain&#34;</span>
+            }
+        }
+    }
+}</code></pre></div>
+<p>Don&rsquo;t forget to replace <code>loaderio-your-token-goes-here</code> value with the token that you received at the previous step. Now, the hard-coded response is returned at the endpoint which Loader uses for verification.</p>
+
+<p>If your Function App is a .NET project, include <code>proxies.json</code> to the <code>csproj</code>/<code>fsproj</code> file, so that it becomes a part of the deployment artifact:</p>
+
+<pre><code>...
+      &lt;None Update=&quot;proxies.json&quot;&gt;
+         &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+      &lt;/None&gt;
+   &lt;/ItemGroup&gt;
+&lt;/Project&gt;
+</code></pre>
+
+<p>After re-publishing the Function App, you should be able to see a new proxy in the portal:</p>
+
+<p><img src="loader-verifier-proxy.png" alt="Loader Verifier Proxy in the Azure Portal" /></p>
+
+<figcaption><h4>Loader Verifier Proxy in the Azure Portal</h4></figcaption>
+
+<p>You are all set to go! Click the &ldquo;Verify&rdquo; button to see</p>
+
+<p><img src="target-verification-congrats.png" alt="Target Verification Completed of Azure Function App" /></p>
+
+<h2 id="option-2-another-function">Option 2: Another Function</h2>
+
+<p>Instead of dealing with Proxies, you could create another Azure Function in the same App and let it return the token.</p>
+
+<p>I&rsquo;ll give you an example of defining such a Function with TypeScript and Pulumi.</p>
+
+<p>Say, I want to load-test the following target HTTP function (it just pauses for 500 ms):</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> target = <span style="color:#00f">new</span> azure.appservice.HttpFunction(<span style="color:#a31515">&#34;Target&#34;</span>, {
+    callback: <span style="color:#2b91af">async</span> (context, req) =&gt; {
+        await <span style="color:#00f">new</span> Promise(resolve =&gt; setTimeout(resolve, 500));
+        <span style="color:#00f">return</span> {
+            status: <span style="color:#2b91af">200</span>,
+            body: <span style="color:#a31515">&#34;Hello World!&#34;</span>,
+        };
+    },
+});</code></pre></div>
+<p>Now, I can add another HTTP function to handle the verification requests:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> verifier = <span style="color:#00f">new</span> azure.appservice.HttpFunction(<span style="color:#a31515">&#34;Verifier&#34;</span>, {
+    route: <span style="color:#a31515">&#34;loaderio-your-token-goes-here&#34;</span>,
+    callback: <span style="color:#2b91af">async</span> (context, req) =&gt; {
+        <span style="color:#00f">return</span> {
+            status: <span style="color:#2b91af">200</span>,
+            body: <span style="color:#a31515">&#34;loaderio-your-token-goes-here&#34;</span>,
+        };
+    },
+});</code></pre></div>
+<p>Finally, I put both Functions into a Function App and deploy them together:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.MultiCallbackFunctionApp(<span style="color:#a31515">&#34;loaderio&#34;</span>, {
+    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+    functions: [target, verifier],
+    hostSettings: { extensions: { http: { routePrefix: <span style="color:#a31515">&#34;&#34;</span> } } },
+});
+
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> endpoint = app.endpoint;</code></pre></div>
+<p>Note that I set <code>routePrefix</code> to an empty string to avoid <code>api</code> prefix in my URLs (I usually do it anyway). Now, as soon as Pulumi deploys my App, I can start testing it with Loader.</p>
+
+<p>You can find a full example involving the <code>MultiCallbackFunctionApp</code> component <a href="https://github.com/pulumi/pulumi-azure/blob/master/examples/http-multi/index.ts">here</a>.</p>
+
+<h2 id="running-the-load-tests">Running the Load Tests</h2>
+
+<p>Regardless of which path you chose, you should now be good to start using Loader to run performance tests on your Azure Functions.</p>
+
+<p>Here is a chart of a sample test that I ran to make sure the setup works:</p>
+
+<p><img src="loader-results.png" alt="Loader.io Test Results" /></p>
+
+<figcaption><h4>Loader.io Test Results</h4></figcaption>
+
+<p>Which test parameters to use and what kind of results you might get depends a lot on your application. That&rsquo;s a good topic for another post someday.</p>
+
+<p>For now, happy testing!</p>
+
+                    </div>
+                    
+                    
+                    <div class="after-post-tags">
+                        <ul class="tags">
+                        
+                        <li>
+                        
+                        <a href="/tags/azure">Azure</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/azure-functions">Azure Functions</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/performance">Performance</a>
+                        
+                        </li>
+                        
+                        <li>
+                        
+                        <a href="/tags/serverless">Serverless</a>
+                        
+                        </li>
+                        
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div class="mb-5">
+                <h6 class="float-left">Responses</h6>
+                <div class="float-right"><a href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/15'>Write a response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">15</div>
+            <div class="mt-4">Visit the <b><a href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/15'>Github Issue</a></b> to comment on this page</div>
+        </div>
+    </div>
+</div>
+    </div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+    
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>

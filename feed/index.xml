@@ -12,6 +12,151 @@
 
     
         <entry>
+            <title type="html"><![CDATA[Load-Testing Azure Functions with Loader.io]]></title>
+            <link href="https://mikhail.io/2019/07/load-testing-azure-functions-with-loaderio/"/>
+            <id>https://mikhail.io/2019/07/load-testing-azure-functions-with-loaderio/</id>
+            
+            <published>2019-07-04T00:00:00+00:00</published>
+            <updated>2019-07-04T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Verifying your Function App as a valid target for the cloud load testing.</blockquote>
+
+<p>When Azure Functions team presented the new <a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-premium-plan">Premium plan</a>, they made a series of demos which compared the response time of a Function App running on the Consumption plan vs. an App running on the Premium plan. Both apps would receive a rapid growth of incoming requests, and then the percentiles of response latencies were compared.</p>
+
+<p>The demos used a tool called <a href="https://loader.io/">Loader</a>, also referred to as &ldquo;Loader.io&rdquo;. The tool is visual and easy-to-use, but there is one step which might be just a little bit tricky to go through: verification. To avoid DDoS-ing somebody else&rsquo;s site, Loader requires users to verify each Target host by placing a key on a given URL of that domain.</p>
+
+<p>If you want to follow along, it&rsquo;s time to create an account at <a href="https://loader.io/">loader.io</a>&mdash;they have a free plan. After signing in, go to <a href="https://loader.io/targets/new">New target host</a> and enter the URL of your Function App:</p>
+
+<p><img src="new-target-host.png" alt="Azure Function App as a new target host" /></p>
+
+<figcaption><h4>Azure Function App as a new target host</h4></figcaption>
+
+<p>Click &ldquo;Next: Verify&rdquo; button, and you are given a token to put inside your Function App to prove the ownership of it:</p>
+
+<p><img src="target-verification.png" alt="Target Verification of Azure Function App" /></p>
+
+<figcaption><h4>Target Verification of Azure Function App</h4></figcaption>
+
+<p>I know two ways to achieve verification.</p>
+
+<h2 id="option-1-function-proxies">Option 1: Function Proxies</h2>
+
+<p>With <a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-proxies">Azure Functions Proxies</a>, you can specify endpoints in your Function App which aren&rsquo;t handled by Functions directly but redirect the requests to other endpoints or respond with a hard-coded response.</p>
+
+<p>The later is exactly what we need. Create a <code>proxies.json</code> file in the root of your Function App, next to the <code>host.json</code> file, and put the following content in there:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
+    &#34;$schema&#34;: <span style="color:#a31515">&#34;http://json.schemastore.org/proxies&#34;</span>,
+    &#34;proxies&#34;: {
+        &#34;loaderio-verifier&#34;: {
+            &#34;matchCondition&#34;: {
+                &#34;methods&#34;: [ <span style="color:#a31515">&#34;GET&#34;</span> ],
+                &#34;route&#34;: <span style="color:#a31515">&#34;/loaderio-your-token-goes-here&#34;</span>
+            },
+            &#34;responseOverrides&#34;: {
+                &#34;response.body&#34;: <span style="color:#a31515">&#34;loaderio-your-token-goes-here&#34;</span>,
+                &#34;response.headers.Content-Type&#34;: <span style="color:#a31515">&#34;text/plain&#34;</span>
+            }
+        }
+    }
+}</code></pre></div>
+<p>Don&rsquo;t forget to replace <code>loaderio-your-token-goes-here</code> value with the token that you received at the previous step. Now, the hard-coded response is returned at the endpoint which Loader uses for verification.</p>
+
+<p>If your Function App is a .NET project, include <code>proxies.json</code> to the <code>csproj</code>/<code>fsproj</code> file, so that it becomes a part of the deployment artifact:</p>
+
+<pre><code>...
+      &lt;None Update=&quot;proxies.json&quot;&gt;
+         &lt;CopyToOutputDirectory&gt;PreserveNewest&lt;/CopyToOutputDirectory&gt;
+      &lt;/None&gt;
+   &lt;/ItemGroup&gt;
+&lt;/Project&gt;
+</code></pre>
+
+<p>After re-publishing the Function App, you should be able to see a new proxy in the portal:</p>
+
+<p><img src="loader-verifier-proxy.png" alt="Loader Verifier Proxy in the Azure Portal" /></p>
+
+<figcaption><h4>Loader Verifier Proxy in the Azure Portal</h4></figcaption>
+
+<p>You are all set to go! Click the &ldquo;Verify&rdquo; button to see</p>
+
+<p><img src="target-verification-congrats.png" alt="Target Verification Completed of Azure Function App" /></p>
+
+<h2 id="option-2-another-function">Option 2: Another Function</h2>
+
+<p>Instead of dealing with Proxies, you could create another Azure Function in the same App and let it return the token.</p>
+
+<p>I&rsquo;ll give you an example of defining such a Function with TypeScript and Pulumi.</p>
+
+<p>Say, I want to load-test the following target HTTP function (it just pauses for 500 ms):</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> target = <span style="color:#00f">new</span> azure.appservice.HttpFunction(<span style="color:#a31515">&#34;Target&#34;</span>, {
+    callback: <span style="color:#2b91af">async</span> (context, req) =&gt; {
+        await <span style="color:#00f">new</span> Promise(resolve =&gt; setTimeout(resolve, 500));
+        <span style="color:#00f">return</span> {
+            status: <span style="color:#2b91af">200</span>,
+            body: <span style="color:#a31515">&#34;Hello World!&#34;</span>,
+        };
+    },
+});</code></pre></div>
+<p>Now, I can add another HTTP function to handle the verification requests:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> verifier = <span style="color:#00f">new</span> azure.appservice.HttpFunction(<span style="color:#a31515">&#34;Verifier&#34;</span>, {
+    route: <span style="color:#a31515">&#34;loaderio-your-token-goes-here&#34;</span>,
+    callback: <span style="color:#2b91af">async</span> (context, req) =&gt; {
+        <span style="color:#00f">return</span> {
+            status: <span style="color:#2b91af">200</span>,
+            body: <span style="color:#a31515">&#34;loaderio-your-token-goes-here&#34;</span>,
+        };
+    },
+});</code></pre></div>
+<p>Finally, I put both Functions into a Function App and deploy them together:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.MultiCallbackFunctionApp(<span style="color:#a31515">&#34;loaderio&#34;</span>, {
+    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+    functions: [target, verifier],
+    hostSettings: { extensions: { http: { routePrefix: <span style="color:#a31515">&#34;&#34;</span> } } },
+});
+
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> endpoint = app.endpoint;</code></pre></div>
+<p>Note that I set <code>routePrefix</code> to an empty string to avoid <code>api</code> prefix in my URLs (I usually do it anyway). Now, as soon as Pulumi deploys my App, I can start testing it with Loader.</p>
+
+<p>You can find a full example involving the <code>MultiCallbackFunctionApp</code> component <a href="https://github.com/pulumi/pulumi-azure/blob/master/examples/http-multi/index.ts">here</a>.</p>
+
+<h2 id="running-the-load-tests">Running the Load Tests</h2>
+
+<p>Regardless of which path you chose, you should now be good to start using Loader to run performance tests on your Azure Functions.</p>
+
+<p>Here is a chart of a sample test that I ran to make sure the setup works:</p>
+
+<p><img src="loader-results.png" alt="Loader.io Test Results" /></p>
+
+<figcaption><h4>Loader.io Test Results</h4></figcaption>
+
+<p>Which test parameters to use and what kind of results you might get depends a lot on your application. That&rsquo;s a good topic for another post someday.</p>
+
+<p>For now, happy testing!</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-functions" term="azure-functions" label="Azure Functions" />
+                             
+                                <category scheme="https://mikhail.io/tags/performance" term="performance" label="Performance" />
+                             
+                                <category scheme="https://mikhail.io/tags/serverless" term="serverless" label="Serverless" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
             <title type="html"><![CDATA[How Azure CLI Manages Your Access Tokens]]></title>
             <link href="https://mikhail.io/2019/07/how-azure-cli-manages-access-tokens/"/>
             <id>https://mikhail.io/2019/07/how-azure-cli-manages-access-tokens/</id>
