@@ -12,6 +12,136 @@
 
     
         <entry>
+            <title type="html"><![CDATA[How Azure CLI Manages Your Access Tokens]]></title>
+            <link href="https://mikhail.io/2019/07/how-azure-cli-manages-access-tokens/"/>
+            <id>https://mikhail.io/2019/07/how-azure-cli-manages-access-tokens/</id>
+            
+            <published>2019-07-03T00:00:00+00:00</published>
+            <updated>2019-07-03T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Azure CLI is a powerful tool to manage your cloud resources. Where does it store the sensitive information and why might you want to care?</blockquote>
+
+<p>Azure has several tools available to create and manage cloud resources. The Azure command-line interface (CLI) is probably the second most-used tool after the web portal. The CLI runs on any platform and covers a wide variety of actions. Here is a command to create a new Virtual Machine:</p>
+
+<pre><code>az vm create --resource-group Sample --name VM1 --image UbuntuLTS --generate-ssh-keys
+</code></pre>
+
+<p>If you use Azure for your day-to-day job or hobby projects, it&rsquo;s quite likely that you already have the Azure CLI installed on your computer.</p>
+
+<h2 id="azure-login">Azure login</h2>
+
+<p>The very first command that you run after installing the CLI on your development machine is going to be</p>
+
+<pre><code>az login
+</code></pre>
+
+<p>There are several sign-in flows, but most typically the CLI opens the default browser asking you to log in there. The login operation has a unique session identifier. Once you sign in with this session ID, the CLI receives a notification on its back channel. The notification contains a JWT access token.</p>
+
+<p>From this point on, the access token is used by most other CLI commands to access Azure Management REST API. API uses OAuth protocol where the access token is passed in the <code>Authorization</code> HTTP header.</p>
+
+<h2 id="storing-tokens-on-the-local-disk">Storing tokens on the local disk</h2>
+
+<p>However, there is one problem. The CLI is a short-lived program: it runs for the duration of a single command execution and then quits. The process dies, so there&rsquo;s no way to keep access tokens in memory between the executions. To avoid continually asking for user credentials, the CLI keeps its state on disk. If you go to the <code>~/.azure/</code> directory (<code>%HOMEPATH%/.azure/</code> in Windows command-line) you can find several of such state files:</p>
+
+<pre><code>~/.azure&gt; ls
+
+accessTokens.json
+az.json
+az.sess
+azureProfile.json
+clouds.configtelemetry.txt
+</code></pre>
+
+<p>Two of these files contain some relevant information. <code>azureProfile.json</code> lists the properties of your Azure subscriptions and users (no passwords or tokens).</p>
+
+<p><code>accessTokens.json</code> is more interesting. As the name suggests, it contains all the tokens from the Azure CLI, right there in plain text. Here is the shape of JSON entries in there:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
+   &#34;tokenType&#34;: <span style="color:#a31515">&#34;Bearer&#34;</span>,
+   &#34;expiresIn&#34;: 3599,
+   &#34;expiresOn&#34;: <span style="color:#a31515">&#34;2019-05-05 00:22:01.577315&#34;</span>,
+   &#34;resource&#34;: <span style="color:#a31515">&#34;https://management.core.windows.net/&#34;</span>,
+   &#34;accessToken&#34;: <span style="color:#a31515">&#34;...&#34;</span>,
+   &#34;refreshToken&#34;: <span style="color:#a31515">&#34;...&#34;</span>,
+   &#34;identityProvider&#34;: <span style="color:#a31515">&#34;live.com&#34;</span>,
+   &#34;userId&#34;: <span style="color:#a31515">&#34;...&#34;</span>,
+   &#34;isMRRT&#34;: <span style="color:#00f">true</span>,
+   &#34;_clientId&#34;: <span style="color:#a31515">&#34;...&#34;</span>,
+   &#34;_authority&#34;: <span style="color:#a31515">&#34;https://login.microsoftonline.com/common&#34;</span>
+}</code></pre></div>
+<p>There are multiple entries like this for different combinations of <code>resource</code>, <code>_authority</code>, and others. Obviously, I removed all the sensitive values from this snippet, but you could see yours in plain text. Go ahead and copy-paste a value of <code>accessToken</code> property to &ldquo;Encoded&rdquo; the text box on <a href="https://jwt.io">https://jwt.io</a> page. The site decodes the token and shows you the properties:</p>
+
+<p><img src="azure-jwt-decoded.png" alt="Azure access token decoded with JWT.io" /></p>
+
+<figcaption><h4>Azure access token decoded with JWT.io</h4></figcaption>
+
+<p>The access token has a limited lifespan&mdash;mine are all 60 minutes. To avoid requiring to login after access expiration, there is another powerful token&mdash;a refresh token. Whenever an access token expires, CLI goes to the authentication service, presents the refresh token, and asks for a new access token. The lifetime of a refresh token is longer, and it&rsquo;s managed on the service side. There are some configurable policies to expire it: for instance, Azure might invalidate a token if it was inactive for more than X days. It can also be revoked manually at any time.</p>
+
+<p>The refresh tokens are stored inside the same <code>accessTokens.json</code> file, right next to the access token (see the snippet above). It&rsquo;s not a JWT token: it is an opaque blob sent from Azure AD whose contents are not known to any client components. You cannot see whatâ€™s inside a refresh token but Azure can.</p>
+
+<h2 id="token-reuse-by-other-tools">Token reuse by other tools</h2>
+
+<p>We learned that access tokens are not specific to the Azure CLI and aren&rsquo;t used exclusively by it. Let&rsquo;s run a short experiment:</p>
+
+<ol>
+<li><p>Run <code>az login</code> or any other Azure CLI command to make sure there&rsquo;s a current access token.</p></li>
+
+<li><p>Open <code>azureProfile.json</code> and copy-paste the subscription <code>id</code> field into the following URL: <code>https://management.azure.com/subscriptions/{subscription-id}/resourcegroups?api-version=2019-05-10</code>.</p></li>
+
+<li><p>Open the <code>accessTokens.json</code> file, find the latest entry, and copy the <code>accessToken</code> field.</p></li>
+</ol>
+
+<p>Now, build the following cURL command out of these two values:</p>
+
+<pre><code>curl --header &quot;Authorization: Bearer {access-token}&quot; \
+https://management.azure.com/subscriptions/{subscription-id}/resourcegroups?api-version=2019-05-10
+</code></pre>
+
+<p>Run the command, and you get the list of resource groups in your subscription!</p>
+
+<p>By the way, you can also find both properties with the Azure CLI commands <code>az account list</code> and <code>az account get-access-token</code>. It doesn&rsquo;t feel as hacky as copy-pasting from JSON files, but it is more convenient :)</p>
+
+<p>Multiple third-party tools use the fact that the Azure CLI can log in to Azure and then provide access tokens. Both Terraform and Pulumi have a default method of authenticating into Azure with the Azure CLI. They probably delegate to the CLI instead of accessing the <code>accessTokens.json</code> file directly, but that&rsquo;s mostly convenience and not the hard requirement. Effectively, they are able to reuse the tokens created by the Azure CLI for their own purpose.</p>
+
+<h2 id="security-risks-of-token-exposure">Security risks of token exposure</h2>
+
+<p>This is all handy and good. However, there is a dark side of convenience. The existence of a file with clear-text Azure access tokens means that you should be careful not to expose that file to anyone. Don&rsquo;t share your <code>~/.azure/</code> folder with anybody, don&rsquo;t put it on GitHub, don&rsquo;t upload it to random file-sharing applications.</p>
+
+<p>Access tokens file could potentially become an attack vector. Say, you install a new shiny CLI tool from NPM (many developers have dozens of them). You run it from your user account, the tool does its job but also silently uploads <code>accessTokens.json</code> file to somebody&rsquo;s FTP. A month later, you get surprised while looking at your Azure bill.</p>
+
+<p>I checked this scenario by uploading my <code>~/.azure</code> folder to a brand-new VM. A fresh installation of the Azure CLI happily welcomes me without the need for <code>az login</code>:</p>
+
+<p><img src="cli-on-vm.png" alt="Azure CLI open on a new VM with copied credentials" /></p>
+
+<figcaption><h4>Azure CLI open on a new VM with copied credentials</h4></figcaption>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Know your tools, reuse the power of Azure CLI for those Azure Management REST API crunching sessions, and keep your machine safe.</p>
+
+<p>Happy hacking!</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-cli" term="azure-cli" label="Azure CLI" />
+                             
+                                <category scheme="https://mikhail.io/tags/security" term="security" label="Security" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
             <title type="html"><![CDATA[Globally-distributed Serverless Application in 100 Lines of Code. Infrastructure Included!]]></title>
             <link href="https://mikhail.io/2019/07/globally-distributed-serverless-application-in-100-lines-of-code/"/>
             <id>https://mikhail.io/2019/07/globally-distributed-serverless-application-in-100-lines-of-code/</id>
