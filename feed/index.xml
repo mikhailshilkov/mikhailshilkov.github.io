@@ -12,6 +12,539 @@
 
     
         <entry>
+            <title type="html"><![CDATA[How To Build Globally Distributed Applications with Azure Cosmos DB and Pulumi]]></title>
+            <link href="https://mikhail.io/2019/09/how-to-build-globally-distributed-applications-with-azure-cosmos-db-and-pulumi/"/>
+            <id>https://mikhail.io/2019/09/how-to-build-globally-distributed-applications-with-azure-cosmos-db-and-pulumi/</id>
+            
+            <published>2019-09-24T00:00:00+00:00</published>
+            <updated>2019-09-24T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>A reusable component to build highly-available, low-latency applications on Azure</blockquote><p>In a <a href="/2019/07/globally-distributed-serverless-application-in-100-lines-of-code/">previous blog post</a>, I shared how easy it is to create a globally distributed, highly-available, low-latency application with Azure Functions, Azure Cosmos DB, and Pulumi.</p>
+
+<p>Today, I want to show how the same approach can be generalized for any cloud compute service, including containers, virtual machines, and serverless functions.</p>
+
+<h2 id="e-commerce-example">E-commerce Example</h2>
+
+<p>Letâ€™s consider an example of an e-commerce website which targets a worldwide audience. The architecture of such a website should address several challenges.</p>
+
+<h3 id="multiple-teams">Multiple Teams</h3>
+
+<p>A large e-commerce website is a sophisticated software application and consists of many subcomponents. Many engineers in multiple teams work on it simultaneously.</p>
+
+<p>A typical approach is to organize engineers into smaller teams and make each team autonomous and responsible for one or several business domains. This strategy leads to microservices architecture when the application is built out of loosely coupled components. Each component represents a &ldquo;vertical slice&rdquo;: a team owns functionality across the vertical stack, from its user interface and service API to the data storage layer and underlying infrastructure.</p>
+
+<p>Here is an example of such a breakdown:</p>
+
+<p><img src="website.png" alt="Multiple components on a single web page" /></p>
+
+<figcaption>
+    <h4>
+        Multiple components on a single web page
+    </h4>
+</figcaption>
+
+<h3 id="diversity-of-technology-decisions">Diversity of Technology Decisions</h3>
+
+<p>One of the guiding principles of microservices architecture is that each team makes decisions regarding which tools and technologies to use. They are free to choose programming languages, databases, or cloud services that are the best fit for the service. In practice, some restrictions do apply&mdash;for instance, the teams might need to share the same cloud provider.</p>
+
+<p>In our hypothetical example, the whole product is hosted on Azure cloud, however other aspects differ:</p>
+
+<ul>
+<li>Product Page team runs JavaScript serverless functions and stores data in a document database</li>
+<li>Shopping Cart team uses C# and .NET Core, packages the code in a Docker container, and uses event sourcing to store every action ever made by users while shopping</li>
+<li>Pricing Engine team has a mix of Java and C++ code with a bunch of third-party libraries and deploys the services to Ubuntu VMs that use MongoDB drivers for storage</li>
+</ul>
+
+<h3 id="global-presence">Global Presence</h3>
+
+<p>Regardless of the tech, the user-facing services must serve customers across the globe and serve them fast. This requirement demands a geo-distributed infrastructure so that user requests could be handled by the nearest data center to minimize the latency and ensure excellent user experience.</p>
+
+<p>Each team has to solve the following problems in a way which fits their tech stack:</p>
+
+<ul>
+<li>Distribute the data across the globe</li>
+<li>Run their compute workload in each region next to the data</li>
+<li>Manage all this infrastructure in a reliable way</li>
+</ul>
+
+<p>Let&rsquo;s consider these goals and possible solutions.</p>
+
+<h2 id="azure-cosmos-db">Azure Cosmos DB</h2>
+
+<p>Distributing data across many data centers while keeping them consistent and available is one of the hardest problems in computer science and engineering. Delegating this challenge to a specialized service or product is usually a sensible idea.</p>
+
+<p>Azure Cosmos DB is the database of choice for global applications running in the Azure cloud. Cosmos DB provides a turn-key global distribution to any number of regions worldwide. Regions can be added or removed along the way while running production workloads and without having any impact on high availability. The accounts can be provisioned with a single write region or in multi-master mode with every region being writable, thus enabling writes that are local to each region.</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="distributed-cosmos.svg"
+            alt="Azure Cosmos DB with multiple locations"
+             />
+        
+    
+    <figcaption>
+        <h4>Azure Cosmos DB with multiple locations</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>Cosmos DB supports multiple models of data: key-value, document, column family, graph, with wire-protocol compatible APIs for MongoDB, Apache Cassandra, SQL, etcd, Gremlin, etc. It also supports multiple well-defined and practical consistency levels, from eventual to strong consistency, so that each application can strike the right balance between latency, availability, and consistency guarantees. All of this is offered as a fully-managed service, with the comprehensive SLAs covering latency, throughput, consistency, and 99.999% high availability for both reads and writes.</p>
+
+<p>Sounds great, but how do we build applications to leverage this power?</p>
+
+<h2 id="distributed-web-applications">Distributed Web Applications</h2>
+
+<p>In contrast to Cosmos accounts, compute services in Azure are located in a single region. This holds true for Virtual Machines, Container Instances, Serverless Functions, and managed Azure Kubernetes Service.</p>
+
+<p>If an application is deployed to a single location, we are not making good use of geographic redundancy of the database. If a user happens to be far from the application region, their request has to travel across the globe. Moreover, the application connects to the nearest region of Cosmos DB, while all other regions stay idle:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="distributed-cosmos-single-app.svg"
+            alt="Application deployed in a single location"
+             />
+        
+    
+    <figcaption>
+        <h4>Application deployed in a single location</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>Instead, we should deploy a copy of application infrastructure to each of the target regions:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="distributed-app.svg"
+            alt="Application deployed in multiple locations"
+             />
+        
+    
+    <figcaption>
+        <h4>Application deployed in multiple locations</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>Each application instance has to be configured to connect to the endpoint of the Cosmos DB in the same region to enjoy local single-digit-milliseconds latency for reads and writes.</p>
+
+<p>While beneficial to end-users, such setup brings much extra complexity in terms of infrastructure management:</p>
+
+<ul>
+<li>Application regions must stay in sync with Cosmos DB regions, including the correct configuration of preferred locations.</li>
+<li>With the growth of the number of regions, the traditional capacity planning gets harder and harder. This makes a dynamic auto-scaling configuration increasingly important.</li>
+<li>A central routing service must be configured to flow the traffic from end-users to the closest application instance.</li>
+<li>Each team must execute all these tasks, independently but coherently.</li>
+</ul>
+
+<p>Letâ€™s see how infrastructure as code and a general-purpose programming language come to the rescue.</p>
+
+<h2 id="search-for-a-reusable-abstraction">Search for a Reusable Abstraction</h2>
+
+<p>In our example, three teams have a common goal of providing high-quality service to customers around the world, but they differ in the compute services they want to use.</p>
+
+<p>Product Card team relies on serverless functions, so their infrastructure may look like this:</p>
+
+<p><img src="functions.png" alt="Global application with Azure Functions" /></p>
+
+<figcaption>
+    <h4>
+        Global application with Azure Functions
+    </h4>
+</figcaption>
+
+<p>Shopping Cart team packages their code as a Docker container, which they put into Azure Container Registry, and then use Azure Container Instances to run the application. The Registry is a global Azure resource, while Container Instances are deployed separately per region.</p>
+
+<p><img src="containers.png" alt="Global application with Azure Container Instances" /></p>
+
+<figcaption>
+    <h4>
+        Global application with Azure Container Instances
+    </h4>
+</figcaption>
+
+<p>Pricing Engine team runs their code on Infrastructure-as-a-Service (IaaS), so they have a task of creating Virtual Machine images, and then deploying those to an Azure Virtual Machine Scale Set, fronting it with a Load Balancer, and configuring all the networking infrastructure including Virtual Networks, Subnets, Public IPs, Network Security Groups, etc. Once again, this has to be done for each location independently.</p>
+
+<p><img src="vmscalesets.png" alt="Global application with Virtual Machines" /></p>
+
+<figcaption>
+    <h4>
+        Global application with Virtual Machines
+    </h4>
+</figcaption>
+
+<p>Each team has the same global structure of infrastructure, including a Traffic Manager front-end and a Cosmos DB data store. At the same time, the per-region compute infrastructure differs substantially.</p>
+
+<p>Instead of copying the common pieces of infrastructure between the teams, we can think of a reusable abstraction which could be shared by every service.</p>
+
+<p><img src="globalapp.png" alt="Global application pattern" /></p>
+
+<figcaption>
+    <h4>
+        Global application pattern
+    </h4>
+</figcaption>
+
+<p>For this blog post, I created a custom Pulumi component called CosmosApp which implements such abstraction and simplifies the provisioning of global web applications. The component creates distributed Cosmos DB resources, as well as the front-end routing component, while allowing pluggable compute layer implementation.</p>
+
+<h2 id="cosmos-app-with-azure-functions">Cosmos App with Azure Functions</h2>
+
+<p>Let&rsquo;s look at an example of how the component can be used. Creating a globally-distributed application requires three steps:</p>
+
+<h3 id="list-the-regions">List the Regions</h3>
+
+<p>We define a configuration value to contain a comma-separated list of Azure regions that weâ€™ll deploy the application to.</p>
+
+<pre><code>$ pulumi config set locations WestUS,WestEurope,SouthEastAsia,SouthBrazil,AustraliaCentral
+</code></pre>
+
+<p>This value can be loaded and parsed into a JavaScript array:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> locations = <span style="color:#00f">new</span> pulumi.Config().require(<span style="color:#a31515">&#34;locations&#34;</span>).split(<span style="color:#a31515">&#34;,&#34;</span>);</code></pre></div>
+<h3 id="build-a-region-template">Build a Region Template</h3>
+
+<p>We define a factory function to create the infrastructure in each location. Its signature is a bit unusual in that we return a function from another function. I&rsquo;ll explain the motivation in the next example. For now, it&rsquo;s important to understand the following:</p>
+
+<ul>
+<li>We get a Cosmos account and a location as input arguments</li>
+<li>We create a Function App in the specified location with connection settings pointing to the local Cosmos DB replica</li>
+<li>We return the identifier of the Function App so that a Traffic Manager endpoint could point to it</li>
+</ul>
+
+<p>Here is the function:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">function</span> buildProductApp({ cosmosAccount }: GlobalContext) {
+    <span style="color:#00f">return</span> ({ location }: RegionalContext) =&gt; {
+        <span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.ArchiveFunctionApp(<span style="color:#a31515">&#34;function-app&#34;</span>, {
+            resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+            location,
+            archive: <span style="color:#2b91af">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./app&#34;</span>),
+            appSettings: {
+                COSMOSDB_ENDPOINT: <span style="color:#2b91af">cosmosAccount.endpoint</span>,
+                COSMOSDB_KEY: <span style="color:#2b91af">cosmosAccount.primaryMasterKey</span>,
+                COSMOSDB_LOCATION: <span style="color:#2b91af">location</span>,
+            },
+        });
+
+        <span style="color:#00f">return</span> {
+            id: <span style="color:#2b91af">app.functionApp.id</span>,
+        };
+    };
+}</code></pre></div>
+<h3 id="instantiate-a-cosmos-app">Instantiate a Cosmos App</h3>
+
+<p>Finally, we use the <code>buildProductApp</code> factory function to create the geo-distributed application:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> products = <span style="color:#00f">new</span> CosmosApp(<span style="color:#a31515">&#34;products&#34;</span>, {
+    resourceGroup,
+    locations,
+    databaseName: <span style="color:#a31515">&#34;productsdb&#34;</span>,
+    containerName: <span style="color:#a31515">&#34;products&#34;</span>,
+    factory: <span style="color:#2b91af">buildProductApp</span>,
+});</code></pre></div>
+<p>[ <a href="https://github.com/pulumi/examples/tree/master/azure-ts-cosmosapp-component/functionApp.ts">Full Example</a> ]</p>
+
+<h2 id="cosmos-app-with-container-instances">Cosmos App with Container Instances</h2>
+
+<p>The Shopping Cart team will have to follow the same steps but define their compute infrastructure accordingly.</p>
+
+<p>A significant difference to the Functions-based example is the fact that the Container-based application needs some infrastructure to be shared across regions. The top block of the factory function defines an instance of Azure Container Registry, builds a Docker image, and puts that image into the Registry:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">function</span> buildShoppingCartApp({ cosmosAccount, database, container }: GlobalContext) {
+
+    <span style="color:#00f">const</span> registry = <span style="color:#00f">new</span> azure.containerservice.Registry(<span style="color:#a31515">&#34;global&#34;</span>, {
+        resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+        adminEnabled: <span style="color:#2b91af">true</span>,
+        sku: <span style="color:#a31515">&#34;Premium&#34;</span>,
+    }, opts);
+
+    <span style="color:#00f">const</span> dockerImage = <span style="color:#00f">new</span> docker.Image(<span style="color:#a31515">&#34;node-app&#34;</span>, {
+        imageName: <span style="color:#2b91af">pulumi.interpolate</span><span style="color:#a31515">`</span><span style="color:#a31515">${</span>registry.loginServer<span style="color:#a31515">}</span><span style="color:#a31515">/mynodeapp:v1.0.0`</span>,
+        build: {
+            context: <span style="color:#a31515">&#34;./container&#34;</span>,
+        },
+        registry: {
+            server: <span style="color:#2b91af">registry.loginServer</span>,
+            username: <span style="color:#2b91af">registry.adminUsername</span>,
+            password: <span style="color:#2b91af">registry.adminPassword</span>,
+        },
+    });
+
+    <span style="color:#00f">return</span> ({ location }: RegionalContext) =&gt; {
+        <span style="color:#008000">// ... see the next sample
+</span><span style="color:#008000"></span>    };
+}</code></pre></div>
+<p>Now, the factory function that builds per-region infrastructure can directly reference the Registry and the image to deploy an Azure Container Instances group. Note how <code>registry</code> and <code>dockerImage</code> are used as any other TypeScript variable inside the closure factory function:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">function</span> buildShoppingCartApp({ cosmosAccount, database, container }: GlobalContext) {
+
+    <span style="color:#00f">const</span> registry = <span style="color:#00f">new</span> azure.containerservice.Registry(<span style="color:#008000">/* ... */</span>);
+    <span style="color:#00f">const</span> dockerImage = <span style="color:#00f">new</span> docker.Image(<span style="color:#008000">/* ... */</span>);
+
+    <span style="color:#00f">return</span> ({ location }: RegionalContext) =&gt; {
+        <span style="color:#00f">const</span> group = <span style="color:#00f">new</span> azure.containerservice.Group(<span style="color:#a31515">`aci-</span><span style="color:#a31515">${</span>location<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+            resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+            location,
+            imageRegistryCredentials: [{
+                server: <span style="color:#2b91af">registry.loginServer</span>,
+                username: <span style="color:#2b91af">registry.adminUsername</span>,
+                password: <span style="color:#2b91af">registry.adminPassword</span>,
+            }],
+            osType: <span style="color:#a31515">&#34;Linux&#34;</span>,
+            containers: [
+                {
+                    cpu: <span style="color:#2b91af">0.5</span>,
+                    image: <span style="color:#2b91af">dockerImage.imageName</span>,
+                    memory: <span style="color:#2b91af">1.5</span>,
+                    name: <span style="color:#a31515">&#34;web-server&#34;</span>,
+                    ports: [{
+                        port: <span style="color:#2b91af">80</span>,
+                        protocol: <span style="color:#a31515">&#34;TCP&#34;</span>,
+                    }],
+                    environmentVariables: {
+                        ENDPOINT: <span style="color:#2b91af">cosmosAccount.endpoint</span>,
+                        MASTER_KEY: <span style="color:#2b91af">cosmosAccount.primaryMasterKey</span>,
+                        DATABASE: <span style="color:#2b91af">database.name</span>,
+                        COLLECTION: <span style="color:#2b91af">container.name</span>,
+                        LOCATION: <span style="color:#2b91af">location</span>,
+                    },
+                },
+            ],
+            ipAddressType: <span style="color:#a31515">&#34;public&#34;</span>,
+            dnsNameLabel: <span style="color:#a31515">`acishop-</span><span style="color:#a31515">${</span>location<span style="color:#a31515">}</span><span style="color:#a31515">`</span>,
+        });
+
+        <span style="color:#00f">return</span> {
+            url: <span style="color:#2b91af">group.fqdn</span>,
+        };
+    };
+}</code></pre></div>
+<p>Finally, a <code>CosmosApp</code> is defined:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> aci = <span style="color:#00f">new</span> CosmosApp(<span style="color:#a31515">&#34;aci&#34;</span>, {
+    resourceGroup,
+    locations,
+    databaseName: <span style="color:#a31515">&#34;cartdb&#34;</span>,
+    containerName: <span style="color:#a31515">&#34;items&#34;</span>,
+    factory: <span style="color:#2b91af">buildShoppingCartApp</span>,
+    enableMultiMaster: <span style="color:#2b91af">true</span>,
+});</code></pre></div>
+<p>Shopping Cart workload expects both reads and writes from the end-users, so the team decides to enable multi-master support in their Cosmos DB instance.</p>
+
+<p>[ <a href="https://github.com/pulumi/examples/tree/master/azure-ts-cosmosapp-component/aci.ts">Full Example</a> ]</p>
+
+<h2 id="cosmos-app-with-virtual-machine-scale-sets">Cosmos App with Virtual Machine Scale Sets</h2>
+
+<p>The Pricing Engine team has to go through the same steps but employ IaaS-based infrastructure to run application code. The factory function creates a dozen resources related to virtual machines, load balancing, networking, and auto-scaling. You may define as many resources as needed in the code, as long as it returns a pointer to the proper resource to link the endpoint.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">function</span> buildVMScaleSetApp({ cosmosAccount, database }: GlobalContext) {
+
+    <span style="color:#008000">// Build a VM image here...
+</span><span style="color:#008000"></span>
+    <span style="color:#008000">// Define a MongoDB compatible collection
+</span><span style="color:#008000"></span>    <span style="color:#00f">const</span> collection = <span style="color:#00f">new</span> azure.cosmosdb.MongoCollection(<span style="color:#a31515">`mongo-</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+        resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+        accountName: <span style="color:#2b91af">cosmosAccount.name</span>,
+        databaseName: <span style="color:#2b91af">database.name</span>,
+    });
+
+    <span style="color:#00f">return</span> ({ location }: RegionalContext) =&gt; {
+
+        <span style="color:#00f">const</span> publicIp = <span style="color:#00f">new</span> azure.network.PublicIp(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> loadBalancer = <span style="color:#00f">new</span> azure.lb.LoadBalancer(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> bpepool = <span style="color:#00f">new</span> azure.lb.BackendAddressPool(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> probe = <span style="color:#00f">new</span> azure.lb.Probe(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> rule = <span style="color:#00f">new</span> azure.lb.Rule(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> vnet = <span style="color:#00f">new</span> azure.network.VirtualNetwork(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> subnet = <span style="color:#00f">new</span> azure.network.Subnet(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> scaleSet = <span style="color:#00f">new</span> azure.compute.ScaleSet(<span style="color:#008000">/* ... */</span>);
+        <span style="color:#00f">const</span> autoscale = <span style="color:#00f">new</span> azure.monitoring.AutoscaleSetting(<span style="color:#008000">/* ... */</span>);
+
+        <span style="color:#00f">return</span> {
+            id: <span style="color:#2b91af">publicIp.id</span>,
+        };
+    };
+}</code></pre></div>
+<p>The code also uses a collection with the MongoDB protocol compatibility because thatâ€™s what the application expects.</p>
+
+<p>[ <a href="https://github.com/pulumi/examples/tree/master/azure-ts-cosmosapp-component/vms.ts">Full Example</a> ]</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Azure Cloud Platform offers an amazing array of capabilities for application developers. Azure Cosmos DB takes care of distributing the data globally, reliably, consistently, and with low-latency access anywhere around the world. Nonetheless, developers still need to take care of adequately provisioning the application layer for efficiently serving users around the globe.</p>
+
+<p>Cosmos App component is an excellent example of the power of using a general-purpose programming language to define cloud infrastructure. Such a component can let you codify the best practices and let multiple teams or companies share the implementation. The component and applications can evolve independently, with tools like versioning, package managers, compilers, and automated tests helping to maintain high-quality standards.</p>]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/pulumi" term="pulumi" label="Pulumi" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-cosmos-db" term="azure-cosmos-db" label="Azure Cosmos DB" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
+            <title type="html"><![CDATA[How to Avoid Cost Pitfalls by Monitoring APIs in AWS Lambda]]></title>
+            <link href="https://mikhail.io/2019/08/how-to-avoid-cost-pitfalls-by-monitoring-apis-in-aws-lambda/"/>
+            <id>https://mikhail.io/2019/08/how-to-avoid-cost-pitfalls-by-monitoring-apis-in-aws-lambda/</id>
+            
+            <published>2019-08-23T00:00:00+00:00</published>
+            <updated>2019-08-23T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>How to monitor your APIs using serverless technologies and an Epsagon dashboard.</blockquote>
+
+<p>The modern software world runs on application programming interfaces, otherwise known as APIs. There is an API for everything: charging a credit card, sending an email, finding an address on a map, or hailing a taxi.</p>
+
+<p>Likewise, the huge computing power of the cloud is entirely accessible via multiple layers of programming interfaces, including HTTP services and language-specific SDKs. Cloud vendors such as AWS have thousands of endpoints available to every developer in the world and modern businesses ought to embrace these existing services to stay productive. Instead of trying to reinvent the wheel, businesses should focus on the core values and differentiators for their specific market and simply purchase, adopt and reuse the remaining services required from third parties that have proven themselves in their given niche.</p>
+
+<p>This principle stands at the core of the philosophy behind serverless architecture: focus on the crucial bits. Serverless tech has a low barrier of entry and was designed with the intention to require little boilerplate code to use. This helps to explain why so many reliable <a href="https://epsagon.com/blog/the-importance-and-impact-of-apis-in-serverless/">APIs are an inherent part</a> of serverless applications today. Lambda functions, for their part, are used by developers as the glue between cloud services and internal as well as external API calls.</p>
+
+<h2 id="role-of-performance">Role of Performance</h2>
+
+<p>One thing to keep in mind when adopting APIs, in general, is performance. Most API calls are usually synchronous requests over HTTP or HTTPS. They may be fast to execute, but they may also be slow and responsiveness is not manifested in the API definition itself. Moreover, the latency may vary over time, as APIs can crash at seemingly random intervals or under higher loads. Throttling strategies might also kick in once the workload passes a given threshold.</p>
+
+<p>This aspect of performance is arguably more decisive in the serverless world than ever before, as slow downstream APs for serverless platforms have numerous implications:</p>
+
+<ul>
+<li>Each Lambda function has a maximum duration threshold and it&rsquo;s going to time out and fail if the total duration of API calls goes above that value.</li>
+<li>AWS charges organizations for execution times for Lambda invocations. Even when a function is idle while waiting for the HTTP response, you pay for each 100 milliseconds consumed. Slow API calls lead to the inevitable <a href="https://epsagon.com/blog/how-much-does-aws-lambda-cost/">extra cost of the serverless application</a>.</li>
+<li>For synchronous invocations, when a user is waiting for the Lambda to complete, substantial slowdowns lead to poor user experience, as unhappy customers and lose time, and often, revenue.</li>
+</ul>
+
+<p>Luckily, a lot can be done to prevent and mitigate such issues.</p>
+
+<h2 id="instrumenting-api-performance">Instrumenting API Performance</h2>
+
+<p>There are several strategies to assess the impact that the performance of a third-party API has on your serverless application.</p>
+
+<p>While just getting started with a new API, it makes sense to research if the supplier has provided a performance SLA or not. Regardless of the answer, the next step is to execute the target calls and measure the latency profile. You should strive to do so well in advance, before signing up for a new service. Finally, it&rsquo;s worth running a load test to emulate your target workload over an extended period.</p>
+
+<p>Your job is still not done even after an application is successfully deployed to production. For any non-trivial application, it&rsquo;s worth investing in monitoring tools and best practices. A monitoring toolkit provides both real-time and historical perspectives on the performance of your dependencies as well as their impact on application usability and cost.</p>
+
+<p>The following section gives a sneak peek of such activities.</p>
+
+<h2 id="example-geo-alerting-application">Example: Geo-Alerting Application</h2>
+
+<p>Let&rsquo;s consider a sample application that processes telemetry from connected vehicles. Each vehicle sends periodic messages, which end up in the AWS cloud. A single AWS Lambda receives a message and executes the following steps:</p>
+
+<ul>
+<li>Decodes the payload and extracts data, including geo-coordinates and sensor values.</li>
+<li>Reverse geocodes the coordinates to infer the address with a call to the <a href="https://geocode.xyz/">xyz</a> service.</li>
+<li>Saves a log entry containing the message properties and addresses to an <a href="https://aws.amazon.com/dynamodb/">AWS DynamoDB</a>.</li>
+<li>Compares the values against thresholds to check whether to send an alert.</li>
+<li>If needed, loads a suitable email template from an <a href="https://aws.amazon.com/s3/">AWS S3</a> bucket.</li>
+<li>Sends an email notification using the <a href="https://sendgrid.com/">SendGrid</a> mailing service.</li>
+</ul>
+
+<p>It&rsquo;s a reasonably straightforward application and yet it depends on four external APIs: two AWS services and two third-party endpoints. Here, we will implement a prototype of such an application and link it to an <a href="https://epsagon.com/">Epsagon</a> dashboard to see what kind of insights we can get about its performance.</p>
+
+<h2 id="timeline-of-a-single-invocation">Timeline of a Single Invocation</h2>
+
+<p>Let&rsquo;s start by calling my AWS Lambda once, then find that invocation in the Epsagon dashboard and display the <a href="https://epsagon.com/blog/introducing-the-timeline-view/">timeline view</a>:</p>
+
+<p><img src="timeline.png" alt="The Epsagon dashboard: A Timeline view of a single call." /></p>
+
+<figcaption><h4>The Epsagon dashboard: A Timeline view of a single call.</h4></figcaption>
+
+<p>You can see that this single invocation took 827 milliseconds to complete and that this time was entirely spent on waiting for the API calls to complete. You can also clearly see the breakdown of the execution time between the four dependencies and that the geocoding and email sending is slower than the calls to DynamoDB and S3.</p>
+
+<p>The timeline view looks very familiar to any developer who has ever worked with performance and network tabs as part of a browser&rsquo;s developer tools. And it&rsquo;s beneficial for a similar purpose: hunting down the culprit of slow execution.</p>
+
+<p>It&rsquo;s worth mentioning that you don&rsquo;t have to track the calls manually. All the data is collected automatically by the Epsagon library once you plug it into the Lambda.</p>
+
+<h2 id="tracking-invocations-over-time">Tracking Invocations Over Time</h2>
+
+<p>The above was just one measurement, which might not be very representative of reality. The next step is to see how the target AWS Lambda behaves over time. Let&rsquo;s set up a test to execute the function several hundred times over several minutes. It&rsquo;s easiest to use AWS API Gateway and invoke the function via HTTP. Alternatively, you could use an SQS queue or another asynchronous trigger, but monitoring behaves similarly in all cases.</p>
+
+<p>After the test, go ahead and navigate to the Architecture Map page:</p>
+
+<p><img src="architecturemap.png" alt="Architecture Map - Epsagon dashboard." /></p>
+
+<figcaption><h4>Architecture Map - Epsagon dashboard.</h4></figcaption>
+
+<p>The preceding Epsagon dashboard gives you an aggregate view of all recent function executions. In this case, the numbers happen to be quite similar to the previous test: about 800 milliseconds of invocation time on average with geocoding being the slowest call. SendGrid calls seem to go faster on average, but the red border around it indicates that some of the requests failed. This also points to a potential problem, which you would need to investigate. You may want to take some concrete actions based on the collected data, such as trying another geocoding service to see if it is faster for a comparable price.</p>
+
+<p>You can estimate the cost of your application based on the predicted number of invocations multiplied by the price for 900 milliseconds of execution time. This function spends all the time waiting for I/O operations to complete and it&rsquo;s not CPU- or memory-heavy. Therefore, it makes sense to provision smaller sizes of AWS Lambda instances.</p>
+
+<p>Finally, you may want to break down your &ldquo;monolith&rdquo; function into multiple functions that are interconnected with queues. Smaller single-purpose functions <a href="https://epsagon.com/blog/the-right-way-to-distribute-messages-effectively-in-serverless-applications/">have several benefits</a>, including higher resilience and potentially lower cost.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Almost every serverless function relies on one or many API calls and a combination of other cloud services and third-party applications. The latency and stability of those calls directly affect the Lambda function, both in terms of performance and cost.</p>
+
+<p>Be sure to test the performance of any newly adopted API before relying on it. In addition, you need to monitor the latency, reliability and <a href="https://epsagon.com/blog/finding-serverless-hidden-costs/">cost of the API calls in production</a>. It is important that you optimize the structure of your application to avoid long-running calls on the synchronous path that is observable by end-users. And for better cost manageability and higher resilience, complete the executions as fast as possible and delegate the remaining work to queue- or event-based functions.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/aws" term="aws" label="AWS" />
+                             
+                                <category scheme="https://mikhail.io/tags/epsagon" term="epsagon" label="Epsagon" />
+                             
+                                <category scheme="https://mikhail.io/tags/monitoring" term="monitoring" label="Monitoring" />
+                             
+                                <category scheme="https://mikhail.io/tags/aws-lambda" term="aws-lambda" label="AWS Lambda" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
             <title type="html"><![CDATA[Ten Pearls With Azure Functions in Pulumi]]></title>
             <link href="https://mikhail.io/2019/08/ten-pearls-with-azure-functions-in-pulumi/"/>
             <id>https://mikhail.io/2019/08/ten-pearls-with-azure-functions-in-pulumi/</id>
