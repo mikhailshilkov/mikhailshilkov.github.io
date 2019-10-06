@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Expressions | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Expressions" />
+	<meta property="og:description" content="We&rsquo;ve deployed two Terraforms resource&mdash;a Resource Group and a Storage Account&mdash;but their definitions have some drawbacks:
+ The location fields are hard-coded and are set to two different regions The Storage Account name is hard-coded too, and you had to to find a globally unique name manually The Storage Account references the Resource Group by its hard-coded name, which means duplication and lack of safety  Let&rsquo;s solve these problems." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/lab/terraform/5-expressions/" />
+
+	
+	
+	
+	
+
+
+	
+	
+
+	
+	
+	<meta name="twitter:card" content="summary"/>
+	
+	
+
+	<meta name="twitter:title" content="Expressions"/>
+	<meta name="twitter:description" content="We&rsquo;ve deployed two Terraforms resource&mdash;a Resource Group and a Storage Account&mdash;but their definitions have some drawbacks:
+ The location fields are hard-coded and are set to two different regions The Storage Account name is hard-coded too, and you had to to find a globally unique name manually The Storage Account references the Resource Group by its hard-coded name, which means duplication and lack of safety  Let&rsquo;s solve these problems."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-3 pl-0">
+                <nav class="sidebar">
+                    <div class="sidebar-header">
+                        <h3>Learn Terraform</h3>
+                    </div>
+
+                    <ul class="list-unstyled components">
+                        <p>to deploy Azure Functions and co.</p>
+                        <li>
+                            <a href="..">Introduction</a>
+                        </li>
+                        
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/1-prerequisites/">1. Prerequisites</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/2-newfile/">2. New Terraform File</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/3-resourcegroup/">3. Resource Group</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/4-storageaccount/">4. Storage Account</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <span class="current">5. Expressions</span>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/6-state/">6. Terraform State</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/7-consumptionplan/">7. Consumption Plan</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/8-functionapp/">8. Function App</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/9-inouts/">9. Inputs and Outputs</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/10-multiplefiles/">10. Multiple Files</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/11-furthersteps/">11. Further Steps</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            <a href="https://mikhail.io/lab/terraform/12-cleanup/">12. Clean Up</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </nav>
+            </div>
+            
+            <div class="col-lg-8 offset-lg-1 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Expressions</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            <span class="post-date"> 6 minutes to complete</span>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div class="article-post">
+                    
+
+<p>We&rsquo;ve deployed two Terraforms resource&mdash;a Resource Group and a Storage Account&mdash;but their definitions have some drawbacks:</p>
+
+<ul>
+<li>The <code>location</code> fields are hard-coded and are set to two different regions</li>
+<li>The Storage Account <code>name</code> is hard-coded too, and you had to to find a globally unique name manually</li>
+<li>The Storage Account references the Resource Group by its hard-coded name, which means duplication and lack of safety</li>
+</ul>
+
+<p>Let&rsquo;s solve these problems.</p>
+
+<h2 id="values-as-expressions">Values as expressions</h2>
+
+<p>Values for resource arguments may be defined in terms of string literals, as we did before. They are contained in double-quotes, e.g., <code>&quot;westus&quot;</code>.</p>
+
+<p>The value can also be an <em>expression</em>. An expression has no double-quotes around it and can point to other resources. Here is an example:</p>
+
+<pre><code>  resource_group_name      = azurerm_resource_group.rg.name
+</code></pre>
+
+<p>This line specifies that the value for the argument <code>resource_group_name</code> should be set to <code>name</code> attribute of the resource <code>rg</code> of type <code>azurerm_resource_group</code>. In this case, this means that the Storage Account should take the name of the Resource Group from its resource definition. Even if you rename the Resource Group later on, you won&rsquo;t have to change the definition of the Storage Account resource.</p>
+
+<p>Note that the reference uses the Terraform resource name <code>rg</code>, not the Resource Group name <code>terraform-workshop</code>.</p>
+
+<p>Terraform checks expressions before applying the definitions, and it&rsquo;s able to catch errors like broken references.</p>
+
+<h2 id="reference-name-and-location-of-the-resource-group">Reference Name and Location of the Resource Group</h2>
+
+<p>Modify the definition of the Storage Account resource to reference the Resource Group in <code>resource_group_name</code> and <code>location</code>:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-hcl" data-lang="hcl"><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;azurerm_storage_account&#34; &#34;sa&#34;</span> {
+  name                     = <span style="color:#a31515">&#34;&lt;your unique SA name&gt;&#34;</span>
+  resource_group_name      = <span style="color:#00f">azurerm_resource_group</span>.<span style="color:#00f">rg</span>.<span style="color:#00f">name</span>
+  location                 = <span style="color:#00f">azurerm_resource_group</span>.<span style="color:#00f">rg</span>.<span style="color:#00f">location</span>
+  account_tier             = <span style="color:#a31515">&#34;Standard&#34;</span>
+  account_replication_type = <span style="color:#a31515">&#34;LRS&#34;</span>
+}</code></pre></div>
+<p>Run <code>terraform apply</code> again and look at the preview, you should see the suggestion to replace your Storage Account:</p>
+
+<pre><code>Terraform will perform the following actions:
+
+  # azurerm_storage_account.sa must be replaced
+...
+      ~ location                          = &quot;westus2&quot; -&gt; &quot;westus&quot; # forces replacement
+...
+</code></pre>
+
+<p>It&rsquo;s not possible to change the location of a Storage Account in-place. Because we changed the location, Terraform decides to replace the resource: delete the old instance and create a new one.</p>
+
+<p>Always look for replacement notes in Terraform preview: sometimes they may come as a surprise and then you would want to investigate before re-creating a resource which may contain valuable data.</p>
+
+<p>However, this time, it&rsquo;s okay, so confirm the actions and wait for completions.</p>
+
+<h2 id="generating-a-unique-name">Generating a unique name</h2>
+
+<p>Previously, you had to come up with a globally unique name for the Storage Account. However, this account is not our primary target: we just need it to start working with Azure Functions. It would be perfectly fine to give it some unique machine-generated name just to be able to proceed. We can use a <code>random_string</code> Terraform resource to do this for us.</p>
+
+<p>First, register the <code>random</code> provider:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-hcl" data-lang="hcl"><span style="color:#00f">provider</span> <span style="color:#a31515">&#34;random&#34;</span> {
+}</code></pre></div>
+<p>And then define a <code>random_string</code> resource:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-hcl" data-lang="hcl"><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;random_string&#34; &#34;sa_name&#34;</span> {
+  length = 10
+  special = <span style="color:#2b91af">false</span>
+  upper = <span style="color:#2b91af">false</span>
+}</code></pre></div>
+<p>Storage Account names can only contain lowercase letters and digits, so we exclude special and uppercase characters. Now, update the definition of the Storage Account:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-hcl" data-lang="hcl"><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;azurerm_storage_account&#34; &#34;sa&#34;</span> {
+  name                     = <span style="color:#a31515">&#34;sa${random_string.sa_name.result}&#34;</span>
+  resource_group_name      = <span style="color:#00f">azurerm_resource_group</span>.<span style="color:#00f">rg</span>.<span style="color:#00f">name</span>
+  location                 = <span style="color:#00f">azurerm_resource_group</span>.<span style="color:#00f">rg</span>.<span style="color:#00f">location</span>
+  account_tier             = <span style="color:#a31515">&#34;Standard&#34;</span>
+  account_replication_type = <span style="color:#a31515">&#34;LRS&#34;</span>
+}</code></pre></div>
+<p>This time, we used a different syntax of using referenced value: string interpolation with a very JavaScript-like syntax. The resulting name should be something like <code>saxpm31vuc7r</code>&mdash;starting with <code>sa</code> and then 10 random characters.</p>
+
+<p>Run <code>terraform apply</code> to recreate the Storage Account.</p>
+
+<p>Note that the <code>random_string</code> resource produces stable values: they are not going to change between subsequent runs. Very useful for multiple deployments!</p>
+
+<h2 id="checkpoint">Checkpoint</h2>
+
+<p>List the resources in your Resource Group.</p>
+
+<pre><code>$ az resource list -g terraform-workshop -o table
+
+Name          ResourceGroup       Location  Type
+------------  ------------------- --------  ---------------------------------
+saxpm31vuc7r  terraform-workshop  westus    Microsoft.Storage/storageAccounts
+</code></pre>
+
+<p>You should see a single Storage Account with a random name.</p>
+
+                    
+                    
+                    <h2>Next Step</h2>
+                    <a href="https://mikhail.io/lab/terraform/6-state/">
+                        <button type="button" class="btn btn-primary btn-lg">
+                            
+                            Terraform State
+                            
+                        </button>
+                    </a>
+                    
+                    
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
+    </div>
+    
+    
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>
