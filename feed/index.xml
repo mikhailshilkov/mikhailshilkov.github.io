@@ -12,6 +12,296 @@
 
     
         <entry>
+            <title type="html"><![CDATA[Santa Brings Cloud to Every Developer]]></title>
+            <link href="https://mikhail.io/2019/12/santa-brings-cloud-to-every-developer/"/>
+            <id>https://mikhail.io/2019/12/santa-brings-cloud-to-every-developer/</id>
+            
+            <published>2019-12-01T00:00:00+00:00</published>
+            <updated>2019-12-01T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>How Santa Cloud uses F# and Pulumi to bring cloud resources to the homes of software engineers.</blockquote>
+
+<p><em>The post is a part of
+<a href="https://sergeytihon.com/2019/11/05/f-advent-calendar-in-english-2019/">F# Advent Calendar 2019</a>.
+It&rsquo;s Christmas time!</em></p>
+
+<p>Cloud is everywhere, and yet it&rsquo;s still inaccessible to millions of developers and IT pros. With shining yet cloudy eyes return they from KubeCon&rsquo;s and re:Invent&rsquo;s, just to pick up an issue in Jira, fix yet another <code>SingletonProxyFactoryBean</code> in their J2EE application, commit it to SVN, and hope it will be delivered in three months to the data center in their HQ basement.</p>
+
+<p>But hey, it&rsquo;s December now, which means it&rsquo;s time to write a letter to Santa Cloud! Santa Cloud brings gifts to the homes of well-behaved engineers on the night of Christmas Eve. He accomplishes this feat with the aid of his elves, who make the toys in their glorious workshops in the State of Washington.</p>
+
+<p><img src="elves.jpg" alt="Cloud Elves" /></p>
+
+<p>Here are some typical letters that Santa gets these days:</p>
+
+<blockquote>I maintain 15 different apps, and each one has a custom deployment workflow. If only I had a <b>Kubernetes</b> cluster, I would stick all the apps in it and let the blue/green deployments do the magic!</blockquote>
+
+<blockquote>My ten-year-old legacy application was designed for twenty users, and now it has to handle twenty thousand. It reached its performance limits! If only I could port it to <b>Serverless</b>, this would fix all my scalability issues.</blockquote>
+
+<blockquote>
+<p>We have 2 TB of data to analyze! Could you please send me a data lake and a <strong>Spark</strong> cluster? Actually, can I have two&hellip; or maybe three?</p>
+</blockquote>
+
+<p>There&rsquo;s enough cloud for everyone! Perhaps, a naughty engineer, who created a lot of technical debt and meeting invites, might only get a cozy single-core VM for their LAMP-stack website. But the lucky ones might get a whole Kubernetes cluster for themselves!</p>
+
+<h2 id="behind-the-snow-curtains">Behind the Snow Curtains</h2>
+
+<p>While cloud elves are good at provisioning the underlying hardware and providing services, Santa still needs to coordinate them to fulfill wishes. There are millions of aspiring cloud engineers, and all of them believe in Santa. It&rsquo;s not feasible to click the buttons in web portals or run ad-hoc scripts for each and every wishlist.</p>
+
+<p>Luckily, Santa Cloud is good at programming and automation. He codes in <a href="https://fsharp.org">F#</a>, and he&rsquo;s one of the early customers of the .NET SDK for <a href="https://pulumi.com">Pulumi</a>. Hey, it&rsquo;s my fairy tale, so I choose the tech stack, thank you. Worry not, even if you are not familiar with F# or Pulumi, you will be able to follow along.</p>
+
+<p>The workflow looks approximately like this:</p>
+
+<ul>
+<li>Represent a letter as a value in the program</li>
+<li>Pick an elf which can fulfill the desire</li>
+<li>Produce the resource</li>
+<li>Wrap a note to the recipient</li>
+</ul>
+
+<h3 id="parsing-wishlists">Parsing wishlists</h3>
+
+<p>Too bad, not every wishful engineer knows F#. Maybe, next year, Santa can make an online form that wouldn&rsquo;t accept anything but valid code. For now, it&rsquo;s the duty of Mrs. Cloud to read every letter and convert it to a list of records. Here is a sample:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> wishes = [
+    { Recipient = Person <span style="color:#a31515">&#34;Kelsey&#34;</span> ; Resource = Kubernetes (Nodes 25) }
+    { Recipient = Person <span style="color:#a31515">&#34;Jeff&#34;</span>   ; Resource = Serverless DotNet }
+    { Recipient = Person <span style="color:#a31515">&#34;Satoshi&#34;</span>; Resource = Blockchain Public }
+]</code></pre></div>
+<p>The value <code>wishes</code> is a strongly-typed list of records. Each record has multiple properties and utilizes &ldquo;algebraic data types&rdquo;: each type would have a label (&ldquo;Kubernetes&rdquo;) and an associated piece of data (25 nodes). The shape of data depends on the label: it&rsquo;s not possible to ask 25 nodes of serverless.</p>
+
+<p>When the list is defined and compiled, it goes to production. But first, we need to assign an elf to each item in the list.</p>
+
+<h3 id="elves">Elves</h3>
+
+<p>All-powerful craftselves are represented as another F# type: a function type.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Elf</span> = Wish -&gt; (<span style="color:#2b91af">unit</span> -&gt; Identifier) option</code></pre></div>
+<p>Here is what it tells us:</p>
+
+<ul>
+<li>It&rsquo;s a function which expects a <code>Wish</code> as an input parameter</li>
+<li>It may return nothing if this elf can&rsquo;t fulfill the wish (represented by <code>option</code> type)</li>
+<li>If it returns something, it returns yet another function&mdash;of type <code>unit -&gt; Identifier</code></li>
+<li>This resulting function has a side effect (it accepts <code>unit</code>): the production of a cloud resource</li>
+<li>It returns an <code>Identifier</code> of that resource</li>
+</ul>
+
+<p>Whoa, that&rsquo;s a lot of information conveyed by a single-line type definition!</p>
+
+<p>In our program, each elf is a function, for example:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> aws (wish: Wish) =
+    <span style="color:#00f">match</span> wish.Resource <span style="color:#00f">with</span>
+    | Kubernetes k8s -&gt; makeEksCluster k8s |&gt; Some
+    | Serverless s8s -&gt; makeAwsLambda s8s  |&gt; Some
+    <span style="color:#008000">//|  ... more resource types
+</span><span style="color:#008000"></span>    | _ -&gt; None</code></pre></div>
+<p>The function matches the type of the desired resource and calls a corresponding resource provisioning routine.</p>
+
+<h3 id="resource-provisioning">Resource provisioning</h3>
+
+<p>Pulumi handles the creation of cloud resources with its .NET SDKs spanning across all major cloud providers.</p>
+
+<p>Here is a snippet which defines an Azure Function App:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> makeFunctionApp (Person name) (runtime: Runtime) () =
+    <span style="color:#00f">let</span> app =
+        FunctionApp(name,
+            FunctionAppArgs
+               (ResourceGroupName = io resourceGroup.Name,
+                AppSettings = inputMap [<span style="color:#a31515">&#34;runtime&#34;</span>, runtime.ToString() |&gt; input],
+                StorageConnectionString = io storageAccount.PrimaryConnectionString,
+                Version = input <span style="color:#a31515">&#34;~2&#34;</span>))
+    Url app.DefaultHostname</code></pre></div>
+<p>And here is a Google Kubernetes Engine cluster:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> makeGkeCluster (Person name) (Nodes nodeCount) () =
+    <span style="color:#00f">let</span> masterVersion = input <span style="color:#a31515">&#34;1.15.1&#34;</span>
+    <span style="color:#00f">let</span> cluster =
+        Cluster(name,
+            ClusterArgs
+               (InitialNodeCount = input nodeCount,
+                MinMasterVersion = masterVersion,
+                NodeVersion = masterVersion,
+                NodeConfig = input (
+                    ClusterNodeConfigArgs
+                       (MachineType = input <span style="color:#a31515">&#34;n1-standard-1&#34;</span>))))
+    Url cluster.Endpoint</code></pre></div>
+<h3 id="production">Production</h3>
+
+<p>The application logic of picking the right production facility and executing the order takes five lines of code.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> fulfill wish =
+    <span style="color:#008000">// Randomize the order of elves, so that they get equal opportunities
+</span><span style="color:#008000"></span>    <span style="color:#00f">let</span> elves = shuffle [aws; azure; gcp]
+
+    <span style="color:#008000">// Find the first elf which agrees to produce a resource
+</span><span style="color:#008000"></span>    <span style="color:#00f">let</span> make = elves |&gt; List.pick (<span style="color:#00f">fun</span> elf -&gt; elf wish)
+
+    <span style="color:#008000">// Run the production!
+</span><span style="color:#008000"></span>    <span style="color:#00f">let</span> identifier = make()
+
+    wish.Recipient, identifier</code></pre></div>
+<p>We shuffle the order of elves to give them comparable workload, pick the first one in the list who agrees to execute the order, run the provisioning, and return the recipient name with their shiny resource identifier.</p>
+
+<p>Go team Santa!</p>
+
+<h3 id="delivery">Delivery</h3>
+
+<p>For a nice personal touch, a card needs to be printed, gift-wrapped, and delivered by Santa and reindeers. Programming the reindeers is for another blog post. For now, we just return a list of tuples of person names and resource URLs:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> send (responses: Response <span style="color:#2b91af">list</span>) =
+    responses
+    |&gt; List.map (<span style="color:#00f">fun</span> (Person name, Url url) -&gt; name, url)
+    |&gt; dict</code></pre></div>
+<p>Finally, another line combines the steps into the workflow:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> santaCloud () = wishes |&gt; (List.map fulfill) |&gt; send</code></pre></div>
+<p>And the last line defines the entry point of the application:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">[&lt;EntryPoint&gt;]
+<span style="color:#00f">let</span> main _ = Deployment.run santaCloud</code></pre></div>
+<p>Running the program produces an output like this:</p>
+
+<p><img src="pulumiup.png" alt="Pulumi Console Output" /></p>
+
+<h2 id="retrospective">Retrospective</h2>
+
+<p>Honestly, the system is brand-new this year, so we still need to see how it plays out on Christmas Eve. Regardless, we learned a thing or two today:</p>
+
+<ul>
+<li><strong>Types</strong>: F# has an excellent type system that allows expressing domain terms concisely and precisely.</li>
+<li><strong>Logic</strong>: The program workflow is expressed in terms of function calls, pattern matching, and collections manipulation.</li>
+<li><strong>Infrastructure</strong>: Cloud resources are defined in F# with Pulumi .NET SDK, which supports pretty much any resource in any cloud.</li>
+<li><strong>Application</strong>: Blended together, these components enable writing expressive, cohesive, maintainable, cloud-native applications using familiar and loved tools and practices.</li>
+</ul>
+
+<p>Learn more about <a href="https://pulumi.com/dotnet">Pulumi for .NET</a> or browse <a href="https://github.com/mikhailshilkov/fsharp-advent-pulumi">the full code</a> for this example.</p>
+
+<p>Merry Cloudsmas, ho-ho-ho!</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/f" term="f" label="F#" />
+                             
+                                <category scheme="https://mikhail.io/tags/aws" term="aws" label="AWS" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/gcp" term="gcp" label="GCP" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
+            <title type="html"><![CDATA[Choosing the Best Deployment Tool for Your Serverless Applications]]></title>
+            <link href="https://mikhail.io/2019/11/choosing-the-best-deployment-tool-for-serverless-applications/"/>
+            <id>https://mikhail.io/2019/11/choosing-the-best-deployment-tool-for-serverless-applications/</id>
+            
+            <published>2019-11-12T00:00:00+00:00</published>
+            <updated>2019-11-12T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Factors to consider while deploying cloud infrastructure for serverless apps.</blockquote>
+
+<p>Function-as-a-Service solutions, such as AWS Lambda and Azure Functions, are a great way to build modern, scalable, and affordable cloud-native applications. By delegating routine work to cloud providers, serverless applications focus on custom logic to provide the ultimate business value. But, in fact, serverless is more than cloud functions. It&rsquo;s storage, HTTP gateways, databases, queues, monitoring, and security&mdash;and your serverless applications are likely to use multiple managed services and consist of many moving parts.</p>
+
+<p>So how do you deploy such applications reliably? There are multiple cloud deployment tools out there! In this article, I identify several criteria to consider when making your decision.</p>
+
+<h2 id="point-and-click-or-write-code">Point-and-Click or Write Code?</h2>
+
+<p>Most tutorials and getting-started guides use web portals, like AWS Management Console or Microsoft Azure portal, to create basic serverless applications and required infrastructure. The visual flow of solutions like these is simple for newcomers to understand, and they can take shortcuts and assume some sensible defaults to streamline the process.</p>
+
+<p>However, simply clicking through the online wizard won&rsquo;t produce reliable outcomes. Two weeks later, for example, you might not be able to follow the exact same sequence of steps to create a copy of your application when you need it. Now imagine if your colleague has to try!</p>
+
+<p>Instead of the manual provisioning process, you can define the infrastructure as code. I&rsquo;m using â€œcodeâ€ in a broad sense here: It can be any machine-readable format that is written by a human and executed by an automated tool.</p>
+
+<p>I strongly recommend using the infrastructure-as-code approach for any application that&rsquo;s beyond simple demos and one-off trials. Put the code definition to the source control, and you&rsquo;ll get repeatable deployments, documentation, a history of changes, and reference materials&mdash;all in one step.</p>
+
+<h2 id="procedural-or-desired-state">Procedural or Desired State?</h2>
+
+<p>Bash or PowerShell scripts are the traditional way to automate. Every cloud provider has a command-line interface (CLI) to manage its resource portfolio, so it&rsquo;s entirely possible to script the provisioning of the entire infrastructure for your serverless application.</p>
+
+<p>However, there are a few downsides to this approach. Naturally, scripts are very imperative: You describe the exact steps to execute, in the required order. And if you need to change the state of an existing environment, you&rsquo;ll likely need to manage update scripts that bring the infrastructure through transition steps. Finally, it&rsquo;s hard to manage failures: If a script fails in the middle, the exact state of your resources will often be unknown.</p>
+
+<p>You can also try the declarative style of Desired State Configuration (DSC). The goal of DSC is to describe the complete state of the infrastructure, regardless of its current state. Then, it functions as an automated tool which reads the desired state, compares it to the current state, and figures out which steps to execute to reconcile the two.</p>
+
+<p>All the tools that I mention in the rest of the article follow the desired-state philosophy.</p>
+
+<h2 id="cloud-vendor-or-third-party">Cloud Vendor or Third Party?</h2>
+
+<p>Each cloud vendor has its own native tool to manage infrastructure as code: <a href="https://aws.amazon.com/cloudformation/">AWS CloudFormation</a>, <a href="https://docs.microsoft.com/en-us/azure/azure-resource-manager/template-deployment-overview">Azure Resource Manager (ARM) templates</a>, and <a href="https://cloud.google.com/deployment-manager/">Google Cloud Deployment Manager</a>, for example. These are all first-class services, so they have excellent feature coverage and are widely used, stable, and battle-tested.</p>
+
+<p>However, while the vendor tools are robust, they have a set of constraints. Obviously, each tool focuses on one cloud, so mastering CloudFormation won&rsquo;t make you an ARM guru. Also, the deployment managers are fundamental infrastructure components of their respective clouds. Because they need to support every service and feature, they tend to operate at a quite low level. Additionally, they must avoid breaking changes, so legacy features and issues tend to pile up over time. The tools may feel rigid, and because they are closed source and vendor managed, you don&rsquo;t have much influence.</p>
+
+<p>It&rsquo;s worth noting that numerous third-party infrastructure management tools try to compete with cloud vendors, and serverless apps can successfully use many of them. <a href="https://www.terraform.io/">HashiCorp&rsquo;s Terraform</a>, for example, is a cross-provider tool, which covers not only the majority of each cloud&rsquo;s features, but also the configuration of Kubernetes, Docker images, Kafka, monitoring tools, and some databases.</p>
+
+<p>The downside of third-party tools is that they may not offer support for some cloud features. For example, while using Terraform&rsquo;s AzureRM provider, I definitely bumped into missing features, especially for newer services or niche configurations. To compensate for these kinds of issues, third-party tools are usually open source and accept contributions, so an active community is an essential factor.</p>
+
+<h2 id="execution-on-the-client-or-in-the-cloud">Execution on the Client or in the Cloud?</h2>
+
+<p>Cloud vendor tools take your definition files and run them from within the managed cloud service. For example, Azure creates a first-class object&mdash;deployment&mdash;which shows the deployed resources or problems that occurred. CloudFormation can automatically roll back a failed deployment to the previous well-known state.</p>
+
+<p>In contrast, CLI scripts, Terraform, and <a href="https://www.pulumi.com/">Pulumi</a> run the deployment from the client machine where they are executed, or, even better, from CI/CD servers for most production deployments. This means they have more granular control over the execution flow and error handling, but also that they aren&rsquo;t able to reuse the built-in deployment features of the native-cloud managers.</p>
+
+<p>Some tools, like <a href="https://github.com/cloudtools/troposphere">Troposphere</a>, <a href="https://aws.amazon.com/cdk/">AWS Cloud Development Kit (AWS CDK)</a>, and <a href="https://serverless.com/">Serverless Framework</a>, have their own way to describe the infrastructure. Still, they transpile these definitions to formats like CloudFormation to make use of the cloud deployment engines.</p>
+
+<h2 id="general-purpose-or-specialized">General Purpose or Specialized?</h2>
+
+<p>CloudFormation, ARM templates, and Terraform are all general-purpose tools: You can define serverless applications with them, but that&rsquo;s not their primary focus. Traditional infrastructure and networking solutions still have a far larger audience, so these scenarios attract more attention from the vendors. General-purpose tools lack higher-level abstractions, so the resource definitions tend to be verbose and repetitive.</p>
+
+<p>Instead of general-purpose tools, you can use a specialized solution that is inherently modeled around the concepts of serverless. Serverless Framework is a multi-provider tool, while <a href="https://aws.amazon.com/serverless/sam/">AWS Serverless Application Model (SAM)</a> is a comparable option from AWS. Another example is Claudia.js&mdash;a deployment tool for node-based AWS Lambda.</p>
+
+<p>It&rsquo;s easy to get started with specialized tools, and to use them for implementing basic scenarios. However, if your application is a combination of serverless features and traditional infrastructure, you may need to use more than one tool. In this case, make sure that the benefits of the specialized tools are enough to compensate for the complexity of using multiple options simultaneously.</p>
+
+<p>I struggled with trying to use Serverless Framework for Azure: The experience was not ideal, and some features were missing. Understandably, AWS is Serverless Framework&rsquo;s primary target, so plugins targeting other clouds may lag behind.</p>
+
+<h2 id="markup-or-programming-language">Markup or Programming Language?</h2>
+
+<p>If you settle for a desired-state configuration tool, you will likely use a markup language to define the cloud infrastructure. CloudFormation, Google Cloud Deployment Manager, and Serverless Framework use YAML, while ARM templates are defined in JSON. Terraform invented its own markup language called HCL. This language makes the definitions more succinct and expressive, but requires you to master a new language and toolchain.</p>
+
+<p>However, markup languages are lacking expressiveness to easily represent conditional shapes, multiple similar resources, or higher-level abstractions. They embed home-grown constructs inside YAML or JSON, or make you fall back to template-based generation. A newer class of tools is trying to address this limitation by using general-purpose programming languages to define cloud infrastructures. For example, AWS CDK uses TypeScript, Python, Java, and .NET to produce CloudFormation output.</p>
+
+<p>Pulumi takes this idea even further by providing support for a similar set of languages to provision infrastructure for any cloud&mdash;and many tools beyond the cloud. Developers can use their existing skills and tools to define type-safe and testable infrastructure and to create higher level abstractions with classes, components, and functions.</p>
+
+<p>Both Pulumi and AWS CDK have a set of components focusing on serverless applications, so they might be the best tools for providing both high-level expressive serverless components and low-level infrastructure resources, if needed.</p>
+
+<p>In the past, I deployed Azure resources with templates containing five thousand lines of JSON. It wasn&rsquo;t a great developer experience to write all those lines, and the application was mostly a bunch of web servers and SQL databases&mdash;nothing too fancy. When I define a similar infrastructure with TypeScript, the code size reduction is at least tenfold. <a href="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/">This post</a> gives an example of a similar transformation for an AWS serverless app.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Serverless applications consist of many components, combining multiple managed services into one cohesive flow. Regardless of your preference for a specific tool, you should use the infrastructure-as-code approach to make your serverless applications reliable and maintainable in the long run.</p>
+
+<p>Cloud infrastructure tools are evolving quickly, and none of them are perfect just yet. To choose what&rsquo;s best for you, evaluate your needs and constraints, compare several options, and keep an eye on the field: More innovations are coming soon.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/aws" term="aws" label="AWS" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/serverless" term="serverless" label="Serverless" />
+                             
+                                <category scheme="https://mikhail.io/tags/aws-lambda" term="aws-lambda" label="AWS Lambda" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-functions" term="azure-functions" label="Azure Functions" />
+                             
+                                <category scheme="https://mikhail.io/tags/infrastructure-as-code" term="infrastructure-as-code" label="Infrastructure as code" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
             <title type="html"><![CDATA[AWS Lambda vs. Azure Functions: 10 Major Differences]]></title>
             <link href="https://mikhail.io/2019/10/aws-lambda-vs-azure-functions-ten-major-differences/"/>
             <id>https://mikhail.io/2019/10/aws-lambda-vs-azure-functions-ten-major-differences/</id>
