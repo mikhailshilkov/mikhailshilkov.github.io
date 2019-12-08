@@ -1,362 +1,543 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Introducing Stream Processing in F# | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="Introducing Stream Processing in F#" />
+	<meta property="og:description" content="The post was published for F# Advent Calendar 2016, thus the examples are themed around the Christmas gifts.
+This article is my naive introduction to the data processing discipline called Stream Processing." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2016/11/introducing-stream-processing-in-fsharp/" />
 
-    <title>Introducing Stream Processing in F# | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="Introducing Stream Processing in F#"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="Introducing Stream Processing in F#" />
-    <meta property="og:url" content="https://mikhail.io/2016/11/introducing-stream-processing-in-fsharp/" />
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2016/11/introducing-stream-processing-in-fsharp/teaser.png" />
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="Stream Processing" />
+	
+	<meta property="article:tag" content="FSharp" />
+	
+	<meta property="article:tag" content="Advent Calendar" />
+	
+	<meta property="article:tag" content="Data Processing" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2016/11/introducing-stream-processing-in-fsharp/teaser.png" />
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="Introducing Stream Processing in F#"/>
+	<meta name="twitter:description" content="The post was published for F# Advent Calendar 2016, thus the examples are themed around the Christmas gifts.
+This article is my naive introduction to the data processing discipline called Stream Processing."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Nov 29th, 2016</div>
-    
-    <h1>Introducing Stream Processing in F#</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p><em>The post was published for 
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Introducing%20Stream%20Processing%20in%20F%23%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2016%2f11%2fintroducing-stream-processing-in-fsharp%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Introducing Stream Processing in F#</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Nov 29, 2016
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 14 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p><em>The post was published for
 <a href="https://sergeytihon.wordpress.com/2016/10/23/f-advent-calendar-in-english-2016/">F# Advent Calendar 2016</a>,
 thus the examples are themed around the Christmas gifts.</em></p>
-<p>This post is opening a series of articles about data processing
-discipline called <strong>Stream Processing</strong>. </p>
-<p>I describe stream processing from the developer perspective, using the 
-following (rather unusual) angle:</p>
-<ul>
-<li>F# as the primary language</li>
-<li>Concepts and principles are more important than frameworks and tools</li>
-<li>Start with modeling the domain problem and then solve just the problems
-that your domain has</li>
-</ul>
+
+<p>This article is my naive introduction to the data processing discipline called <strong>Stream Processing</strong>.</p>
+
+<p>I describe stream processing from the developer perspective, using the
+following (rather unusual) angle:
+- F# as the primary language
+- Concepts and principles are more important than frameworks and tools
+- Start with modeling the domain problem and then solve just the problems
+that your domain has</p>
+
 <p>We begin the journey by introducing what stream processing is all about.</p>
-<h2 id="what-s-and-why-s">What&#39;s and Why&#39;s</h2>
+
+<h2 id="what-s-and-why-s">What&rsquo;s and Why&rsquo;s</h2>
+
 <p>There are several techniques to process data that are flowing into your
 applications, and stream processing is one of them.</p>
-<p>Stream processing is focused on the real-time processing of data 
-continuously, concurrently, and in a record-by-record fashion. Stream 
-processing is designed to analyze and act on live data flow, using 
-&quot;continuous queries&quot; expressed in user code. Data is structured 
+
+<p>Stream processing is focused on the real-time processing of data
+continuously, concurrently, and in a record-by-record fashion. Stream
+processing is designed to analyze and act on live data flow, using
+&ldquo;continuous queries&rdquo; expressed in user code. Data is structured
 as a continuous stream of events over time:</p>
-<p><img src="/2016/11/introducing-stream-processing-in-fsharp//eventflow.png" alt="Flow of events"></p>
+
+<p><img src="eventflow.png" alt="Flow of events" /></p>
+
 <p>In contrast to some other approaches to reason about application
 structure, stream processing concepts are drawn around the data structures,
 flows and transformations rather than services or remote calls.</p>
-<p>Although the approach is nothing new, it gained much more traction 
-during the last years, especially in big data community. Products 
-like <em>Storm</em>, <em>Kafka</em>, <em>Flink</em>, <em>Samza</em> (all under <em>Apache Foundation</em>), 
-<em>Google Cloud Dataflow</em>, <em>Akka Streams</em> are popularizing the programming 
+
+<p>Although the approach is nothing new, it gained much more traction
+during the last years, especially in big data community. Products
+like <em>Storm</em>, <em>Kafka</em>, <em>Flink</em>, <em>Samza</em> (all under <em>Apache Foundation</em>),
+<em>Google Cloud Dataflow</em>, <em>Akka Streams</em> are popularizing the programming
 model and bringing the tools to make it reliable and scalable.</p>
-<p>These products are born from the need to run data processing in 
+
+<p>These products are born from the need to run data processing in
 massively distributed environments. They are all about scaling out
 and solving or mitigating the issues of distributed systems which
 are inherintly not reliable.</p>
-<p>While this is a noble and mission-critical goal for internet-scale companies, most 
+
+<p>While this is a noble and mission-critical goal for internet-scale companies, most
 applications do not require such massive performances and scale.</p>
+
 <p>There is something to be said for the domain-driven approach, when
 an application is built around the main asset and burden of enterprise
-systems: the core business logic. It may happen that you don&#39;t need
+systems: the core business logic. It may happen that you don&rsquo;t need
 a general purpose framework with the lowest processing latency. Instead
-your choice of tools might lean towards the cleanest code possible, tailored 
+your choice of tools might lean towards the cleanest code possible, tailored
 for your own needs, and maintainable over time.</p>
+
 <p>Knowing the landscape can help you do the right trade-off.</p>
-<p>The recent Stream Processing boom comes from <em>Apache</em> / <em>JVM</em> world. 
-Unfortunately, stream processing frameworks and underlying concepts 
-are mostly unfamiliar to <em>.NET</em> developers. </p>
+
+<p>The recent Stream Processing boom comes from <em>Apache</em> / <em>JVM</em> world.
+Unfortunately, stream processing frameworks and underlying concepts
+are mostly unfamiliar to <em>.NET</em> developers.</p>
+
 <p>While <em>Azure Cloud</em> provides a managed service called <em>Azure Stream Analytics</em>,
 the product is built around SQL-like language and is rather limited in
 extensibility.</p>
+
 <p>We will have a look at other options in .NET space in the further posts
 of the series.</p>
-<p>For now, I want to start filling the gap and introduce the basic concepts 
-with F#. As a bonus, we are not limited by particular tools and 
+
+<p>For now, I want to start filling the gap and introduce the basic concepts
+with F#. As a bonus, we are not limited by particular tools and
 implementations, but can start from the ground up.</p>
+
 <h2 id="elements-of-a-stream">Elements of a Stream</h2>
-<p>As I already mentioned above, people are doing stream processing for long 
-time. In fact, if you receive events and then apply the transformation 
-logic structured around a single event at a time - you are already 
-doing stream processing. </p>
+
+<p>As I already mentioned above, people are doing stream processing for long
+time. In fact, if you receive events and then apply the transformation
+logic structured around a single event at a time - you are already
+doing stream processing.</p>
+
 <p>Here is a simple picture which illustrates the elements of processing:</p>
-<p><img src="/2016/11/introducing-stream-processing-in-fsharp//stage.png" alt="Stream Processing Stage"></p>
+
+<p><img src="stage.png" alt="Stream Processing Stage" /></p>
+
 <p>The data <strong>Source</strong> is responsible for injection of events
 into the pipeline. They are the input intergration points, typically they can
 be persistent message queues, logs or subscription feeds.</p>
+
 <p>A sequence of events in the same Source is called <strong>Stream</strong> (thus Stream Processing).
-Streams have <strong>unbounded</strong> nature, which means that the amount 
-of data points is not limited in size or time. There is no &quot;end&quot; of data: events
+Streams have <strong>unbounded</strong> nature, which means that the amount
+of data points is not limited in size or time. There is no &ldquo;end&rdquo; of data: events
 will potentially keep coming as long as the processing application is alive.</p>
+
 <p>The high-level purpose of the <strong>Transformation</strong> is to extract
-value from the events. That&#39;s where the business logic resides, and that&#39;s
+value from the events. That&rsquo;s where the business logic resides, and that&rsquo;s
 where development effort goes to. Transformations can also be refered as Stages,
 Flows, Tasks, Jobs and so on, depending on the context.</p>
+
 <p>The most simple transformation like format conversion can be stateless.
 However, other transformations will often use some kind of <strong>State Store</strong>,
-as a means to</p>
-<ul>
-<li>Aggregate data from multiple events of the same stream</li>
-<li>Correlate events from several streams</li>
-<li>Enrich event data with external lookup data</li>
-</ul>
-<p>Data <strong>Sink</strong> represents the output of the pipeline, the place where the transformed, 
-aggregated and enriched events end up at. </p>
+as a means to
+- Aggregate data from multiple events of the same stream
+- Correlate events from several streams
+- Enrich event data with external lookup data</p>
+
+<p>Data <strong>Sink</strong> represents the output of the pipeline, the place where the transformed,
+aggregated and enriched events end up at.</p>
+
 <p>A Sink can be a database of any kind, which stores the processed data, ready
 to be consumed by user queries and reports.</p>
+
 <p>Another Sink can become a Source for another stream of events. This way
 the series of transformations are sequenced together into <strong>Processing Pipelines</strong>
 (or <strong>Topologies</strong>).</p>
+
 <p>On the high-level, the pipelines can usually be represented as directed graphs,
 with data streams in nodes and transformations in edges:</p>
-<p><img src="/2016/11/introducing-stream-processing-in-fsharp//topology.png" alt="Stream Processing Pipeline"></p>
+
+<p><img src="topology.png" alt="Stream Processing Pipeline" /></p>
+
 <p>In real-world applications, the pipelines can have lots of interconnected
 elements and flow branches. We will start with a simplistic example.</p>
+
 <h2 id="gift-count-pipeline">Gift Count Pipeline</h2>
+
 <p>Word Count is the Hello World and TODO app of the data
-processing world. Here are the reference implementations for 
+processing world. Here are the reference implementations for
 <a href="https://cloud.google.com/dataflow/examples/wordcount-example">Dataflow</a>,
 <a href="https://github.com/apache/flink/blob/master/flink-examples/flink-examples-batch/src/main/java/org/apache/flink/examples/java/wordcount/WordCount.java">Flink</a> and
 <a href="https://github.com/nathanmarz/storm-starter/blob/master/src/jvm/storm/starter/WordCountTopology.java">Storm</a>.</p>
-<p>To make it a bit more fun, we&#39;ll make a Gift Count pipeline out of it. 
+
+<p>To make it a bit more fun, we&rsquo;ll make a Gift Count pipeline out of it.
 The following image summarizes our Gift Count topology:</p>
-<p><img src="/2016/11/introducing-stream-processing-in-fsharp//giftcount.png" alt="Gift Count Pipeline"></p>
-<p>The pipeline consists of one source, one sink and two transformations. 
+
+<p><img src="giftcount.png" alt="Gift Count Pipeline" /></p>
+
+<p>The pipeline consists of one source, one sink and two transformations.
 The input of the pipeline is the source of gift lists (each list is a comma
 separated line of text).</p>
+
 <p>The purpose of the processing is to tokenize gift lists into separate gifts,
 and then count the occurances of each gift in the stream. The output
 is written into a database sink, e.g. a key value store with gifts as keys and
 amounts as values.</p>
-<p>Note that while Split stage is stateless, the Count stage needs to keep some 
+
+<p>Note that while Split stage is stateless, the Count stage needs to keep some
 internal state to be able to aggregate data over multiple entries.</p>
-<p>Let&#39;s start thinking about the implementation. How do we model transformations
+
+<p>Let&rsquo;s start thinking about the implementation. How do we model transformations
 and pipelines in code?</p>
+
 <h2 id="transformations">Transformations</h2>
-<p>Here&#39;s how a transformation is typically represented in <em>Apache Storm</em>, the grand
-daddy of Big Data Stream Processing systems (transformations are called 
+
+<p>Here&rsquo;s how a transformation is typically represented in <em>Apache Storm</em>, the grand
+daddy of Big Data Stream Processing systems (transformations are called
 <em>Bolts</em> in Storm, and code is Java):</p>
-<pre><code class="language-java">public class TokenizerBolt implements IRichBolt {
-    public void execute(Tuple input) {
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#00f">public</span> class TokenizerBolt implements IRichBolt {
+    <span style="color:#00f">public</span> void execute(Tuple input) {
         String wishlist = input.getString(0);
-        for(String gift: wishlist.split(&quot;, &quot;)) {
-            collector.emit(new Values(gift));
+        <span style="color:#00f">for</span>(String gift: wishlist.split(<span style="color:#a31515">&#34;, &#34;</span>)) {
+            collector.emit(<span style="color:#00f">new</span> Values(gift));
         }
         collector.ack(input);
     }
-    // Other code is omitted
-}</code></pre>
+    <span style="color:#008000">// Other code is omitted
+</span><span style="color:#008000"></span>}</code></pre></div>
 <p>Tokenizer is a class which implements a predefined interface with <code>execute</code>
 method in it. The method accepts a container class <code>Tuple</code> from where
 we can extract real data using position-based indexing. Something like a
 <code>DataRow</code> from ADO.NET. The method does not return anything, but instead
 calls an effect-ful method <code>emit</code>, passing a tuple to the next transformation
 in the pipeline.</p>
-<p>Clearly, there is some room for improvement here. We don&#39;t want to put our important
+
+<p>Clearly, there is some room for improvement here. We don&rsquo;t want to put our important
 domain logic into amorphous functions of type <code>Collector -&gt; Tuple -&gt; unit</code>. Here
 is what we can do:</p>
+
 <ul>
 <li>Use strong typing to see what function does based on its signature</li>
 <li>Use pure functions to make them easy to test and reason about</li>
 <li>Use domain-specific types with F# records and ADTs</li>
 </ul>
+
 <p>Our domain is very simple in Gift Count example. Still, we could describe <code>Gift</code>
-type to restrict it to be lowercase, not empty etc. But for the sake of simplisity 
-I&#39;ll limit it to one liner:</p>
-<pre><code class="language-fsharp">type Gift = string</code></pre>
+type to restrict it to be lowercase, not empty etc. But for the sake of simplisity
+I&rsquo;ll limit it to one liner:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Gift</span> = <span style="color:#2b91af">string</span></code></pre></div>
 <p>Now, the type of the first transformation should be <code>string -&gt; Gift list</code>. So,
-our transformation is based on a function </p>
-<pre><code class="language-fsharp">let tokenize (wishlist: string) =
-  wishlist.ToLowerInvariant().Split(&quot;, &quot;)
+our transformation is based on a function</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> tokenize (wishlist: <span style="color:#2b91af">string</span>) =
+  wishlist.ToLowerInvariant().Split(<span style="color:#a31515">&#34;, &#34;</span>)
   |&gt; List.ofArray
-  |&gt; List.map (fun x -&gt; x.Trim())
-  |&gt; List.filter (fun x -&gt; x.Length &gt; 0)</code></pre>
+  |&gt; List.map (<span style="color:#00f">fun</span> x -&gt; x.Trim())
+  |&gt; List.filter (<span style="color:#00f">fun</span> x -&gt; x.Length &gt; 0)</code></pre></div>
 <p>The counting transformation is modeled in a similar way. The base function
-is of type <code>Gift list -&gt; (Gift * int) list</code> and is actually implemented as </p>
-<pre><code class="language-fsharp">let count xs = List.countBy id xs</code></pre>
+is of type <code>Gift list -&gt; (Gift * int) list</code> and is actually implemented as</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> count xs = List.countBy id xs</code></pre></div>
 <p>Instead of using a real database, we will just print the counts to console.
 So the last optional step for our examples will be to print out the counts
 one by one. Here is a helper function:</p>
-<pre><code class="language-fsharp">let print (gift, count) = sprintf &quot;%i %s&quot; count gift</code></pre>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> print (gift, count) = sprintf <span style="color:#a31515">&#34;%i %s&#34;</span> count gift</code></pre></div>
 <p>Now, we can tokenize and count the gifts in a single list. But how do we
-aggregate data over time? Let&#39;s leave this to the pipelines.</p>
+aggregate data over time? Let&rsquo;s leave this to the pipelines.</p>
+
 <h2 id="pipelines">Pipelines</h2>
-<p>Let&#39;s have a look at a definition of a Storm pipeline (in Java):</p>
-<pre><code class="language-java">TopologyBuilder builder = new TopologyBuilder();
-builder.setSpout(&quot;line-reader&quot;, new LineReaderSpout());
-builder.setBolt(&quot;gifts-spitter&quot;, new GiftSpitterBolt()).shuffleGrouping(&quot;line-reader&quot;);
-builder.setBolt(&quot;gift-counter&quot;, new GiftCounterBolt()).shuffleGrouping(&quot;gifts-spitter&quot;);</code></pre>
+
+<p>Let&rsquo;s have a look at a definition of a Storm pipeline (in Java):</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">TopologyBuilder builder = <span style="color:#00f">new</span> TopologyBuilder();
+builder.setSpout(<span style="color:#a31515">&#34;line-reader&#34;</span>, <span style="color:#00f">new</span> LineReaderSpout());
+builder.setBolt(<span style="color:#a31515">&#34;gifts-spitter&#34;</span>, <span style="color:#00f">new</span> GiftSpitterBolt()).shuffleGrouping(<span style="color:#a31515">&#34;line-reader&#34;</span>);
+builder.setBolt(<span style="color:#a31515">&#34;gift-counter&#34;</span>, <span style="color:#00f">new</span> GiftCounterBolt()).shuffleGrouping(<span style="color:#a31515">&#34;gifts-spitter&#34;</span>);</code></pre></div>
 <p>There is a <code>Builder</code> class, which is capable to add Sources (<code>Spouts</code>) and Transformations
-(<code>Bolts</code>) to the pipeline. But again, there&#39;s no type story here: the stages are linked
+(<code>Bolts</code>) to the pipeline. But again, there&rsquo;s no type story here: the stages are linked
 by name, and the types are just implementations of predefined interfaces.</p>
+
 <p>Here is another example of the pipeline, now from <em>Google Dataflow SDK</em> (still Java):</p>
-<pre><code class="language-java">Pipeline
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Pipeline
     .create(options)
-    .apply(TextIO.Read.from(&quot;...&quot;))
-    .apply(ParDo.named(&quot;ExtractGifts&quot;).of(new DoFn&lt;String, String&gt;() {
-         public void processElement(ProcessContext c) { /* Implements tokenizer */ }
-    }))    
-    .apply(Count.&lt;String&gt;perElement())
-    .apply(MapElements.via(new SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
-         public String apply(KV&lt;String, Long&gt; element) { /* Formats results */ }
+    .apply(TextIO.Read.from(<span style="color:#a31515">&#34;...&#34;</span>))
+    .apply(ParDo.named(<span style="color:#a31515">&#34;ExtractGifts&#34;</span>).of(<span style="color:#00f">new</span> DoFn&lt;String, String&gt;() {
+         <span style="color:#00f">public</span> void processElement(ProcessContext c) { <span style="color:#008000">/* Implements tokenizer */</span> }
     }))
-    .apply(TextIO.Write.to(&quot;...&quot;));</code></pre>
+    .apply(Count.&lt;String&gt;perElement())
+    .apply(MapElements.via(<span style="color:#00f">new</span> SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
+         <span style="color:#00f">public</span> String apply(KV&lt;String, Long&gt; element) { <span style="color:#008000">/* Formats results */</span> }
+    }))
+    .apply(TextIO.Write.to(<span style="color:#a31515">&#34;...&#34;</span>));</code></pre></div>
 <p>I consider this to be more descriptive. There is a clear flow of operations chained
 together. The types are visible and checked at compile time.</p>
+
 <p>How would we like to see this pipeline in F#? Our motivation example is going to
 be the same processing applied to a normal F# list of wishlists (strings). The following
 code snippet counts the gifts in wishlists and prints the result:</p>
-<pre><code class="language-fsharp">wishlists
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">wishlists
 |&gt; List.collect tokenize
 |&gt; List.countBy id
 |&gt; List.map print
-|&gt; List.iter (Console.WriteLine)</code></pre>
+|&gt; List.iter (Console.WriteLine)</code></pre></div>
 <p>My goal for the rest of the article will be to define a <code>Flow</code> module which would
 enable me to write a Stream Processing pipeline in the same fashion. Here is the
 target code:</p>
-<pre><code class="language-fsharp">sourceOfWishlists
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">sourceOfWishlists
 |&gt; Flow.collect tokenize
 |&gt; Flow.countBy id
 |&gt; Flow.map print
-|&gt; Flow.connectTo sinkForCounts</code></pre>
-<p>So, how do we implement something like this? Let&#39;s start with clarifying how
+|&gt; Flow.connectTo sinkForCounts</code></pre></div>
+<p>So, how do we implement something like this? Let&rsquo;s start with clarifying how
 Source and Sink can be defined.</p>
+
 <h2 id="source-and-sink">Source and Sink</h2>
+
 <p>We declared the source of a stream to be unbounded, not limited in time
-or event count. </p>
-<p>However, the modern stream processing systems like <em>Flink</em> and <em>Dataflow</em> 
+or event count.</p>
+
+<p>However, the modern stream processing systems like <em>Flink</em> and <em>Dataflow</em>
 (both with ideas from <em>Apache Beam</em>) are trying to sit on two chairs at the same time by declaring
 that bounded data sources are just sub-case of unbounded streams. If your
 goal is to process a fixed batch of data, you could represent it as
 one-by-one sequence of events.</p>
+
 <p>Big Data world has a well known approach when batch processing and real time
 stream processing are done in parallel, with separate tools and separate code base.
 The approach is called <em>Lambda Architecture</em>. Beam is declaring this approach outdated,
 offering a way to reuse streaming code and capacity also for bounded data workloads.</p>
-<p>To follow this modern path, we will declare our <code>Source</code> as following:</p>
-<pre><code class="language-fsharp">type BoundedSource&lt;&#39;T&gt; = unit -&gt; &#39;T seq
-type UnboundedSource&lt;&#39;T&gt; = (&#39;T -&gt; unit) -&gt; unit
 
-type Source&lt;&#39;T&gt; = 
-  | Bounded of BoundedSource&lt;&#39;T&gt;
-  | Unbounded of UnboundedSource&lt;&#39;T&gt;</code></pre>
+<p>To follow this modern path, we will declare our <code>Source</code> as following:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">BoundedSource</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = <span style="color:#2b91af">unit</span> -&gt; <span style="color:#00f">&#39;</span>T seq
+<span style="color:#00f">type</span> <span style="color:#2b91af">UnboundedSource</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = (<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>) -&gt; <span style="color:#2b91af">unit</span>
+
+<span style="color:#00f">type</span> <span style="color:#2b91af">Source</span>&lt;<span style="color:#00f">&#39;</span>T&gt; =
+  | Bounded <span style="color:#00f">of</span> BoundedSource&lt;<span style="color:#00f">&#39;</span>T&gt;
+  | Unbounded <span style="color:#00f">of</span> UnboundedSource&lt;<span style="color:#00f">&#39;</span>T&gt;</code></pre></div>
 <p><code>Source</code> is a generic discriminated union with two cases. <code>Bounded</code> case represents
 a side effect-ful function, which returns a sequence of elements when called.
 The argument of <code>unit</code> is there to delay the processing: we need to declare
 sources long before they start to emit values.</p>
-<p>The <code>Unbounded</code> case is a bit harder to understand. It accepts an action to be 
+
+<p>The <code>Unbounded</code> case is a bit harder to understand. It accepts an action to be
 executed as the argument and returns nothing meaningful (<code>unit</code> again). You will
 see a usage example later.</p>
-<p>The <code>Sink</code> represents an action to happen at the end of pipeline. I&#39;ve made it
+
+<p>The <code>Sink</code> represents an action to happen at the end of pipeline. I&rsquo;ve made it
 a discriminated union too, but with just one case:</p>
-<pre><code class="language-fsharp">type Sink&lt;&#39;T&gt; = | Action of (&#39;T -&gt; unit)</code></pre>
-<p>Now, we should be able to simulate an empty processing pipeline: directly connect 
-a source to a sink. Let&#39;s start with bounded data:</p>
-<pre><code class="language-fsharp">let copyPipeline source sink =
-  match source, sink with
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Sink</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = | Action <span style="color:#00f">of</span> (<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>)</code></pre></div>
+<p>Now, we should be able to simulate an empty processing pipeline: directly connect
+a source to a sink. Let&rsquo;s start with bounded data:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> copyPipeline source sink =
+  <span style="color:#00f">match</span> source, sink <span style="color:#00f">with</span>
   | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
-  | _ -&gt; failwith &quot;Not supported yet&quot;
+  | _ -&gt; failwith <span style="color:#a31515">&#34;Not supported yet&#34;</span>
 
-let gifts = seq [&quot;Ball&quot;; &quot;Train&quot;; &quot;Doll&quot;]
-let giftBoundedSource = (fun() -&gt; gifts) |&gt; Bounded
+<span style="color:#00f">let</span> gifts = seq [<span style="color:#a31515">&#34;Ball&#34;</span>; <span style="color:#a31515">&#34;Train&#34;</span>; <span style="color:#a31515">&#34;Doll&#34;</span>]
+<span style="color:#00f">let</span> giftBoundedSource = (<span style="color:#00f">fun</span>() -&gt; gifts) |&gt; Bounded
 
-let consoleSink = (fun (s: string) -&gt; Console.WriteLine s) |&gt; Action
+<span style="color:#00f">let</span> consoleSink = (<span style="color:#00f">fun</span> (s: <span style="color:#2b91af">string</span>) -&gt; Console.WriteLine s) |&gt; Action
 
-copyPipeline giftBoundedSource consoleSink</code></pre>
-<p>This code will print out all the gift names from the sequence. Now, let&#39;s extend it to
-stream unbounded data. Before we can do that, let&#39;s introduce a helper class:</p>
-<pre><code class="language-fsharp">type Triggered&lt;&#39;T&gt;() = 
-  let subscribers = new List&lt;&#39;T -&gt; unit&gt;()
-  member this.DoNext x =
-    subscribers.ForEach(fun s -&gt; s x)
-  member this.Subscribe = subscribers.Add</code></pre>
+copyPipeline giftBoundedSource consoleSink</code></pre></div>
+<p>This code will print out all the gift names from the sequence. Now, let&rsquo;s extend it to
+stream unbounded data. Before we can do that, let&rsquo;s introduce a helper class:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Triggered</span>&lt;<span style="color:#00f">&#39;</span>T&gt;() =
+  <span style="color:#00f">let</span> subscribers = <span style="color:#00f">new</span> List&lt;<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>&gt;()
+  <span style="color:#00f">member</span> this.DoNext x =
+    subscribers.ForEach(<span style="color:#00f">fun</span> s -&gt; s x)
+  <span style="color:#00f">member</span> this.Subscribe = subscribers.Add</code></pre></div>
 <p>An instance of such class keeps a mutable list of subscribers. Subscribers are
 added by calling <code>Subscribe</code> method. Someone else can then call <code>DoNext</code> method,
 and each subscriber will get an item every time.</p>
-<p>Here&#39;s how we can use it for unbounded data processing:</p>
-<pre><code class="language-fsharp">let copyPipeline source sink =
-  match source, sink with
+
+<p>Here&rsquo;s how we can use it for unbounded data processing:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> copyPipeline source sink =
+  <span style="color:#00f">match</span> source, sink <span style="color:#00f">with</span>
   | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
   | Unbounded ub, Action a -&gt; ub a
 
-let consoleSource = new Triggered&lt;string&gt;()
-let unboundedSource = consoleSource.Subscribe |&gt; Unbounded
+<span style="color:#00f">let</span> consoleSource = <span style="color:#00f">new</span> Triggered&lt;<span style="color:#2b91af">string</span>&gt;()
+<span style="color:#00f">let</span> unboundedSource = consoleSource.Subscribe |&gt; Unbounded
 copyPipeline unboundedSource consoleSink
 
-Seq.initInfinite (fun _ -&gt; Console.ReadLine())
-|&gt; Seq.takeWhile ((&lt;&gt;) &quot;q&quot;)
-|&gt; Seq.iter consoleSource.DoNext</code></pre>
-<p>This little program will echo whatever you enter into the console until you type 
+Seq.initInfinite (<span style="color:#00f">fun</span> _ -&gt; Console.ReadLine())
+|&gt; Seq.takeWhile ((&lt;&gt;) <span style="color:#a31515">&#34;q&#34;</span>)
+|&gt; Seq.iter consoleSource.DoNext</code></pre></div>
+<p>This little program will echo whatever you enter into the console until you type
 <code>q</code> to quit. That is an example of unbounded data: you can type as long as
 you want, there is no hard limit.</p>
-<p>Here&#39;s how it works:</p>
+
+<p>Here&rsquo;s how it works:</p>
+
 <ol>
 <li><code>Triggered</code> source is created.</li>
 <li>Unbounded source is declared by subscribing to the trigger.</li>
@@ -364,103 +545,113 @@ you want, there is no hard limit.</p>
 <li>Every time a new line is entered, <code>DoNext</code> method of the trigger is called
 and the data flows to the sink.</li>
 </ol>
+
 <p>Stop here and make sure you understand the example before going further.</p>
+
 <h2 id="flow">Flow</h2>
-<p>Now it&#39;s time to implement the contracts for the flow that we defined
+
+<p>Now it&rsquo;s time to implement the contracts for the flow that we defined
 in Gift Count example. The contract consists of two parts. The first part
 is a generic interface which defines all the operations that we need:</p>
-<pre><code class="language-fsharp">type Runnable = unit -&gt; unit
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Runnable</span> = <span style="color:#2b91af">unit</span> -&gt; <span style="color:#2b91af">unit</span>
 
-type IFlow&lt;&#39;a&gt; =
-  abstract member Map&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b&gt;
-  abstract member Collect&lt;&#39;b&gt; : (&#39;a -&gt; &#39;b list) -&gt; IFlow&lt;&#39;b&gt;
-  abstract member CountBy&lt;&#39;b when &#39;b: equality&gt; : (&#39;a -&gt; &#39;b) -&gt; IFlow&lt;&#39;b * int&gt;
-  abstract member To: Sink&lt;&#39;a&gt; -&gt; Runnable</code></pre>
+<span style="color:#00f">type</span> <span style="color:#2b91af">IFlow</span>&lt;<span style="color:#00f">&#39;</span>a&gt; =
+  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> Map&lt;<span style="color:#00f">&#39;</span>b&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
+  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> Collect&lt;<span style="color:#00f">&#39;</span>b&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b <span style="color:#2b91af">list</span>) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
+  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> CountBy&lt;<span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b * int&gt;
+  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> To: Sink&lt;<span style="color:#00f">&#39;</span>a&gt; -&gt; Runnable</code></pre></div>
 <p>Then we define a module which is just a wrapper around the interface to
 enable F#-style API:</p>
-<pre><code class="language-fsharp">module Flow =
-  let map&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO) (flow: IFlow&lt;&#39;TI&gt;) = flow.Map f
-  let collect&lt;&#39;TI, &#39;TO&gt; (f: &#39;TI -&gt; &#39;TO list) (flow: IFlow&lt;&#39;TI&gt;) = flow.Collect f
-  let countBy&lt;&#39;T, &#39;TK when &#39;TK: equality&gt; (f: &#39;T -&gt; &#39;TK) (flow: IFlow&lt;&#39;T&gt;) = flow.CountBy f
-  let connectTo&lt;&#39;T&gt; sink (flow: IFlow&lt;&#39;T&gt;) = flow.To sink
-  let run (r: Runnable) = r()</code></pre>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">module</span> Flow =
+  <span style="color:#00f">let</span> map&lt;<span style="color:#00f">&#39;</span>TI, <span style="color:#00f">&#39;</span>TO&gt; (f: <span style="color:#00f">&#39;</span>TI -&gt; <span style="color:#00f">&#39;</span>TO) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>TI&gt;) = flow.Map f
+  <span style="color:#00f">let</span> collect&lt;<span style="color:#00f">&#39;</span>TI, <span style="color:#00f">&#39;</span>TO&gt; (f: <span style="color:#00f">&#39;</span>TI -&gt; <span style="color:#00f">&#39;</span>TO <span style="color:#2b91af">list</span>) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>TI&gt;) = flow.Collect f
+  <span style="color:#00f">let</span> countBy&lt;<span style="color:#00f">&#39;</span>T, <span style="color:#00f">&#39;</span>TK <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>TK: equality&gt; (f: <span style="color:#00f">&#39;</span>T -&gt; <span style="color:#00f">&#39;</span>TK) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>T&gt;) = flow.CountBy f
+  <span style="color:#00f">let</span> connectTo&lt;<span style="color:#00f">&#39;</span>T&gt; sink (flow: IFlow&lt;<span style="color:#00f">&#39;</span>T&gt;) = flow.To sink
+  <span style="color:#00f">let</span> run (r: Runnable) = r()</code></pre></div>
 <p>Then, we just need an implementation of <code>IFlow</code> and a factory method to create
-an initial instance of flow given a data source. </p>
-<p>Now I&#39;d like to emphasize that there are multiple possible implementations 
+an initial instance of flow given a data source.</p>
+
+<p>Now I&rsquo;d like to emphasize that there are multiple possible implementations
 of <code>IFlow</code> depending on the required properties for the pipeline. They might make
 use of different libraries or frameworks, or be a naive simple implementation like
-the one below, suitable for modeling and testing. </p>
-<p>In fact, one of my implementations doesn&#39;t run the pipeline, but instead uses reflection
+the one below, suitable for modeling and testing.</p>
+
+<p>In fact, one of my implementations doesn&rsquo;t run the pipeline, but instead uses reflection
 to build a visual graph of processing stages, to be used for documentation and discussion
 purposes.</p>
+
 <p>We will have a look at more advanced implementations in the further articles, but
 for now here is a naive version:</p>
-<pre><code class="language-fsharp">module Runner =
-  let private mapTransform map = function
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">module</span> Runner =
+  <span style="color:#00f">let</span> private mapTransform map = <span style="color:#00f">function</span>
     | Bounded bs -&gt; bs &gt;&gt; Seq.map map |&gt; Bounded
     | Unbounded us -&gt;
-      fun subscriber -&gt; map &gt;&gt; subscriber |&gt; us
+      <span style="color:#00f">fun</span> subscriber -&gt; map &gt;&gt; subscriber |&gt; us
       |&gt; Unbounded
 
-  let private collectTransform mapToMany = function
+  <span style="color:#00f">let</span> private collectTransform mapToMany = <span style="color:#00f">function</span>
     | Bounded bs -&gt; bs &gt;&gt; Seq.map mapToMany &gt;&gt; Seq.concat |&gt; Bounded
     | Unbounded us -&gt;
-      fun subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
+      <span style="color:#00f">fun</span> subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
       |&gt; Unbounded
 
-  let private countByTransform&lt;&#39;a, &#39;b when &#39;b: equality&gt; (getKey: &#39;a -&gt; &#39;b) source =
-    let state = new Dictionary&lt;&#39;b, int&gt;()
-    let addItem i = 
-      let key = getKey i
-      let value = if state.ContainsKey key then state.[key] else 0
-      let newValue = value + 1
+  <span style="color:#00f">let</span> private countByTransform&lt;<span style="color:#00f">&#39;</span>a, <span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt; (getKey: <span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) source =
+    <span style="color:#00f">let</span> state = <span style="color:#00f">new</span> Dictionary&lt;<span style="color:#00f">&#39;</span>b, int&gt;()
+    <span style="color:#00f">let</span> addItem i =
+      <span style="color:#00f">let</span> key = getKey i
+      <span style="color:#00f">let</span> value = <span style="color:#00f">if</span> state.ContainsKey key <span style="color:#00f">then</span> state.[key] <span style="color:#00f">else</span> 0
+      <span style="color:#00f">let</span> newValue = value + 1
       state.[key] &lt;- newValue
       (key, newValue)
 
-    match source with
+    <span style="color:#00f">match</span> source <span style="color:#00f">with</span>
     | Bounded bs -&gt; bs &gt;&gt; Seq.countBy getKey |&gt; Bounded
-    | Unbounded us -&gt; (fun s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
+    | Unbounded us -&gt; (<span style="color:#00f">fun</span> s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
 
-  let private stage source transform sink () =
-    match transform source, sink with
+  <span style="color:#00f">let</span> private stage source transform sink () =
+    <span style="color:#00f">match</span> transform source, sink <span style="color:#00f">with</span>
     | Bounded bs, Action a -&gt; bs() |&gt; Seq.iter a
     | Unbounded us, Action a -&gt; us a
 
-  type private Flow&lt;&#39;a&gt;(source: Source&lt;&#39;a&gt;, connect: Sink&lt;&#39;a&gt; -&gt; Runnable) =
-    member this.Apply&lt;&#39;b&gt; t = new Flow&lt;&#39;b&gt;(t source, stage source t) :&gt; IFlow&lt;&#39;b&gt;
+  <span style="color:#00f">type</span> <span style="color:#2b91af">private</span> Flow&lt;<span style="color:#00f">&#39;</span>a&gt;(source: Source&lt;<span style="color:#00f">&#39;</span>a&gt;, connect: Sink&lt;<span style="color:#00f">&#39;</span>a&gt; -&gt; Runnable) =
+    <span style="color:#00f">member</span> this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; t = <span style="color:#00f">new</span> Flow&lt;<span style="color:#00f">&#39;</span>b&gt;(t source, stage source t) :&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
 
-    interface IFlow&lt;&#39;a&gt; with
-      member this.Map&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (mapTransform map)
+    <span style="color:#00f">interface</span> IFlow&lt;<span style="color:#00f">&#39;</span>a&gt; <span style="color:#00f">with</span>
+      <span style="color:#00f">member</span> this.Map&lt;<span style="color:#00f">&#39;</span>b&gt; map = this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; (mapTransform map)
 
-      member this.Collect&lt;&#39;b&gt; map = this.Apply&lt;&#39;b&gt; (collectTransform map)
+      <span style="color:#00f">member</span> this.Collect&lt;<span style="color:#00f">&#39;</span>b&gt; map = this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; (collectTransform map)
 
-      member this.CountBy&lt;&#39;b when &#39;b: equality&gt;(getKey) = 
-        this.Apply&lt;&#39;b * int&gt; (countByTransform&lt;&#39;a, &#39;b&gt; getKey)
+      <span style="color:#00f">member</span> this.CountBy&lt;<span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt;(getKey) =
+        this.Apply&lt;<span style="color:#00f">&#39;</span>b * int&gt; (countByTransform&lt;<span style="color:#00f">&#39;</span>a, <span style="color:#00f">&#39;</span>b&gt; getKey)
 
-      member this.To(sink) = connect(sink)
+      <span style="color:#00f">member</span> this.To(sink) = connect(sink)
 
-  let from&lt;&#39;a&gt; source =
-    new Flow&lt;&#39;a&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;&#39;a&gt;</code></pre>
-<p>The implementation details are not that important at the moment (even though it&#39;s
-just 37 lines of code), so I&#39;ll just proceed to the pipeline definition:</p>
-<pre><code class="language-fsharp">unboundedSource                // e.g. same console source as before
-|&gt; Runner.from                 // create Runner implementation of IFlow
-|&gt; Flow.collect tokenize
+  <span style="color:#00f">let</span> from&lt;<span style="color:#00f">&#39;</span>a&gt; source =
+    <span style="color:#00f">new</span> Flow&lt;<span style="color:#00f">&#39;</span>a&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;<span style="color:#00f">&#39;</span>a&gt;</code></pre></div>
+<p>The implementation details are not that important at the moment (even though it&rsquo;s
+just 37 lines of code), so I&rsquo;ll just proceed to the pipeline definition:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">unboundedSource                <span style="color:#008000">// e.g. same console source as before
+</span><span style="color:#008000"></span>|&gt; Runner.from                 <span style="color:#008000">// create Runner implementation of IFlow
+</span><span style="color:#008000"></span>|&gt; Flow.collect tokenize
 |&gt; Flow.countBy id
 |&gt; Flow.map print
-|&gt; Flow.connectTo consoleSink  // connect to the Sink
-|&gt; Flow.run                    // start listening for events</code></pre>
-<p>Here you can find 
+|&gt; Flow.connectTo consoleSink  <span style="color:#008000">// connect to the Sink
+</span><span style="color:#008000"></span>|&gt; Flow.run                    // start listening <span style="color:#00f">for</span> events</code></pre></div>
+<p>Here you can find
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/streamprocessing/GiftCount.fs">the full code of the Gift Count example</a>.</p>
+
 <h2 id="conclusion">Conclusion</h2>
-<p>In this article, we started reasoning about low-latency processing 
+
+<p>In this article, we started reasoning about low-latency processing
 pipelines from the domain logic point of view. We
 tried to reuse well known F# idioms like ADTs and HOFs
 to show how stream processing is not much different from other types
 of applications.</p>
+
 <p>Although this post is quite long by now, we just scratched the surface
-of the stream processing. Here are some focus areas for the 
+of the stream processing. Here are some focus areas for the
 follow-ups:</p>
+
 <ul>
 <li>More complex pipeline topologies</li>
 <li>State management</li>
@@ -471,99 +662,114 @@ follow-ups:</p>
 <li>Documentation and formal analysis</li>
 </ul>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/stream-processing">Stream Processing</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/fsharp">F#</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/advent-calendar">Advent Calendar</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/data-processing">Data Processing</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2016/11/introducing-stream-processing-in-fsharp//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/stream-processing/'>Stream Processing</a>, <a href='/tags/f#/'>F#</a>, <a href='/tags/f#-advent-calendar/'>F# Advent Calendar</a>, <a href='/tags/data-processing/'>Data Processing</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2016/11/introducing-stream-processing-in-fsharp/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'Introducing Stream Processing in F#';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

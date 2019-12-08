@@ -1,298 +1,452 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Azure Function Triggered by Azure Event Grid | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="Azure Function Triggered by Azure Event Grid" />
+	<meta property="og:description" content="Update: I missed the elephant in the room. There actually exists a specialized trigger for Event Grid binding. In the portal, just select Experimental in Scenario drop down while creating the function." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid/" />
 
-    <title>Azure Function Triggered by Azure Event Grid | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="Azure Function Triggered by Azure Event Grid"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="Azure Function Triggered by Azure Event Grid" />
-    <meta property="og:url" content="https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid/" />
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid/teaser.png" />
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Azure Functions" />
+	
+	<meta property="article:tag" content="Azure Event Grid" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid/teaser.png" />
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="Azure Function Triggered by Azure Event Grid"/>
+	<meta name="twitter:description" content="Update: I missed the elephant in the room. There actually exists a specialized trigger for Event Grid binding. In the portal, just select Experimental in Scenario drop down while creating the function."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Oct 5th, 2017</div>
-    
-    <h1>Azure Function Triggered by Azure Event Grid</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p><em>Update: I missed the elephant in the room. There actually exists a specialized
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Azure%20Function%20Triggered%20by%20Azure%20Event%20Grid%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2017%2f10%2fazure-function-triggered-by-azure-event-grid%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Azure Function Triggered by Azure Event Grid</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Oct 5, 2017
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 3 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p><em>Update: I missed the elephant in the room. There actually exists a specialized
 trigger for Event Grid binding. In the portal, just select <code>Experimental</code>
-in <code>Scenario</code> drop down while creating the function. In precompiled 
+in <code>Scenario</code> drop down while creating the function. In precompiled
 functions, reference <code>Microsoft.Azure.WebJobs.Extensions.EventGrid</code> NuGet
 package.</em></p>
+
 <p><em>The rest of the article describes my original approach to trigger an
-Azure Function from <a href="https://azure.microsoft.com/en-us/services/event-grid/">Azure Event Grid</a> 
+Azure Function from <a href="https://azure.microsoft.com/en-us/services/event-grid/">Azure Event Grid</a>
 with generic Web Hook trigger.</em></p>
+
 <p>Here are the steps to follow:</p>
+
 <h2 id="create-a-function-with-webhook-trigger">Create a Function with Webhook Trigger</h2>
-<p>I&#39;m not aware of a specialized trigger type for Event Grid, so
+
+<p>I&rsquo;m not aware of a specialized trigger type for Event Grid, so
 I decided to use Generic Webhook trigger (which is essentially an
 HTTP trigger).</p>
-<p>I used the Azure Portal to generate a function, so here is the 
+
+<p>I used the Azure Portal to generate a function, so here is the
 <code>function.json</code> that I got:</p>
-<pre><code class="language-json">{
-  &quot;bindings&quot;: [
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
+  &#34;bindings&#34;: [
     {
-      &quot;type&quot;: &quot;httpTrigger&quot;,
-      &quot;direction&quot;: &quot;in&quot;,
-      &quot;webHookType&quot;: &quot;genericJson&quot;,
-      &quot;name&quot;: &quot;req&quot;
+      &#34;type&#34;: <span style="color:#a31515">&#34;httpTrigger&#34;</span>,
+      &#34;direction&#34;: <span style="color:#a31515">&#34;in&#34;</span>,
+      &#34;webHookType&#34;: <span style="color:#a31515">&#34;genericJson&#34;</span>,
+      &#34;name&#34;: <span style="color:#a31515">&#34;req&#34;</span>
     },
     {
-      &quot;type&quot;: &quot;http&quot;,
-      &quot;direction&quot;: &quot;out&quot;,
-      &quot;name&quot;: &quot;res&quot;
+      &#34;type&#34;: <span style="color:#a31515">&#34;http&#34;</span>,
+      &#34;direction&#34;: <span style="color:#a31515">&#34;out&#34;</span>,
+      &#34;name&#34;: <span style="color:#a31515">&#34;res&#34;</span>
     }
   ],
-  &quot;disabled&quot;: false
-}</code></pre>
+  &#34;disabled&#34;: <span style="color:#00f">false</span>
+}</code></pre></div>
 <p>For precompiled functions, just decorate it with <code>HttpTriggerAttribute</code> with
 POST method:</p>
-<pre><code class="language-csharp">public static Task&lt;HttpResponseMessage&gt; Run(
-    [HttpTrigger(AuthorizationLevel.Function, &quot;post&quot;)] HttpRequestMessage req)</code></pre>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> Task&lt;HttpResponseMessage&gt; Run(
+    [HttpTrigger(AuthorizationLevel.Function, &#34;post&#34;)] HttpRequestMessage req)
+</code></pre></div>
 <h2 id="parse-the-payload">Parse the Payload</h2>
+
 <p>Events from Event Grid will arrive in a specific predefined JSON format.
 Here is an example of events to expect:</p>
-<pre><code class="language-json">[{
-  &quot;id&quot;: &quot;0001&quot;,
-  &quot;eventType&quot;: &quot;MyHelloWorld&quot;,
-  &quot;subject&quot;: &quot;Hello World!&quot;,
-  &quot;eventTime&quot;: &quot;2017-10-05T08:53:07&quot;,
-  &quot;data&quot;: {
-    &quot;hello&quot;: &quot;world&quot;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">[{
+  &#34;id&#34;: <span style="color:#a31515">&#34;0001&#34;</span>,
+  &#34;eventType&#34;: <span style="color:#a31515">&#34;MyHelloWorld&#34;</span>,
+  &#34;subject&#34;: <span style="color:#a31515">&#34;Hello World!&#34;</span>,
+  &#34;eventTime&#34;: <span style="color:#a31515">&#34;2017-10-05T08:53:07&#34;</span>,
+  &#34;data&#34;: {
+    &#34;hello&#34;: <span style="color:#a31515">&#34;world&#34;</span>
   },
-  &quot;topic&quot;: &quot;/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1&quot;
-}]</code></pre>
+  &#34;topic&#34;: <span style="color:#a31515">&#34;/SUBSCRIPTIONS/GUID/RESOURCEGROUPS/NAME/PROVIDERS/MICROSOFT.EVENTGRID/TOPICS/MY-EVENTGRID-TOPIC1&#34;</span>
+}]</code></pre></div>
 <p>To be able to parse those data more easily, I defined a C# class to deserialize
 JSON to:</p>
-<pre><code class="language-csharp">public class GridEvent
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">GridEvent</span>
 {
-    public string Id { get; set; }
-    public string EventType { get; set; }
-    public string Subject { get; set; }
-    public DateTime EventTime { get; set; }
-    public Dictionary&lt;string, string&gt; Data { get; set; }
-    public string Topic { get; set; }
-}</code></pre>
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Id { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> EventType { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Subject { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+    <span style="color:#00f">public</span> DateTime EventTime { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+    <span style="color:#00f">public</span> Dictionary&lt;<span style="color:#2b91af">string</span>, <span style="color:#2b91af">string</span>&gt; Data { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Topic { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+}
+</code></pre></div>
 <p>Now, the function can read the events (note, that they are sent in arrays)
 from the body of POST request:</p>
-<pre><code class="language-csharp">public static async Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req, TraceWriter log)
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task&lt;HttpResponseMessage&gt; Run(HttpRequestMessage req, TraceWriter log)
 {
-    string jsonContent = await req.Content.ReadAsStringAsync();
-    var events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
+    <span style="color:#2b91af">string</span> jsonContent = <span style="color:#00f">await</span> req.Content.ReadAsStringAsync();
+    <span style="color:#2b91af">var</span> events = JsonConvert.DeserializeObject&lt;GridEvent[]&gt;(jsonContent);
 
-    // do something with events
-
-    return req.CreateResponse(HttpStatusCode.OK);
-}</code></pre>
+    <span style="color:#008000">// do something with events
+</span><span style="color:#008000"></span>
+    <span style="color:#00f">return</span> req.CreateResponse(HttpStatusCode.OK);
+}
+</code></pre></div>
 <h2 id="validate-the-endpoint">Validate the Endpoint</h2>
-<p>To prevent you from sending events to endpoints that you don&#39;t own, Event
+
+<p>To prevent you from sending events to endpoints that you don&rsquo;t own, Event
 Grid requires each subsriber to validate itself. For this purpose, Event
-Grid will send events of the special type <code>SubscriptionValidation</code>. </p>
+Grid will send events of the special type <code>SubscriptionValidation</code>.</p>
+
 <p>The validation request will contain a code, which we need to echo back in
-200-OK HTTP response. </p>
+200-OK HTTP response.</p>
+
 <p>Here is a small piece of code to do just that:</p>
-<pre><code class="language-csharp">if (req.Headers.GetValues(&quot;Aeg-Event-Type&quot;).FirstOrDefault() == &quot;SubscriptionValidation&quot;)
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">if</span> (req.Headers.GetValues(<span style="color:#a31515">&#34;Aeg-Event-Type&#34;</span>).FirstOrDefault() == <span style="color:#a31515">&#34;SubscriptionValidation&#34;</span>)
 {
-    var code = events[0].Data[&quot;validationCode&quot;];
-    return req.CreateResponse(HttpStatusCode.OK,
-        new { validationResponse = code });
-}</code></pre>
+    <span style="color:#2b91af">var</span> code = events[0].Data[<span style="color:#a31515">&#34;validationCode&#34;</span>];
+    <span style="color:#00f">return</span> req.CreateResponse(HttpStatusCode.OK,
+        <span style="color:#00f">new</span> { validationResponse = code });
+}
+</code></pre></div>
 <p>The function is ready!</p>
+
 <h2 id="create-a-custom-event-grid-topic">Create a Custom Event Grid Topic</h2>
+
 <p>To test it out, go to the portal and create a custom Event Grid topic.
 Then click on Add Event Subscription button, give it a name and copy paste
 the function URL (including key) to Subscriber Endpoint field:</p>
-<p><img src="/2017/10/azure-function-triggered-by-azure-event-grid//function-url.png" alt="Azure Function URL"></p>
-<p><img src="/2017/10/azure-function-triggered-by-azure-event-grid//event-subscription.png" alt="Event Grid Subscription"></p>
+
+<p><img src="function-url.png" alt="Azure Function URL" /></p>
+
+<p><img src="event-subscription.png" alt="Event Grid Subscription" /></p>
+
 <p>Creating a subscription will immediately trigger a validation request to
 your function, so you should see one invocation in the logs.</p>
+
 <h2 id="send-custom-events">Send Custom Events</h2>
+
 <p>Now, go to your favorite HTTP client (curl, Postman, etc) and send a sample
 event to check how the whole setup works:</p>
-<pre><code class="language-http">POST /api/events HTTP/1.1
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-http" data-lang="http">POST /api/events <span style="color:#00f">HTTP</span>/1.1
 Host: &lt;your-eventgrid-topic&gt;.westus2-1.eventgrid.azure.net
 aeg-sas-key: &lt;key&gt;
 Content-Type: application/json
 
 [{
-  &quot;id&quot;: &quot;001&quot;,
-  &quot;eventType&quot;: &quot;MyHelloWorld&quot;,
-  &quot;subject&quot;: &quot;Hello World!&quot;,
-  &quot;eventTime&quot;: &quot;2017-10-05T08:53:07&quot;,
-  &quot;data&quot;: {
-    &quot;hello&quot;: &quot;world&quot;
+  &#34;id&#34;: <span style="color:#a31515">&#34;001&#34;</span>,
+  &#34;eventType&#34;: <span style="color:#a31515">&#34;MyHelloWorld&#34;</span>,
+  &#34;subject&#34;: <span style="color:#a31515">&#34;Hello World!&#34;</span>,
+  &#34;eventTime&#34;: <span style="color:#a31515">&#34;2017-10-05T08:53:07&#34;</span>,
+  &#34;data&#34;: {
+    &#34;hello&#34;: <span style="color:#a31515">&#34;world&#34;</span>
   }
-}]</code></pre>
+}]</code></pre></div>
 <p>Obviously, adjust the endpoint and key based on the data from the portal.</p>
-<p>You should get a 200-OK back and then see your event in Azure Function 
+
+<p>You should get a 200-OK back and then see your event in Azure Function
 invocation logs.</p>
+
 <p>Have fun!</p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-functions">Azure Functions</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-event-grid">Azure Event Grid</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2017/10/azure-function-triggered-by-azure-event-grid//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/azure-event-grid/'>Azure Event Grid</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2017/10/azure-function-triggered-by-azure-event-grid/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'Azure Function Triggered by Azure Event Grid';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

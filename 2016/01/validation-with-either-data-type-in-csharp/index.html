@@ -1,303 +1,446 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Validation with Either data type in C# | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="Validation with Either data type in C#" />
+	<meta property="og:description" content="In this article we will employ a functional monadic concept Either to make validation code more expressive and easier to maintain." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2016/01/validation-with-either-data-type-in-csharp/" />
 
-    <title>Validation with Either data type in C# | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="Validation with Either data type in C#"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="Validation with Either data type in C#" />
-    <meta property="og:url" content="https://mikhail.io/2016/01/validation-with-either-data-type-in-csharp/" />
+	
+	
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="Functional Programming" />
+	
+	<meta property="article:tag" content="Clean Code" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary"/>
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="Validation with Either data type in C#"/>
+	<meta name="twitter:description" content="In this article we will employ a functional monadic concept Either to make validation code more expressive and easier to maintain."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Jan 6th, 2016</div>
-    
-    <h1>Validation with Either data type in C#</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Validation%20with%20Either%20data%20type%20in%20C%23%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2016%2f01%2fvalidation-with-either-data-type-in-csharp%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Validation with Either data type in C#</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Jan 6, 2016
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 4 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
 code more expressive and easier to maintain.</p>
-<h2 id="problem">Problem</h2>
-<p>Let&#39;s say we get a request from some client code and we need to check if this
-request is actually valid. If it&#39;s not valid, we want to make a detailed description
-of the problems that we identified. If it is valid, we want to produce a response
-about the successful acceptance of the request. Let&#39;s define the classes:</p>
-<pre><code class="language-csharp">public class Request { ... }
-public class Response { ... }
-public class ValidationError { ... }</code></pre>
-<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
-or <code>ValidationError</code>. Let&#39;s look at some possible solutions.</p>
-<h2 id="throw-an-exception">Throw an exception</h2>
-<p>Validation <em>error</em> sounds like it could be an exception:</p>
-<pre><code class="language-csharp">public Response Validate(Request r)
-{
-   if (!Valid(r))
-       throw new ValidationException(new ValidationError(...));
 
-   return new Response(r);
-}</code></pre>
+<h2 id="problem">Problem</h2>
+
+<p>Let&rsquo;s say we get a request from some client code and we need to check if this
+request is actually valid. If it&rsquo;s not valid, we want to make a detailed description
+of the problems that we identified. If it is valid, we want to produce a response
+about the successful acceptance of the request. Let&rsquo;s define the classes:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Request</span> { ... }
+<span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Response</span> { ... }
+<span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ValidationError</span> { ... }
+</code></pre></div>
+<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
+or <code>ValidationError</code>. Let&rsquo;s look at some possible solutions.</p>
+
+<h2 id="throw-an-exception">Throw an exception</h2>
+
+<p>Validation <em>error</em> sounds like it could be an exception:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> Response Validate(Request r)
+{
+   <span style="color:#00f">if</span> (!Valid(r))
+       <span style="color:#00f">throw</span> <span style="color:#00f">new</span> ValidationException(<span style="color:#00f">new</span> ValidationError(...));
+
+   <span style="color:#00f">return</span> <span style="color:#00f">new</span> Response(r);
+}
+</code></pre></div>
 <p>This approach is really bad though. You have to declare a special exception
 class to hold the validation error. But even worse, exception handling is not
-explicit - you don&#39;t see the exception type when you look at method signature.
+explicit - you don&rsquo;t see the exception type when you look at method signature.
 Client processing code is going to be messed up because of exception handling.
 Never use exceptions for your business logic flow.</p>
+
 <h2 id="output-parameter">Output parameter</h2>
+
 <p>We could make an output parameter of <code>ValidationError</code> type:</p>
-<pre><code class="language-csharp">public Response Validate(Request r, out ValidationError error)
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> Response Validate(Request r, <span style="color:#00f">out</span> ValidationError error)
 {
-    if (Valid(r))
-    { 
-        error = new ValidationError(...);
-        return null;
+    <span style="color:#00f">if</span> (Valid(r))
+    {
+        error = <span style="color:#00f">new</span> ValidationError(...);
+        <span style="color:#00f">return</span> <span style="color:#00f">null</span>;
     }
 
-    error = null;
-    return new Response(r);
-}</code></pre>
-<p>Now the interface is more explicit: client won&#39;t be able to completely ignore
+    error = <span style="color:#00f">null</span>;
+    <span style="color:#00f">return</span> <span style="color:#00f">new</span> Response(r);
+}
+</code></pre></div>
+<p>Now the interface is more explicit: client won&rsquo;t be able to completely ignore
 the fact that an error is possible. But output parameters are not really
 easy to use in C#, especially in fluent-style client code. Moreover, we are
 using nulls as a way to represent missing object, which is a smell by itself,
 because nulls are not explicit. Never use nulls in your business logic.</p>
+
 <h2 id="return-the-combined-result">Return the combined result</h2>
-<p>We could declare a container class which would keep both <code>Response</code> and 
+
+<p>We could declare a container class which would keep both <code>Response</code> and
 <code>ValidationError</code>, and then return it from the method.</p>
-<pre><code class="language-csharp">public class Both&lt;TData, TError&gt;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Both</span>&lt;TData, TError&gt;
 {
-    public TData Data { get; set; }
-    public TErrro Error { get; set; }
+    <span style="color:#00f">public</span> TData Data { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+    <span style="color:#00f">public</span> TErrro Error { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
 ...
-public Both&lt;Response, ValidationError&gt; Validate(Request r)
+<span style="color:#00f">public</span> Both&lt;Response, ValidationError&gt; Validate(Request r)
 {
-    return Valid(r) 
-        ? new Both&lt;Response, ValidationError&gt; { Data = new Response(r) }
-        : new Both&lt;Response, ValidationError&gt; { Error = new ValidationError(...) };
-}</code></pre>
-<p>Looks much nicer, we are getting there. Now it&#39;s a pure function with input
+    <span style="color:#00f">return</span> Valid(r)
+        ? <span style="color:#00f">new</span> Both&lt;Response, ValidationError&gt; { Data = <span style="color:#00f">new</span> Response(r) }
+        : <span style="color:#00f">new</span> Both&lt;Response, ValidationError&gt; { Error = <span style="color:#00f">new</span> ValidationError(...) };
+}
+</code></pre></div>
+<p>Looks much nicer, we are getting there. Now it&rsquo;s a pure function with input
 and output parameters, but we still use null for result state representation.
-Let&#39;s see how we can solve it with <strong>Either</strong> data structure.</p>
+Let&rsquo;s see how we can solve it with <strong>Either</strong> data structure.</p>
+
 <h2 id="introducing-either">Introducing Either</h2>
-<p>Instead of returning <code>Both</code> with nullable properties, let&#39;s return <code>Either</code> 
+
+<p>Instead of returning <code>Both</code> with nullable properties, let&rsquo;s return <code>Either</code>
 with just one of them. When constructing an object, you can specify either
-a &#39;left&#39; or a &#39;right&#39; argument, but not both.</p>
-<pre><code class="language-csharp">public class Either&lt;TL, TR&gt;
+a &lsquo;left&rsquo; or a &lsquo;right&rsquo; argument, but not both.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Either</span>&lt;TL, TR&gt;
 {
-    private readonly TL left;
-    private readonly TR right;
-    private readonly bool isLeft;
+    <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> TL left;
+    <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> TR right;
+    <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> <span style="color:#2b91af">bool</span> isLeft;
 
-    public Either(TL left)
+    <span style="color:#00f">public</span> Either(TL left)
     {
-        this.left = left;
-        this.isLeft = true;
+        <span style="color:#00f">this</span>.left = left;
+        <span style="color:#00f">this</span>.isLeft = <span style="color:#00f">true</span>;
     }
 
-    public Either(TR right)
+    <span style="color:#00f">public</span> Either(TR right)
     {
-        this.right = right;
-        this.isLeft = false;
+        <span style="color:#00f">this</span>.right = right;
+        <span style="color:#00f">this</span>.isLeft = <span style="color:#00f">false</span>;
     }
-}</code></pre>
+}
+</code></pre></div>
 <p>Now, the main difference is in how the client uses it. There are no properties
 to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
-<pre><code class="language-csharp">public T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
-    =&gt; this.isLeft ? leftFunc(this.left) : rightFunc(this.right);</code></pre>
-<p>That&#39;s the concept of pattern matching implemented in C# world. If a left value 
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
+    =&gt; <span style="color:#00f">this</span>.isLeft ? leftFunc(<span style="color:#00f">this</span>.left) : rightFunc(<span style="color:#00f">this</span>.right);
+</code></pre></div>
+<p>That&rsquo;s the concept of pattern matching implemented in C# world. If a left value
 is specified, <code>Match</code> will return the result of the left function, otherwise the result
 of the right function.</p>
+
 <p>Another improvement would be to create explicit operators for easy conversions
 from left and right types:</p>
-<pre><code class="language-csharp">public static implicit operator Either&lt;TL, TR&gt;(TL left) =&gt; new Either&lt;TL, TR&gt;(left);
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">implicit</span> <span style="color:#00f">operator</span> Either&lt;TL, TR&gt;(TL left) =&gt; <span style="color:#00f">new</span> Either&lt;TL, TR&gt;(left);
 
-public static implicit operator Either&lt;TL, TR&gt;(TR right) =&gt; new Either&lt;TL, TR&gt;(right);</code></pre>
-<p>Let&#39;s have a look at a complete example.</p>
-<h2 id="why-it-s-great">Why it&#39;s great</h2>
+<span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">implicit</span> <span style="color:#00f">operator</span> Either&lt;TL, TR&gt;(TR right) =&gt; <span style="color:#00f">new</span> Either&lt;TL, TR&gt;(right);
+</code></pre></div>
+<p>Let&rsquo;s have a look at a complete example.</p>
+
+<h2 id="why-it-s-great">Why it&rsquo;s great</h2>
+
 <p>Here is the service code written with <code>Either</code>:</p>
-<pre><code class="language-csharp">public Either&lt;Response, ValidationError&gt; Validate(Request r)
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> Either&lt;Response, ValidationError&gt; Validate(Request r)
 {
-    return Valid(r) 
-        ? Data = new Response(r)
-        : new ValidationError(...);
-}</code></pre>
+    <span style="color:#00f">return</span> Valid(r)
+        ? Data = <span style="color:#00f">new</span> Response(r)
+        : <span style="color:#00f">new</span> ValidationError(...);
+}
+</code></pre></div>
 <p>Clean and nice! Now a simplistic client:</p>
-<pre><code class="language-csharp">var validated = service.Validate(request);
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> validated = service.Validate(request);
 Console.WriteLine(
     validated.Match(
-        result =&gt; $&quot;Success: {result}&quot;,
-        error =&gt; $&quot;Error: {error}&quot;)
-    );</code></pre>
+        result =&gt; <span style="color:#a31515">$&#34;Success: {result}&#34;</span>,
+        error =&gt; <span style="color:#a31515">$&#34;Error: {error}&#34;</span>)
+    );
+</code></pre></div>
 <p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
 validation may fail.</p>
+
 <h2 id="show-me-the-code">Show me the code</h2>
+
 <p>You can find the definition of <code>Either</code> class in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Either%7BTL%2CTR%7D.cs">github repo</a>.</p>
-<p><strong>Update.</strong> Here is a link to an awesome talk on this topic: 
+
+<p><strong>Update.</strong> Here is a link to an awesome talk on this topic:
 <a href="https://vimeo.com/113707214">Railway oriented programming: Error handling in functional languages by Scott Wlaschin</a></p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/functional-programming">Functional Programming</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/clean-code">Clean Code</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2016/01/validation-with-either-data-type-in-csharp//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/clean-code/'>Clean Code</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2016/01/validation-with-either-data-type-in-csharp/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'Validation with Either data type in C#';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

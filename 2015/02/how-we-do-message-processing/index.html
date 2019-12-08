@@ -1,251 +1,458 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>How we do message processing | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="How we do message processing" />
+	<meta property="og:description" content="Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture..." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2015/02/how-we-do-message-processing/" />
 
-    <title>How we do message processing | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="How we do message processing"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="How we do message processing" />
-    <meta property="og:url" content="https://mikhail.io/2015/02/how-we-do-message-processing/" />
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2015/02/how-we-do-message-processing/teaser.jpg" />
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="Architecture" />
+	
+	<meta property="article:tag" content="Messaging" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2015/02/how-we-do-message-processing/teaser.jpg" />
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="How we do message processing"/>
+	<meta name="twitter:description" content="Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture..."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=How%20we%20do%20message%20processing%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2015%2f02%2fhow-we-do-message-processing%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">How we do message processing</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Feb 5, 2015
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 8 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="architecture.jpg"
+            alt="System architecture"
+             />
+        
+    
+    <figcaption>
+        <h4>System architecture</h4>
+    </figcaption>
+    
+</figure>
+
     </div>
 </div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Feb 5th, 2015</div>
-    
-    <h1>How we do message processing</h1>
-    
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
-    
+<p>The devices use communication channels to send messages to our gateway - the input point of our application. The application&rsquo;s goal is to understand what came in, do the required actions and save the information into the database for further processing. Let&rsquo;s consider the database to be the end point of processing. Sounds easy, right? But some difficulties appear with the growth of amount and diversity of incoming messages; so let&rsquo;s look at some of them.</p>
 
-    <div class="post-content">
-        <p>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture:
-<img src="/2015/02/how-we-do-message-processing//architecture.jpg" alt="System architecture"></p>
-<p>The devices use communication channels to send messages to our gateway - the input point of our application. The application&#39;s goal is to understand what came in, do the required actions and save the information into the database for further processing. Let&#39;s consider the database to be the end point of processing. Sounds easy, right? But some difficulties appear with the growth of amount and diversity of incoming messages; so let&#39;s look at some of them.</p>
-<p>A few words on the target load level. Our system processes the messages from tens of thousands of devices, and we get from several hundreds to a thousand messages per second. If you numbers are different by orders of magnitude, it might be the case that your problems are going to look completely different and you&#39;ll need a different set of tools to solve them.</p>
+<p>A few words on the target load level. Our system processes the messages from tens of thousands of devices, and we get from several hundreds to a thousand messages per second. If you numbers are different by orders of magnitude, it might be the case that your problems are going to look completely different and you&rsquo;ll need a different set of tools to solve them.</p>
+
 <p>Apart from the number of messages itself, there is a problem of irregularity and peak times. The application must be ready for relatively short peaks which might be about ten times higher than the average expectation. To address this problem we organize the system as a sequence of queues and corresponding processors.</p>
-<p>The input gateway doesn&#39;t do much of real job: it just receives a message from a client and puts it into the queue. This operation is very cheap, thus the gateway is capable of accepting a vast number of messages per second. Afterwards a separate process retrieves several messages - the amount it wants to get - from the queue and does the hard work. The processing happens asynchronously while the load on the system remains limited. Perhaps the time in the queue grows at peaks, but that&#39;s it.</p>
-<p>Normally the message processing is non-trivial and consists of several actions. Here we get to the next logical step: we break down the job into several stages, each one having a separate queue and a dedicated processor. The queues and processors are independent and may reside on separate physical servers; and we can tune and scale them independently:
-<img src="/2015/02/how-we-do-message-processing//sequence.jpg" alt="Sequence-based architecture"></p>
+
+<p>The input gateway doesn&rsquo;t do much of real job: it just receives a message from a client and puts it into the queue. This operation is very cheap, thus the gateway is capable of accepting a vast number of messages per second. Afterwards a separate process retrieves several messages - the amount it wants to get - from the queue and does the hard work. The processing happens asynchronously while the load on the system remains limited. Perhaps the time in the queue grows at peaks, but that&rsquo;s it.</p>
+
+<p>Normally the message processing is non-trivial and consists of several actions. Here we get to the next logical step: we break down the job into several stages, each one having a separate queue and a dedicated processor. The queues and processors are independent and may reside on separate physical servers; and we can tune and scale them independently:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="sequence.jpg"
+            alt="Sequence-based architecture"
+             />
+        
+    
+    <figcaption>
+        <h4>Sequence-based architecture</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
 <p>The first queue contains the messages from devices as-is, without decoding or transforming them. The first processor decodes them and puts them into the second queue. The second processor could, for instance, call a third-party service and enrich the message with some relevant information, and the third processor could save that information into the database.</p>
+
 <p>These are the basics, so what do we still need to consider?</p>
+
 <h3 id="define-your-values">Define your values</h3>
+
 <ol>
 <li><p>Simplicity of creation, change and support</p>
-<p> Asynchronous distributed message processing brings quite some extra complexity into the software product. You should constantly work on reducing this price. The code gets optimized to be, at first place, readable and straightforward for all the team members, cheap to be changed and supported. If nobody but the author can decrypt the code, no great architecture will make the team happy.</p>
-<p> This statements looks obvious, but it might take quite some time and effort before the team starts to consistently implement this principle and not just declare it. Do the regular refactoring whenever you feel you can make the code a bit better and simpler. All the source code should get reviewed and the most critical parts are better to be developed in pair.</p>
-</li>
+
+<p>Asynchronous distributed message processing brings quite some extra complexity into the software product. You should constantly work on reducing this price. The code gets optimized to be, at first place, readable and straightforward for all the team members, cheap to be changed and supported. If nobody but the author can decrypt the code, no great architecture will make the team happy.</p>
+
+<p>This statements looks obvious, but it might take quite some time and effort before the team starts to consistently implement this principle and not just declare it. Do the regular refactoring whenever you feel you can make the code a bit better and simpler. All the source code should get reviewed and the most critical parts are better to be developed in pair.</p></li>
+
 <li><p>Fault tolerance</p>
-<p> It makes sense to define your policies of hardware or subsystem failures handling from the very beginning. They will differ for different products. It might be the case that someone can throw away all the messages that come in during 5 minutes of a server reboot.</p>
-<p> In our system we don&#39;t want to lose messages. If a particular service is not currently available, a database call times out, or there is a random processing error, it must not result in information loss. The affected messages must be saved inside the queue and will be processed right after the problem is fixed.</p>
-<p> Suppose your code on one server calls a web service on another server in synchronous manner. If the second server is not available, the processing will fail, and you can&#39;t do anything but log the error. In case of asynchronous processing the message will wait for the second server to go live again.</p>
-</li>
+
+<p>It makes sense to define your policies of hardware or subsystem failures handling from the very beginning. They will differ for different products. It might be the case that someone can throw away all the messages that come in during 5 minutes of a server reboot.</p>
+
+<p>In our system we don&rsquo;t want to lose messages. If a particular service is not currently available, a database call times out, or there is a random processing error, it must not result in information loss. The affected messages must be saved inside the queue and will be processed right after the problem is fixed.</p>
+
+<p>Suppose your code on one server calls a web service on another server in synchronous manner. If the second server is not available, the processing will fail, and you can&rsquo;t do anything but log the error. In case of asynchronous processing the message will wait for the second server to go live again.</p></li>
+
 <li><p>Performance</p>
-<p> Processing rate per second, latency, load on the servers - all these are important parameters of application performance. That&#39;s why we choose the architecture to be flexible.</p>
-<p> Although, don&#39;t pay TOO much attention to optimization from the very beginning. Usually the majority of performance issues is created by relatively small pieces of code. Unfortunately people tend to be very bad at predicting where exactly those issues are going to appear. People write <a href="http://carlos.bueno.org/optimization/">books on pre-mature optimization</a>. So make sure that your architecture allows you to fine-tune the system and forget about optimization until the first load testing.</p>
-<p> At the same time, and for this reason, start running the load tests early on, and then include them into your standard testing procedure. Start optimizing only when the tests reveal a specific performance problem.</p>
-</li>
+
+<p>Processing rate per second, latency, load on the servers - all these are important parameters of application performance. That&rsquo;s why we choose the architecture to be flexible.</p>
+
+<p>Although, don&rsquo;t pay TOO much attention to optimization from the very beginning. Usually the majority of performance issues is created by relatively small pieces of code. Unfortunately people tend to be very bad at predicting where exactly those issues are going to appear. People write <a href="http://carlos.bueno.org/optimization/">books on pre-mature optimization</a>. So make sure that your architecture allows you to fine-tune the system and forget about optimization until the first load testing.</p>
+
+<p>At the same time, and for this reason, start running the load tests early on, and then include them into your standard testing procedure. Start optimizing only when the tests reveal a specific performance problem.</p></li>
 </ol>
+
 <h3 id="fine-tune-your-mindset">Fine tune your mindset</h3>
+
 <ol>
 <li><p>Operate queues and asynchronous processors</p>
-<p> I already described this above. Our main tools are queues and processors. While the classic approach is &quot;get request, call remote code, wait for response, return it back to the originator&quot;, now we should always use &quot;get a message from a queue, process it, send a message to another queue&quot;. The right mix of these two approaches should enable both scalability and ease of development.</p>
-</li>
+
+<p>I already described this above. Our main tools are queues and processors. While the classic approach is &ldquo;get request, call remote code, wait for response, return it back to the originator&rdquo;, now we should always use &ldquo;get a message from a queue, process it, send a message to another queue&rdquo;. The right mix of these two approaches should enable both scalability and ease of development.</p></li>
+
 <li><p>Break the processing down into several stages</p>
-<p> If message processing is complex enough to be split into several stages, do that by creating several queues and processors. Make sure that you don&#39;t make it too complex to understand by unneeded fragmentation: the right balance is important. Quite often you will see a split which feels natural for developers. If not, try thinking of possible failure points. If there are multiple reasons why a processor may fail, consider its breakdown.</p>
-</li>
-<li><p>Don&#39;t mix decoding and processing</p>
-<p> Usually the messages arrive encoded with a protocol which can be binary, XML, JSON, etc. Decode them into your native format as soon as possible. This will help you solve two problems. First, you might need to support multiple protocols; and after decoding you unify the format of all further messages. Second, logging and debugging gets simpler.</p>
-</li>
+
+<p>If message processing is complex enough to be split into several stages, do that by creating several queues and processors. Make sure that you don&rsquo;t make it too complex to understand by unneeded fragmentation: the right balance is important. Quite often you will see a split which feels natural for developers. If not, try thinking of possible failure points. If there are multiple reasons why a processor may fail, consider its breakdown.</p></li>
+
+<li><p>Don&rsquo;t mix decoding and processing</p>
+
+<p>Usually the messages arrive encoded with a protocol which can be binary, XML, JSON, etc. Decode them into your native format as soon as possible. This will help you solve two problems. First, you might need to support multiple protocols; and after decoding you unify the format of all further messages. Second, logging and debugging gets simpler.</p></li>
+
 <li><p>Make the queues topology configurable</p>
-<p> Structure your code in a way that allows you to change the configuration of queues relatively easy. Splitting a processor into two parts should not result in tons of refactoring. Don&#39;t make your code depend on a specific queue mechanism implementation: tomorrow you might want to change it.</p>
-</li>
+
+<p>Structure your code in a way that allows you to change the configuration of queues relatively easy. Splitting a processor into two parts should not result in tons of refactoring. Don&rsquo;t make your code depend on a specific queue mechanism implementation: tomorrow you might want to change it.</p></li>
+
 <li><p>Do batch processing</p>
-<p> Normally it makes sense to receive messages from a queue in batches, not one by one. The services that you use might accept arrays for faster processing and in this case one call will always be faster than a handful of small ones. One insertion of 100 rows into database is faster than 100 remote insertions.</p>
-</li>
+
+<p>Normally it makes sense to receive messages from a queue in batches, not one by one. The services that you use might accept arrays for faster processing and in this case one call will always be faster than a handful of small ones. One insertion of 100 rows into database is faster than 100 remote insertions.</p></li>
 </ol>
+
 <h3 id="create-tooling">Create tooling</h3>
+
 <ol>
 <li><p>Implement total monitoring</p>
-<p> Invest into monitoring tools. It should be easy to see the charts of throughput, average processing time, queue size and time since last message with breakdown by queue.
-<img src="/2015/02/how-we-do-message-processing//monitoring.jpg" alt="Queue monitoring"></p>
-<p> We use monitoring tools not only on production and staging environments but also on testing servers and even developer&#39;s machines. Carefully baked charts are helpful during debug and load testing procedures.</p>
-</li>
+
+<p>Invest into monitoring tools. It should be easy to see the charts of throughput, average processing time, queue size and time since last message with breakdown by queue.
+<img src="monitoring.jpg" alt="Queue monitoring" /></p>
+
+<p>We use monitoring tools not only on production and staging environments but also on testing servers and even developer&rsquo;s machines. Carefully baked charts are helpful during debug and load testing procedures.</p></li>
+
 <li><p>Test everything</p>
-<p> Message processing systems are perfect fields to apply fully automated testing. Input data protocols are well-defined and there is no human interaction. Cover your code with unit tests. Make your queues pluggable so that you could mock your real queues out with test in-memory queues to run quick intercommunication tests. Finally, create full-blown integration tests which should be run on staging environment (and preferably also on production).</p>
-</li>
+
+<p>Message processing systems are perfect fields to apply fully automated testing. Input data protocols are well-defined and there is no human interaction. Cover your code with unit tests. Make your queues pluggable so that you could mock your real queues out with test in-memory queues to run quick intercommunication tests. Finally, create full-blown integration tests which should be run on staging environment (and preferably also on production).</p></li>
+
 <li><p>Store the failed messages</p>
-<p> Usually you don&#39;t want one erroneous message to stop the complete queue processing. Being able to diagnose the problem is equally important. So put all the failed messages into a specialized storage and put a spotlight on it. Make a tool to move messages back to the relevant queue as soon as the failure reason is addressed.</p>
-<p> Same or similar mechanism can be used to store the messages to be processed at some point of time in the future. Keep them in that special storage and check periodically if now is time to proceed.</p>
-</li>
+
+<p>Usually you don&rsquo;t want one erroneous message to stop the complete queue processing. Being able to diagnose the problem is equally important. So put all the failed messages into a specialized storage and put a spotlight on it. Make a tool to move messages back to the relevant queue as soon as the failure reason is addressed.</p>
+
+<p>Same or similar mechanism can be used to store the messages to be processed at some point of time in the future. Keep them in that special storage and check periodically if now is time to proceed.</p></li>
+
 <li><p>Automate the deployment</p>
-<p> Application setup and update must require just one or two clicks. Strive for frequent updates on production; ideally - automated deployment on every commit to the dedicated branch. Deployment scripts or tools will help developers maintain their personal and testing environments up-to-date.</p>
-</li>
+
+<p>Application setup and update must require just one or two clicks. Strive for frequent updates on production; ideally - automated deployment on every commit to the dedicated branch. Deployment scripts or tools will help developers maintain their personal and testing environments up-to-date.</p></li>
 </ol>
+
 <h3 id="wrapping-up">Wrapping up</h3>
+
 <p>Clean and understandable architecture provides developers with a good means of communication, helps figure out the similar vision and concepts. Architecture metaphor expressed in form of a picture or short document will bring you closer to smart design, will help find errors or plan a refactoring.</p>
+
 <p>Happy message processing!</p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/architecture">Architecture</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/messaging">Messaging</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2015/02/how-we-do-message-processing//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/architecture/'>Architecture</a>, <a href='/tags/design/'>Design</a>, <a href='/tags/messages/'>Messages</a>, <a href='/tags/message-processing/'>Message Processing</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2015/02/how-we-do-message-processing/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'How we do message processing';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

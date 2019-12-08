@@ -1,371 +1,564 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Custom Autoscaling with Durable Functions | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="Custom Autoscaling with Durable Functions" />
+	<meta property="og:description" content="Leverage Azure Durable Functions to scale-out and scale-in App Service based on a custom metric" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/" />
 
-    <title>Custom Autoscaling with Durable Functions | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="Custom Autoscaling with Durable Functions"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="Custom Autoscaling with Durable Functions" />
-    <meta property="og:url" content="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/" />
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/teaser.png" />
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Azure Functions" />
+	
+	<meta property="article:tag" content="Scalability" />
+	
+	<meta property="article:tag" content="Azure App Service" />
+	
+	<meta property="article:tag" content="Azure Service Bus" />
+	
+	<meta property="article:tag" content="Durable Functions" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/teaser.png" />
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="Custom Autoscaling with Durable Functions"/>
+	<meta name="twitter:description" content="Leverage Azure Durable Functions to scale-out and scale-in App Service based on a custom metric"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Jul 24th, 2017</div>
-    
-    <h1>Custom Autoscaling with Durable Functions</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p>In my previous post 
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Custom%20Autoscaling%20with%20Durable%20Functions%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2017%2f07%2fcustom-autoscaling-with-durable-functions%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Custom Autoscaling with Durable Functions</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Jul 24, 2017
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 6 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p>In my previous post
 <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">Custom Autoscaling of Azure App Service with a Function App</a>
-I&#39;ve created a Function App which watches a Service Bus Subscription
+I&rsquo;ve created a Function App which watches a Service Bus Subscription
 backlog and adjusts the scale of App Service based on the observed load.</p>
+
 <p>It works fine but there are two minor issues that I would like to address
 in this article:</p>
+
 <ul>
 <li><p><strong>Scaling Logic</strong> function from that workflow needs to preserve state
 between calls. I used Table Storage bindings for that, which proved to
-be a bit verbose and low level: I needed to manage conversion to entity and 
-JSON serialization myself;</p>
-</li>
+be a bit verbose and low level: I needed to manage conversion to entity and
+JSON serialization myself;</p></li>
+
 <li><p>There is no feedback from <strong>Scaler</strong> function (which executes the change)
 back to <strong>Scaling Logic</strong> function. Thus, if scaling operation is slow or
-fails, there is no easy way to notify the logic about that.</p>
-</li>
+fails, there is no easy way to notify the logic about that.</p></li>
 </ul>
-<p>Let&#39;s see how these issues can be solved with Azure Durable Functions.</p>
+
+<p>Let&rsquo;s see how these issues can be solved with Azure Durable Functions.</p>
+
 <h2 id="meet-durable-functions">Meet Durable Functions</h2>
-<p>Microsoft has recently announced the preview of 
+
+<p>Microsoft has recently announced the preview of
 <a href="https://azure.github.io/azure-functions-durable-extension/">Durable Functions</a>:</p>
+
 <blockquote>
-<p>Durable Functions is an Azure Functions extension for building long-running, 
+<p>Durable Functions is an Azure Functions extension for building long-running,
 stateful function orchestrations in code using C# in a serverless environment.</p>
 </blockquote>
+
 <p>The library is built on top of <a href="https://github.com/Azure/durabletask">Durable Task Framework</a>
 and introduces several patterns for Function coordination and stateful
 processing. Please go read the <a href="https://azure.github.io/azure-functions-durable-extension/">documentation</a>,
-it&#39;s great and has some very useful examples.</p>
+it&rsquo;s great and has some very useful examples.</p>
+
 <p>I decided to give Durable Functions a try for my autoscaling workflow. Feel
 free to refer to <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">the first part</a>
 to understand my goals and the previous implementation.</p>
+
 <h2 id="architecture">Architecture</h2>
+
 <p>The flow of metric collection, scaling logic and scaling action stays the
 same. The state and cross-function communication aspects are now delegated
 to Durable Functions, so the diagram becomes somewhat simpler:</p>
-<p><img src="/2017/07/custom-autoscaling-with-durable-functions//AutoscalingArchitecture.png" alt="Autoscaling Architecture"></p>
-<p>The blue sign on <strong>Scaling Logic</strong> function denotes its statefulness.</p>
-<p>Let&#39;s walk through the functions implementation to see how the workflow
-plays out.</p>
-<p>This time I&#39;ll start with <strong>Scaler</strong> function and then flow from right to left
-to make the explanation more clear.</p>
-<h2 id="scaler">Scaler</h2>
-<p><strong>Scaler</strong> function applies the scaling decisions to the Azure resource, App
-Service Plan in my case. I&#39;ve extracted App Service related code to a helper, 
-to keep the function minimal and clean. You can see the full code in 
-<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
-<p><strong>Scaler</strong> function is triggered by Durable Function&#39;s <code>ActivityTrigger</code>. That
-basically means that it&#39;s ready to be called from other functions. Here is
-the code:</p>
-<pre><code class="language-csharp">[FunctionName(nameof(Scaler))]
-public static int Scaler([ActivityTrigger] DurableActivityContext context)
-{
-    var action = context.GetInput&lt;ScaleAction&gt;();
 
-    var newCapacity = ScalingHelper.ChangeAppServiceInstanceCount(
+<p><img src="AutoscalingArchitecture.png" alt="Autoscaling Architecture" /></p>
+
+<p>The blue sign on <strong>Scaling Logic</strong> function denotes its statefulness.</p>
+
+<p>Let&rsquo;s walk through the functions implementation to see how the workflow
+plays out.</p>
+
+<p>This time I&rsquo;ll start with <strong>Scaler</strong> function and then flow from right to left
+to make the explanation more clear.</p>
+
+<h2 id="scaler">Scaler</h2>
+
+<p><strong>Scaler</strong> function applies the scaling decisions to the Azure resource, App
+Service Plan in my case. I&rsquo;ve extracted App Service related code to a helper,
+to keep the function minimal and clean. You can see the full code in
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+
+<p><strong>Scaler</strong> function is triggered by Durable Function&rsquo;s <code>ActivityTrigger</code>. That
+basically means that it&rsquo;s ready to be called from other functions. Here is
+the code:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[FunctionName(nameof(Scaler))]
+<span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#2b91af">int</span> Scaler([ActivityTrigger] DurableActivityContext context)
+{
+    <span style="color:#2b91af">var</span> action = context.GetInput&lt;ScaleAction&gt;();
+
+    <span style="color:#2b91af">var</span> newCapacity = ScalingHelper.ChangeAppServiceInstanceCount(
         action.ResourceName,
         action.Type == ScaleActionType.Down ? -1 : +1);
 
-    return newCapacity;
-}</code></pre>
+    <span style="color:#00f">return</span> newCapacity;
+}
+</code></pre></div>
 <p>In order to receive an input value, I utilize <code>context.GetInput()</code> method.
-I believe that the team is working on support of custom classes 
+I believe that the team is working on support of custom classes
 (<code>ScaleAction</code> in my case) directly as function parameters.</p>
+
 <p>The function then executes the scale change and returns back the new capacity
 of App Service Plan. Note that this is new: we were not able to return
 values in the previous implementation.</p>
+
 <h2 id="scaling-logic">Scaling Logic</h2>
+
 <p><strong>Scaling Logic</strong> is using <a href="https://azure.github.io/azure-functions-durable-extension/articles/samples/counter.html">Stateful Actor pattern</a>.
 One instance of such actor is created for each scalable resource (I only use
 1 now). Here is the implementation (again, simplified for readability):</p>
-<pre><code class="language-csharp">[FunctionName(nameof(ScalingLogic))]
-public static async Task&lt;ScalingState&gt; ScalingLogic(
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[FunctionName(nameof(ScalingLogic))]
+<span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task&lt;ScalingState&gt; ScalingLogic(
     [OrchestrationTrigger] DurableOrchestrationContext context, 
     TraceWriter log)
 {
-    var state = context.GetInput&lt;ScalingState&gt;();
+    <span style="color:#2b91af">var</span> state = context.GetInput&lt;ScalingState&gt;();
 
-    var metric = await context.WaitForExternalEvent&lt;Metric&gt;(nameof(Metric));
+    <span style="color:#2b91af">var</span> metric = <span style="color:#00f">await</span> context.WaitForExternalEvent&lt;Metric&gt;(nameof(Metric));
 
     UpdateHistory(state.History, metric.Value);
     ScaleAction action = CalculateScalingAction(state);
 
-    if (action != null)
+    <span style="color:#00f">if</span> (action != <span style="color:#00f">null</span>)
     {
-        var result = await context.CallFunctionAsync&lt;int&gt;(nameof(Scaler), action);
-        log.Info($&quot;Scaling logic: Scaled to {result} instances.&quot;);
+        <span style="color:#2b91af">var</span> result = <span style="color:#00f">await</span> context.CallFunctionAsync&lt;<span style="color:#2b91af">int</span>&gt;(nameof(Scaler), action);
+        log.Info(<span style="color:#a31515">$&#34;Scaling logic: Scaled to {result} instances.&#34;</span>);
         state.LastScalingActionTime = context.CurrentUtcDateTime;
     }
 
     context.ContinueAsNew(state);
-    return state;
-}</code></pre>
+    <span style="color:#00f">return</span> state;
+}
+</code></pre></div>
 <p>Here is how it works:</p>
+
 <ul>
 <li><p>Function is bound to <code>OrchestrationTrigger</code>, yet another trigger type from
-Durable Functions;</p>
-</li>
-<li><p>It loads durable state from the received <code>context</code>;</p>
-</li>
+Durable Functions;</p></li>
+
+<li><p>It loads durable state from the received <code>context</code>;</p></li>
+
 <li><p>It then waits for an external event called Metric (to be sent by <strong>Collector</strong>
-function, see the next section);</p>
-</li>
+function, see the next section);</p></li>
+
 <li><p>When an event is received, the function updates its state and calculates
-if a scaling action is warranted;</p>
-</li>
+if a scaling action is warranted;</p></li>
+
 <li><p>If yes, it calls <strong>Scaler</strong> function and sends the scale action. It expects
-an integer result, denoting the new amount of instances;</p>
-</li>
+an integer result, denoting the new amount of instances;</p></li>
+
 <li><p>It then calls <code>ContinueAsNew</code> method to start a new iteration of the actor
-loop, providing the updated state.</p>
-</li>
+loop, providing the updated state.</p></li>
 </ul>
-<p>One important note: the orchestrated function 
-<a href="https://azure.github.io/azure-functions-durable-extension/articles/topics/checkpointing-and-replay.html">has to be deterministic</a>. 
-That means, for example, that <code>DateTime.Now</code> is not allowed to be used. 
+
+<p>One important note: the orchestrated function
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/topics/checkpointing-and-replay.html">has to be deterministic</a>.
+That means, for example, that <code>DateTime.Now</code> is not allowed to be used.
 I use <code>context.CurrentUtcDateTime</code> instead for time-related calculations.</p>
-<p>The implementation of this function solves both problems that I mentioned 
+
+<p>The implementation of this function solves both problems that I mentioned
 in the introduction. We do not manage state storage and serialization manually,
 and we now have the ability to get feedback from <strong>Scaler</strong> function.</p>
+
 <h2 id="metrics-collector">Metrics Collector</h2>
-<p>I&#39;ve extracted Service Bus related code to a helper to keep the code sample
-minimal and clean. You can see the full code in 
+
+<p>I&rsquo;ve extracted Service Bus related code to a helper to keep the code sample
+minimal and clean. You can see the full code in
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/durable-functions/DurableScaling.cs">my github repo</a>.</p>
+
 <p>Here is the remaining implementation of <strong>Metric Collector</strong>:</p>
-<pre><code class="language-csharp">[FunctionName(nameof(MetricCollector))]
-public static async Task MetricCollector(
-    [TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo myTimer,
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[FunctionName(nameof(MetricCollector))]
+<span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task MetricCollector(
+    [TimerTrigger(&#34;0 */1 * * * *&#34;)] TimerInfo myTimer,
     [OrchestrationClient] DurableOrchestrationClient client,
     TraceWriter log)
 {
-    var resource = Environment.GetEnvironmentVariable(&quot;ResourceToScale&quot;);
+    <span style="color:#2b91af">var</span> resource = Environment.GetEnvironmentVariable(<span style="color:#a31515">&#34;ResourceToScale&#34;</span>);
 
-    var status = await client.GetStatusAsync(resource);
-    if (status == null)
+    <span style="color:#2b91af">var</span> status = <span style="color:#00f">await</span> client.GetStatusAsync(resource);
+    <span style="color:#00f">if</span> (status == <span style="color:#00f">null</span>)
     {
-        await client.StartNewAsync(nameof(ScalingLogic), resource, new ScalingState());
+        <span style="color:#00f">await</span> client.StartNewAsync(nameof(ScalingLogic), resource, <span style="color:#00f">new</span> ScalingState());
     }
-    else
+    <span style="color:#00f">else</span>
     {
-        var metric = ServiceBusHelper.GetSubscriptionMetric(resource);
-        log.Info($&quot;Collector: Current metric value is {metric.Value.Value} at {DateTime.Now}&quot;);
-        await client.RaiseEventAsync(resource, nameof(Metric), metric);
+        <span style="color:#2b91af">var</span> metric = ServiceBusHelper.GetSubscriptionMetric(resource);
+        log.Info(<span style="color:#a31515">$&#34;Collector: Current metric value is {metric.Value.Value} at {DateTime.Now}&#34;</span>);
+        <span style="color:#00f">await</span> client.RaiseEventAsync(resource, nameof(Metric), metric);
     }
-}</code></pre>
-<p>It&#39;s still a timer-triggered &quot;normal&quot; (non-durable) function, but now it 
-also has an additional binding to <code>OrchestrationClient</code>. This client is used 
+}
+</code></pre></div>
+<p>It&rsquo;s still a timer-triggered &ldquo;normal&rdquo; (non-durable) function, but now it
+also has an additional binding to <code>OrchestrationClient</code>. This client is used
 to communicate metric data to the <strong>Scaling Logic</strong>.</p>
+
 <p>With the current implementation, <strong>Metric Collector</strong> also has a second
 responsibility: actor instance management. At every iteration, it queries
 for the current status of corresponding actor. If that is <code>null</code>, Collector
 creates a new instance with initial empty state.</p>
+
 <p>To my liking, this aspect is a bit unfortunate, but it seems to be required
-with the current implementation of Durable Functions framework. See 
+with the current implementation of Durable Functions framework. See
 <a href="https://github.com/Azure/azure-functions-durable-extension/issues/21">my related question on github</a>.</p>
+
 <h2 id="conclusions">Conclusions</h2>
+
 <p>I adjusted the initial flow of autoscaling functions to use Durable Functions
 library. It made the state management look more straightforward, and also
 allowed direct communication between two functions in strongly-typed
 request-response manner.</p>
+
 <p>The resulting code is relatively clear and resembles the typical structure
 of async-await code that C# developers are used to.</p>
+
 <p>There are some downsides that I found about Durable Functions too:</p>
+
 <ul>
 <li><p>This is a very early preview, so there are some implementation issues.
 A couple times I managed to put my functions into a state where they were stuck
 and no calls could be made anymore. The only way I could get out of there is by
-clearing some blobs in the Storage Account;</p>
-</li>
+clearing some blobs in the Storage Account;</p></li>
+
 <li><p>The actor instance management story feels raw. The function, which needs to
 send events to actors, has to manage their lifecycle and instance IDs. I would
-need to add some more checks to make the code production ready, e.g. to 
-restart actors if they end up in faulty state;</p>
-</li>
+need to add some more checks to make the code production ready, e.g. to
+restart actors if they end up in faulty state;</p></li>
+
 <li><p>There are some concurrency issues in function-to-function communication
-to be resolved;</p>
-</li>
+to be resolved;</p></li>
+
 <li><p>Some discipline is required to keep Durable functions side-effect free
 and deterministic. The multiple executions caused by awaits and replays are
-counter-intuitive (at least for novice devs), and thus error-prone.</p>
-</li>
+counter-intuitive (at least for novice devs), and thus error-prone.</p></li>
 </ul>
+
 <p>Having said that, I believe Durable Functions can be a very useful abstraction
 to simplify some of the more advanced scenarios and workflows. I look
 forward to further iterations of the library, and I will keep trying it out
 for more scenarios.</p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-functions">Azure Functions</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/scalability">Scalability</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-app-service">Azure App Service</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-service-bus">Azure Service Bus</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/durable-functions">Durable Functions</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2017/07/custom-autoscaling-with-durable-functions//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>, <a href='/tags/scalability/'>Scalability</a>, <a href='/tags/azure-app-service/'>Azure App Service</a>, <a href='/tags/azure-service-bus/'>Azure Service Bus</a>, <a href='/tags/durable-functions/'>Durable Functions</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'Custom Autoscaling with Durable Functions';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

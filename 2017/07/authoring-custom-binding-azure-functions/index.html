@@ -1,258 +1,422 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Authoring a Custom Binding for Azure Functions | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="Authoring a Custom Binding for Azure Functions" />
+	<meta property="og:description" content="The process of creating a custom binding for Azure Functions." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2017/07/authoring-custom-binding-azure-functions/" />
 
-    <title>Authoring a Custom Binding for Azure Functions | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="Authoring a Custom Binding for Azure Functions"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="Authoring a Custom Binding for Azure Functions" />
-    <meta property="og:url" content="https://mikhail.io/2017/07/authoring-custom-binding-azure-functions/" />
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2017/07/authoring-custom-binding-azure-functions/teaser.jpg" />
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Azure Functions" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2017/07/authoring-custom-binding-azure-functions/teaser.jpg" />
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="Authoring a Custom Binding for Azure Functions"/>
+	<meta name="twitter:description" content="The process of creating a custom binding for Azure Functions."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Jul 26th, 2017</div>
-    
-    <h1>Authoring a Custom Binding for Azure Functions</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Authoring%20a%20Custom%20Binding%20for%20Azure%20Functions%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2017%2f07%2fauthoring-custom-binding-azure-functions%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Authoring a Custom Binding for Azure Functions</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Jul 26, 2017
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 5 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
 I described how I used Durable Functions extensions
 in Azure Function App. Durable Functions are using several binding types
 that are not part of the standard suite: <code>OrchestrationClient</code>,
-<code>OrchestrationTrigger</code>, <code>ActivityTrigger</code>. These custom bindings 
+<code>OrchestrationTrigger</code>, <code>ActivityTrigger</code>. These custom bindings
 <a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">are installed</a>
 by copying the corresponding assemblies to a special Extensions folder.</p>
-<p>Although Bring-Your-Own-Binding (BYOB) feature hasn&#39;t been released yet, I
-decided to follow the path of Durable Functions and create my own 
+
+<p>Although Bring-Your-Own-Binding (BYOB) feature hasn&rsquo;t been released yet, I
+decided to follow the path of Durable Functions and create my own
 custom binding.</p>
+
 <h2 id="configuration-binding">Configuration Binding</h2>
-<p>I&#39;ve picked a really simple use case for my first experiments with custom
+
+<p>I&rsquo;ve picked a really simple use case for my first experiments with custom
 bindings: reading configuration values.</p>
+
 <p>Azure Functions store their configuration values in App Settings (local
 runtime uses <code>local.settings.json</code> file for that).</p>
+
 <p>That means, when you need a configuration value inside your C# code,
 you normally do</p>
-<pre><code class="language-csharp">string setting = ConfigurationManager.AppSettings[&quot;MySetting&quot;];</code></pre>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">string</span> setting = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;MySetting&#34;</span>];
+</code></pre></div>
 <p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
-<p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a> 
-service bus subscription metrics, I wrote this kind of bulky code:</p>
-<pre><code class="language-csharp">var resourceToScale = ConfigurationManager.AppSettings[&quot;ResourceToScale&quot;];
 
-var connectionString = ConfigurationManager.AppSettings[&quot;ServiceBusConnection&quot;];
-var topic = ConfigurationManager.AppSettings[&quot;Topic&quot;];
-var subscription = ConfigurationManager.AppSettings[&quot;Subscription&quot;];</code></pre>
-<p>The code is no rocket science, but it&#39;s tedious to write, so instead I came
+<p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a>
+service bus subscription metrics, I wrote this kind of bulky code:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> resourceToScale = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ResourceToScale&#34;</span>];
+
+<span style="color:#2b91af">var</span> connectionString = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ServiceBusConnection&#34;</span>];
+<span style="color:#2b91af">var</span> topic = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Topic&#34;</span>];
+<span style="color:#2b91af">var</span> subscription = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Subscription&#34;</span>];
+</code></pre></div>
+<p>The code is no rocket science, but it&rsquo;s tedious to write, so instead I came
 up with this idea to define Functions:</p>
-<pre><code class="language-csharp">public static void MyFunction(
-    [TimerTrigger(&quot;0 */1 * * * *&quot;)] TimerInfo timer,
-    [Configuration(Key = &quot;ResourceToScale&quot;)] string resource,
-    [Configuration] ServiceBusSubscriptionConfig config)</code></pre>
-<p>Note two usages of <code>Configuration</code> attribute. The first one defines the 
-specific configuration key, and binds its value to a string parameter. The 
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> MyFunction(
+    [TimerTrigger(&#34;0 */1 * * * *&#34;)] TimerInfo timer,
+    [Configuration(Key = &#34;ResourceToScale&#34;)] <span style="color:#2b91af">string</span> resource,
+    [Configuration] ServiceBusSubscriptionConfig config)
+</code></pre></div>
+<p>Note two usages of <code>Configuration</code> attribute. The first one defines the
+specific configuration key, and binds its value to a string parameter. The
 other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
 the config class as</p>
-<pre><code class="language-csharp">public class ServiceBusSubscriptionConfig
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ServiceBusSubscriptionConfig</span>
 {
-    public ServiceBusSubscriptionConfig(string serviceBusConnection, string topic, string subscription)
+    <span style="color:#00f">public</span> ServiceBusSubscriptionConfig(<span style="color:#2b91af">string</span> serviceBusConnection, <span style="color:#2b91af">string</span> topic, <span style="color:#2b91af">string</span> subscription)
     {
         ServiceBusConnection = serviceBusConnection;
         Topic = topic;
         Subscription = subscription;
     }
 
-    public string ServiceBusConnection { get; }
-    public string Topic { get; }
-    public string Subscription { get; }
-}</code></pre>
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> ServiceBusConnection { <span style="color:#00f">get</span>; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Topic { <span style="color:#00f">get</span>; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Subscription { <span style="color:#00f">get</span>; }
+}
+</code></pre></div>
 <p>The immutable class is a bit verbose, but I still prefer it over get-set
 container in this scenario.</p>
+
 <p>The binding behavior is convention-based in this case: the binding engine
 should load configuration values based on the names of class properties.</p>
+
 <h2 id="motivation">Motivation</h2>
+
 <p>So, why do I need such binding?</p>
-<p>As I said, it&#39;s a simple use case to play with BYOB feature, and overall,
+
+<p>As I said, it&rsquo;s a simple use case to play with BYOB feature, and overall,
 <strong>understand</strong> the internals of Function Apps a bit better.</p>
+
 <p>But apart from that, I removed 4 lines of garbage from the function body
 (at the cost of two extra parameters). <strong>Less noise</strong> means more readable code,
 especially when I put this code on a webpage.</p>
-<p>As a bonus, the <strong>testability</strong> of the function immediately increased. It&#39;s so
+
+<p>As a bonus, the <strong>testability</strong> of the function immediately increased. It&rsquo;s so
 much easier for the test just to accept the configuration as input parameter,
 instead of fine-tuning the configuration files inside test projects, or
 hiding <code>ConfigurationManager</code> usage behind a mockable facade.</p>
+
 <p>Such approach does seem to be the strength of Azure Functions code in
-general. It&#39;s often possible to reduce imperative IO-related code to 
+general. It&rsquo;s often possible to reduce imperative IO-related code to
 attribute-decorated function parameters.</p>
+
 <h2 id="implementing-a-custom-binding">Implementing a Custom Binding</h2>
+
 <p>The actual implementation process of a custom non-trigger binding is quite
 simple:</p>
-<p><strong>Create a class library</strong> with the word &quot;Extension&quot; in its name. Import
+
+<p><strong>Create a class library</strong> with the word &ldquo;Extension&rdquo; in its name. Import
 <code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
 packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
+
 <p><strong>Define</strong> a class for binding attribute:</p>
-<pre><code class="language-csharp">[AttributeUsage(AttributeTargets.Parameter)]
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[AttributeUsage(AttributeTargets.Parameter)]
 [Binding]
-public class ConfigurationAttribute : Attribute
+<span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ConfigurationAttribute</span> : Attribute
 {
     [AutoResolve]
-    public string Key { get; set; }
-}</code></pre>
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Key { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+}
+</code></pre></div>
 <p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
 resolvable from <code>function.json</code>.</p>
+
 <p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
 how to use your binding correctly.</p>
+
 <p>The interface has just one method to implement:</p>
-<pre><code class="language-csharp">public class ConfigurationExtensionConfigProvider : IExtensionConfigProvider
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ConfigurationExtensionConfigProvider</span> : IExtensionConfigProvider
 {
-    public void Initialize(ExtensionConfigContext context)
+    <span style="color:#00f">public</span> <span style="color:#00f">void</span> Initialize(ExtensionConfigContext context)
     {
-        // ... see below
-    }
+        <span style="color:#008000">// ... see below
+</span><span style="color:#008000"></span>    }
 }
-</code></pre>
+</code></pre></div>
 <p>The first step of the implementation is to define a rule for our new
 <code>ConfigurationAttribute</code> and tell this rule how to get a string value out
 of any attribute instance:</p>
-<pre><code class="language-csharp">var rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
-rule.BindToInput&lt;string&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);</code></pre>
-<p>That&#39;s really all that needs to happen to bind <code>string</code> parameters.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
+rule.BindToInput&lt;<span style="color:#2b91af">string</span>&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
+</code></pre></div>
+<p>That&rsquo;s really all that needs to happen to bind <code>string</code> parameters.</p>
+
 <p>To make our binding work with any POCO, we need a more elaborate construct:</p>
-<pre><code class="language-csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; new Env());
-var cm = context.Config.GetService&lt;IConverterManager&gt;();
-cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(typeof(PocoConverter&lt;&gt;));</code></pre>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; <span style="color:#00f">new</span> Env());
+<span style="color:#2b91af">var</span> cm = context.Config.GetService&lt;IConverterManager&gt;();
+cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(<span style="color:#00f">typeof</span>(PocoConverter&lt;&gt;));
+</code></pre></div>
 <p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
 this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
 type argument) with a generic converter called <code>PocoConverter</code>.</p>
+
 <p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
-<pre><code class="language-csharp">private class Env
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Env</span>
 {
-    public string GetValue(string key) =&gt; ConfigurationManager.AppSettings[key];
-}</code></pre>
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> GetValue(<span style="color:#2b91af">string</span> key) =&gt; ConfigurationManager.AppSettings[key];
+}
+</code></pre></div>
 <p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
 names and reads configuration values out of them. Then it calls a constructor
 which matches the property count:</p>
-<pre><code class="language-csharp">private class PocoConverter&lt;T&gt; : IConverter&lt;Env, T&gt;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">PocoConverter</span>&lt;T&gt; : IConverter&lt;Env, T&gt;
 {
-    public T Convert(Env env)
+    <span style="color:#00f">public</span> T Convert(Env env)
     {
-        var values = typeof(T)
+        <span style="color:#2b91af">var</span> values = <span style="color:#00f">typeof</span>(T)
             .GetProperties()
             .Select(p =&gt; p.Name)
             .Select(env.GetValue)
-            .Cast&lt;object&gt;()
+            .Cast&lt;<span style="color:#2b91af">object</span>&gt;()
             .ToArray();
 
-        var constructor = typeof(T).GetConstructor(values.Select(v =&gt; v.GetType()).ToArray());
-        if (constructor == null)
+        <span style="color:#2b91af">var</span> constructor = <span style="color:#00f">typeof</span>(T).GetConstructor(values.Select(v =&gt; v.GetType()).ToArray());
+        <span style="color:#00f">if</span> (constructor == <span style="color:#00f">null</span>)
         {
-            throw new Exception(&quot;We tried to bind to your C# class, but it looks like there&#39;s no constructor which accepts all property values&quot;);
+            <span style="color:#00f">throw</span> <span style="color:#00f">new</span> Exception(<span style="color:#a31515">&#34;We tried to bind to your C# class, but it looks like there&#39;s no constructor which accepts all property values&#34;</span>);
         }
 
-        return (T)constructor.Invoke(values);
+        <span style="color:#00f">return</span> (T)constructor.Invoke(values);
     }
-}</code></pre>
+}
+</code></pre></div>
 <p>This piece of code is not particularly robust, but it is good enough to
 illustrate the concept.</p>
-<p>And that&#39;s it, the binding it ready! You can find the complete example in
+
+<p>And that&rsquo;s it, the binding it ready! You can find the complete example in
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/custom-binding-azure-functions">my github repo</a>.</p>
+
 <h2 id="deploying-custom-bindings">Deploying Custom Bindings</h2>
+
 <p>Since BYOB feature is in early preview, there is no tooling for automated
 deployment, and we need to do everything manually. But the process is not
 too sophisticated:</p>
+
 <ol>
-<li><p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p>
-</li>
+<li><p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p></li>
+
 <li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
-to that folder&#39;s path. For local development add a line to <code>local.settings.json</code>:</p>
-<pre><code class="language-json"> &quot;AzureWebJobs_ExtensionsPath&quot;: &quot;D:\\BindingExtensions&quot;,</code></pre>
-</li>
-<li><p>Create a subfolder for your extension, e.g. 
-<code>D:\BindingExtensions\ConfigurationExtension</code>.</p>
-</li>
-<li><p>Copy the contents of <code>bin\Debug\</code> of your extension&#39;s class library
-to that folder.</p>
-</li>
-<li><p>Reference your extension library from your Function App.</p>
-</li>
+to that folder&rsquo;s path. For local development add a line to <code>local.settings.json</code>:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json"><span style="color:#a31515">&#34;AzureWebJobs_ExtensionsPath&#34;</span><span style="">:</span> <span style="color:#a31515">&#34;D:\\BindingExtensions&#34;</span><span style="">,</span></code></pre></div></li>
+
+<li><p>Create a subfolder for your extension, e.g.
+<code>D:\BindingExtensions\ConfigurationExtension</code>.</p></li>
+
+<li><p>Copy the contents of <code>bin\Debug\</code> of your extension&rsquo;s class library
+to that folder.</p></li>
+
+<li><p>Reference your extension library from your Function App.</p></li>
 </ol>
+
 <p>You are good to go! Decorate your function parameters with the new attribute.</p>
+
 <p>Run the function app locally to try it out. In the console output you should
 be able to see something like</p>
-<pre><code>Loaded custom extension: ConfigurationExtensionConfigProvider from 
-&#39;D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll&#39;</code></pre><p>You will be able to debug your extension if needed.</p>
+
+<pre><code>Loaded custom extension: ConfigurationExtensionConfigProvider from
+'D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll'
+</code></pre>
+
+<p>You will be able to debug your extension if needed.</p>
+
 <h2 id="useful-links">Useful Links</h2>
+
 <p>Use the following links to find out more about custom bindings, see more
 examples and walkthroughs, and get fresh updates:</p>
+
 <ul>
 <li><a href="https://github.com/Azure/azure-webjobs-sdk/wiki/Extensibility">Extensibility in Azure WebJobs SDK</a></li>
 <li><a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/SampleExtension">Sample Extension for Azure Functions</a>,
@@ -261,101 +425,103 @@ examples and walkthroughs, and get fresh updates:</p>
 <li><a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/src/WebJobs.Extensions.DurableTask">Custom Bindings of Durable Functions</a></li>
 <li><a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">Installation Guide for Durable Functions</a></li>
 </ul>
+
 <p>Have a good binding!</p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-functions">Azure Functions</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2017/07/authoring-custom-binding-azure-functions//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/azure/'>Azure</a>, <a href='/tags/azure-functions/'>Azure Functions</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2017/07/authoring-custom-binding-azure-functions/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'Authoring a Custom Binding for Azure Functions';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

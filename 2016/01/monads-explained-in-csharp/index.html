@@ -1,387 +1,556 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Monads explained in C# | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="Monads explained in C#" />
+	<meta property="og:description" content="The newer and much longer version of this article is now available: Monads explained in C# (again)
+It looks like there is a mandatory post that every blogger who learns functional programming should write: what a Monad is." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2016/01/monads-explained-in-csharp/" />
 
-    <title>Monads explained in C# | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="Monads explained in C#"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="Monads explained in C#" />
-    <meta property="og:url" content="https://mikhail.io/2016/01/monads-explained-in-csharp/" />
-
+	
+	
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="Functional Programming" />
+	
+	<meta property="article:tag" content="Monads" />
+	
+	<meta property="article:tag" content="LINQ" />
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
+	
+	
+	<meta name="twitter:card" content="summary"/>
+	
+	
 
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="Monads explained in C#"/>
+	<meta name="twitter:description" content="The newer and much longer version of this article is now available: Monads explained in C# (again)
+It looks like there is a mandatory post that every blogger who learns functional programming should write: what a Monad is."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Jan 25th, 2016</div>
-    
-    <h1>Monads explained in C#</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p><em>The newer and much longer version of this article is now available:</em>
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Monads%20explained%20in%20C%23%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2016%2f01%2fmonads-explained-in-csharp%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Monads explained in C#</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Jan 25, 2016
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 6 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p><em>The newer and much longer version of this article is now available:</em>
 <a href="https://mikhail.io/2018/07/monads-explained-in-csharp-again/">Monads explained in C# (again)</a></p>
+
 <p>It looks like there is a mandatory post that every blogger who learns functional programming should write:
 what a Monad is. Monads have the reputation of being something very abstract and very confusing for every
-developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you 
+developer who is not a hipster Haskell programmer. They say that once you understand what a monad is, you
 loose the ability to explain it in simple language. Doug Crockford was the first one to lay this rule down, but
 it becomes kind of obvious once you read 3 or 5 explanations on the web. Here is my attempt, probably doomed
 to fail :)</p>
+
 <h2 id="monads-are-container-types">Monads are container types</h2>
+
 <p>Monads represent a class of types which behave in the common way.</p>
+
 <p>Monads are containers which encapsulate some kind of functionality. On top of
-that, they provide a way to combine two containers into one. And that&#39;s about it. </p>
-<p>The goals of monads are similar to generic goals of any encapsulation in 
-software development practices: hide the implementation details from the client, 
-but provide a proper way to use the hidden functionality. </p>
-<p>It&#39;s not because we 
-want to be able to change the implementation, it&#39;s because we want to make the 
-client as simple as possible and to enforce the best way of code structure. 
-Quite often monads provide the way to avoid imperative code in favor of 
+that, they provide a way to combine two containers into one. And that&rsquo;s about it.</p>
+
+<p>The goals of monads are similar to generic goals of any encapsulation in
+software development practices: hide the implementation details from the client,
+but provide a proper way to use the hidden functionality.</p>
+
+<p>It&rsquo;s not because we
+want to be able to change the implementation, it&rsquo;s because we want to make the
+client as simple as possible and to enforce the best way of code structure.
+Quite often monads provide the way to avoid imperative code in favor of
 functional style.</p>
-<p>Monads are flexible, so in C# we could try to represent a monadic type as 
+
+<p>Monads are flexible, so in C# we could try to represent a monadic type as
 a generic class:</p>
-<pre><code class="language-csharp">public class Monad&lt;T&gt;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Monad</span>&lt;T&gt;
 {
-}</code></pre>
+}
+</code></pre></div>
 <h2 id="monad-instances-can-be-created">Monad instances can be created</h2>
-<p>Quite an obvious statement, isn&#39;t it. Having a class <code>Monad&lt;T&gt;</code>, there should 
-be a way to create an object of this class out of an instance of type <code>T</code>. 
-In functional world this operation is known as <code>Return</code> function. In C# it 
+
+<p>Quite an obvious statement, isn&rsquo;t it. Having a class <code>Monad&lt;T&gt;</code>, there should
+be a way to create an object of this class out of an instance of type <code>T</code>.
+In functional world this operation is known as <code>Return</code> function. In C# it
 can be as simple as a constructor:</p>
-<pre><code class="language-csharp">public class Monad&lt;T&gt;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Monad</span>&lt;T&gt;
 {
-    public Monad(T instance)
+    <span style="color:#00f">public</span> Monad(T instance)
     {
     }
-}</code></pre>
-<p>But usually it makes sense to define an extension method to enable fluent 
+}
+</code></pre></div>
+<p>But usually it makes sense to define an extension method to enable fluent
 syntax of monad creation:</p>
-<pre><code class="language-csharp">public static class MonadExtensions
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">MonadExtensions</span>
 {
-    public static Monad&lt;T&gt; Return&lt;T&gt;(this T instance) =&gt; new Monad&lt;T&gt;(instance);
-}</code></pre>
+    <span style="color:#00f">public</span> <span style="color:#00f">static</span> Monad&lt;T&gt; Return&lt;T&gt;(<span style="color:#00f">this</span> T instance) =&gt; <span style="color:#00f">new</span> Monad&lt;T&gt;(instance);
+}
+</code></pre></div>
 <h2 id="monads-can-be-chained-to-create-new-monads">Monads can be chained to create new monads</h2>
-<p>This is the property which makes monads so useful, but also a bit confusing. 
-In functional world this operation is expressed with the <code>Bind</code> function 
+
+<p>This is the property which makes monads so useful, but also a bit confusing.
+In functional world this operation is expressed with the <code>Bind</code> function
 (or <code>&gt;&gt;=</code> operator). Here is the signature of <code>Bind</code> method in C#:</p>
-<pre><code class="language-csharp">public class Monad&lt;T&gt;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Monad</span>&lt;T&gt;
 {
-    public Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
+    <span style="color:#00f">public</span> Monad&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Monad&lt;TO&gt;&gt; func)
     {
     }
-}</code></pre>
-<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an 
-argument of type <code>T</code> (not a monad) and returns an instance of <code>Monad&lt;TO&gt;</code> 
-where <code>TO</code> is another type. Now, our first instance of <code>Monad&lt;T&gt;</code> knows 
-how to bind itself to this function to produce another instance of monad 
-of the new type. The full power of monads comes when we compose several of 
+}
+</code></pre></div>
+<p>As you can see, the <code>func</code> argument is a complicated thing. It accepts an
+argument of type <code>T</code> (not a monad) and returns an instance of <code>Monad&lt;TO&gt;</code>
+where <code>TO</code> is another type. Now, our first instance of <code>Monad&lt;T&gt;</code> knows
+how to bind itself to this function to produce another instance of monad
+of the new type. The full power of monads comes when we compose several of
 them in one chain:</p>
-<pre><code class="language-csharp">initialValue
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">initialValue
     .Return()
     .Bind(v1 =&gt; produceV2OutOfV1(v1))
     .Bind(v2 =&gt; produceV3OutOfV2(v2))
     .Bind(v3 =&gt; produceV4OutOfV3(v3))
-    //...</code></pre>
-<p>Let&#39;s have a look at some examples.</p>
-<p><a name="maybe" href="/2016/01/monads-explained-in-csharp/undefined"></a></p>
+    <span style="color:#008000">//...
+</span></code></pre></div>
+<p>Let&rsquo;s have a look at some examples.</p>
+
+<p><a name="maybe"></a></p>
+
 <h2 id="example-maybe-option-type">Example: Maybe (Option) type</h2>
-<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach 
-to dealing with &#39;no value&#39; value, alternative to the concept of <code>null</code>. 
-Basically your object should never be null, but it can either have <code>Some</code> 
-value or be <code>None</code>. F# has a maybe implementation built into the language: 
-it&#39;s called <code>option</code> type. Here is a sample implementation in C#:</p>
-<pre><code class="language-csharp">public class Maybe&lt;T&gt; where T : class
+
+<p><code>Maybe</code> is the 101 monad which is used everywhere. <code>Maybe</code> is another approach
+to dealing with &lsquo;no value&rsquo; value, alternative to the concept of <code>null</code>.
+Basically your object should never be null, but it can either have <code>Some</code>
+value or be <code>None</code>. F# has a maybe implementation built into the language:
+it&rsquo;s called <code>option</code> type. Here is a sample implementation in C#:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Maybe</span>&lt;T&gt; <span style="color:#00f">where</span> T : <span style="color:#00f">class</span>
 {
-    private readonly T value;
+    <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> T <span style="color:#00f">value</span>;
 
-    public Maybe(T someValue)
+    <span style="color:#00f">public</span> Maybe(T someValue)
     {
-        if (someValue == null)
-            throw new ArgumentNullException(nameof(someValue));
-        this.value = someValue;
+        <span style="color:#00f">if</span> (someValue == <span style="color:#00f">null</span>)
+            <span style="color:#00f">throw</span> <span style="color:#00f">new</span> ArgumentNullException(nameof(someValue));
+        <span style="color:#00f">this</span>.<span style="color:#00f">value</span> = someValue;
     }
 
-    private Maybe()
+    <span style="color:#00f">private</span> Maybe()
     {
     }
 
-    public Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func) where TO : class
+    <span style="color:#00f">public</span> Maybe&lt;TO&gt; Bind&lt;TO&gt;(Func&lt;T, Maybe&lt;TO&gt;&gt; func) <span style="color:#00f">where</span> TO : <span style="color:#00f">class</span>
     {
-        return value != null ? func(value) : Maybe&lt;TO&gt;.None();
+        <span style="color:#00f">return</span> <span style="color:#00f">value</span> != <span style="color:#00f">null</span> ? func(<span style="color:#00f">value</span>) : Maybe&lt;TO&gt;.None();
     }
 
-    public static Maybe&lt;T&gt; None() =&gt; new Maybe&lt;T&gt;();
-}</code></pre>
-<pre><code class="language-csharp">public static class MaybeExtensions
+    <span style="color:#00f">public</span> <span style="color:#00f">static</span> Maybe&lt;T&gt; None() =&gt; <span style="color:#00f">new</span> Maybe&lt;T&gt;();
+}
+</code></pre></div><div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">MaybeExtensions</span>
 {
-    public static Maybe&lt;T&gt; Return&lt;T&gt;(this T value) where T : class
+    <span style="color:#00f">public</span> <span style="color:#00f">static</span> Maybe&lt;T&gt; Return&lt;T&gt;(<span style="color:#00f">this</span> T <span style="color:#00f">value</span>) <span style="color:#00f">where</span> T : <span style="color:#00f">class</span>
     {
-        return value != null ? new Maybe&lt;T&gt;(value) : Maybe&lt;T&gt;.None();
+        <span style="color:#00f">return</span> <span style="color:#00f">value</span> != <span style="color:#00f">null</span> ? <span style="color:#00f">new</span> Maybe&lt;T&gt;(<span style="color:#00f">value</span>) : Maybe&lt;T&gt;.None();
     }
-}</code></pre>
-<p>Return function is implemented with a combination of a public constructor 
-which accepts <code>Some</code> value (notice that <code>null</code> is not allowed) and a static 
-<code>None</code> method returning an object of &#39;no value&#39;. <code>Return</code> extension method
-combines both of them in one call. </p>
-<p><code>Bind</code> function is implemented explicitly. </p>
-<p>Let&#39;s have a look at a use case. Imagine we have a traditional repository 
+}
+</code></pre></div>
+<p>Return function is implemented with a combination of a public constructor
+which accepts <code>Some</code> value (notice that <code>null</code> is not allowed) and a static
+<code>None</code> method returning an object of &lsquo;no value&rsquo;. <code>Return</code> extension method
+combines both of them in one call.</p>
+
+<p><code>Bind</code> function is implemented explicitly.</p>
+
+<p>Let&rsquo;s have a look at a use case. Imagine we have a traditional repository
 which loads data from an external storage (no monads yet):</p>
-<pre><code class="language-csharp">public interface ITraditionalRepository
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> ITraditionalRepository
 {
-    Customer GetCustomer(int id);
-    Address GetAddress(int id);
-    Order GetOrder(int id);
-}</code></pre>
+    Customer GetCustomer(<span style="color:#2b91af">int</span> id);
+    Address GetAddress(<span style="color:#2b91af">int</span> id);
+    Order GetOrder(<span style="color:#2b91af">int</span> id);
+}
+</code></pre></div>
 <p>Now, we write a client class which loads data one by one and tries to find
 a shipper:</p>
-<pre><code class="language-csharp">Shipper shipperOfLastOrderOnCurrentAddress = null;
-var customer = repo.GetCustomer(customerId);
-if (customer?.Address != null)
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">Shipper shipperOfLastOrderOnCurrentAddress = <span style="color:#00f">null</span>;
+<span style="color:#2b91af">var</span> customer = repo.GetCustomer(customerId);
+<span style="color:#00f">if</span> (customer?.Address != <span style="color:#00f">null</span>)
 {
-    var address = repo.GetAddress(customer.Address.Id);
-    if (address?.LastOrder != null)
+    <span style="color:#2b91af">var</span> address = repo.GetAddress(customer.Address.Id);
+    <span style="color:#00f">if</span> (address?.LastOrder != <span style="color:#00f">null</span>)
     {
-        var order = repo.GetOrder(address.LastOrder.Id);
+        <span style="color:#2b91af">var</span> order = repo.GetOrder(address.LastOrder.Id);
         shipperOfLastOrderOnCurrentAddress = order?.Shipper;
     }
 }
-return shipperOfLastOrderOnCurrentAddress;</code></pre>
+<span style="color:#00f">return</span> shipperOfLastOrderOnCurrentAddress;
+</code></pre></div>
 <p>Note, that the code assumes that repository returns <code>null</code> if some entity
 is not found, although nothing in the type system shows that. Then, there
 is a number of <code>null</code> checks (facilitated with elvis operator). The code gets
 a bit cluttered and less linear.</p>
+
 <p>Here is an alternative repository which returns <code>Maybe</code> type:</p>
-<pre><code class="language-csharp">public interface IMonadicRepository
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> IMonadicRepository
 {
-    Maybe&lt;Customer&gt; GetCustomer(int id);
-    Maybe&lt;Address&gt; GetAddress(int id);
-    Maybe&lt;Order&gt; GetOrder(int id);
-}</code></pre>
+    Maybe&lt;Customer&gt; GetCustomer(<span style="color:#2b91af">int</span> id);
+    Maybe&lt;Address&gt; GetAddress(<span style="color:#2b91af">int</span> id);
+    Maybe&lt;Order&gt; GetOrder(<span style="color:#2b91af">int</span> id);
+}
+</code></pre></div>
 <p>The contract is more explicit: you see that <code>Maybe</code> type is used, so you
 will be forced to handle the case of absent value.</p>
-<p>And here is how the above example can be rewritten with <code>Bind</code> method 
+
+<p>And here is how the above example can be rewritten with <code>Bind</code> method
 composition:</p>
-<pre><code class="language-csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
     repo.GetCustomer(customerId)
         .Bind(c =&gt; c.Address)
         .Bind(a =&gt; repo.GetAddress(a.Id))
         .Bind(a =&gt; a.LastOrder)
         .Bind(lo =&gt; repo.GetOrder(lo.Id))
-        .Bind(o =&gt; o.Shipper);</code></pre>
-<p>There&#39;s no branching anymore, the code is fluent and linear.</p>
-<p>If you think that the syntax looks very much like a LINQ query with a bunch 
-of <code>Select</code> statements, you are not the only one ;) One of the common 
-implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface which allows 
+        .Bind(o =&gt; o.Shipper);
+</code></pre></div>
+<p>There&rsquo;s no branching anymore, the code is fluent and linear.</p>
+
+<p>If you think that the syntax looks very much like a LINQ query with a bunch
+of <code>Select</code> statements, you are not the only one ;) One of the common
+implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface which allows
 a more C#-idiomatic binding composition. Actually:</p>
-<h2 id="ienumerable-selectmany-is-a-monad-">IEnumerable + SelectMany is a monad </h2>
+
+<h2 id="ienumerable-selectmany-is-a-monad">IEnumerable + SelectMany is a monad</h2>
+
 <p><code>IEnumerable</code> is an interface for enumerable containers.</p>
+
 <p>Enumerable containers can be created - thus the <code>Return</code> monadic operation.</p>
-<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here 
+
+<p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here
 is its signature:</p>
-<pre><code class="language-csharp">public static IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
-    this IEnumerable&lt;A&gt; first, 
-    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)</code></pre>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> IEnumerable&lt;B&gt; SelectMany&lt;A, B&gt;(
+    <span style="color:#00f">this</span> IEnumerable&lt;A&gt; first,
+    Func&lt;A, IEnumerable&lt;B&gt;&gt; selector)
+</code></pre></div>
 <p>And here is an example of composition:</p>
-<pre><code class="language-csharp">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">IEnumerable&lt;Shipper&gt; someWeirdListOfShippers =
     customers
         .SelectMany(c =&gt; c.Addresses)
         .SelectMany(a =&gt; a.Orders)
-        .SelectMany(o =&gt; o.Shippers);</code></pre>
+        .SelectMany(o =&gt; o.Shippers);
+</code></pre></div>
 <p>The query has no idea about how the collections are stored (encapsulated in
 containers). We use functions <code>A -&gt; IEnumerable&lt;B&gt;</code> to produce new enumerables
 (<code>Bind</code> operation).</p>
+
 <h2 id="monad-laws">Monad laws</h2>
+
 <p>There are a couple of laws that <code>Return</code> and <code>Bind</code> need to adhere to, so
 that they produce a proper monad.</p>
+
 <p><strong>Identity law</strong> says that that <code>Return</code> is a neutral operation: you can safely
-run it before <code>Bind</code>, and it won&#39;t change the result of the function call:</p>
-<pre><code class="language-csharp">// Given
-T value;
+run it before <code>Bind</code>, and it won&rsquo;t change the result of the function call:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Given
+</span><span style="color:#008000"></span>T <span style="color:#00f">value</span>;
 Func&lt;T, M&lt;U&gt;&gt; f;
 
-// == means both parts are equivalent
-value.Return().Bind(f) == f(value) </code></pre>
+<span style="color:#008000">// == means both parts are equivalent
+</span><span style="color:#008000"></span><span style="color:#00f">value</span>.Return().Bind(f) == f(<span style="color:#00f">value</span>)
+</code></pre></div>
 <p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
 are composed does not matter:</p>
-<pre><code class="language-csharp">// Given
-M&lt;T&gt; m;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Given
+</span><span style="color:#008000"></span>M&lt;T&gt; m;
 Func&lt;T, M&lt;U&gt;&gt; f;
 Func&lt;U, M&lt;V&gt;&gt; g;
 
-// == means both parts are equivalent
-m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))</code></pre>
-<p>The laws may look complicated, but in fact they are very natural 
-expectations that any developer has when working with monads, so don&#39;t
+<span style="color:#008000">// == means both parts are equivalent
+</span><span style="color:#008000"></span>m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))
+</code></pre></div>
+<p>The laws may look complicated, but in fact they are very natural
+expectations that any developer has when working with monads, so don&rsquo;t
 spend too much mental effort on memorizing them.</p>
+
 <h2 id="conclusion">Conclusion</h2>
-<p>You should not be afraid of the &quot;M-word&quot; just because you are a C# programmer. 
-C# does not have a notion of monads as predefined language constructs, but 
-it doesn&#39;t mean we can&#39;t borrow some ideas from the functional world. Having 
-said that, it&#39;s also true that C# is lacking some powerful ways to combine 
-and generalize monads which are possible in Haskell and other functional 
+
+<p>You should not be afraid of the &ldquo;M-word&rdquo; just because you are a C# programmer.
+C# does not have a notion of monads as predefined language constructs, but
+it doesn&rsquo;t mean we can&rsquo;t borrow some ideas from the functional world. Having
+said that, it&rsquo;s also true that C# is lacking some powerful ways to combine
+and generalize monads which are possible in Haskell and other functional
 languages.</p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/functional-programming">Functional Programming</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/monads">Monads</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/linq">LINQ</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2016/01/monads-explained-in-csharp//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/functional-programming/'>Functional Programming</a>, <a href='/tags/monads/'>Monads</a>, <a href='/tags/maybe/'>Maybe</a>, <a href='/tags/linq/'>LINQ</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2016/01/monads-explained-in-csharp/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'Monads explained in C#';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

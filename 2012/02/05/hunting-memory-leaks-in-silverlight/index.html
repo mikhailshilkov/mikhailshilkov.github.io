@@ -1,258 +1,412 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Hunting memory leaks in Silverlight | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="Hunting memory leaks in Silverlight" />
+	<meta property="og:description" content="Recently, I&#39;ve spent a couple of days seeking and fixing memory leaks in our Silverlight application. It might be tough sometimes, but it&#39;s a good &#39;brain-teasing&#39; practice and it&#39;s a good way to learn how inner things work." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2012/02/05/hunting-memory-leaks-in-silverlight/" />
 
-    <title>Hunting memory leaks in Silverlight | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="Hunting memory leaks in Silverlight"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="Hunting memory leaks in Silverlight" />
-    <meta property="og:url" content="https://mikhail.io/2012/02/05/hunting-memory-leaks-in-silverlight/" />
+	
+	
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="CSharp" />
+	
+	<meta property="article:tag" content="Memory leaks" />
+	
+	<meta property="article:tag" content="Silverlight" />
+	
+	<meta property="article:tag" content="WinDbg" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary"/>
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="Hunting memory leaks in Silverlight"/>
+	<meta name="twitter:description" content="Recently, I&#39;ve spent a couple of days seeking and fixing memory leaks in our Silverlight application. It might be tough sometimes, but it&#39;s a good &#39;brain-teasing&#39; practice and it&#39;s a good way to learn how inner things work."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Feb 5th, 2012</div>
-    
-    <h1>Hunting memory leaks in Silverlight</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p>Recently, I&#39;ve spent a couple of days seeking and fixing memory leaks in our Silverlight application. It might be tough sometimes, but it&#39;s a good &#39;brain-teasing&#39; practice and it&#39;s a good way to learn how inner things work.</p>
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Hunting%20memory%20leaks%20in%20Silverlight%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2012%2f02%2f05%2fhunting-memory-leaks-in-silverlight%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Hunting memory leaks in Silverlight</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Feb 5, 2012
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 4 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Recently, I&rsquo;ve spent a couple of days seeking and fixing memory leaks in our Silverlight application. It might be tough sometimes, but it&rsquo;s a good &lsquo;brain-teasing&rsquo; practice and it&rsquo;s a good way to learn how inner things work.</p>
+
 <p>Memory leaks in Silverlight applications may be found with WinDbg tool. Have a look here for a quick introduction:
 <a href="http://davybrion.com/blog/2009/08/finding-memory-leaks-in-silverlight-with-windbg/">http://davybrion.com/blog/2009/08/finding-memory-leaks-in-silverlight-with-windbg/</a></p>
+
 <p>Basically, I only use 4 commands in WinDbg. First, I enable debugging Silverlight 5 applications:</p>
-<pre><code>!load C:\Program Files (x86)\Microsoft Silverlight\5.0.61118.0\sos.dll</code></pre><p>Then, I get the amount of instances for class names matching the search pattern:</p>
-<pre><code>!dumpheap -stat -type &lt;type name&gt;</code></pre><p>Next, I use the result to locate class instances&#39; addresses:</p>
-<pre><code>!dumpheap -MT &lt;MT from previous&gt;</code></pre><p>Finally, I get the reference chain for each of address found:</p>
-<pre><code>!gcroot &lt;address&gt;</code></pre><p>Having done this, you&#39;ll have to turn your brain on and try to figure out whether you found a memory leak and why if yes, why it takes place. Here are several examples of memory leaks that I found during last session:</p>
-<ol>
-<li>HtmlPage.Document.AttachEvent() call, which was never detached. We were using some browser-level API to subscribe on HTML document events, and never cared about unsubscribing. I got it refactored to native Silverlight event handlers, and this solved the issue.</li>
-<li>Deriving from MultiScaleTileSource. We used to have several classes for map layer rendering, inherited from MultiScaleTileSource. If an instance of such class is never used for map rendering (no assignment to MultiScaleImage.Source), then the GC never collects it (together with everything it references, of course). Another portion of refactoring helped: do not derive from MultiScaleTileSource whenever it&#39;s not needed for MultiScaleImage population. Sounds trivial, right? But it helps a lot.</li>
-<li>Improper usage of CompositionTarget.Rendering event. For our custom animated Progress control, we used to subscribe to CompositionTarget.Rendering in control constructor, and then animated the progress in event handler. As the Progress control used to be a part of control tree (in Expanded/Collapsed state), the event was never unsubsribed, which means... ta-dam... a memory leak. Now I use CompositionTarget.Rendering more carefully: subscribe to it at the point when Progress control is shown, and unsubscribe immediately after it gets collapsed.</li>
-<li>One of our major controls used to fail to unsubscribe itself from global error handler. There were a couple other similar event-related leaks. All fixed.</li>
-<li><p>A weird Telerik-related leak. We actively use RadGridView control throughout our application, and we dynamically set HeaderCellStyle for some of the columns depending on grid configuration. Unexpectedly enough, this led to a memory leak with the following reference stack:</p>
-<p> HandleTable:</p>
-<pre><code> 02f311f4 (pinned handle)
- -&gt; 11ee6210 System.Object[]
- -&gt; 10f21690 OurNamespace.Utilities.AppletHelper
- -&gt; 10f21670 System.EventHandler`1[[OurNamespace.Utilities.EventArgs`1[[System.Exception, mscorlib]], OurNamespace.Utilities]]
- -&gt; 10f2103c QFVClient.App
- -&gt; 1111a9bc QFVClient.PageContainer
- -&gt; 11122138 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11122184 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 1188ba6c System.Windows.Controls.Grid
- -&gt; 1188bad4 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 118912d8 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11122dc8 System.Windows.Controls.Border
- -&gt; 11122e30 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11122e7c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11128ea4 System.Windows.Controls.Grid
- -&gt; 11128f0c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11128f58 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11128fa4 System.Windows.Controls.Border
- -&gt; 1112900c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11129058 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11132e00 System.Windows.Controls.Grid
- -&gt; 11132e68 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11135bc4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11133758 QFVClient.Controls.SearchBox
- -&gt; 11133ca8 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11133cf4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11133c40 System.Windows.ResourceDictionary
- -&gt; 11133d30 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11133d7c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11133e18 System.Windows.Style
- -&gt; 11133e68 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 11133eb4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 11133ef0 System.Collections.Generic.Dictionary`2[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]]
- -&gt; 11133f3c System.Collections.Generic.Dictionary`2+Entry[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]][]
- -&gt; 110dced0 System.Windows.Style
- -&gt; 110dcf20 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 110dcf6c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 110dce6c System.Windows.SetterBaseCollection
- -&gt; 110dcfa8 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 110dcff4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 110dcd0c System.Windows.Setter
- -&gt; 110dcd5c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 110dcda8 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 110dcde4 System.Collections.Generic.Dictionary`2[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]]
- -&gt; 110dce30 System.Collections.Generic.Dictionary`2+Entry[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]][]
- -&gt; 110dcad0 System.Windows.Controls.ControlTemplate
- -&gt; 110dcb34 System.Windows.ResourceDictionary
- -&gt; 110dd0d8 MS.Internal.ResourceDictionaryCollection
- -&gt; 110dd21c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 1111609c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 110df418 System.Windows.ResourceDictionary
- -&gt; 110df470 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
- -&gt; 110eb8b4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
- -&gt; 110ecde0 System.Windows.Style
- -&gt; 116d1cd4 OurNamespace.Controls.TextColumn</code></pre></li>
-</ol>
-<p>PageContainer is the application container which always exists, while TextColumn is a custom column class for a Telerik grid, which is already removed from application tree at the time point. Our TextColumn gets bound with root controls through ResourceDictionary/Style chain; and I can&#39;t explain the reason of such a leak. Though, clearing HeaderCellStyle when grid is not needed anymore does fix the problem. Weird enough.</p>
+
+<pre><code>!load C:\Program Files (x86)\Microsoft Silverlight\5.0.61118.0\sos.dll
+</code></pre>
+
+<p>Then, I get the amount of instances for class names matching the search pattern:</p>
+
+<pre><code>!dumpheap -stat -type &lt;type name&gt;
+</code></pre>
+
+<p>Next, I use the result to locate class instances&rsquo; addresses:</p>
+
+<pre><code>!dumpheap -MT &lt;MT from previous&gt;
+</code></pre>
+
+<p>Finally, I get the reference chain for each of address found:</p>
+
+<pre><code>!gcroot &lt;address&gt;
+</code></pre>
+
+<p>Having done this, you&rsquo;ll have to turn your brain on and try to figure out whether you found a memory leak and why if yes, why it takes place. Here are several examples of memory leaks that I found during last session:
+1. HtmlPage.Document.AttachEvent() call, which was never detached. We were using some browser-level API to subscribe on HTML document events, and never cared about unsubscribing. I got it refactored to native Silverlight event handlers, and this solved the issue.
+2. Deriving from MultiScaleTileSource. We used to have several classes for map layer rendering, inherited from MultiScaleTileSource. If an instance of such class is never used for map rendering (no assignment to MultiScaleImage.Source), then the GC never collects it (together with everything it references, of course). Another portion of refactoring helped: do not derive from MultiScaleTileSource whenever it&rsquo;s not needed for MultiScaleImage population. Sounds trivial, right? But it helps a lot.
+3. Improper usage of CompositionTarget.Rendering event. For our custom animated Progress control, we used to subscribe to CompositionTarget.Rendering in control constructor, and then animated the progress in event handler. As the Progress control used to be a part of control tree (in Expanded/Collapsed state), the event was never unsubsribed, which means&hellip; ta-dam&hellip; a memory leak. Now I use CompositionTarget.Rendering more carefully: subscribe to it at the point when Progress control is shown, and unsubscribe immediately after it gets collapsed.
+4. One of our major controls used to fail to unsubscribe itself from global error handler. There were a couple other similar event-related leaks. All fixed.
+5. A weird Telerik-related leak. We actively use RadGridView control throughout our application, and we dynamically set HeaderCellStyle for some of the columns depending on grid configuration. Unexpectedly enough, this led to a memory leak with the following reference stack:</p>
+
+<pre><code>HandleTable:
+    02f311f4 (pinned handle)
+    -&gt; 11ee6210 System.Object[]
+    -&gt; 10f21690 OurNamespace.Utilities.AppletHelper
+    -&gt; 10f21670 System.EventHandler`1[[OurNamespace.Utilities.EventArgs`1[[System.Exception, mscorlib]], OurNamespace.Utilities]]
+    -&gt; 10f2103c QFVClient.App
+    -&gt; 1111a9bc QFVClient.PageContainer
+    -&gt; 11122138 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11122184 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 1188ba6c System.Windows.Controls.Grid
+    -&gt; 1188bad4 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 118912d8 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11122dc8 System.Windows.Controls.Border
+    -&gt; 11122e30 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11122e7c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11128ea4 System.Windows.Controls.Grid
+    -&gt; 11128f0c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11128f58 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11128fa4 System.Windows.Controls.Border
+    -&gt; 1112900c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11129058 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11132e00 System.Windows.Controls.Grid
+    -&gt; 11132e68 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11135bc4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11133758 QFVClient.Controls.SearchBox
+    -&gt; 11133ca8 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11133cf4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11133c40 System.Windows.ResourceDictionary
+    -&gt; 11133d30 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11133d7c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11133e18 System.Windows.Style
+    -&gt; 11133e68 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 11133eb4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 11133ef0 System.Collections.Generic.Dictionary`2[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]]
+    -&gt; 11133f3c System.Collections.Generic.Dictionary`2+Entry[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]][]
+    -&gt; 110dced0 System.Windows.Style
+    -&gt; 110dcf20 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 110dcf6c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 110dce6c System.Windows.SetterBaseCollection
+    -&gt; 110dcfa8 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 110dcff4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 110dcd0c System.Windows.Setter
+    -&gt; 110dcd5c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 110dcda8 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 110dcde4 System.Collections.Generic.Dictionary`2[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]]
+    -&gt; 110dce30 System.Collections.Generic.Dictionary`2+Entry[[System.UInt32, mscorlib],[System.Windows.DependencyObject, System.Windows]][]
+    -&gt; 110dcad0 System.Windows.Controls.ControlTemplate
+    -&gt; 110dcb34 System.Windows.ResourceDictionary
+    -&gt; 110dd0d8 MS.Internal.ResourceDictionaryCollection
+    -&gt; 110dd21c System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 1111609c System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 110df418 System.Windows.ResourceDictionary
+    -&gt; 110df470 System.Collections.Generic.Dictionary`2[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]]
+    -&gt; 110eb8b4 System.Collections.Generic.Dictionary`2+Entry[[MS.Internal.IManagedPeerBase, System.Windows],[System.Object, mscorlib]][]
+    -&gt; 110ecde0 System.Windows.Style
+    -&gt; 116d1cd4 OurNamespace.Controls.TextColumn
+</code></pre>
+
+<p>PageContainer is the application container which always exists, while TextColumn is a custom column class for a Telerik grid, which is already removed from application tree at the time point. Our TextColumn gets bound with root controls through ResourceDictionary/Style chain; and I can&rsquo;t explain the reason of such a leak. Though, clearing HeaderCellStyle when grid is not needed anymore does fix the problem. Weird enough.</p>
+
 <p>As you can see, there are numerous reasons for memory leaks in a Silverlight application. Some are obvious (e.g. global event handlers never unsubscribed), other ones are hard to understand intuitively and sometimes depend on runtime or third party internals. In any case, a way to fix or workaround always exists. Good luck with bug hunting!</p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/csharp">C#</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/memory-leaks">Memory leaks</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/silverlight">Silverlight</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/windbg">WinDbg</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2012/02/05/hunting-memory-leaks-in-silverlight//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/c#/'>C#</a>, <a href='/tags/fixing-memory-leaks/'>fixing memory leaks</a>, <a href='/tags/memory-leaks/'>Memory leaks</a>, <a href='/tags/silverlight/'>Silverlight</a>, <a href='/tags/windbg/'>WinDbg</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2012/02/05/hunting-memory-leaks-in-silverlight/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'Hunting memory leaks in Silverlight';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>

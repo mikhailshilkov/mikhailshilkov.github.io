@@ -1,283 +1,416 @@
 <!DOCTYPE html>
-<html prefix="og: http://ogp.me/ns#">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>How I fixed a bug in SQL Server | Mikhail Shilkov</title>
+	
+	
+	
+        <link rel="stylesheet" href="https://kit-free.fontawesome.com/releases/latest/css/free.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
 
-    <meta name="description" content="Software development using .NET, C#, SQL, Javascript and related technologies" />
+	
+	
+	<meta property="og:title" content="How I fixed a bug in SQL Server" />
+	<meta property="og:description" content="Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, the new cardinality estimator was introduced. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &#34;new&#34; also means &#34;less tested&#34;..." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2015/02/how-i-fixed-a-bug-in-sql-server/" />
 
-    <title>How I fixed a bug in SQL Server | Mikhail Shilkov</title>
-    <meta name="author" content="Mikhail Shilkov">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="twitter:card" content="summary_large_image"></meta>
-    <meta name="twitter:creator" content="@MikhailShilkov"></meta>
-    <meta name="twitter:title" content="How I fixed a bug in SQL Server"></meta>
-
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="How I fixed a bug in SQL Server" />
-    <meta property="og:url" content="https://mikhail.io/2015/02/how-i-fixed-a-bug-in-sql-server/" />
+	
+	
+	
+	
 
 
+	
+	
+	<meta property="article:tag" content="SQL Server" />
+	
+	<meta property="article:tag" content="Databases" />
+	
 
+	
+	
+	<meta name="twitter:card" content="summary"/>
+	
+	
 
-    <link href="/feed/" rel="alternate" title="mikhail.io" type="application/atom+xml">
-    <link href="/favicon.ico?v=2" rel="shortcut icon">
-
-    <!-- Bootstrap -->
-    <link href="/vendor/prism.css" rel="stylesheet" media="screen">
-    <link href="/styles/site.css" rel="stylesheet" media="screen">
-
-    <meta name="generator" content="DocPad v6.80.6" />
-    
+	<meta name="twitter:title" content="How I fixed a bug in SQL Server"/>
+	<meta name="twitter:description" content="Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, the new cardinality estimator was introduced. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &#34;new&#34; also means &#34;less tested&#34;..."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
-<body>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
 
-<div class="navbar navbar-default navbar-static-top">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            <a class="navbar-brand" href="/">
-                <span class="text-primary">Mikhail Shilkov</span><br />
-                <span class="elevator-pitch">Serverless, Azure, FP, F# and more</span>
-            </a>
-        </div>
-        <div class="collapse navbar-collapse navbar-right">
-            <ul class="nav navbar-nav">
-                <!--<li><a href="/">Blog</a></li>-->
-                
-                    <li><a href="/tags/">Topics</a></li>
-                
-                    <li><a href="/archives/">Archives</a></li>
-                
-                    <li><a href="/talks/">Talks</a></li>
-                
-                    <li><a href="/about/">About</a></li>
-                
-                <li class="hidden-xs">
-                    <a href="/feed/" class="rss"><span class="icon icon-feed"></span></a>
-                    <a href="https://www.linkedin.com/in/mikhailshilkov" class="linkedin"><span class="icon icon-linkedin"></span></a>
-                    <a href="https://twitter.com/mikhailshilkov" class="twitter"><span class="icon icon-twitter"></span></a>
-                    <a href="https://github.com/mikhailshilkov" class="github"><span class="icon icon-github"></span></a>
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-            </ul>
-            <form class="navbar-form navbar-right hidden-xs" role="search" action="https://google.com/search"
-                  method="get">
-                <div class="form-group">
-                    <input type="search" name="q" class="form-control" placeholder="Search">
-                    <input type="hidden" name="q" value="site:mikhail.io">
-                </div>
-            </form>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
         </div>
+        
     </div>
-</div>
-<div class="container">
-    <article class="post">
-    <div class="post-date">Feb 17th, 2015</div>
-    
-    <h1>How I fixed a bug in SQL Server</h1>
-    
+</nav>
 
-    
 
-    <div class="post-content">
-        <p>Well, not really... I just reported it to Microsoft and then it got fixed. Anyway, here is the story.</p>
-<p>Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, <a href="http://blogs.msdn.com/b/psssql/archive/2014/04/01/sql-server-2014-s-new-cardinality-estimator-part-1.aspx">the new cardinality estimator was introduced</a>. In two words, cardinality estimator is a piece of SQL functionality which estimates how many rows the engine might get for a specific query or a query part. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &quot;new&quot; also means &quot;less tested&quot;...</p>
-<p>Immediately after migration we found out that one of the stored procedures got much slower than before. That stored procedure was retrieving thousands of rows from a queue, and then did a series of transformations which took ages to complete. During the investigation we found that the query plan is far from being optimal, with massive scans of partitioned tables; and the reason was in ridiculously high estimations on one of the tables. That table was of moderate size (millions of rows), our query touched only some hundreds rows, while the estimate was... millions!</p>
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=How%20I%20fixed%20a%20bug%20in%20SQL%20Server%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2015%2f02%2fhow-i-fixed-a-bug-in-sql-server%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">How I fixed a bug in SQL Server</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Feb 17, 2015
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 5 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Well, not really&hellip; I just reported it to Microsoft and then it got fixed. Anyway, here is the story.</p>
+
+<p>Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, <a href="http://blogs.msdn.com/b/psssql/archive/2014/04/01/sql-server-2014-s-new-cardinality-estimator-part-1.aspx">the new cardinality estimator was introduced</a>. In two words, cardinality estimator is a piece of SQL functionality which estimates how many rows the engine might get for a specific query or a query part. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &ldquo;new&rdquo; also means &ldquo;less tested&rdquo;&hellip;</p>
+
+<p>Immediately after migration we found out that one of the stored procedures got much slower than before. That stored procedure was retrieving thousands of rows from a queue, and then did a series of transformations which took ages to complete. During the investigation we found that the query plan is far from being optimal, with massive scans of partitioned tables; and the reason was in ridiculously high estimations on one of the tables. That table was of moderate size (millions of rows), our query touched only some hundreds rows, while the estimate was&hellip; millions!</p>
+
 <p>Here is a repro to show this issue on any test database (database must be in SQL Server 2014 compatibility mode):</p>
-<pre><code>CREATE TABLE [dbo].[Store](
-    Id int IDENTITY(1,1) NOT NULL,
-    City int NOT NULL,
-    Size int NOT NULL,
-    Name varchar(max) NULL,
-    CONSTRAINT [PK_Store] PRIMARY KEY CLUSTERED ([Id] ASC)
- ) 
-
- GO
-
- CREATE NONCLUSTERED INDEX [IX_Store] ON [dbo].[Store]
-(
-    City ASC,
-    Size ASC
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">CREATE</span> <span style="color:#00f">TABLE</span> [dbo].[Store](
+Id int <span style="color:#00f">IDENTITY</span>(1,1) <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
+City int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
+<span style="color:#00f">Size</span> int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
+Name varchar(<span style="color:#00f">max</span>) <span style="color:#00f">NULL</span>,
+     <span style="color:#00f">CONSTRAINT</span> [PK_Store] <span style="color:#00f">PRIMARY</span> <span style="color:#00f">KEY</span> CLUSTERED ([Id] <span style="color:#00f">ASC</span>)
 )
 
-GO
- TRUNCATE TABLE Store
-INSERT Store 
-SELECT i % 101, i % 11, &#39;Store &#39; + CAST(i AS VARCHAR)
-  FROM 
- (SELECT TOP 100000 ROW_NUMBER() OVER (ORDER BY s1.[object_id]) AS i
-  FROM sys.all_objects  s1, sys.all_objects  s2) numbers
-GO
+<span style="color:#00f">GO</span>
 
-CREATE TABLE StoreRequest (City int NOT NULL, Size int NOT NULL)
+<span style="color:#00f">CREATE</span> NONCLUSTERED <span style="color:#00f">INDEX</span> [IX_Store] <span style="color:#00f">ON</span> [dbo].[Store]
+(
+City <span style="color:#00f">ASC</span>,
+<span style="color:#00f">Size</span> <span style="color:#00f">ASC</span>
+)
 
-GO
-DELETE StoreRequest
-INSERT StoreRequest values (55, 1)
-INSERT StoreRequest values (66, 2)
+<span style="color:#00f">GO</span>
+<span style="color:#00f">TRUNCATE</span> <span style="color:#00f">TABLE</span> Store
+<span style="color:#00f">INSERT</span> Store
+<span style="color:#00f">SELECT</span> i % 101, i % 11, <span style="color:#a31515">&#39;Store &#39;</span> + <span style="color:#00f">CAST</span>(i <span style="color:#00f">AS</span> VARCHAR)
+  <span style="color:#00f">FROM</span>
+  (<span style="color:#00f">SELECT</span> TOP 100000 ROW_NUMBER() OVER (<span style="color:#00f">ORDER</span> <span style="color:#00f">BY</span> s1.[object_id]) <span style="color:#00f">AS</span> i
+     <span style="color:#00f">FROM</span> sys.all_objects  s1, sys.all_objects  s2) numbers
+<span style="color:#00f">GO</span>
 
-GO
+<span style="color:#00f">CREATE</span> <span style="color:#00f">TABLE</span> StoreRequest (City int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>, <span style="color:#00f">Size</span> int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>)
 
- SELECT s.City
-   FROM StoreRequest AS r
-        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
-                    ON s.City = r.City AND s.Size = r.Size
-  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55</code></pre><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
+<span style="color:#00f">GO</span>
+<span style="color:#00f">DELETE</span> StoreRequest
+<span style="color:#00f">INSERT</span> StoreRequest <span style="color:#00f">values</span> (55, 1)
+<span style="color:#00f">INSERT</span> StoreRequest <span style="color:#00f">values</span> (66, 2)
+
+<span style="color:#00f">GO</span>
+
+<span style="color:#00f">SELECT</span> s.City
+  <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
+       <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
+               <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
+ <span style="color:#00f">WHERE</span> r.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55</code></pre></div>
+<p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
+
 <p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
-<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
+
+<p><img src="2014estimates.png" alt="Execution plan in SQL Server 2014" /></p>
+
 <p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
-<p>Good news: it&#39;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
-<pre><code> SELECT s.City
-   FROM StoreRequest AS r
-        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
-                    ON s.City = r.City AND s.Size = r.Size
-  WHERE s.Size &lt;&gt; 1 OR s.City &lt;&gt; 55</code></pre><p>Estimator is able to handle this situation correctly:</p>
-<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
+
+<p>Good news: it&rsquo;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> s.City
+  <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
+       <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
+               <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
+ <span style="color:#00f">WHERE</span> s.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55</code></pre></div>
+<p>Estimator is able to handle this situation correctly:</p>
+
+<p><img src="2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be" /></p>
+
 <p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
+
 <p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
-<pre><code> SELECT s.City
-   FROM StoreRequest AS r
-        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK) 
-                    ON s.City = r.City AND s.Size = r.Size
-  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
- OPTION(QUERYTRACEON 9481) </code></pre><p>And then we get this:</p>
-<p><img src="/2015/02/how-i-fixed-a-bug-in-sql-server//2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"> <span style="color:#00f">SELECT</span> s.City
+   <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
+        <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
+                <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
+  <span style="color:#00f">WHERE</span> r.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55
+ <span style="color:#00f">OPTION</span>(QUERYTRACEON 9481)</code></pre></div>
+<p>And then we get this:</p>
+
+<p><img src="2012estimates.png" alt="Execution plan in SQL Server 2012" /></p>
+
 <p>Which is as good as the best attempt of SQL Server 2014 and much-much better than the worst one.</p>
+
 <p>I posted this repro to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server forum</a>. Here is the comment that I got from Erland Sommarskog, SQL Server MVP:</p>
+
 <blockquote>
 <p>The estimate here is clearly incorrect. SQL Server knows the density of Size and City. It knows the cardinality of the temp table. The density information gives how many rows the join will produce. The WHERE clause will then remove a certain number of rows. With no statistics for the temp table, it does not know how many, but it will apply some standard guess.</p>
-</blockquote>
-<blockquote>
+
 <p>50000 is a completely bogus number, because the join cannot produce that many rows, and SQL Server is able to compute the join with out the WHERE clause decently. (Well, it estimates 90, when the number is 180.) No, this is obviously a case of the cardinality estimator giving up completely.</p>
-</blockquote>
-<blockquote>
+
 <p>It is worth noting that both these WHERE clauses gives reasonable estimates:</p>
-</blockquote>
-<blockquote>
+
 <pre><code>WHERE r.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
-WHERE s.Size &lt;&gt; 11 OR s.City &lt;&gt; 550</code></pre></blockquote>
-<blockquote>
+WHERE s.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
+</code></pre>
+
 <p>Whereas these two gives the spooky 50000:</p>
-</blockquote>
-<blockquote>
+
 <pre><code>WHERE s.Size &lt;&gt; 11 OR r.City &lt;&gt; 550
-WHERE r.Size &lt;&gt; 11 OR s.City &lt;&gt; 550</code></pre></blockquote>
-<blockquote>
+WHERE r.Size &lt;&gt; 11 OR s.City &lt;&gt; 550
+</code></pre>
+
 <ul>
 <li>Erland Sommarskog</li>
 </ul>
 </blockquote>
+
 <p>Then I also posted it to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server feedback issue tracker</a> and after a couple of weeks got a reply from Microsoft employee:</p>
+
 <blockquote>
 <p>Thank you for reporting this issue. I am happy to let you know that we have a fix for this problem, which will be available in one of the upcoming servicing releases for SQL Server 2014 (the details will be published in a KB).</p>
-</blockquote>
-<blockquote>
+
 <ul>
 <li>Thanks, Alexey, SQL Development</li>
 </ul>
 </blockquote>
+
 <p>Thanks to Erlang and Alexey for their help. I look forward to the servicing release!
 Happy coding!</p>
 
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/sql-server">SQL Server</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/databases">Databases</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+            </div>
+            
+        </div>
     </div>
-
+    <div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div id="disqus_thread"></div>
+<script type="application/javascript">
+    var disqus_config = function () {
     
-    <p>
-      Like this post? Please share it!<br />
-      <table>
-        <tr>
-          <td>
-            <a href="https://twitter.com/share" class="twitter-share-button" data-via="MikhailShilkov">Tweet</a>
-            <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
-          </td>
-          <td>
-            <a href="http://news.ycombinator.com/submit" class="hn-share-button" style="height: 28px">Vote on HN</a>
-            <script src="//hnbutton.appspot.com/static/hn.min.js" async defer></script>
-          </td>
-          <td style="vertical-align: top; padding-top: 3px">
-            <a href="//www.reddit.com/submit" onclick="window.location = '//www.reddit.com/submit?url=' + encodeURIComponent(window.location); return false"> <img src="//www.redditstatic.com/spreddit7.gif" alt="submit to reddit" border="0" width="75" /> </a>
-          </td>
-        </tr>
-      </table>
-    </p>
-
-    See a mistake? <a href="https://github.com/mikhailshilkov/mikhailio-docpad/edit/master/src/documents/2015/02/how-i-fixed-a-bug-in-sql-server//index.html.md">Edit this post!</a><br />
     
-
     
-    <div class="post-tags">
-        Posted In: <a href='/tags/sql-server/'>SQL Server</a>, <a href='/tags/execution-plan/'>Execution Plan</a>, <a href='/tags/query-plan/'>Query Plan</a>, <a href='/tags/database/'>Database</a>, <a href='/tags/repro/'>Repro</a>, <a href='/tags/erland-sommarskog/'>Erland Sommarskog</a>
-    </div>
-    
-</article>
-    <div id="me">
-    <p itemscope itemtype="http://data-vocabulary.org/Person">
-        <img src="/images/Headshot-Square.jpg" alt="Mikhail Shilkov" itemprop="photo" />
-        I'm <b><span itemprop="name">Mikhail Shilkov</span></b>, a <span itemprop="title">software developer and architect</span>,
-        a Microsoft Azure MVP, Russian expat living in the Netherlands. I am passionate about cloud technologies, 
-        functional programming and the intersection of the two.
-    </p>
-    <p>
-        <a href="https://www.linkedin.com/in/mikhailshilkov/">LinkedIn</a> &#8226;
-        <a href="https://twitter.com/mikhailshilkov">@mikhailshilkov</a> &#8226;
-        <a href="https://github.com/mikhailshilkov">GitHub</a> &#8226;
-        <a href="https://stackoverflow.com/users/1171619/mikhail">Stack Overflow</a>
-    </p>
-</div>
-    <div id="disqus_thread"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments.</a></noscript></div>
-<script type="text/javascript">
-    var disqus_shortname = 'mikhailio';
-    var disqus_url = 'https://mikhail.io/2015/02/how-i-fixed-a-bug-in-sql-server/';
-    var disqus_identifier = disqus_url;
-    var disqus_title = 'How I fixed a bug in SQL Server';
-
+    };
     (function() {
-        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
-        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-    })();
-
-    setInterval(() => {
-        let iframes = document.getElementsByTagName("iframe");
-        for (let iframe of iframes) {
-            let src = iframe.src;
-            if (src && src.match(/(ads-iframe)|(disqusads)/gi)) {
-                iframe.parentNode.removeChild(iframe);
-                console.log('Blocked a nasty ad');
-            }
+        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
+            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
+            return;
         }
-    }, 500);
+        var d = document, s = d.createElement('script'); s.async = true;
+        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', +new Date());
+        (d.head || d.body).appendChild(s);
+    })();
 </script>
-</div>
-<div class="container">
-    <div class="navbar navbar-footer">
-        <p class="navbar-center navbar-text">Content copyright &copy; 2018 Mikhail Shilkov</p>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
+        </div>
     </div>
-</div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
 
 
 
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js"></script>
-<script src="/vendor/prism.js"></script>
-<script src="/site.js"></script>
 
-<script>
-  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
-  ga('create', 'UA-59218480-1', 'auto');
-  ga('send', 'pageview');
 
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
 </script>
-</body>
+
+    </body>
 </html>
