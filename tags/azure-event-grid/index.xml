@@ -3,7 +3,7 @@
     <generator>Hugo -- gohugo.io</generator>
     <title>Mikhail Shilkov</title><link href="https://mikhail.io/tags/azure-event-grid/feed" rel="self" />
     <link href="https://mikhail.io/tags/azure-event-grid/"/>
-    <updated>2019-12-08T12:57:59+01:00</updated>
+    <updated>2019-12-20T16:34:40+01:00</updated>
     <author>
             <name>Mikhail Shilkov</name>
             </author>
@@ -135,8 +135,8 @@
             <link href="https://mikhail.io/2019/"/>
             <id>https://mikhail.io/2019/</id>
             
-            <published>2019-12-01T00:00:00+00:00</published>
-            <updated>2019-12-01T00:00:00+00:00</updated>
+            <published>2019-12-19T00:00:00+00:00</published>
+            <updated>2019-12-19T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -156,8 +156,305 @@
             <link href="https://mikhail.io/tags/aws/"/>
             <id>https://mikhail.io/tags/aws/</id>
             
-            <published>2019-12-01T00:00:00+00:00</published>
-            <updated>2019-12-01T00:00:00+00:00</updated>
+            <published>2019-12-19T00:00:00+00:00</published>
+            <updated>2019-12-19T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[AWS Lambda]]></title>
+            <link href="https://mikhail.io/tags/aws-lambda/"/>
+            <id>https://mikhail.io/tags/aws-lambda/</id>
+            
+            <published>2019-12-19T00:00:00+00:00</published>
+            <updated>2019-12-19T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Provisioned Concurrency: Avoiding Cold Starts in AWS Lambda]]></title>
+            <link href="https://mikhail.io/2019/12/aws-lambda-provisioned-concurrency-no-cold-starts/"/>
+            <id>https://mikhail.io/2019/12/aws-lambda-provisioned-concurrency-no-cold-starts/</id>
+            
+            <published>2019-12-19T00:00:00+00:00</published>
+            <updated>2019-12-19T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>AWS recently announced the launch of Provisioned Concurrency, a new feature of AWS Lambda that intends to solve the problem of cold starts.</blockquote>
+
+<p>AWS recently <a href="https://aws.amazon.com/blogs/aws/new-provisioned-concurrency-for-lambda-functions/">announced</a> the launch of <strong>Provisioned Concurrency</strong>, a new feature of AWS Lambda that intends to solve the problem of cold starts. In this article, we take another look at the problem of latency-critical serverless applications, and how the new feature impacts the status-quo.</p>
+
+<h2 id="concurrency-model-of-aws-lambda">Concurrency Model of AWS Lambda</h2>
+
+<p>Despite being serverless, AWS Lambda uses lightweight containers to process incoming requests. Every container, or worker, can process only a single request at any given time.</p>
+
+<figure >
+    
+        <img src="executions.png"
+            alt="Overlapping executions land on separate workers"
+             />
+        
+    
+    <figcaption>
+        <h4>Overlapping executions land on separate workers</h4>
+    </figcaption>
+    
+</figure>
+
+<p>Because of this, the number of concurrent requests defines the number of required workers that a specific AWS Lambda function needs to serve a response at any given moment.</p>
+
+<h2 id="cold-starts">Cold Starts</h2>
+
+<p>How does AWS know how many workers it needs to run for a given function? Well, it doesn&rsquo;t know in advance. AWS allocates new workers on-demand as the Lambda gets invoked.</p>
+
+<p>Whenever Lambda receives a request but it has no idle workers, the control plane assigns a new generic worker to it. The worker then has to download the custom code or binaries of your Lambda and load them into memory before it can service the request. This process takes time, which significantly increases response latency.</p>
+
+<p>The issue of sporadically slow responses caused by the need to increase the pool of workers is known as <strong>Cold Start</strong>. Cold starts are consistently the top concern about the applicability of serverless technologies to latency-sensitive workloads. There are numerous articles about the problem, including many articles I have written in the <a href="https://mikhail.io/serverless/coldstarts/">Cold Starts</a> section on my website</p>
+
+<h2 id="warming">Warming</h2>
+
+<p>Cold starts don&rsquo;t occur for the majority of requests because AWS Lambda reuses workers between subsequent invocations. However, if a particular worker is idle for too long (usually, several minutes), AWS may decide to recycle and return it to the generic pool.</p>
+
+<p>A trick known as <strong>Lambda Warmers</strong> uses kept-alive workers to reduce the frequency of cold starts. The idea is to have a CloudWatch timer that fires every few minutes and sends <code>N</code> parallel requests to the target Lambda. If all those requests land at the same time, AWS has to provision at least <code>N</code> workers to process them. The actual operation doesn&rsquo;t have to do any useful work, but it resets the recycling timer back to zero.</p>
+
+<p>There are a few drawbacks with this approach:</p>
+
+<ul>
+<li>If a valid request comes at the same time as warming requests, it might hit a cold start.</li>
+<li>Extra logic is needed in the Lambda code to detect warming requests and short-circuit them instead of doing useful work.</li>
+<li>CloudWatch rules require additional setup and management.</li>
+<li>The result is still best-effort: Lambda still recycles workers from time to time.</li>
+</ul>
+
+<p>You can find more details about how Pulumi can help with some of these issues in <a href="https://mikhail.io/2018/08/aws-lambda-warmer-as-pulumi-component/">AWS Lambda Warmer as Pulumi Component</a>.</p>
+
+<h2 id="provisioned-concurrency">Provisioned Concurrency</h2>
+
+<p>At re:Invent 2019, AWS introduced Lambda <strong>Provisioned Concurrency</strong>&mdash;a feature to work around cold starts. The base concurrency model doesn&rsquo;t change. However, you can request a given number of workers to be always-warm and dedicated to a specific Lambda.</p>
+
+<p>Here is an example of configuring the provisioned concurrency with Pulumi in TypeScript:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> lambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;mylambda&#34;</span>, {
+    code: <span style="color:#2b91af">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./app&#34;</span>),
+    handler: <span style="color:#a31515">&#34;handler&#34;</span>,
+    role: <span style="color:#2b91af">role.arn</span>,
+    publish: <span style="color:#2b91af">true</span>,
+});
+
+<span style="color:#00f">const</span> fixed = <span style="color:#00f">new</span> aws.lambda.ProvisionedConcurrencyConfig(<span style="color:#a31515">&#34;fixed-concurrency&#34;</span>, {
+  functionName: <span style="color:#2b91af">lambda.name</span>,
+  qualifier: <span style="color:#2b91af">lambda.version</span>,
+  provisionedConcurrentExecutions: <span style="color:#2b91af">2</span>,
+});</code></pre></div>
+<p>The snippet sets the provisioned concurrency for <code>mylambda</code> to a fixed value of <code>2</code>. Note that concurrency is provisioned per Lambda version, and it can&rsquo;t be set for the <code>$LATEST</code> version alias. Therefore, I set the <code>publish</code> attribute of my Lambda to <code>true</code> and reference a specific version of the Lambda in provisioning.</p>
+
+<h2 id="dynamic-provisioned-concurrency">Dynamic Provisioned Concurrency</h2>
+
+<p>A fixed level of provisioned concurrency works well for stable workloads.</p>
+
+<figure >
+    
+        <img src="steady.png"
+            alt="Fixed provisioned concurrency for uniform workloads"
+             />
+        
+    
+    <figcaption>
+        <h4>Fixed provisioned concurrency for uniform workloads</h4>
+    </figcaption>
+    
+</figure>
+
+<p>However, many workloads fluctuate a lot. Extreme elasticity and lack of configuration parameters have always been the essential benefits of AWS Lambda. It works great if you can tolerate the cold starts that come during scale-out. If not, you can explore more advanced scenarios for provisioning concurrency dynamically.</p>
+
+<p>Instead of choosing a permanently fixed value, you can configure provisioned concurrency to autoscale. The first required component is the autoscaling target:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> resourceId = pulumi.interpolate<span style="color:#a31515">`function:</span><span style="color:#a31515">${</span>lambda.name<span style="color:#a31515">}</span><span style="color:#a31515">:</span><span style="color:#a31515">${</span>lambda.version<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
+<span style="color:#00f">const</span> target = <span style="color:#00f">new</span> aws.appautoscaling.Target(<span style="color:#a31515">&#34;target&#34;</span>, {
+    resourceId,
+    serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
+    scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
+    minCapacity: <span style="color:#2b91af">1</span>,
+    maxCapacity: <span style="color:#2b91af">10</span>,
+});</code></pre></div>
+<p>The second component is the autoscaling policy, which defines the conditions when scaling starts. There are two important ways to adapt your concurrency provisioning to traffic patterns.</p>
+
+<h3 id="scheduled-profile">Scheduled profile</h3>
+
+<p>Quite often, increases in request rates are partially predictable. For example, usage increases during business hours and decreases at night.</p>
+
+<figure >
+    
+        <img src="scheduled.png"
+            alt="Provisioned concurrency matches predictable workload changes"
+             />
+        
+    
+    <figcaption>
+        <h4>Provisioned concurrency matches predictable workload changes</h4>
+    </figcaption>
+    
+</figure>
+
+<p>The following snippet sets two scheduled rules that switch between two levels of provisioned concurrency every day.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">function</span> scheduledConcurrency(name: <span style="color:#2b91af">string</span>, cron: <span style="color:#2b91af">string</span>, capacity: <span style="color:#2b91af">number</span>) {
+    <span style="color:#00f">return</span> <span style="color:#00f">new</span> aws.appautoscaling.ScheduledAction(<span style="color:#a31515">`schedule-</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+        resourceId,
+        serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
+        scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
+        scalableTargetAction: {
+            minCapacity: <span style="color:#2b91af">capacity</span>,
+            maxCapacity: <span style="color:#2b91af">capacity</span>,
+        },
+        schedule: <span style="color:#a31515">`cron(</span><span style="color:#a31515">${</span>cron<span style="color:#a31515">}</span><span style="color:#a31515">)`</span>,
+    }, { dependsOn: [target]});
+}
+
+scheduledConcurrency(<span style="color:#a31515">&#34;day&#34;</span>, <span style="color:#a31515">&#34;0 8 * * ? *&#34;</span>, 10);
+scheduledConcurrency(<span style="color:#a31515">&#34;night&#34;</span>, <span style="color:#a31515">&#34;0 18 * * ? *&#34;</span>, 2);</code></pre></div>
+<p>The example defines a helper function and calls it twice to set two schedules with different parameters.</p>
+
+<h3 id="autoscaling-based-on-utilization">Autoscaling based on utilization</h3>
+
+<p>If your workload pattern is less predictable, you can configure autoscaling for provisioned concurrency based on the measured utilization.</p>
+
+<figure >
+    
+        <img src="variable.png"
+            alt="Provisioned concurrency matches the variation in workload"
+             />
+        
+    
+    <figcaption>
+        <h4>Provisioned concurrency matches the variation in workload</h4>
+    </figcaption>
+    
+</figure>
+
+<p>Here is a basic example of a dynamic scaling policy.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> scaledConcurrency = <span style="color:#00f">new</span> aws.appautoscaling.Policy(<span style="color:#a31515">&#34;autoscaling&#34;</span>, {
+    resourceId,
+    serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
+    scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
+    policyType: <span style="color:#a31515">&#34;TargetTrackingScaling&#34;</span>,
+    targetTrackingScalingPolicyConfiguration: {
+        targetValue: <span style="color:#2b91af">0.8</span>,
+        predefinedMetricSpecification: {
+            predefinedMetricType: <span style="color:#a31515">&#34;LambdaProvisionedConcurrencyUtilization&#34;</span>,
+        },
+    },
+}, { dependsOn: [target]});</code></pre></div>
+<p>Currently, there are issues with autoscaling based on the metrics, which makes provisioned concurrency scale less effectively than what the chart above shows. Hopefully, Amazon will fix these issues soon.</p>
+
+<h2 id="pricing">Pricing</h2>
+
+<p>While hand-crafted Lambda warmers are virtually free, provisioned concurrency can be costly. The new pricing is an integral part of the change: Instead of purely per-call model, AWS charges per hour for provisioned capacity.</p>
+
+<p>You would pay $0.015 per hour per GB of provisioned worker memory, even if a worker handled zero requests.</p>
+
+<p>The per-invocation price gets a discount: $0.035 per GB-hour instead of the regular $0.06 per GB-hour. This change means that fully-utilized workers would be cheaper if provisioned compared to on-demand workers.</p>
+
+<figure >
+    
+        <img src="pricing.png"
+            alt="Comparison of the cost of a 1GB worker for two billing models"
+             />
+        
+    
+    <figcaption>
+        <h4>Comparison of the cost of a 1GB worker for two billing models</h4>
+    </figcaption>
+    
+</figure>
+
+<p>The equilibrium point is at 60% utilization. Note that because the billed duration is rounded up to the nearest 100 ms for each execution, the utilization is not limited to 100%. A series of sequential executions can be processed by a single worker. If each execution is 10 ms, the charge is still 100 ms, and the total utilization can be as high as 1000% in terms of the chart above!</p>
+
+<p>Finally, be careful to clean up your resources after any experiments: Leaving running workers with provisioned concurrency can be expensive! Using <code>pulumi destroy</code> removes resources after you finish experimenting.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Provisioned concurrency brings the long-awaited solution to cold starts in AWS Lambda. However, it comes at a cost in terms of a direct impact on billing and management overhead to provision concurrency at optimal levels.</p>
+
+<p>For high-load functions where utilization is continuously above a known level of requests, it makes sense to set the provisioned concurrency to that level to save money and have the guarantee of warm workers.</p>
+
+<p>If your Lambda hosts a latency-sensitive API, especially with runtimes like Java and .NET, you should strive to find the right balance between the percentage of requests that result in a cold start and the money spent on concurrency. Autoscaling should help once AWS has fixed the initial glitches that slipped into their current services.</p>
+
+<p>If you want to try this for yourself, we&rsquo;ve updated the <a href="https://github.com/pulumi/examples/blob/master/aws-ts-serverless-raw/">Serverless App example</a> to show off the scenario of configurable AWS Lambda provisioned concurrency.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/aws" term="aws" label="AWS" />
+                             
+                                <category scheme="https://mikhail.io/tags/serverless" term="serverless" label="Serverless" />
+                             
+                                <category scheme="https://mikhail.io/tags/aws-lambda" term="aws-lambda" label="AWS Lambda" />
+                            
+                        
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Serverless]]></title>
+            <link href="https://mikhail.io/tags/serverless/"/>
+            <id>https://mikhail.io/tags/serverless/</id>
+            
+            <published>2019-12-19T00:00:00+00:00</published>
+            <updated>2019-12-19T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Tags]]></title>
+            <link href="https://mikhail.io/tags/"/>
+            <id>https://mikhail.io/tags/</id>
+            
+            <published>2019-12-19T00:00:00+00:00</published>
+            <updated>2019-12-19T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -233,9 +530,6 @@
             
         </entry>
     
-    
-        
-        
     
         
         <entry>
@@ -448,48 +742,6 @@ It&rsquo;s Christmas time!</em></p>
     
         
         <entry>
-            <title type="html"><![CDATA[Tags]]></title>
-            <link href="https://mikhail.io/tags/"/>
-            <id>https://mikhail.io/tags/</id>
-            
-            <published>2019-12-01T00:00:00+00:00</published>
-            <updated>2019-12-01T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[AWS Lambda]]></title>
-            <link href="https://mikhail.io/tags/aws-lambda/"/>
-            <id>https://mikhail.io/tags/aws-lambda/</id>
-            
-            <published>2019-11-12T00:00:00+00:00</published>
-            <updated>2019-11-12T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
             <title type="html"><![CDATA[Azure Functions]]></title>
             <link href="https://mikhail.io/tags/azure-functions/"/>
             <id>https://mikhail.io/tags/azure-functions/</id>
@@ -624,27 +876,6 @@ It&rsquo;s Christmas time!</em></p>
             <title type="html"><![CDATA[Infrastructure-as-Code]]></title>
             <link href="https://mikhail.io/tags/infrastructure-as-code/"/>
             <id>https://mikhail.io/tags/infrastructure-as-code/</id>
-            
-            <published>2019-11-12T00:00:00+00:00</published>
-            <updated>2019-11-12T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Serverless]]></title>
-            <link href="https://mikhail.io/tags/serverless/"/>
-            <id>https://mikhail.io/tags/serverless/</id>
             
             <published>2019-11-12T00:00:00+00:00</published>
             <updated>2019-11-12T00:00:00+00:00</updated>
@@ -7808,9 +8039,18 @@ wherever possible. Santa has no spare elves to keep reinventing IT wheels.</p>
 <p>My assignment was to redesign the <strong>Wish Fulfillment</strong> service. The service receives
 wish lists from clients (they call children &ldquo;clients&rdquo;):</p>
 
-<p><img src="wish-list.png" alt="Christmas Wish List" /></p>
-
-<p><center class="img-caption">Christmas Card with a Wish List &copy; my son Tim</center></p>
+<figure >
+    
+        <img src="wish-list.png"
+            alt="Christmas Card with a Wish List (c) my son Tim"
+             />
+        
+    
+    <figcaption>
+        <h4>Christmas Card with a Wish List (c) my son Tim</h4>
+    </figcaption>
+    
+</figure>
 
 <p>Luckily, the list is already parsed by some other service, and also contains the metadata about
 the kid&rsquo;s background (age, gender, and so on) and preferences.</p>
@@ -7831,9 +8071,18 @@ called &ldquo;Santa&rsquo;s Archive of Products&rdquo;, also referred to as SAP.
 
 <p>Here is the whole flow in one picture:</p>
 
-<p><img src="gift-fulfillment-service.png" alt="Gift Fulfillment Workflow" /></p>
-
-<p><center class="img-caption">Gift Fulfillment Workflow</center></p>
+<figure >
+    
+        <img src="gift-fulfillment-service.png"
+            alt="Gift Fulfillment Workflow"
+             />
+        
+    
+    <figcaption>
+        <h4>Gift Fulfillment Workflow</h4>
+    </figcaption>
+    
+</figure>
 
 <p>How should we implement this service?</p>
 
@@ -7859,9 +8108,18 @@ and the cost of busy applications is proportional to the actual resource utiliza
 
 <p>Here is the diagram of the original design:</p>
 
-<p><img src="azure-functions-diagram.png" alt="Workflow Design with Azure Functions and Storage Queues" /></p>
-
-<p><center class="img-caption">Workflow Design with Azure Functions and Storage Queues</center></p>
+<figure >
+    
+        <img src="azure-functions-diagram.png"
+            alt="Workflow Design with Azure Functions and Storage Queues"
+             />
+        
+    
+    <figcaption>
+        <h4>Workflow Design with Azure Functions and Storage Queues</h4>
+    </figcaption>
+    
+</figure>
 
 <p>We used Azure Storage Queues to keep the whole flow asynchronous and more resilient to failures
 and load fluctuation.</p>
@@ -8065,9 +8323,18 @@ uses a custom computation expression:</p>
 }</code></pre></div>
 <p>Notice how closely it matches the workflow definition from our domain model:</p>
 
-<p><img src="durable-orchestrator-vs-async.png" alt="Async Function vs. Durable Orchestrator" /></p>
-
-<p><center class="img-caption">Async function vs. Durable Orchestrator</center></p>
+<figure >
+    
+        <img src="durable-orchestrator-vs-async.png"
+            alt="Async function vs. Durable Orchestrator"
+             />
+        
+    
+    <figcaption>
+        <h4>Async function vs. Durable Orchestrator</h4>
+    </figcaption>
+    
+</figure>
 
 <p>The only differences are:</p>
 
@@ -9046,9 +9313,18 @@ component talking to an SQS queue and getting the messages from it. It&rsquo;s t
 Orchestrator and related infrastructure to provision the required number of instances for working
 on concurrent executions:</p>
 
-<p><img src="aws-lambda-queue-scaling.png" alt="Model of AWS Lambda Scale-Out" /></p>
-
-<p><center class="img-caption">Model of AWS Lambda Scale-Out</center></p>
+<figure >
+    
+        <img src="aws-lambda-queue-scaling.png"
+            alt="Model of AWS Lambda Scale-Out"
+             />
+        
+    
+    <figcaption>
+        <h4>Model of AWS Lambda Scale-Out</h4>
+    </figcaption>
+    
+</figure>
 
 <p>As to scaling behavior, here is what the official
 <a href="https://docs.aws.amazon.com/en_us/lambda/latest/dg/scaling.html">AWS docs</a> say:</p>
@@ -9082,9 +9358,18 @@ getting them pushed from a central Orchestrator.</p>
 connects to the same data source (the queue) and needs to determine how many instances to provision
 based on the metrics from that queue:</p>
 
-<p><img src="azure-function-queue-scaling.png" alt="Model of Azure Function Scale-Out" /></p>
-
-<p><center class="img-caption">Model of Azure Function Scale-Out</center></p>
+<figure >
+    
+        <img src="azure-function-queue-scaling.png"
+            alt="Model of Azure Function Scale-Out"
+             />
+        
+    
+    <figcaption>
+        <h4>Model of Azure Function Scale-Out</h4>
+    </figcaption>
+    
+</figure>
 
 <p>This model has pros and cons. If one execution is idle, waiting for some I/O operation such as an
 HTTP request to finish, the instance might become busy processing other messages, thus being more
@@ -9123,9 +9408,32 @@ left vertical axis denotes the number of items still-to-be-handled.</p>
 execution logs the instance ID so that I could derive the instance count from the logs. The right
 vertical axis shows the instance number.</p>
 
-<p><img src="aws-lambda-sqs-iobound-scaling.png" alt="AWS Lambda processing 100k SQS messages with &quot;Pause&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="aws-lambda-sqs-iobound-scaling.png"
+            alt="AWS Lambda processing 100k SQS messages with &#34;Pause&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>AWS Lambda processing 100k SQS messages with &#34;Pause&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">AWS Lambda processing 100k SQS messages with &ldquo;Pause&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>It took AWS Lambda 5.5 minutes to process the whole batch of 100k messages. For comparison, the
 same batch processed sequentially would take about 14 hours.</p>
@@ -9141,9 +9449,32 @@ same batch processed sequentially would take about 14 hours.</p>
 
 <p>Same function, same chart, same instance size of 128 MB of RAM&mdash;but this time for Google Cloud Functions:</p>
 
-<p><img src="gcp-cloud-function-pubsub-iobound-scaling.png" alt="Google Cloud Function processing 100k Pub/Sub messages with &quot;Pause&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="gcp-cloud-function-pubsub-iobound-scaling.png"
+            alt="Google Cloud Function processing 100k Pub/Sub messages with &#34;Pause&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>Google Cloud Function processing 100k Pub/Sub messages with &#34;Pause&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">Google Cloud Function processing 100k Pub/Sub messages with &ldquo;Pause&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>Coincidentally, the total amount of instances, in the end, was very close to AWS. The scaling
 pattern looks entirely different though: Within the very first minute, there was a burst of
@@ -9158,9 +9489,32 @@ scaling close to 300 instances, and then the growth got very modest.</p>
 <p>The shape of the chart for Azure Functions is very similar, but the instance number growth is
 significantly different:</p>
 
-<p><img src="azure-function-queue-iobound-scaling.png" alt="Azure Function processing 100k queue messages with &quot;Pause&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="azure-function-queue-iobound-scaling.png"
+            alt="Azure Function processing 100k queue messages with &#34;Pause&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>Azure Function processing 100k queue messages with &#34;Pause&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">Azure Function processing 100k queue messages with &ldquo;Pause&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>The total processing time was a bit faster than AWS and somewhat slower than GCP. Azure Function
 instances process several messages in parallel, so it takes much less of them to do the same amount
@@ -9195,9 +9549,32 @@ memory, the instance size might have a significant influence on the result.</p>
 
 <p>I started with the smallest memory allocation of 128 MB:</p>
 
-<p><img src="aws-lambda-sqs-cpubound-scaling.png" alt="AWS Lambda (128 MB) processing 100k SQS messages with &quot;Bcrypt&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="aws-lambda-sqs-cpubound-scaling.png"
+            alt="AWS Lambda (128 MB) processing 100k SQS messages with &#34;Bcrypt&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>AWS Lambda (128 MB) processing 100k SQS messages with &#34;Bcrypt&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">AWS Lambda (128 MB) processing 100k SQS messages with &ldquo;Bcrypt&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>This time it took almost 10 minutes to complete the experiment.</p>
 
@@ -9212,9 +9589,32 @@ experiment. So, the total processing time increased only by the factor of 2&mdas
 <p>Let&rsquo;s see if larger Lambda instances would improve the outcome. Here is the chart for 512 MB of
 allocated memory:</p>
 
-<p><img src="aws-lambda-sqs-cpubound-scaling-512.png" alt="AWS Lambda (512 MB) processing 100k SQS messages with &quot;Bcrypt&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="aws-lambda-sqs-cpubound-scaling-512.png"
+            alt="AWS Lambda (512 MB) processing 100k SQS messages with &#34;Bcrypt&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>AWS Lambda (512 MB) processing 100k SQS messages with &#34;Bcrypt&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">AWS Lambda (512 MB) processing 100k SQS messages with &ldquo;Bcrypt&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>And yes it does. The average execution duration is down to 400 ms: 4 times less, as expected.
 The scaling shape still holds, so the entire batch was done in less than four minutes.</p>
@@ -9224,9 +9624,32 @@ The scaling shape still holds, so the entire batch was done in less than four mi
 <p>I executed the same experiment on Google Cloud Functions. I started with 128 MB, and it looks
 impressive:</p>
 
-<p><img src="gcp-cloud-function-pubsub-cpubound-scaling.png" alt="Google Cloud Function (128 MB) processing 100k Pub/Sub messages with &quot;Bcrypt&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="gcp-cloud-function-pubsub-cpubound-scaling.png"
+            alt="Google Cloud Function (128 MB) processing 100k Pub/Sub messages with &#34;Bcrypt&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>Google Cloud Function (128 MB) processing 100k Pub/Sub messages with &#34;Bcrypt&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">Google Cloud Function (128 MB) processing 100k Pub/Sub messages with &ldquo;Bcrypt&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>The average execution duration is very close to Amazon&rsquo;s: 1,600 ms. However, GCP scaled more
 aggressively&mdash;to a staggering 1,169 parallel executions! Scaling also has a different shape:
@@ -9236,18 +9659,64 @@ lowest CPU profile&mdash;very close to AWS&rsquo;s time on a 4x more powerful CP
 <p>What will GCP achieve on a faster CPU? Let&rsquo;s provision 512 MB. It must absolutely crush the
 test. Umm, wait, look at that:</p>
 
-<p><img src="gcp-cloud-function-pubsub-cpubound-scaling-512.png" alt="Google Cloud Function (512 MB) processing 100k Pub/Sub messages with &quot;Bcrypt&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="gcp-cloud-function-pubsub-cpubound-scaling-512.png"
+            alt="Google Cloud Function (512 MB) processing 100k Pub/Sub messages with &#34;Bcrypt&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>Google Cloud Function (512 MB) processing 100k Pub/Sub messages with &#34;Bcrypt&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">Google Cloud Function (512 MB) processing 100k Pub/Sub messages with &ldquo;Bcrypt&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>It actually&hellip; got slower. Yes, the average execution time is 4x lower: 400 ms, but the scaling
 got much less aggressive too, which canceled the speedup.</p>
 
 <p>I confirmed it with the largest instance size of 2,048 MB:</p>
 
-<p><img src="gcp-cloud-function-pubsub-cpubound-scaling-2048.png" alt="Google Cloud Function (2 GB) processing 100k Pub/Sub messages with &quot;Bcrypt&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="gcp-cloud-function-pubsub-cpubound-scaling-2048.png"
+            alt="Google Cloud Function (2 GB) processing 100k Pub/Sub messages with &#34;Bcrypt&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>Google Cloud Function (2 GB) processing 100k Pub/Sub messages with &#34;Bcrypt&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">Google Cloud Function (2 GB) processing 100k Pub/Sub messages with &ldquo;Bcrypt&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>CPU is fast: 160 ms average execution time, but the total time to process 100k messages went up
 to eight minutes. Beyond the initial spike at the first minute, it failed to scale up any further
@@ -9260,9 +9729,32 @@ many small instances available on the pool rather than a similar number of giant
 
 <p>A single invocation takes about 400 ms to complete on Azure Function. Here is the burndown chart:</p>
 
-<p><img src="azure-function-queue-cpubound-scaling.png" alt="Azure Function processing 100k queue messages with &quot;Bcrypt&quot; handler" /></p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="azure-function-queue-cpubound-scaling.png"
+            alt="Azure Function processing 100k queue messages with &#34;Bcrypt&#34; handler"
+             />
+        
+    
+    <figcaption>
+        <h4>Azure Function processing 100k queue messages with &#34;Bcrypt&#34; handler</h4>
+    </figcaption>
+    
+</figure>
 
-<p><center class="img-caption">Azure Function processing 100k queue messages with &ldquo;Bcrypt&rdquo; handler</center></p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>Azure spent 21 minutes to process the whole backlog. The scaling was linear, similarly to AWS,
 but with a much slower pace regarding instance size growth, about <code>2.5 * Minutes</code>.</p>
@@ -9601,6 +10093,8 @@ V2 being a bit slower to ramp up or slightly more resource hungry.</li>
             
             <content type="html"><![CDATA[<blockquote>Comparison of cold start statistics for FaaS across AWS, Azure and GCP</blockquote>
 
+<p><em>The newer and much more detailed cold start comparison is now available: <a href="/serverless/coldstarts/">Cold Starts in Serverless Functions</a></em></p>
+
 <p>Serverless cloud services are hot. Except when they are not :)</p>
 
 <p>AWS Lambda, Azure Functions, Google Cloud Functions are all similar in their attempt
@@ -9627,11 +10121,14 @@ This is a &ldquo;warm start&rdquo;:</p>
 
 <p><img src="warmstart.png" alt="Warm Start" /></p>
 
-<p>The problem of cold start latency was described multiple times, here are the notable links:
-- <a href="https://blogs.msdn.microsoft.com/appserviceteam/2018/02/07/understanding-serverless-cold-start/">Understanding Serverless Cold Start</a>
-- <a href="https://hackernoon.com/cold-starts-in-aws-lambda-f9e3432adbf0">Everything you need to know about cold starts in AWS Lambda</a>
-- <a href="https://serverless.com/blog/keep-your-lambdas-warm/">Keeping Functions Warm</a>
-- <a href="https://theburningmonk.com/2018/01/im-afraid-youre-thinking-about-aws-lambda-cold-starts-all-wrong/">I&rsquo;m afraid you&rsquo;re thinking about AWS Lambda cold starts all wrong</a></p>
+<p>The problem of cold start latency was described multiple times, here are the notable links:</p>
+
+<ul>
+<li><a href="https://blogs.msdn.microsoft.com/appserviceteam/2018/02/07/understanding-serverless-cold-start/">Understanding Serverless Cold Start</a></li>
+<li><a href="https://hackernoon.com/cold-starts-in-aws-lambda-f9e3432adbf0">Everything you need to know about cold starts in AWS Lambda</a></li>
+<li><a href="https://serverless.com/blog/keep-your-lambdas-warm/">Keeping Functions Warm</a></li>
+<li><a href="https://theburningmonk.com/2018/01/im-afraid-youre-thinking-about-aws-lambda-cold-starts-all-wrong/">I&rsquo;m afraid you&rsquo;re thinking about AWS Lambda cold starts all wrong</a></li>
+</ul>
 
 <p>The goal of my article today is to explore how cold starts compare:</p>
 
@@ -10463,9 +10960,18 @@ my AWS Console is clean again!</p>
 process. FP comes with a baggage of unfamiliar vocabulary that can be daunting for
 somebody coming from an object-oriented language like C#.</p>
 
-<p><img src="functional-programming-word-cloud.png" alt="Functional Programming Word Cloud" /></p>
-
-<p><em>Some of functional lingo</em></p>
+<figure >
+    
+        <img src="functional-programming-word-cloud.png"
+            alt="Some of functional lingo"
+             />
+        
+    
+    <figcaption>
+        <h4>Some of functional lingo</h4>
+    </figcaption>
+    
+</figure>
 
 <p>&ldquo;Monad&rdquo; is probably the most infamous term from the list above. Monads have reputation of being
 something very abstract and very confusing.</p>
@@ -11242,9 +11748,18 @@ hosting parameters</li>
 discovering new services and features, and it&rsquo;s a quick way to make a single
 change.</p>
 
-<p><img src="azureportal.png" alt="Azure Portal" /></p>
-
-<p><em>Creating an App Service in Azure Portal</em></p>
+<figure >
+    
+        <img src="azureportal.png"
+            alt="Creating an App Service in Azure Portal"
+             />
+        
+    
+    <figcaption>
+        <h4>Creating an App Service in Azure Portal</h4>
+    </figcaption>
+    
+</figure>
 
 <p>Clicking buttons manually doesn&rsquo;t scale though. After the initial setup is
 complete, maintaining the environment over time poses significant challenges:</p>
@@ -11299,10 +11814,18 @@ the difference.</p>
 <p>There&rsquo;s a problem with templates though: they are JSON files. They get
 very large very fast, they are hard to reuse, it&rsquo;s easy to make a typo.</p>
 
-<p><img src="armtemplate.png" alt="ARM Template" /></p>
-
-<p><em>A fragment of auto-generated ARM Template for App Service, note the
-line numbers</em></p>
+<figure >
+    
+        <img src="armtemplate.png"
+            alt="A fragment of auto-generated ARM Template for App Service, note the line numbers"
+             />
+        
+    
+    <figcaption>
+        <h4>A fragment of auto-generated ARM Template for App Service, note the line numbers</h4>
+    </figcaption>
+    
+</figure>
 
 <p>Terraform is another templating tool to provision cloud resources but it uses
 YAML instead of JSON. I don&rsquo;t have much experience with it, but the problems
@@ -11416,8 +11939,8 @@ format output URL:</p>
 endpoint: <span style="color:#a31515">&#34;https://mywebsiteb76260b5.azurewebsites.net&#34;</span></code></pre></div>
 <p>Multiple outputs can be combined with <code>pulumi.all</code>, e.g. given SQL Server
 and Database, we could make a connection string:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> connectionString = 
-    pulumi.all([sqlServer, database]).apply(([server, db]) =&gt; 
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> connectionString =
+    pulumi.all([sqlServer, database]).apply(([server, db]) =&gt;
         <span style="color:#a31515">`Server=tcp:</span><span style="color:#a31515">${</span>server<span style="color:#a31515">}</span><span style="color:#a31515">.database.windows.net;initial catalog=</span><span style="color:#a31515">${</span>db<span style="color:#a31515">}</span><span style="color:#a31515">;user ID=</span><span style="color:#a31515">${</span>username<span style="color:#a31515">}</span><span style="color:#a31515">;password=</span><span style="color:#a31515">${</span>pwd<span style="color:#a31515">}</span><span style="color:#a31515">;Min Pool Size=0;Max Pool Size=30;Persist Security Info=true;`</span>)</code></pre></div>
 <h2 id="using-the-power-of-npm">Using the Power of NPM</h2>
 
@@ -13349,9 +13872,18 @@ constant pace, evenly spread over 2 hours.</p>
 
 <p>Here are the <strong>old</strong> metrics of Queue Backlog and Instance Count over time:</p>
 
-<p><img src="FunctionAppScaling.png" alt="Function App Scaling (Old)" /></p>
-
-<p><em>Old charts are shown in gray background</em></p>
+<figure >
+    
+        <img src="FunctionAppScaling.png"
+            alt="Old charts are shown in gray background"
+             />
+        
+    
+    <figcaption>
+        <h4>Old charts are shown in gray background</h4>
+    </figcaption>
+    
+</figure>
 
 <p>You can see a huge delay of almost one hour before the function caught up
 to speed of incoming messages and half-an-hour more before the backlog
@@ -14266,167 +14798,149 @@ invocation logs.</p>
             
             
             <content type="html"><![CDATA[<blockquote>Are there any known patterns / tools / frameworks to provide scalable, stateful, effectively-once, end-to-end processing of messages, to be hosted in Azure?</blockquote>
-*This experimental post is a question. The question
-is too broad for StackOverflow, so I'm posting it here. Please engage in the
-comments section, or forward the link to subject experts.*
 
-TL;DR: Are there any known patterns / tools / frameworks to provide 
-scalable, stateful, effectively-once, end-to-end processing of messages, 
-to be hosted in Azure, preferably on PaaS-level of service?
+<p><em>This experimental post is a question. The question is too broad for StackOverflow, so I&rsquo;m posting it here. Please engage in the comments section, or forward the link to subject experts.</em></p>
 
-Motivational Example
---------------------
+<p>TL;DR: Are there any known patterns / tools / frameworks to provide scalable, stateful, effectively-once, end-to-end
+processing of messages, to be hosted in Azure, preferably on PaaS-level of service?</p>
 
-Let's say we are making a TODO app. There is a constant flow of requests
+<h2 id="motivational-example">Motivational Example</h2>
+
+<p>Let&rsquo;s say we are making a TODO app. There is a constant flow of requests
 to create a TODO in the system. Each request contains just two fields:
-a title and a project ID which TODO should belong to. Here is the definition:
-
-``` fsharp
-type TodoRequest = {
+a title and a project ID which TODO should belong to. Here is the definition:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">TodoRequest</span> = {
   ProjectId: int
-  Title: string
-}
-```
-
-Now, we want to process the request and assign each TODO an identifier,
+  Title: <span style="color:#2b91af">string</span>
+}</code></pre></div>
+<p>Now, we want to process the request and assign each TODO an identifier,
 which should be an auto-incremented integer. Numeration is unique per project,
-so each TODO must have its own combination of `ProjectId` and `Id`:
-
-``` fsharp
-type Todo = {
+so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Todo</span> = {
   ProjectId: int
   Id: int
-  Title: string
-}
-```
-
-Now, instead of relying on some database sequences, I want to describe this
-transformation as a function. The function has the type `(TodoRequest, int) ->
-(Todo, int)`, i.e. it transforms a tuple of a request and current per-project
-state (last generated ID) to a tuple of a TODO and post-processing state:
-
-``` fsharp
-let create (request: TodoRequest, state: int) =
-  let nextId = state + 1
-  let todo = {
+  Title: <span style="color:#2b91af">string</span>
+}</code></pre></div>
+<p>Now, instead of relying on some database sequences, I want to describe this
+transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
+(Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
+state (last generated ID) to a tuple of a TODO and post-processing state:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> create (request: TodoRequest, state: int) =
+  <span style="color:#00f">let</span> nextId = state + 1
+  <span style="color:#00f">let</span> todo = {
     ProjectId = request.ProjectId
     Id = nextId
     Title = request.Title
   }
-  todo, nextId
-```
+  todo, nextId</code></pre></div>
+<p>This is an extremely simple function, and I can use it to great success to
+process local, non-durable data.</p>
 
-This is an extremely simple function, and I can use it to great success to
-process local, non-durable data.
+<p>But if I need to make a reliable distributed application out of it, I need
+to take care of lots of things:</p>
 
-But if I need to make a reliable distributed application out of it, I need
-to take care of lots of things:
+<ol>
+<li><p>No request should be lost. I need to persist all the requests into
+a durable storage in case of processor crash.</p></li>
 
-1. No request should be lost. I need to persist all the requests into 
-a durable storage in case of processor crash. 
+<li><p>Similarly, I need to persist TODO&rsquo;s too. Presumably, some downstream
+logic will use the persisted data later on in TODO&rsquo;s lifecycle.</p></li>
 
-2. Similarly, I need to persist TODO's too. Presumably, some downstream 
-logic will use the persisted data later on in TODO's lifecycle.
+<li><p>The state (the counter) must be durable too. In case of crash of processing
+function, I want to be able to restart processing after recovery.</p></li>
 
-3. The state (the counter) must be durable too. In case of crash of processing
-function, I want to be able to restart processing after recovery. 
+<li><p>Processing of the requests should be sequential per project ID. Otherwise
+I might get a clash of ID&rsquo;s in case two requests belonging to the same
+project are processed concurrently.</p></li>
 
-4. Processing of the requests should be sequential per project ID. Otherwise
-I might get a clash of ID's in case two requests belonging to the same 
-project are processed concurrently.
+<li><p>I still want requests to different projects to be processed in parallel,
+to make sure the system scales up with the growth of project count.</p></li>
 
-5. I still want requests to different projects to be processed in parallel,
-to make sure the system scales up with the growth of project count.
-
-6. There must be no holes or duplicates in TODO numbering per project, even
+<li><p>There must be no holes or duplicates in TODO numbering per project, even
 in face of system failures. In worst case, I agree to tolerate a duplicated
-entry in the output log, but it must be exactly the same entry (i.e. two 
-entries with same project id, id and title).
+entry in the output log, but it must be exactly the same entry (i.e. two
+entries with same project id, id and title).</p></li>
 
-7. The system should tolerate a permanent failure of any single hardware
-dependency and automatically fail-over within reasonable time.
+<li><p>The system should tolerate a permanent failure of any single hardware
+dependency and automatically fail-over within reasonable time.</p></li>
+</ol>
 
-It's not feasible to meet all of those requirements without relying on some
-battle-tested distributed services or frameworks.
+<p>It&rsquo;s not feasible to meet all of those requirements without relying on some
+battle-tested distributed services or frameworks.</p>
 
-Which options do I know of?
+<p>Which options do I know of?</p>
 
-Transactions
-------------
+<h2 id="transactions">Transactions</h2>
 
-Traditionally, this kind of requirements were solved by using transactions
-in something like SQL Server. If I store requests, TODO's and current ID per
+<p>Traditionally, this kind of requirements were solved by using transactions
+in something like SQL Server. If I store requests, TODO&rsquo;s and current ID per
 project in the same relational database, I can make each processing step a
-single atomic transaction. 
+single atomic transaction.</p>
 
-This addresses all the concerns, as long as we can stay inside the single 
-database. That's probably a viable option for the TODO app, but less of so
-if I convert my toy example to some real applications like IoT data 
-processing.
+<p>This addresses all the concerns, as long as we can stay inside the single
+database. That&rsquo;s probably a viable option for the TODO app, but less of so
+if I convert my toy example to some real applications like IoT data
+processing.</p>
 
-Can we do the same for distributed systems at scale?
+<p>Can we do the same for distributed systems at scale?</p>
 
-Azure Event Hubs
-----------------
+<h2 id="azure-event-hubs">Azure Event Hubs</h2>
 
-Since I touched IoT space, the logical choice would be to store our entries
-in Azure Event Hubs. That works for many criteria, but I don't see any available
-approach to make such processing consistent in the face of failures.
+<p>Since I touched IoT space, the logical choice would be to store our entries
+in Azure Event Hubs. That works for many criteria, but I don&rsquo;t see any available
+approach to make such processing consistent in the face of failures.</p>
 
-When processing is done, we need to store 3 pieces: generated TODO event,
+<p>When processing is done, we need to store 3 pieces: generated TODO event,
 current processing offset and current ID. Event goes to another event hub,
 processing offset is stored in Blob Storage and ID can be saved to something
-like Table Storage. 
+like Table Storage.</p>
 
-But there's no way to store those 3 pieces atomically. Whichever order we 
-choose, we are bound to get anomalies in some specific failure modes.
+<p>But there&rsquo;s no way to store those 3 pieces atomically. Whichever order we
+choose, we are bound to get anomalies in some specific failure modes.</p>
 
-Azure Functions
----------------
+<h2 id="azure-functions">Azure Functions</h2>
 
-Azure Functions don't solve those problems. But I want to mention this
+<p>Azure Functions don&rsquo;t solve those problems. But I want to mention this
 Function-as-a-Service offering because they provide an ideal programming
-model for my use case.
+model for my use case.</p>
 
-I need to take just one step from my domain function to Azure Function: 
-to define bindings for e.g. Event Hubs and Table Storage.
+<p>I need to take just one step from my domain function to Azure Function:
+to define bindings for e.g. Event Hubs and Table Storage.</p>
 
-However, reliability guarantees will stay poor. I won't get neither sequential
-processing per Event Hub partition key, nor atomic state commit.
+<p>However, reliability guarantees will stay poor. I won&rsquo;t get neither sequential
+processing per Event Hub partition key, nor atomic state commit.</p>
 
-Azure Service Fabric
---------------------
+<h2 id="azure-service-fabric">Azure Service Fabric</h2>
 
-Service Fabric sounds like a good candidate service for reliable processing. 
-Unfortunately, I don't have much experience with it to judge.
+<p>Service Fabric sounds like a good candidate service for reliable processing.
+Unfortunately, I don&rsquo;t have much experience with it to judge.</p>
 
-Please leave a comment if you do.
+<p>Please leave a comment if you do.</p>
 
-JVM World
----------
+<h2 id="jvm-world">JVM World</h2>
 
-There are products in JVM world which claim to solve my problem perfectly.
+<p>There are products in JVM world which claim to solve my problem perfectly.</p>
 
-Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
+<p>Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
 Kafka release provides effectively-once processing semantics as long as
 data stay inside Kafka. Kafka does that with atomic publishing to multiple
-topics, and state storage based on compacted topics.
+topics, and state storage based on compacted topics.</p>
 
-Apache Flink has similar guarantees for its stream processing APIs.
+<p>Apache Flink has similar guarantees for its stream processing APIs.</p>
 
-Great, but how do I get such awesomeness in .NET code, and without installing 
-expensive ZooKeeper-managed clusters?
+<p>Great, but how do I get such awesomeness in .NET code, and without installing
+expensive ZooKeeper-managed clusters?</p>
 
-Call for Feedback
------------------
+<h2 id="call-for-feedback">Call for Feedback</h2>
 
-Do you know a solution, product or service?
+<p>Do you know a solution, product or service?</p>
 
-Have you developed effectively-once processing on .NET / Azure stack?
+<p>Have you developed effectively-once processing on .NET / Azure stack?</p>
 
-Are you in touch with somebody who works on such framework?
+<p>Are you in touch with somebody who works on such framework?</p>
 
-Please leave a comment, or ping me on Twitter.]]></content>
+<p>Please leave a comment, or ping me on Twitter.</p>
+]]></content>
             
                  
                     
@@ -14462,192 +14976,195 @@ Please leave a comment, or ping me on Twitter.]]></content>
             
             
             <content type="html"><![CDATA[
-*Updated results are available at 
-[Azure Functions Get More Scalable and Elastic](https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/).*
 
-Automatic elastic scaling is a built-in feature of Serverless computing
-paradigm. One doesn't have to provision servers anymore, they just need to
+<p><em>Updated results are available at
+<a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">Azure Functions Get More Scalable and Elastic</a>.</em></p>
+
+<p>Automatic elastic scaling is a built-in feature of Serverless computing
+paradigm. One doesn&rsquo;t have to provision servers anymore, they just need to
 write code that will be provisioned on as many servers as needed based on the
-actual load. That's the theory.
+actual load. That&rsquo;s the theory.</p>
 
-In particular, Azure Functions can be hosted on the Consumption plan:
+<p>In particular, Azure Functions can be hosted on the Consumption plan:</p>
 
-> The Consumption plan automatically allocates compute power when your 
-> code is running, scales out as necessary to handle load, and then scales 
-> down when code is not running.
+<blockquote>
+<p>The Consumption plan automatically allocates compute power when your
+code is running, scales out as necessary to handle load, and then scales
+down when code is not running.</p>
+</blockquote>
 
-In this post I will run a simple stress test to get a feel of how such
-automatic allocation works in practice and what kind of characteristics 
-we can rely on.
+<p>In this post I will run a simple stress test to get a feel of how such
+automatic allocation works in practice and what kind of characteristics
+we can rely on.</p>
 
-Setup
------
+<h2 id="setup">Setup</h2>
 
-Here are the parameters that I chose for my test of today:
+<p>Here are the parameters that I chose for my test of today:</p>
 
-- Azure Function written in C# and hosted on Consumption plan
-- Triggered by Azure Storage Queue binding
-- Workload is strictly CPU-bound, no I/O is executed
+<ul>
+<li>Azure Function written in C# and hosted on Consumption plan</li>
+<li>Triggered by Azure Storage Queue binding</li>
+<li>Workload is strictly CPU-bound, no I/O is executed</li>
+</ul>
 
-Specifically, each queue item represents one password that I need to hash.
-Each function call performs 12-round [Bcrypt](https://en.wikipedia.org/wiki/Bcrypt)
+<p>Specifically, each queue item represents one password that I need to hash.
+Each function call performs 12-round <a href="https://en.wikipedia.org/wiki/Bcrypt">Bcrypt</a>
 hashing. Bcrypt is a slow algorithm recommended for
-password hashing, because it makes potential hash collision attacks really 
-hard and costly.
+password hashing, because it makes potential hash collision attacks really
+hard and costly.</p>
 
-My function is based on [Bcrypt.Net](https://github.com/BcryptNet/bcrypt.net)
-implementation, and it's extremely simple:
-
-``` csharp
-public static void Run([QueueTrigger("bcrypt-password")] string password)
+<p>My function is based on <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.Net</a>
+implementation, and it&rsquo;s extremely simple:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> Run([QueueTrigger(<span style="color:#a31515">&#34;bcrypt-password&#34;</span>)] <span style="color:#2b91af">string</span> password)
 {
     BCrypt.Net.BCrypt.HashPassword(password, 12);
 }
-```
-
-It turns out that a single execution of this function takes approximately
+</code></pre></div>
+<p>It turns out that a single execution of this function takes approximately
 1 second on an instance of Consumption plan, and consumes 100% CPU during
-that second.
+that second.</p>
 
-Now, the challenge is simple. I send 100,000 passwords
+<p>Now, the challenge is simple. I send 100,000 passwords
 to the queue and see how long it will take to hash them, and also how the
 autoscaling will behave. I will run it two times, with different pace of
-sending messages to the queue.
+sending messages to the queue.</p>
 
-That sounds like a perfect job for a Function App on Consumption plan:
+<p>That sounds like a perfect job for a Function App on Consumption plan:
 - Needs to scale based on load
 - CPU intensive - easy to see how busy each server is
-- Queue-based - easy to see the incoming vs outgoing rate
+- Queue-based - easy to see the incoming vs outgoing rate</p>
 
-Let's see how it went.
+<p>Let&rsquo;s see how it went.</p>
 
-Experiment 1: Steady Load
--------------------------
+<h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
 
-In my first run, I was sending messages at constant rate. 100,000 messages
-were sent within 2 hours, without spikes or drops in the pace.
+<p>In my first run, I was sending messages at constant rate. 100,000 messages
+were sent within 2 hours, without spikes or drops in the pace.</p>
 
-Sounds like an easy job for autoscaling facilities. But here is the actual 
-chart of data processing:
+<p>Sounds like an easy job for autoscaling facilities. But here is the actual
+chart of data processing:</p>
 
-![Function App Scaling](FunctionAppScaling.png)
+<p><img src="FunctionAppScaling.png" alt="Function App Scaling" /></p>
 
-The horizontal axis is time in minutes since the first message came in.
+<p>The horizontal axis is time in minutes since the first message came in.</p>
 
-The orange line shows the queue backlog - the amount of messages sitting in
-the queue at a given moment.
+<p>The orange line shows the queue backlog - the amount of messages sitting in
+the queue at a given moment.</p>
 
-The blue area represents the amount of instances (virtual servers) allocated
-to the function by Azure runtime (see the numbers at the right side).
+<p>The blue area represents the amount of instances (virtual servers) allocated
+to the function by Azure runtime (see the numbers at the right side).</p>
 
-We can divide the whole process into 3 logical segments, approximately 
-40 minutes each:
+<p>We can divide the whole process into 3 logical segments, approximately
+40 minutes each:</p>
 
-**Laging behind**. Runtime starts with 0 instances, and immediately switches
-to 1 when the first message comes in. However it's reluctant to add any more
+<p><strong>Laging behind</strong>. Runtime starts with 0 instances, and immediately switches
+to 1 when the first message comes in. However it&rsquo;s reluctant to add any more
 servers for the next 20 (!) minutes. The scaling heuristic is probably based
-on the past history for this queue/function, and it wasn't busy at all during
-the hours before.
+on the past history for this queue/function, and it wasn&rsquo;t busy at all during
+the hours before.</p>
 
-After 20 minutes, the runtime starts adding more instances: it goes up to 2, 
-then jumps to 4, then reaches 5 at minute 40. The CPU is constantly at 
-100% and the queue backlog grows linearly.
+<p>After 20 minutes, the runtime starts adding more instances: it goes up to 2,
+then jumps to 4, then reaches 5 at minute 40. The CPU is constantly at
+100% and the queue backlog grows linearly.</p>
 
-**Rapid scale up**. After minute 40, it looks like the runtime realizes 
+<p><strong>Rapid scale up</strong>. After minute 40, it looks like the runtime realizes
 that it needs more power. Much more power! The growth speeds up real quick
 and by minute 54 the backlog stops growing, even though the messages are still
 coming in. But there are now 21 instances working, which is enough to
-finally match and beat the rate of incoming messages.
+finally match and beat the rate of incoming messages.</p>
 
-The runtime doesn't stop growing though. CPU's are still at 100%, and the backlog
+<p>The runtime doesn&rsquo;t stop growing though. CPU&rsquo;s are still at 100%, and the backlog
 is still very high, so the scaling goes up and up. The amount of instances
 reaches astonishing 55, at which point all the backlog is processed and
-there are no messages in the queue.
+there are no messages in the queue.</p>
 
-**Searching for balance**. When queue is almost empty and CPU drops below
+<p><strong>Searching for balance</strong>. When queue is almost empty and CPU drops below
 100% for the first time, the runtime decides to scale down. It does that quickly
-and aggressively, switching from 55 to 21 instances in just 2 minutes.
+and aggressively, switching from 55 to 21 instances in just 2 minutes.</p>
 
-From there it keeps slowly reducing the number of instances until the backlog 
+<p>From there it keeps slowly reducing the number of instances until the backlog
 starts growing again. The runtime allows the backlog to grow a bit, but
-then figures out a balanced number of servers (17) to keep the backlog flat 
-at around 2,000 messages. 
+then figures out a balanced number of servers (17) to keep the backlog flat
+at around 2,000 messages.</p>
 
-It stays at 17 until the producer stops sending new messages. The backlog 
-goes to 0, and the amount of instances gradually drops to 0 within 10 minutes.
+<p>It stays at 17 until the producer stops sending new messages. The backlog
+goes to 0, and the amount of instances gradually drops to 0 within 10 minutes.</p>
 
-The second chart from the same experiment looks very similar, but it shows
-different metrics:
+<p>The second chart from the same experiment looks very similar, but it shows
+different metrics:</p>
 
-![Function App Delay](FunctionAppDelay.png)
+<p><img src="FunctionAppDelay.png" alt="Function App Delay" /></p>
 
-The gray line is the delay in minutes since the currently processed message
-got enqueued (message "age", in-queue latency). The blue line is the 
-total processing rate, measured in messages per minute.
+<p>The gray line is the delay in minutes since the currently processed message
+got enqueued (message &ldquo;age&rdquo;, in-queue latency). The blue line is the
+total processing rate, measured in messages per minute.</p>
 
-Due to perfect scalability and stability of my function, both charts are almost
-exactly the same. I've put it here so that you could see that the slowest
-message spent more than 40 minutes sitting inside the queue.
+<p>Due to perfect scalability and stability of my function, both charts are almost
+exactly the same. I&rsquo;ve put it here so that you could see that the slowest
+message spent more than 40 minutes sitting inside the queue.</p>
 
-Experiment 2: Spiky Load
--------------------------
+<h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
 
-With the second run, I tried to emulate a spiky load profile. I was sending
+<p>With the second run, I tried to emulate a spiky load profile. I was sending
 my 100,000 messages throughout 6 hours at lower pace than during the first
 run. But sometimes the producer switched to fast mode and sent a bigger bunch
 of messages in just several minutes. Here is the actual chart of incoming
-message rate:
+message rate:</p>
 
-![Spiky Load](SpikyLoad.png)
+<p><img src="SpikyLoad.png" alt="Spiky Load" /></p>
 
-It's easy to imagine some service which has a usage pattern like that, when
-spikes of the events happen from time to time, or in rush hours.
+<p>It&rsquo;s easy to imagine some service which has a usage pattern like that, when
+spikes of the events happen from time to time, or in rush hours.</p>
 
-This is how the Function App managed to process the messages:
+<p>This is how the Function App managed to process the messages:</p>
 
-![Spiky Load Processing Result](SpikyLoadProcessing.png)
+<p><img src="SpikyLoadProcessing.png" alt="Spiky Load Processing Result" /></p>
 
-The green line still shows the amount of incoming messages per minute. The 
+<p>The green line still shows the amount of incoming messages per minute. The
 blue line denotes how many messages were actually processed at that minute.
-And the orange bars are queue backlogs - the amount of messages pending.
+And the orange bars are queue backlogs - the amount of messages pending.</p>
 
-Here are several observations:
+<p>Here are several observations:</p>
 
-- Obviously, processing latency is way too far from real time. There is
+<ul>
+<li><p>Obviously, processing latency is way too far from real time. There is
 constantly quite a significant backlog in the queue, and processing delay
-reaches 20 minutes at peak.
+reaches 20 minutes at peak.</p></li>
 
-- It took the runtime 2 hours to clean the backlog for the first time. Even
+<li><p>It took the runtime 2 hours to clean the backlog for the first time. Even
 without any spikes during the first hour, the autoscaling algorithm needs
-time to get up to speed.
+time to get up to speed.</p></li>
 
-- Function App runtime is able to scale up quite fast (look at the reaction
-on the fourth spike), but it's not really willing to do that most of the time.
+<li><p>Function App runtime is able to scale up quite fast (look at the reaction
+on the fourth spike), but it&rsquo;s not really willing to do that most of the time.</p></li>
 
-- The growth of the backlog after minute 280 is purely caused by wrong
+<li><p>The growth of the backlog after minute 280 is purely caused by wrong
 decision of runtime. While the load is completely steady, the runtime
 decided to shut down most workers after 20 minutes of empty backlog, and could
-not recover for the next hour.
+not recover for the next hour.</p></li>
+</ul>
 
-Conclusions
------------
+<h2 id="conclusions">Conclusions</h2>
 
-I tried to get a feeling about the ability of Azure Functions to scale
+<p>I tried to get a feeling about the ability of Azure Functions to scale
 on demand, adapting to the workload. The function under test was purely CPU-bound,
-and for that I can give two main conclusions:
+and for that I can give two main conclusions:</p>
 
-- Function Apps are able to scale to high amount of instances running at the
+<ul>
+<li><p>Function Apps are able to scale to high amount of instances running at the
 same time, and to eventually process large parallel jobs (at least up to 55
-instances).
+instances).</p></li>
 
-- Significant processing delays are to be expected for heavy loads. Function
+<li><p>Significant processing delays are to be expected for heavy loads. Function
 App runtime has quite some inertia, and the resulting processing latency can
-easily go up to tens of minutes.
+easily go up to tens of minutes.</p></li>
+</ul>
 
-If you know how these results can be improved, or why they are less than 
-optimal, please leave a comment or contact me directly.
+<p>If you know how these results can be improved, or why they are less than
+optimal, please leave a comment or contact me directly.</p>
 
-I look forward to conducting more tests in the future!]]></content>
+<p>I look forward to conducting more tests in the future!</p>
+]]></content>
             
                  
                     
@@ -14681,261 +15198,227 @@ I look forward to conducting more tests in the future!]]></content>
             
             
             <content type="html"><![CDATA[<blockquote>The process of creating a custom binding for Azure Functions.</blockquote>
-In my [previous post](https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/)
+
+<p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
 I described how I used Durable Functions extensions
 in Azure Function App. Durable Functions are using several binding types
-that are not part of the standard suite: `OrchestrationClient`,
-`OrchestrationTrigger`, `ActivityTrigger`. These custom bindings 
-[are installed](https://azure.github.io/azure-functions-durable-extension/articles/installation.html)
-by copying the corresponding assemblies to a special Extensions folder.
+that are not part of the standard suite: <code>OrchestrationClient</code>,
+<code>OrchestrationTrigger</code>, <code>ActivityTrigger</code>. These custom bindings
+<a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">are installed</a>
+by copying the corresponding assemblies to a special Extensions folder.</p>
 
-Although Bring-Your-Own-Binding (BYOB) feature hasn't been released yet, I
-decided to follow the path of Durable Functions and create my own 
-custom binding.
+<p>Although Bring-Your-Own-Binding (BYOB) feature hasn&rsquo;t been released yet, I
+decided to follow the path of Durable Functions and create my own
+custom binding.</p>
 
-Configuration Binding
----------------------
+<h2 id="configuration-binding">Configuration Binding</h2>
 
-I've picked a really simple use case for my first experiments with custom
-bindings: reading configuration values.
+<p>I&rsquo;ve picked a really simple use case for my first experiments with custom
+bindings: reading configuration values.</p>
 
-Azure Functions store their configuration values in App Settings (local
-runtime uses `local.settings.json` file for that).
+<p>Azure Functions store their configuration values in App Settings (local
+runtime uses <code>local.settings.json</code> file for that).</p>
 
-That means, when you need a configuration value inside your C# code,
-you normally do
+<p>That means, when you need a configuration value inside your C# code,
+you normally do</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">string</span> setting = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;MySetting&#34;</span>];
+</code></pre></div>
+<p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
 
-``` csharp
-string setting = ConfigurationManager.AppSettings["MySetting"];
-```
+<p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a>
+service bus subscription metrics, I wrote this kind of bulky code:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> resourceToScale = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ResourceToScale&#34;</span>];
 
-Alternatively, `Environment.GetEnvironmentVariable()` method can be used.
-
-When I [needed to collect](https://mikhail.io/2017/07/custom-auto-scaling-in-azure/) 
-service bus subscription metrics, I wrote this kind of bulky code:
-
-``` csharp
-var resourceToScale = ConfigurationManager.AppSettings["ResourceToScale"];
-
-var connectionString = ConfigurationManager.AppSettings["ServiceBusConnection"];
-var topic = ConfigurationManager.AppSettings["Topic"];
-var subscription = ConfigurationManager.AppSettings["Subscription"];
-```
-
-The code is no rocket science, but it's tedious to write, so instead I came
-up with this idea to define Functions:
-
-``` csharp
-public static void MyFunction(
-    [TimerTrigger("0 */1 * * * *")] TimerInfo timer,
-    [Configuration(Key = "ResourceToScale")] string resource,
+<span style="color:#2b91af">var</span> connectionString = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ServiceBusConnection&#34;</span>];
+<span style="color:#2b91af">var</span> topic = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Topic&#34;</span>];
+<span style="color:#2b91af">var</span> subscription = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Subscription&#34;</span>];
+</code></pre></div>
+<p>The code is no rocket science, but it&rsquo;s tedious to write, so instead I came
+up with this idea to define Functions:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> MyFunction(
+    [TimerTrigger(&#34;0 */1 * * * *&#34;)] TimerInfo timer,
+    [Configuration(Key = &#34;ResourceToScale&#34;)] <span style="color:#2b91af">string</span> resource,
     [Configuration] ServiceBusSubscriptionConfig config)
-```
-
-Note two usages of `Configuration` attribute. The first one defines the 
-specific configuration key, and binds its value to a string parameter. The 
-other one binds *multiple* configuration values to a POCO parameter. I defined
-the config class as
-
-``` csharp
-public class ServiceBusSubscriptionConfig
+</code></pre></div>
+<p>Note two usages of <code>Configuration</code> attribute. The first one defines the
+specific configuration key, and binds its value to a string parameter. The
+other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
+the config class as</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ServiceBusSubscriptionConfig</span>
 {
-    public ServiceBusSubscriptionConfig(string serviceBusConnection, string topic, string subscription)
+    <span style="color:#00f">public</span> ServiceBusSubscriptionConfig(<span style="color:#2b91af">string</span> serviceBusConnection, <span style="color:#2b91af">string</span> topic, <span style="color:#2b91af">string</span> subscription)
     {
         ServiceBusConnection = serviceBusConnection;
         Topic = topic;
         Subscription = subscription;
     }
 
-    public string ServiceBusConnection { get; }
-    public string Topic { get; }
-    public string Subscription { get; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> ServiceBusConnection { <span style="color:#00f">get</span>; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Topic { <span style="color:#00f">get</span>; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Subscription { <span style="color:#00f">get</span>; }
 }
-```
+</code></pre></div>
+<p>The immutable class is a bit verbose, but I still prefer it over get-set
+container in this scenario.</p>
 
-The immutable class is a bit verbose, but I still prefer it over get-set
-container in this scenario.
+<p>The binding behavior is convention-based in this case: the binding engine
+should load configuration values based on the names of class properties.</p>
 
-The binding behavior is convention-based in this case: the binding engine
-should load configuration values based on the names of class properties.
+<h2 id="motivation">Motivation</h2>
 
-Motivation
-----------
+<p>So, why do I need such binding?</p>
 
-So, why do I need such binding?
+<p>As I said, it&rsquo;s a simple use case to play with BYOB feature, and overall,
+<strong>understand</strong> the internals of Function Apps a bit better.</p>
 
-As I said, it's a simple use case to play with BYOB feature, and overall,
-**understand** the internals of Function Apps a bit better.
+<p>But apart from that, I removed 4 lines of garbage from the function body
+(at the cost of two extra parameters). <strong>Less noise</strong> means more readable code,
+especially when I put this code on a webpage.</p>
 
-But apart from that, I removed 4 lines of garbage from the function body
-(at the cost of two extra parameters). **Less noise** means more readable code,
-especially when I put this code on a webpage.
-
-As a bonus, the **testability** of the function immediately increased. It's so
+<p>As a bonus, the <strong>testability</strong> of the function immediately increased. It&rsquo;s so
 much easier for the test just to accept the configuration as input parameter,
 instead of fine-tuning the configuration files inside test projects, or
-hiding `ConfigurationManager` usage behind a mockable facade.
+hiding <code>ConfigurationManager</code> usage behind a mockable facade.</p>
 
-Such approach does seem to be the strength of Azure Functions code in
-general. It's often possible to reduce imperative IO-related code to 
-attribute-decorated function parameters.
+<p>Such approach does seem to be the strength of Azure Functions code in
+general. It&rsquo;s often possible to reduce imperative IO-related code to
+attribute-decorated function parameters.</p>
 
-Implementing a Custom Binding
------------------------------
+<h2 id="implementing-a-custom-binding">Implementing a Custom Binding</h2>
 
-The actual implementation process of a custom non-trigger binding is quite
-simple:
+<p>The actual implementation process of a custom non-trigger binding is quite
+simple:</p>
 
-**Create a class library** with the word "Extension" in its name. Import
-`Microsoft.Azure.WebJobs` and `Microsoft.Azure.WebJobs.Extensions` NuGet
-packages (at the time of writing I used `2.1.0-beta1` version).
+<p><strong>Create a class library</strong> with the word &ldquo;Extension&rdquo; in its name. Import
+<code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
+packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
 
-**Define** a class for binding attribute:
-
-``` csharp
-[AttributeUsage(AttributeTargets.Parameter)]
+<p><strong>Define</strong> a class for binding attribute:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[AttributeUsage(AttributeTargets.Parameter)]
 [Binding]
-public class ConfigurationAttribute : Attribute
+<span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ConfigurationAttribute</span> : Attribute
 {
     [AutoResolve]
-    public string Key { get; set; }
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Key { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
-```
+</code></pre></div>
+<p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
+resolvable from <code>function.json</code>.</p>
 
-The attribute is marked as `Binding` and the `Key` property is marked as
-resolvable from `function.json`.
+<p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
+how to use your binding correctly.</p>
 
-**Implement** `IExtensionConfigProvider` which will tell the function runtime
-how to use your binding correctly.
-
-The interface has just one method to implement:
-
-``` csharp
-public class ConfigurationExtensionConfigProvider : IExtensionConfigProvider
+<p>The interface has just one method to implement:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ConfigurationExtensionConfigProvider</span> : IExtensionConfigProvider
 {
-    public void Initialize(ExtensionConfigContext context)
+    <span style="color:#00f">public</span> <span style="color:#00f">void</span> Initialize(ExtensionConfigContext context)
     {
-        // ... see below
-    }
+        <span style="color:#008000">// ... see below
+</span><span style="color:#008000"></span>    }
 }
+</code></pre></div>
+<p>The first step of the implementation is to define a rule for our new
+<code>ConfigurationAttribute</code> and tell this rule how to get a string value out
+of any attribute instance:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
+rule.BindToInput&lt;<span style="color:#2b91af">string</span>&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
+</code></pre></div>
+<p>That&rsquo;s really all that needs to happen to bind <code>string</code> parameters.</p>
 
-```
+<p>To make our binding work with any POCO, we need a more elaborate construct:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; <span style="color:#00f">new</span> Env());
+<span style="color:#2b91af">var</span> cm = context.Config.GetService&lt;IConverterManager&gt;();
+cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(<span style="color:#00f">typeof</span>(PocoConverter&lt;&gt;));
+</code></pre></div>
+<p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
+this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
+type argument) with a generic converter called <code>PocoConverter</code>.</p>
 
-The first step of the implementation is to define a rule for our new
-`ConfigurationAttribute` and tell this rule how to get a string value out
-of any attribute instance:
-
-``` csharp
-var rule = context.AddBindingRule<ConfigurationAttribute>();
-rule.BindToInput<string>(a => ConfigurationManager.AppSettings[a.Key]);
-```
-
-That's really all that needs to happen to bind `string` parameters.
-
-To make our binding work with any POCO, we need a more elaborate construct:
-
-``` csharp
-rule.BindToInput<Env>(_ => new Env());
-var cm = context.Config.GetService<IConverterManager>();
-cm.AddConverter<Env, OpenType, ConfigurationAttribute>(typeof(PocoConverter<>));
-```
-
-I instruct the rule to bind to my custom class `Env`, and then I say that
-this class `Env` is convertable to any type (denoted by special `OpenType`
-type argument) with a generic converter called `PocoConverter`.
-
-The `Env` class is a bit dummy (it exists just because I need *some* class):
-
-``` csharp
-private class Env
+<p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Env</span>
 {
-    public string GetValue(string key) => ConfigurationManager.AppSettings[key];
+    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> GetValue(<span style="color:#2b91af">string</span> key) =&gt; ConfigurationManager.AppSettings[key];
 }
-```
-
-And `PocoConverter` is a piece of reflection, that loops through property
+</code></pre></div>
+<p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
 names and reads configuration values out of them. Then it calls a constructor
-which matches the property count:
-
-``` csharp
-private class PocoConverter<T> : IConverter<Env, T>
+which matches the property count:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">PocoConverter</span>&lt;T&gt; : IConverter&lt;Env, T&gt;
 {
-    public T Convert(Env env)
+    <span style="color:#00f">public</span> T Convert(Env env)
     {
-        var values = typeof(T)
+        <span style="color:#2b91af">var</span> values = <span style="color:#00f">typeof</span>(T)
             .GetProperties()
-            .Select(p => p.Name)
+            .Select(p =&gt; p.Name)
             .Select(env.GetValue)
-            .Cast<object>()
+            .Cast&lt;<span style="color:#2b91af">object</span>&gt;()
             .ToArray();
 
-        var constructor = typeof(T).GetConstructor(values.Select(v => v.GetType()).ToArray());
-        if (constructor == null)
+        <span style="color:#2b91af">var</span> constructor = <span style="color:#00f">typeof</span>(T).GetConstructor(values.Select(v =&gt; v.GetType()).ToArray());
+        <span style="color:#00f">if</span> (constructor == <span style="color:#00f">null</span>)
         {
-            throw new Exception("We tried to bind to your C# class, but it looks like there's no constructor which accepts all property values");
+            <span style="color:#00f">throw</span> <span style="color:#00f">new</span> Exception(<span style="color:#a31515">&#34;We tried to bind to your C# class, but it looks like there&#39;s no constructor which accepts all property values&#34;</span>);
         }
 
-        return (T)constructor.Invoke(values);
+        <span style="color:#00f">return</span> (T)constructor.Invoke(values);
     }
 }
-```
+</code></pre></div>
+<p>This piece of code is not particularly robust, but it is good enough to
+illustrate the concept.</p>
 
-This piece of code is not particularly robust, but it is good enough to
-illustrate the concept.
+<p>And that&rsquo;s it, the binding it ready! You can find the complete example in
+<a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/custom-binding-azure-functions">my github repo</a>.</p>
 
-And that's it, the binding it ready! You can find the complete example in
-[my github repo](https://github.com/mikhailshilkov/mikhailio-samples/tree/master/custom-binding-azure-functions).
+<h2 id="deploying-custom-bindings">Deploying Custom Bindings</h2>
 
-Deploying Custom Bindings
--------------------------
-
-Since BYOB feature is in early preview, there is no tooling for automated
+<p>Since BYOB feature is in early preview, there is no tooling for automated
 deployment, and we need to do everything manually. But the process is not
-too sophisticated:
+too sophisticated:</p>
 
-1. Create a folder for custom bindings, e.g. `D:\BindingExtensions`.
+<ol>
+<li><p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p></li>
 
-2. Set `AzureWebJobs_ExtensionsPath` parameter in your app settings
-to that folder's path. For local development add a line to `local.settings.json`:
+<li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
+to that folder&rsquo;s path. For local development add a line to <code>local.settings.json</code>:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json"><span style="color:#a31515">&#34;AzureWebJobs_ExtensionsPath&#34;</span><span style="">:</span> <span style="color:#a31515">&#34;D:\\BindingExtensions&#34;</span><span style="">,</span></code></pre></div></li>
 
-    ``` json
-    "AzureWebJobs_ExtensionsPath": "D:\\BindingExtensions",
-    ```
+<li><p>Create a subfolder for your extension, e.g.
+<code>D:\BindingExtensions\ConfigurationExtension</code>.</p></li>
 
-3. Create a subfolder for your extension, e.g. 
-`D:\BindingExtensions\ConfigurationExtension`.
+<li><p>Copy the contents of <code>bin\Debug\</code> of your extension&rsquo;s class library
+to that folder.</p></li>
 
-4. Copy the contents of `bin\Debug\` of your extension's class library
-to that folder.
+<li><p>Reference your extension library from your Function App.</p></li>
+</ol>
 
-5. Reference your extension library from your Function App.
+<p>You are good to go! Decorate your function parameters with the new attribute.</p>
 
-You are good to go! Decorate your function parameters with the new attribute.
+<p>Run the function app locally to try it out. In the console output you should
+be able to see something like</p>
 
-Run the function app locally to try it out. In the console output you should
-be able to see something like
-
-```
-Loaded custom extension: ConfigurationExtensionConfigProvider from 
+<pre><code>Loaded custom extension: ConfigurationExtensionConfigProvider from
 'D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll'
-```
+</code></pre>
 
-You will be able to debug your extension if needed.
+<p>You will be able to debug your extension if needed.</p>
 
-Useful Links
-------------
+<h2 id="useful-links">Useful Links</h2>
 
-Use the following links to find out more about custom bindings, see more
-examples and walkthroughs, and get fresh updates:
+<p>Use the following links to find out more about custom bindings, see more
+examples and walkthroughs, and get fresh updates:</p>
 
-- [Extensibility in Azure WebJobs SDK](https://github.com/Azure/azure-webjobs-sdk/wiki/Extensibility)
-- [Sample Extension for Azure Functions](https://github.com/Azure/WebJobsExtensionSamples/tree/master/SampleExtension),
-[Sample Usage in Precompiled App](https://github.com/Azure/WebJobsExtensionSamples/blob/master/FunctionApp/ReaderFunction.cs) and
-[Sample Usage in Script Runtime](https://github.com/Azure/WebJobsExtensionSamples/tree/master/ScriptRuntimeSample/Reader)
-- [Custom Bindings of Durable Functions](https://github.com/Azure/azure-functions-durable-extension/tree/master/src/WebJobs.Extensions.DurableTask)
-- [Installation Guide for Durable Functions](https://azure.github.io/azure-functions-durable-extension/articles/installation.html)
+<ul>
+<li><a href="https://github.com/Azure/azure-webjobs-sdk/wiki/Extensibility">Extensibility in Azure WebJobs SDK</a></li>
+<li><a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/SampleExtension">Sample Extension for Azure Functions</a>,
+<a href="https://github.com/Azure/WebJobsExtensionSamples/blob/master/FunctionApp/ReaderFunction.cs">Sample Usage in Precompiled App</a> and
+<a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/ScriptRuntimeSample/Reader">Sample Usage in Script Runtime</a></li>
+<li><a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/src/WebJobs.Extensions.DurableTask">Custom Bindings of Durable Functions</a></li>
+<li><a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">Installation Guide for Durable Functions</a></li>
+</ul>
 
-Have a good binding!]]></content>
+<p>Have a good binding!</p>
+]]></content>
             
                  
                     
@@ -17891,7 +18374,7 @@ should break into the Bunny&rsquo;s headquarters and save the gifts for the kids
 <p>Having said that, each challenge is independent from the others, so you can
 solve them in arbitrary order if you want.</p>
 
-<p><img src="/levelmap.png" alt="Advent Of Code Levels" />
+<p><img src="levelmap.png" alt="Advent Of Code Levels" />
 <em>Advent Calendar in dark ASCII</em></p>
 
 <p>A puzzle consists of a description and an input data set associated with it.
@@ -17908,7 +18391,7 @@ engaging tasks were also computationally intensive, such that a straightforward
 solution took too much time to run to completion. You need to find a
 shortcut to make it faster, which is always fun.</p>
 
-<p><img src="/solved.png" alt="Problem Solved!" />
+<p><img src="solved.png" alt="Problem Solved!" />
 <em>You collect stars for providing the correct answers</em></p>
 
 <p>Apart from generic joy and satisfaction that one gets from solving programming
@@ -17930,7 +18413,7 @@ myself to immutable data structures and pure functions. And it played out really
 I am quite happy with speed of development, readability and performance of
 the code.</p>
 
-<p><img src="/day8.png" alt="Day 8 solved" />
+<p><img src="day8.png" alt="Day 8 solved" />
 <em>Solution to one of the puzzles</em></p>
 
 <p>You can find my code for the first 11 puzzles in
@@ -20998,6 +21481,8 @@ actors which talk to each other by sending messages.</p>
 very thin, and thus easy to understand and maintain.</p>
 
 <p>The business logic is isolated and by itself has no dependency on Akka.NET.</p>
+
+<p><em>Proceed to <a href="/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Part 5 of Building a Poker Bot: Functional Fold as Decision Tree Pattern</a>.</em></p>
 ]]></content>
             
                  
@@ -21585,9 +22070,10 @@ into your <code>bundles.json</code>:</p>
             
             <content type="html"><![CDATA[<blockquote>The last step of the poker bot flow: clicking the buttons. The screen is already recognized, the hand is understood, the decisions are made and now the bot needs to execute the actions. This means clicking the right button at the poker table.</blockquote>
 
-<p>*This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
-to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively
-easy and very enjoyable. Here are the previous parts:*</p>
+<p>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
+to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively easy and very enjoyable.</p>
+
+<p>Here are the previous parts:</p>
 
 <ul>
 <li><a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
@@ -21698,6 +22184,8 @@ click event via the simulator:</p>
 
 <p>It looks fun, doesn&rsquo;t it? The full code for the mouse movements can be found in
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
+
+<p><em>Proceed to <a href="/2016/04/building-a-poker-bot-with-akka-net-actors/">Part 4 of Building a Poker Bot with Akka.NET Actor</a>.</em></p>
 ]]></content>
             
                  
@@ -21947,11 +22435,10 @@ during TDD development.</p>
             
             <content type="html"><![CDATA[<blockquote>This is the second part of Building a Poker Bot series where I describe my experience developing bot software to play in online poker rooms. Reading cards and other fixed images was the first step. The bot should also be able to read different text-based information from the screen.</blockquote>
 
-<p>*This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
-to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively
-easy and very enjoyable. Here is the first part:
-<a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a>
-*</p>
+<p>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
+to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively easy and very enjoyable.</p>
+
+<p>Here is the first part: <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a></p>
 
 <h2 id="why-string-recognition">Why string recognition</h2>
 
@@ -22118,6 +22605,8 @@ of numbers recognition:</p>
 of fixed objects. Nevertheless it&rsquo;s pretty straightforward to implement once
 we split it into small and well-understood conversion steps. The full code
 for card recognition can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/StringRecognition.fs">my github repo</a>.</p>
+
+<p><em>Proceed to <a href="/2016/03/building-a-poker-bot-mouse-movements/">Part 3 of Building a Poker Bot: Mouse Movements</a>.</em></p>
 ]]></content>
             
                  
@@ -22594,9 +23083,9 @@ of Service Fabric.</p>
             
             <content type="html"><![CDATA[<blockquote>This is the first part of Building a Poker Bot series where I describe my experience developing bot software for online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively easy and very enjoyable.</blockquote>
 
-<p>*This is the first part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
+<p>This is the first part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
 for online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively
-easy and very enjoyable.*</p>
+easy and very enjoyable.</p>
 
 <h2 id="screen-recognition">Screen recognition</h2>
 
@@ -22744,7 +23233,7 @@ much less that one could imagine for a task of image recognition. Similar code c
 fixed objects at poker table: dealer button location, action buttons, checkboxes etc. In the next part of this
 series I will show how to recognize non-fixed parts: text and numbers.</p>
 
-<p><em>Proceed to <a href="https://mikhail.io/2016/02/building-a-poker-bot-string-number-recognition/">Part 2 of Building a Poker Bot: String and Number Recognition</a>.</em></p>
+<p><em>Proceed to <a href="/2016/02/building-a-poker-bot-string-recognition/">Part 2 of Building a Poker Bot: String and Number Recognition</a>.</em></p>
 ]]></content>
             
                  
@@ -23078,27 +23567,23 @@ a message. This gives the best concurrency and scalability characteristics.</p>
 implement <strong>Tell</strong> (or <strong>Fire-and-Forget</strong>) model.</p>
 
 <p>Actor definition starts with an interface:</p>
-
-<pre><code>public interface IHardWorkingActor : IActor
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> IHardWorkingActor : IActor
 {
-    Task DoWork(string payload);
+    Task DoWork(<span style="color:#2b91af">string</span> payload);
 }
-</code></pre>
-
+</code></pre></div>
 <p>As you can see, the method does not return any useful data, which means
 the client code isn&rsquo;t really interested in waiting for the operation to
 complete. Here&rsquo;s how we implement this interface in the Actor class:</p>
-
-<pre><code>public class HardWorkingActor : Actor, IHardWorkingActor
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">HardWorkingActor</span> : Actor, IHardWorkingActor
 {
-    public async Task DoWork(string payload)
+    <span style="color:#00f">public</span> <span style="color:#00f">async</span> Task DoWork(<span style="color:#2b91af">string</span> payload)
     {
-        ActorEventSource.Current.ActorMessage(this, &quot;Doing Work&quot;);
-        await Task.Delay(500);
+        ActorEventSource.Current.ActorMessage(<span style="color:#00f">this</span>, <span style="color:#a31515">&#34;Doing Work&#34;</span>);
+        <span style="color:#00f">await</span> Task.Delay(500);
     }
 }
-</code></pre>
-
+</code></pre></div>
 <p>This test implementation simulates the hard work by means of an artificial 500 ms delay.</p>
 
 <p>Now, let&rsquo;s look at the client code. Let&rsquo;s say, the client receives the payloads
@@ -23106,19 +23591,17 @@ from a queue or a web front-end and needs to go as fast as possible. It gets a p
 creates an actor proxy to dispatch the payload to, then it just wants
 to continue with the next payload. Here is the &ldquo;Ask&rdquo; implementation based on
 the Service Fabric samples:</p>
-
-<pre><code>int i = 0;
-var timer = new Stopwatch();
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">int</span> i = 0;
+<span style="color:#2b91af">var</span> timer = <span style="color:#00f">new</span> Stopwatch();
 timer.Start();
-while (true)
+<span style="color:#00f">while</span> (<span style="color:#00f">true</span>)
 {
-    var proxy = ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), &quot;fabric:/Application1&quot;);
-    await proxy.DoWork($&quot;Work ${i++}&quot;);
-    Console.WriteLine($@&quot;Sent work to Actor {proxy.GetActorId()},
-                         rate is {i / timer.Elapsed.TotalSeconds}/sec&quot;);
+    <span style="color:#2b91af">var</span> proxy = ActorProxy.Create&lt;IHardWorkingActor&gt;(ActorId.NewId(), <span style="color:#a31515">&#34;fabric:/Application1&#34;</span>);
+    <span style="color:#00f">await</span> proxy.DoWork(<span style="color:#a31515">$&#34;Work ${i++}&#34;</span>);
+    Console.WriteLine(<span style="color:#a31515">$@&#34;Sent work to Actor {proxy.GetActorId()},
+</span><span style="color:#a31515">                         rate is {i / timer.Elapsed.TotalSeconds}/sec&#34;</span>);
 }
-</code></pre>
-
+</code></pre></div>
 <p>Note an <code>await</code> operator related to every call. That means that the client will
 block until the actor work is complete. When we run the client, no surprise that
 we get the rate of about 2 messages per second:</p>
@@ -23136,16 +23619,14 @@ look like:</p>
 <p>Instead of <code>await</code>-ing, we make a <code>Task</code>, pass it to some (not yet existing)
 extension method and proceed immediately. It appears that the implementation
 of such extension method is trivial:</p>
-
-<pre><code>public static class TaskHelper
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">TaskHelper</span>
 {
-    public static void FireAndForget(this Task task)
+    <span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> FireAndForget(<span style="color:#00f">this</span> Task task)
     {
-        Task.Run(async() =&gt; await task).ConfigureAwait(false);
+        Task.Run(<span style="color:#00f">async</span>() =&gt; <span style="color:#00f">await</span> task).ConfigureAwait(<span style="color:#00f">false</span>);
     }
 }
-</code></pre>
-
+</code></pre></div>
 <p>The result looks quite different from what we had before:</p>
 
 <pre><code>Sent work to Actor -8450334792912439527, rate is 408,484162592517/sec
@@ -24575,121 +25056,109 @@ Happy reviews!</p>
             <content type="html"><![CDATA[<blockquote>We use constructor dependency injection throughout our application. Most service classes have constructors, which accept all dependencies in form of interfaces. We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard.</blockquote>
 
 <p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
-
-<pre><code>public class VeryUsefulClass : IVeryUsefulClass
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">VeryUsefulClass</span> : IVeryUsefulClass
 {
-    private readonly ISomething something;
-    private readonly ISomethingElse somethingElse;
+    <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> ISomething something;
+    <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> ISomethingElse somethingElse;
 
-    public VeryUsefulClass(ISomething something, ISomethingElse somethingElse)
+    <span style="color:#00f">public</span> VeryUsefulClass(ISomething something, ISomethingElse somethingElse)
     {
-        this.something = something;
-        this.somethingElse = somethingElse;
+        <span style="color:#00f">this</span>.something = something;
+        <span style="color:#00f">this</span>.somethingElse = somethingElse;
     }
 
-    public AwesomeResponse DoUsefullStaff(ImportantRequest request)
+    <span style="color:#00f">public</span> AwesomeResponse DoUsefullStaff(ImportantRequest request)
     {
-        this.something.DoSomething();
-        this.somethingElse.DoSomethingElse();
-        return ...;
+        <span style="color:#00f">this</span>.something.DoSomething();
+        <span style="color:#00f">this</span>.somethingElse.DoSomethingElse();
+        <span style="color:#00f">return</span> ...;
     }
 }
-</code></pre>
-
+</code></pre></div>
 <p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
-
-<pre><code>[TestFixture]
-public class VeryUsefulClassTests
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[TestFixture]
+<span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">VeryUsefulClassTests</span>
 {
     [Test]
-    public void WhenSomethingIsNullConstructorThrowsNullException()
+    <span style="color:#00f">public</span> <span style="color:#00f">void</span> WhenSomethingIsNullConstructorThrowsNullException()
     {
         Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt;
-            new VeryUsefulClass(null, new Mock&lt;ISomethingElse&gt;.Object));
+            <span style="color:#00f">new</span> VeryUsefulClass(<span style="color:#00f">null</span>, <span style="color:#00f">new</span> Mock&lt;ISomethingElse&gt;.Object));
     }
 
     [Test]
-    public void WhenSomethingElseIsNullConstructorThrowsNullException()
+    <span style="color:#00f">public</span> <span style="color:#00f">void</span> WhenSomethingElseIsNullConstructorThrowsNullException()
     {
         Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt;
-            new VeryUsefulClass(new Mock&lt;ISomething&gt;.Object, null));
+            <span style="color:#00f">new</span> VeryUsefulClass(<span style="color:#00f">new</span> Mock&lt;ISomething&gt;.Object, <span style="color:#00f">null</span>));
     }
 
     [Test]
-    public void ImportantRequestProducesAwesomeResponse()
+    <span style="color:#00f">public</span> <span style="color:#00f">void</span> ImportantRequestProducesAwesomeResponse()
     {
-        var target = new VeryUsefulClass(new Mock&lt;ISomething&gt;.Object,
-            new Mock&lt;ISomethingElse&gt;.Object);
+        <span style="color:#2b91af">var</span> target = <span style="color:#00f">new</span> VeryUsefulClass(<span style="color:#00f">new</span> Mock&lt;ISomething&gt;.Object,
+            <span style="color:#00f">new</span> Mock&lt;ISomethingElse&gt;.Object);
         ...
     }
 
     ...
 }
-</code></pre>
-
+</code></pre></div>
 <p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &ldquo;noise&rdquo;: too much service code around real code under test.</p>
 
 <h2 id="make-it-better">Make it better</h2>
 
 <p>Now let&rsquo;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
-
-<pre><code>public VeryUsefulClass(ISomething something,
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> VeryUsefulClass(ISomething something,
     ISomethingElse somethingElse,
     ISomethingNew somethingNew)
 {
     ...
 }
-</code></pre>
-
+</code></pre></div>
 <p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&rsquo;s refactor the tests. First, let&rsquo;s declare all mocks as private fields and create them in set-up method:</p>
-
-<pre><code>[TestFixture]
-public class VeryUsefulClassTests
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[TestFixture]
+<span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">VeryUsefulClassTests</span>
 {
-    private Mock&lt;ISomething&gt; something;
-    private Mock&lt;ISomethingElse&gt; somethingElse;
+    <span style="color:#00f">private</span> Mock&lt;ISomething&gt; something;
+    <span style="color:#00f">private</span> Mock&lt;ISomethingElse&gt; somethingElse;
 
     [SetUp]
-    public void SetUp()
+    <span style="color:#00f">public</span> <span style="color:#00f">void</span> SetUp()
     {
-        this.something = new Mock&lt;ISomething&gt;();
-        this.somethingElse = new Mock&lt;ISomethingElse&gt;();
+        <span style="color:#00f">this</span>.something = <span style="color:#00f">new</span> Mock&lt;ISomething&gt;();
+        <span style="color:#00f">this</span>.somethingElse = <span style="color:#00f">new</span> Mock&lt;ISomethingElse&gt;();
     }
 ...
-</code></pre>
-
+</code></pre></div>
 <p>This way the same clean mocks will be available for each and every test. To make use of them, let&rsquo;s create GetTarget method which will create an instance of class under test</p>
-
-<pre><code>private VeryUsefulClass GetTarget()
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> VeryUsefulClass GetTarget()
 {
-    return new VeryUsefulClass(this.something.Object, this.somethingElse.Object);
+    <span style="color:#00f">return</span> <span style="color:#00f">new</span> VeryUsefulClass(<span style="color:#00f">this</span>.something.Object, <span style="color:#00f">this</span>.somethingElse.Object);
 }
-</code></pre>
-
+</code></pre></div>
 <p>Now we are ready to rewrite our test methods with less duplication</p>
-
-<pre><code>[Test]
-public void WhenSomethingIsNullConstructorThrowsNullException()
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[Test]
+<span style="color:#00f">public</span> <span style="color:#00f">void</span> WhenSomethingIsNullConstructorThrowsNullException()
 {
-    this.something = null;
-    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; this.GetTarget());
+    <span style="color:#00f">this</span>.something = <span style="color:#00f">null</span>;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span style="color:#00f">this</span>.GetTarget());
 }
 
 [Test]
-public void WhenSomethingElseIsNullConstructorThrowsNullException()
+<span style="color:#00f">public</span> <span style="color:#00f">void</span> WhenSomethingElseIsNullConstructorThrowsNullException()
 {
-    this.somethingElse = null;
-    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; this.GetTarget());
+    <span style="color:#00f">this</span>.somethingElse = <span style="color:#00f">null</span>;
+    Assert.ThrowsException&lt;ArgumentNullException&gt;(() =&gt; <span style="color:#00f">this</span>.GetTarget());
 }
 
 [Test]
-public void ImportantRequestProducesAwesomeResponse()
+<span style="color:#00f">public</span> <span style="color:#00f">void</span> ImportantRequestProducesAwesomeResponse()
 {
-    var target = this.GetTarget();
+    <span style="color:#2b91af">var</span> target = <span style="color:#00f">this</span>.GetTarget();
     ...
 }
-</code></pre>
-
+</code></pre></div>
 <p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
 
 <p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
@@ -25012,48 +25481,45 @@ public void ImportantRequestProducesAwesomeResponse()
 <p>Immediately after migration we found out that one of the stored procedures got much slower than before. That stored procedure was retrieving thousands of rows from a queue, and then did a series of transformations which took ages to complete. During the investigation we found that the query plan is far from being optimal, with massive scans of partitioned tables; and the reason was in ridiculously high estimations on one of the tables. That table was of moderate size (millions of rows), our query touched only some hundreds rows, while the estimate was&hellip; millions!</p>
 
 <p>Here is a repro to show this issue on any test database (database must be in SQL Server 2014 compatibility mode):</p>
-
-<pre><code>CREATE TABLE [dbo].[Store](
-    Id int IDENTITY(1,1) NOT NULL,
-    City int NOT NULL,
-    Size int NOT NULL,
-    Name varchar(max) NULL,
-    CONSTRAINT [PK_Store] PRIMARY KEY CLUSTERED ([Id] ASC)
- )
-
- GO
-
- CREATE NONCLUSTERED INDEX [IX_Store] ON [dbo].[Store]
-(
-    City ASC,
-    Size ASC
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">CREATE</span> <span style="color:#00f">TABLE</span> [dbo].[Store](
+Id int <span style="color:#00f">IDENTITY</span>(1,1) <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
+City int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
+<span style="color:#00f">Size</span> int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
+Name varchar(<span style="color:#00f">max</span>) <span style="color:#00f">NULL</span>,
+     <span style="color:#00f">CONSTRAINT</span> [PK_Store] <span style="color:#00f">PRIMARY</span> <span style="color:#00f">KEY</span> CLUSTERED ([Id] <span style="color:#00f">ASC</span>)
 )
 
-GO
- TRUNCATE TABLE Store
-INSERT Store
-SELECT i % 101, i % 11, 'Store ' + CAST(i AS VARCHAR)
-  FROM
- (SELECT TOP 100000 ROW_NUMBER() OVER (ORDER BY s1.[object_id]) AS i
-  FROM sys.all_objects  s1, sys.all_objects  s2) numbers
-GO
+<span style="color:#00f">GO</span>
 
-CREATE TABLE StoreRequest (City int NOT NULL, Size int NOT NULL)
+<span style="color:#00f">CREATE</span> NONCLUSTERED <span style="color:#00f">INDEX</span> [IX_Store] <span style="color:#00f">ON</span> [dbo].[Store]
+(
+City <span style="color:#00f">ASC</span>,
+<span style="color:#00f">Size</span> <span style="color:#00f">ASC</span>
+)
 
-GO
-DELETE StoreRequest
-INSERT StoreRequest values (55, 1)
-INSERT StoreRequest values (66, 2)
+<span style="color:#00f">GO</span>
+<span style="color:#00f">TRUNCATE</span> <span style="color:#00f">TABLE</span> Store
+<span style="color:#00f">INSERT</span> Store
+<span style="color:#00f">SELECT</span> i % 101, i % 11, <span style="color:#a31515">&#39;Store &#39;</span> + <span style="color:#00f">CAST</span>(i <span style="color:#00f">AS</span> VARCHAR)
+  <span style="color:#00f">FROM</span>
+  (<span style="color:#00f">SELECT</span> TOP 100000 ROW_NUMBER() OVER (<span style="color:#00f">ORDER</span> <span style="color:#00f">BY</span> s1.[object_id]) <span style="color:#00f">AS</span> i
+     <span style="color:#00f">FROM</span> sys.all_objects  s1, sys.all_objects  s2) numbers
+<span style="color:#00f">GO</span>
 
-GO
+<span style="color:#00f">CREATE</span> <span style="color:#00f">TABLE</span> StoreRequest (City int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>, <span style="color:#00f">Size</span> int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>)
 
- SELECT s.City
-   FROM StoreRequest AS r
-        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK)
-                    ON s.City = r.City AND s.Size = r.Size
-  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
-</code></pre>
+<span style="color:#00f">GO</span>
+<span style="color:#00f">DELETE</span> StoreRequest
+<span style="color:#00f">INSERT</span> StoreRequest <span style="color:#00f">values</span> (55, 1)
+<span style="color:#00f">INSERT</span> StoreRequest <span style="color:#00f">values</span> (66, 2)
 
+<span style="color:#00f">GO</span>
+
+<span style="color:#00f">SELECT</span> s.City
+  <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
+       <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
+               <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
+ <span style="color:#00f">WHERE</span> r.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55</code></pre></div>
 <p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
 
 <p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
@@ -25063,14 +25529,11 @@ GO
 <p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
 
 <p>Good news: it&rsquo;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
-
-<pre><code> SELECT s.City
-   FROM StoreRequest AS r
-        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK)
-                    ON s.City = r.City AND s.Size = r.Size
-  WHERE s.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
-</code></pre>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> s.City
+  <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
+       <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
+               <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
+ <span style="color:#00f">WHERE</span> s.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55</code></pre></div>
 <p>Estimator is able to handle this situation correctly:</p>
 
 <p><img src="2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be" /></p>
@@ -25078,15 +25541,12 @@ GO
 <p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
 
 <p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
-
-<pre><code> SELECT s.City
-   FROM StoreRequest AS r
-        INNER JOIN Store AS s  WITH(INDEX(IX_Store), FORCESEEK)
-                    ON s.City = r.City AND s.Size = r.Size
-  WHERE r.Size &lt;&gt; 1 OR s.City &lt;&gt; 55
- OPTION(QUERYTRACEON 9481)
-</code></pre>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"> <span style="color:#00f">SELECT</span> s.City
+   <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
+        <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
+                <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
+  <span style="color:#00f">WHERE</span> r.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55
+ <span style="color:#00f">OPTION</span>(QUERYTRACEON 9481)</code></pre></div>
 <p>And then we get this:</p>
 
 <p><img src="2012estimates.png" alt="Execution plan in SQL Server 2012" /></p>
@@ -25162,8 +25622,34 @@ Happy coding!</p>
             
             <content type="html"><![CDATA[<blockquote>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture&hellip;</blockquote>
 
-<p>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture:
-<img src="architecture.jpg" alt="System architecture" /></p>
+<p>Our team develops a back-end system that processes messages from mobile devices. The devices collect information from complex machines and send messages to our data center. In this article I want to share our approaches to building such processing software. The ideas are quite general and can be applied to any system of the following architecture:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="architecture.jpg"
+            alt="System architecture"
+             />
+        
+    
+    <figcaption>
+        <h4>System architecture</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>The devices use communication channels to send messages to our gateway - the input point of our application. The application&rsquo;s goal is to understand what came in, do the required actions and save the information into the database for further processing. Let&rsquo;s consider the database to be the end point of processing. Sounds easy, right? But some difficulties appear with the growth of amount and diversity of incoming messages; so let&rsquo;s look at some of them.</p>
 
@@ -25173,8 +25659,34 @@ Happy coding!</p>
 
 <p>The input gateway doesn&rsquo;t do much of real job: it just receives a message from a client and puts it into the queue. This operation is very cheap, thus the gateway is capable of accepting a vast number of messages per second. Afterwards a separate process retrieves several messages - the amount it wants to get - from the queue and does the hard work. The processing happens asynchronously while the load on the system remains limited. Perhaps the time in the queue grows at peaks, but that&rsquo;s it.</p>
 
-<p>Normally the message processing is non-trivial and consists of several actions. Here we get to the next logical step: we break down the job into several stages, each one having a separate queue and a dedicated processor. The queues and processors are independent and may reside on separate physical servers; and we can tune and scale them independently:
-<img src="sequence.jpg" alt="Sequence-based architecture" /></p>
+<p>Normally the message processing is non-trivial and consists of several actions. Here we get to the next logical step: we break down the job into several stages, each one having a separate queue and a dedicated processor. The queues and processors are independent and may reside on separate physical servers; and we can tune and scale them independently:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="sequence.jpg"
+            alt="Sequence-based architecture"
+             />
+        
+    
+    <figcaption>
+        <h4>Sequence-based architecture</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
 
 <p>The first queue contains the messages from devices as-is, without decoding or transforming them. The first processor decodes them and puts them into the second queue. The second processor could, for instance, call a third-party service and enrich the message with some relevant information, and the third processor could save that information into the database.</p>
 
@@ -25362,8 +25874,9 @@ Happy coding!</p>
 
 <p>errors from SQL Server? Keep on reading!</p>
 
-<p>Yesterday, when I came back from my lunch, I got a heads-up from Windows:
-<img src="low-disk-space.gif" alt="Low disk space" /></p>
+<p>Yesterday, when I came back from my lunch, I got a heads-up from Windows:</p>
+
+<p><img src="low-disk-space.gif" alt="Low disk space" /></p>
 
 <p>And it was literally out of space: 0 (zero) bytes available on C: drive. Wow&hellip;</p>
 
@@ -25392,78 +25905,66 @@ on queue 'dbo.XQueue' output the following:
 <p>So, it looks like there is a problem with SQL Server Service Broker, which is constantly trying to read something from disabled queue. Isn&rsquo;t it supposed to stop after 5 attempts (a.k.a. poison messages)? Ok, keep on troubleshooting.</p>
 
 <p>First, let check if the queue is actually disabled</p>
-
-<pre><code>SELECT Name, is_receive_enabled, is_enqueue_enabled
-  FROM sys.service_queues
- WHERE Name = 'XQueue'
-</code></pre>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> Name, is_receive_enabled, is_enqueue_enabled
+  <span style="color:#00f">FROM</span> sys.service_queues
+ <span style="color:#00f">WHERE</span> Name = <span style="color:#a31515">&#39;XQueue&#39;</span></code></pre></div>
 <p>Yep, it&rsquo;s disabled:
 <img src="qdisabled.png" alt="XQueue disabled" /></p>
 
 <p>Do we have anything queued?</p>
-
-<pre><code>SELECT TOP 1000 *
-  FROM [XQueue] WITH(NOLOCK)
-</code></pre>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> TOP 1000 *
+  <span style="color:#00f">FROM</span> [XQueue] <span style="color:#00f">WITH</span>(NOLOCK)</code></pre></div>
 <p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
 
 <p>So, let&rsquo;s have a look at the processor. We had something like that:</p>
-
-<pre><code>CREATE PROCEDURE [dbo].[XQueueProcessor]
-AS
-BEGIN
-    DECLARE
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">CREATE</span> <span style="color:#00f">PROCEDURE</span> [dbo].[XQueueProcessor]
+<span style="color:#00f">AS</span>
+<span style="color:#00f">BEGIN</span>
+    <span style="color:#00f">DECLARE</span>
         @queuing_order BIGINT
-        ,@conversation_handle UNIQUEIDENTIFIER
-        ,@message_enqueue_time DATETIME
-        ,@message_type_name VARCHAR(156)
-        ,@message_body VARBINARY(MAX);
+       ,@conversation_handle UNIQUEIDENTIFIER
+       ,@message_enqueue_time DATETIME
+       ,@message_type_name VARCHAR(156)
+       ,@message_body VARBINARY(<span style="color:#00f">MAX</span>);
 
-    WHILE(1=1) -- MAIN WHILE LOOP RECEIVING THE MESSAGE BATCHES
-    BEGIN
-        BEGIN TRANSACTION
-        BEGIN TRY
+    WHILE(1=1) <span style="color:#008000">-- MAIN WHILE LOOP RECEIVING THE MESSAGE BATCHES
+</span><span style="color:#008000"></span>    <span style="color:#00f">BEGIN</span>
+        <span style="color:#00f">BEGIN</span> TRANSACTION
+        <span style="color:#00f">BEGIN</span> TRY
             WAITFOR(RECEIVE TOP(1)
                         @queuing_order = [queuing_order],
                         @conversation_handle = [conversation_handle],
                         @message_enqueue_time = message_enqueue_time,
                         @message_type_name = message_type_name,
                         @message_body = message_body
-                    FROM [dbo].[XQueue]), TIMEOUT 10
+                    <span style="color:#00f">FROM</span> [dbo].[XQueue]), TIMEOUT 10
 
-            IF (@@ROWCOUNT = 0)
-            BEGIN
-                ROLLBACK TRANSACTION
+            <span style="color:#00f">IF</span> (@@ROWCOUNT = 0)
+            <span style="color:#00f">BEGIN</span>
+                <span style="color:#00f">ROLLBACK</span> TRANSACTION
                 BREAK
-            END
+            <span style="color:#00f">END</span>
 
-            -- SOME CRUD OPERATIONS HAPPEN HERE
-
-            COMMIT TRANSACTION
-        END TRY
-        BEGIN CATCH
-            DECLARE @Error varchar(4000) = ERROR_MESSAGE()
+            <span style="color:#008000">-- SOME CRUD OPERATIONS HAPPEN HERE
+</span><span style="color:#008000"></span>
+            <span style="color:#00f">COMMIT</span> TRANSACTION
+        <span style="color:#00f">END</span> TRY
+        <span style="color:#00f">BEGIN</span> CATCH
+            <span style="color:#00f">DECLARE</span> @Error varchar(4000) = ERROR_MESSAGE()
             PRINT @Error
-            ROLLBACK TRANSACTION
-        END CATCH
-    END
-END
-</code></pre>
-
+            <span style="color:#00f">ROLLBACK</span> TRANSACTION
+        <span style="color:#00f">END</span> CATCH
+    <span style="color:#00f">END</span>
+<span style="color:#00f">END</span></code></pre></div>
 <p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back&hellip; But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &ldquo;The service queue is currently disabled&rdquo; and voila, CPU is busy and error logs are floating the disk.</p>
 
 <p>The fix is pretty trivial, just change the CATCH block to</p>
-
-<pre><code>BEGIN CATCH
-    DECLARE @Error varchar(4000) = ERROR_MESSAGE()
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">BEGIN</span> CATCH
+    <span style="color:#00f">DECLARE</span> @Error varchar(4000) = ERROR_MESSAGE()
     PRINT @Error
-    ROLLBACK TRANSACTION
-    RETURN
-END CATCH
-</code></pre>
-
+    <span style="color:#00f">ROLLBACK</span> TRANSACTION
+    <span style="color:#00f">RETURN</span>
+<span style="color:#00f">END</span> CATCH</code></pre></div>
 <p>Be careful!</p>
 ]]></content>
             
@@ -25501,34 +26002,25 @@ END CATCH
 <p>Sometimes you need to produce a result set, which would contain N rows with numbers 1&hellip;N in each row. For example, I needed to calculate some statistics per week for N weeks starting from today and going back to the past.</p>
 
 <p>Here is a table funtion which does the enumeration:</p>
-
-<pre><code>CREATE FUNCTION dbo.fnEnumerateNumbers(@max int)
-RETURNS TABLE
-RETURN
-WITH
- E1(N) AS (SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1 UNION ALL
-           SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1 UNION ALL
-           SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1 UNION ALL
-           SELECT 1),                 --10E1  or 10 rows
- E2(N) AS (SELECT 1 FROM E1 a, E1 b), --10E2  or 100 rows
- E4(N) AS (SELECT 1 FROM E2 a, E2 b), --10E4  or 10000 rows
- E8(N) AS (SELECT 1 FROM E4 a, E4 b)  --10E8  or 100000000 rows
-SELECT TOP (@max) N = ROW_NUMBER() OVER (ORDER BY (SELECT NULL))
-  FROM E8
-</code></pre>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">CREATE</span> <span style="color:#00f">FUNCTION</span> dbo.fnEnumerateNumbers(@<span style="color:#00f">max</span> int)
+<span style="color:#00f">RETURNS</span> <span style="color:#00f">TABLE</span>
+<span style="color:#00f">RETURN</span>
+<span style="color:#00f">WITH</span>
+ E1(N) <span style="color:#00f">AS</span> (<span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span> <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span> <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span>
+           <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span> <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span> <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span>
+           <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span> <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span> <span style="color:#00f">SELECT</span> 1 <span style="color:#00f">UNION</span> <span style="color:#00f">ALL</span>
+           <span style="color:#00f">SELECT</span> 1),                 <span style="color:#008000">--10E1  or 10 rows
+</span><span style="color:#008000"></span> E2(N) <span style="color:#00f">AS</span> (<span style="color:#00f">SELECT</span> 1 <span style="color:#00f">FROM</span> E1 a, E1 b), <span style="color:#008000">--10E2  or 100 rows
+</span><span style="color:#008000"></span> E4(N) <span style="color:#00f">AS</span> (<span style="color:#00f">SELECT</span> 1 <span style="color:#00f">FROM</span> E2 a, E2 b), <span style="color:#008000">--10E4  or 10000 rows
+</span><span style="color:#008000"></span> E8(N) <span style="color:#00f">AS</span> (<span style="color:#00f">SELECT</span> 1 <span style="color:#00f">FROM</span> E4 a, E4 b)  <span style="color:#008000">--10E8  or 100000000 rows
+</span><span style="color:#008000"></span><span style="color:#00f">SELECT</span> TOP (@<span style="color:#00f">max</span>) N = ROW_NUMBER() OVER (<span style="color:#00f">ORDER</span> <span style="color:#00f">BY</span> (<span style="color:#00f">SELECT</span> <span style="color:#00f">NULL</span>))
+  <span style="color:#00f">FROM</span> E8</code></pre></div>
 <p>Usage is trivial:</p>
-
-<pre><code>SELECT N
-  FROM dbo.fnEnumerateNumbers(100)
-</code></pre>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> N
+  <span style="color:#00f">FROM</span> dbo.fnEnumerateNumbers(100)</code></pre></div>
 <p>And here is how I solved the task of enumerating weeks:</p>
-
-<pre><code>SELECT dateadd(week, 1 - N, getutcdate())
-  FROM dbo.fnEnumerateNumbers(100)
-</code></pre>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> dateadd(week, 1 - N, getutcdate())
+  <span style="color:#00f">FROM</span> dbo.fnEnumerateNumbers(100)</code></pre></div>
 <p>There are multiple possibilities to implement similar function, but I believe this way is the best one in terms of performance. No temporary tables, no table reads, no dependencies on table existance, and you can define your maximum yourself.</p>
 
 <p>Happy coding!</p>
@@ -26892,273 +27384,7 @@ Here is what I ended up with:
     
     
         
-        <entry>
-            <title type="html"><![CDATA[Speech bubble custom border control in Silverlight]]></title>
-            <link href="https://mikhail.io/2012/01/26/speech-bubble-control-in-sl/"/>
-            <id>https://mikhail.io/2012/01/26/speech-bubble-control-in-sl/</id>
-            
-            <published>2012-01-26T00:00:00+00:00</published>
-            <updated>2012-01-26T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[<blockquote>Recently, I was trying to find a Silverlight control, which works like a standard Border, but looks like a Speech Bubble instead. This means the border would have a &ldquo;leader&rdquo; triangle, which could point to a related visual element.</blockquote><p>Recently, I was trying to find a Silverlight control, which works like a standard Border, but looks like a Speech Bubble instead. This means the border would have a &ldquo;leader&rdquo; triangle, which could point to a related visual element. See the following example:</p>
-
-<p><img src="bubbles.png" alt="Speech bubbles on a map" title="Speech bubbles on a map" /></p>
-
-<p>Here we have two objects on a map: two vehicle icons. Each of them has a related bubble pop-up with some status information. When we get many objects on the map, the pop-up &ldquo;leaders&rdquo; will help user grasp the relations between icons and info labels.</p>
-
-<p>First, I started with requirements list to a Bubble control; here&rsquo;s what I got:
-1. The control should act like a standard content control, i.e. it must allow any like of XAML content inside.
-2. It must auto scale up and down whenever the content size changes.
-3. The &ldquo;leader&rdquo; position must be flexible: I need a way to switch it to appear on the left, on the right or totally hidden in design/runtime. I also need to set &ldquo;leader&rdquo; top position and size.
-4. The control look must be customizable with styles/templates. The look from the picture above should be doable, which means I need a way to setup background opacity, border color (make sure the &ldquo;leader&rdquo; and pop-up body has a unite border) and solid shadow.
-5. It must be open source, free to use and modify for a commercial application.</p>
-
-<p>Unfortunately, I failed to find a ready-to-use control on the web, so I had to write one on my own. You can download the Bubble control test application <a href="https://skydrive.live.com/redir.aspx?cid=c010011792a4b538&amp;resid=C010011792A4B538!126&amp;parid=root">here</a>.
-Here is a brief review of the code.</p>
-
-<p>First, we declare the Bubble control and derive from ContentControl to get a ready-to-use Content property for placing child control.</p>
-
-<pre><code>public class Bubble : ContentControl
-{
-    public Bubble()
-    {
-        this.DefaultStyleKey = typeof(Bubble);
-    }
-}
-</code></pre>
-
-<p>Then, we go to Themes/Generic.xaml resource dictionary to declare the (default) control template. Here&rsquo;s how it looks:</p>
-
-<pre><code>&lt;Setter Property=&quot;Template&quot;&gt;
-    &lt;Setter.Value&gt;
-        &lt;ControlTemplate TargetType=&quot;localcontrols:Bubble&quot;&gt;
-            &lt;Grid&gt;
-                &lt;Path x:Name=&quot;OuterPath&quot; Fill=&quot;#020202&quot; StrokeThickness=&quot;0&quot; Opacity=&quot;0.7&quot;&gt;
-                    &lt;Path.Effect&gt;
-                        &lt;BlurEffect Radius=&quot;6&quot;/&gt;
-                    &lt;/Path.Effect&gt;
-                &lt;/Path&gt;
-                &lt;Path x:Name=&quot;InnerPath&quot; Stroke=&quot;#8F8F8F&quot; StrokeThickness=&quot;1&quot;&gt;
-                &lt;/Path&gt;
-                &lt;ContentPresenter x:Name=&quot;ContentContainer&quot; ContentTemplate=&quot;{TemplateBinding ContentTemplate}&quot; Content=&quot;{TemplateBinding Content}&quot;
-                                    HorizontalAlignment=&quot;Center&quot; VerticalAlignment=&quot;Center&quot; /&gt;
-            &lt;/Grid&gt;
-        &lt;/ControlTemplate&gt;
-    &lt;/Setter.Value&gt;
-&lt;/Setter&gt;
-</code></pre>
-
-<p>The three elements are placed into ControlTemplate:</p>
-
-<ul>
-<li>OuterPath is a Path control to render background and shadow. I didn&rsquo;t manage to get the exact required look with a single Path control with DropShadowEffect, so I decided to use two controls instead. We apply Fill, Opacity and BlurEffect to this control.</li>
-<li>InnerPath is a Path control to render the border. We apply Stroke and StrokeThickness to this control.</li>
-<li>ContentContainer is a ContentPresenter to render child control hierarchy.</li>
-</ul>
-
-<p>Now, we can get the references to template&rsquo;s controls in our Bubble&rsquo;s method OnApplyTemplate(). We are going to render the bubble with Path controls, with pixel-based API. So, any time the content size changes, we need to adopt Paths. Let&rsquo;s subscribe to SizeChanged event then.</p>
-
-<pre><code>private Path _OuterPath;
-private Path _InnerPath;
-private ContentPresenter _ContentContainer;
-
-public override void OnApplyTemplate()
-{
-    base.OnApplyTemplate();
-    _OuterPath = (Path)GetTemplateChild(&quot;OuterPath&quot;);
-    _InnerPath = (Path)GetTemplateChild(&quot;InnerPath&quot;);
-    _ContentContainer = (ContentPresenter)GetTemplateChild(&quot;ContentContainer&quot;);
-    if (_OuterPath != null &amp;&amp; _ContentContainer != null)
-        _ContentContainer.SizeChanged += new SizeChangedEventHandler(OnSizeChanged);
-}
-
-private void OnSizeChanged(object sender, SizeChangedEventArgs e)
-{
-    Render();
-}
-</code></pre>
-
-<p>We&rsquo;ll need several properties to customize the look of Bubble control: Corner radius and Leader size &amp; position.</p>
-
-<pre><code>/// &lt;summary&gt;
-/// Corner radius
-/// &lt;/summary&gt;
-public static readonly DependencyProperty CornerRadiusProperty = DependencyProperty.Register(&quot;CornerRadius&quot;, typeof(int), typeof(Bubble), new PropertyMetadata(null));
-public int CornerRadius
-{
-    get
-    {
-        return (int)GetValue(CornerRadiusProperty);
-    }
-    set
-    {
-        SetValue(CornerRadiusProperty, value);
-    }
-}
-
-/// &lt;summary&gt;
-/// Leader (arrow pointer) size
-/// &lt;/summary&gt;
-public static readonly DependencyProperty LeaderSizeProperty = DependencyProperty.Register(&quot;LeaderSize&quot;, typeof(int), typeof(Bubble), new PropertyMetadata(null));
-public int LeaderSize
-{
-    get
-    {
-        return (int)GetValue(LeaderSizeProperty);
-    }
-    set
-    {
-        SetValue(LeaderSizeProperty, value);
-    }
-}
-
-/// &lt;summary&gt;
-/// Leader (arrow pointer) position - relative to upper border
-/// &lt;/summary&gt;
-public static readonly DependencyProperty LeaderTopProperty = DependencyProperty.Register(&quot;LeaderTop&quot;, typeof(int), typeof(Bubble), new PropertyMetadata(null));
-public int LeaderTop
-{
-    get
-    {
-        return (int)GetValue(LeaderTopProperty);
-    }
-    set
-    {
-        SetValue(LeaderTopProperty, value);
-    }
-}
-
-/// &lt;summary&gt;
-/// Leader (arrow pointer) position - left, right or none (hidden)
-/// &lt;/summary&gt;
-public static readonly DependencyProperty LeaderPositionProperty = DependencyProperty.Register(&quot;LeaderPosition&quot;, typeof(BubbleLeaderPosition), typeof(Bubble), new PropertyMetadata(OnPropertyChanged));
-public BubbleLeaderPosition LeaderPosition
-{
-    get
-    {
-        return (BubbleLeaderPosition)GetValue(LeaderPositionProperty);
-    }
-    set
-    {
-        SetValue(LeaderPositionProperty, value);
-    }
-}
-
-public enum BubbleLeaderPosition
-{
-    None,
-    Left,
-    Right
-}
-</code></pre>
-
-<p>Now we only need to implement Render() method - quite a lot of routine work: calculating coordinates of &ldquo;leader&rdquo;, adding Path segments into both OuterPath and InnerPath, setting margins etc.</p>
-
-<pre><code>protected void Render()
-{
-    if (_ContentContainer == null '' _OuterPath == null)
-                return;
-    double width = _ContentContainer.ActualWidth + 2 + SHADOW_SIZE * 2 + LeaderSize;
-    double height = _ContentContainer.ActualHeight + 2 + SHADOW_SIZE * 2;
-
-    // paint the outer path - used for shadow effect
-    RenderPath(_OuterPath, 0, 0, width, height, SHADOW_SIZE);
-
-    // paint the inner path - used for border rendering
-    // may be skipped in control template
-    if (_InnerPath != null)
-        RenderPath(_InnerPath, SHADOW_SIZE, SHADOW_SIZE, width - SHADOW_SIZE, height - SHADOW_SIZE, 0);
-
-    switch (LeaderPosition)
-    {
-        case BubbleLeaderPosition.None:
-            _ContentContainer.Margin = new Thickness(SHADOW_SIZE + 1);
-            break;
-        case BubbleLeaderPosition.Left:
-            _ContentContainer.Margin = new Thickness(LeaderSize + SHADOW_SIZE + 1, SHADOW_SIZE + 1, SHADOW_SIZE + 1, SHADOW_SIZE + 1);
-            break;
-        case BubbleLeaderPosition.Right:
-            _ContentContainer.Margin = new Thickness(SHADOW_SIZE + 1, SHADOW_SIZE + 1, SHADOW_SIZE + 1 + LeaderSize, SHADOW_SIZE + 1);
-            break;
-    }
-}
-
-private void RenderPath(Path path, double left, double top, double right, double bottom, double shadowSize)
-{
-    PathGeometry geometry = new PathGeometry();
-    PathFigure figure = new PathFigure { IsClosed = true };
-    geometry.Figures.Add(figure);
-    switch (LeaderPosition)
-    {
-        case BubbleLeaderPosition.None:
-            figure.StartPoint = new Point { X = left, Y = top + CornerRadius };
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = left + CornerRadius, Y = top }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right - CornerRadius, Y = top } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = right, Y = top + CornerRadius }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right, Y = bottom - CornerRadius } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = right - CornerRadius, Y = bottom }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = left + CornerRadius, Y = bottom } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = left, Y = bottom - CornerRadius }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            break;
-
-        case BubbleLeaderPosition.Left:
-            figure.StartPoint = new Point { X = left + LeaderSize, Y = top + CornerRadius };
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = left + LeaderSize + CornerRadius, Y = top }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right - CornerRadius, Y = top } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = right, Y = top + CornerRadius }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right, Y = bottom - CornerRadius } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = right - CornerRadius, Y = bottom }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = left + LeaderSize + CornerRadius, Y = bottom } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = left + LeaderSize, Y = bottom - CornerRadius }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = left + LeaderSize, Y = top + LeaderTop + 2 * LeaderSize + 2 * shadowSize } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = left, Y = top + LeaderTop + LeaderSize + shadowSize } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = left + LeaderSize, Y = top + LeaderTop } });
-            break;
-
-        case BubbleLeaderPosition.Right:
-            figure.StartPoint = new Point { X = left, Y = top + CornerRadius };
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = left + CornerRadius, Y = top }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right - LeaderSize - CornerRadius, Y = top } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = right - LeaderSize, Y = top + CornerRadius }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right - LeaderSize, Y = top + LeaderTop } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right, Y = top + LeaderTop + LeaderSize + shadowSize } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right - LeaderSize, Y = top + LeaderTop + 2 * LeaderSize + 2 * shadowSize } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = right - LeaderSize, Y = bottom - CornerRadius } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = right - LeaderSize - CornerRadius, Y = bottom }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            figure.Segments.Add(new LineSegment { Point = new Point { X = left + CornerRadius, Y = bottom } });
-            figure.Segments.Add(new ArcSegment { Point = new Point { X = left, Y = bottom - CornerRadius }, SweepDirection = SweepDirection.Clockwise, Size = new Size { Width = CornerRadius, Height = CornerRadius } });
-            break;
-    }
-
-    path.Data = geometry;
-}
-</code></pre>
-
-<p>You can download the Bubble control test application <a href="https://skydrive.live.com/redir.aspx?cid=c010011792a4b538&amp;resid=C010011792A4B538!126&amp;parid=root">here</a>. It will show you something like this :)
-<img src="bubblegirls.png" alt="Bubble girls" title="Bubble girls" /></p>
-]]></content>
-            
-                 
-                    
-                 
-                    
-                         
-                        
-                            
-                             
-                                <category scheme="https://mikhail.io/tags/csharp" term="csharp" label="CSharp" />
-                             
-                                <category scheme="https://mikhail.io/tags/silverlight" term="silverlight" label="Silverlight" />
-                             
-                                <category scheme="https://mikhail.io/tags/wpf" term="wpf" label="WPF" />
-                            
-                        
-                    
-                
-            
-        </entry>
-    
+        
     
         
         <entry>
