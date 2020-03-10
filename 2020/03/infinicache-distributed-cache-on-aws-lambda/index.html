@@ -211,12 +211,13 @@
                 
                 <div class="article-post">
                     <p>&ldquo;InfiniCache: Exploiting Ephemeral Serverless Functions to Build a Cost-Effective Memory Cache&rdquo; by Ao Wang, et al. (<a href="https://www.usenix.org/conference/fast20/presentation/wang-ao">link</a>) is a recently published paper which describes a prototype of a serverless distributed caching system sitting atop AWS Lambda.</p>
+<p>The cost of such a cluster is mostly fixed and depends on required memory allocation, no matter how many requests it serves. InfiniCache aims to bring a serverless pay-per-request dynamic pricing model to the world of in-memory data caching.</p>
 <p>While reading through the paper, I got fascinated by several techniques that they employed while implementing the system. Therefore, I decided to review the paper and highlight its most intriguing parts. I target my review at software and IT engineers working on cloud applications. I assume the reader has a basic understanding of serverless cloud functions (Function-as-a-Service, FaaS) and their traditional use cases.</p>
 <p>Let&rsquo;s start with a problem that InfiniCache aims to solve.</p>
 <h2 id="i-state-in-stateless-functions">I. State in Stateless Functions</h2>
 <p>Serverless functions excel at running stateless workloads. FaaS services use ephemeral compute instances to grow and shrink the capacity to adjust to a variable request rate. New virtual machines or containers are assigned and recycled by the cloud provider at arbitrary moments.</p>
-<p>Functions are incredibly compelling for low-load usage scenarios, among others. Executions are charged per actual duration, at 100 ms granularity. If your application only needs to run several times per day in a test environment, it costs you literally zero.</p>
-<p>Cloud providers try to reuse compute instances for multiple subsequent requests. The price of bootstrapping new instances is too high to pay for every request. A warm instance would keep pre-loaded files in memory between requests to minimize the overhead and <a href="/serverless/coldstarts">cold start</a> duration.</p>
+<p>Functions are incredibly compelling for low-load usage scenarios, among others. Executions are charged per actual duration, at 100 ms granularity. If your application only needs to run several times per day in a test environment, it costs you very close to zero.</p>
+<p>Cloud providers try to reuse compute instances for multiple subsequent requests. The price of bootstrapping new instances is too high to pay for every request. A warm instance would keep pre-loaded files in memory between requests to minimize the overhead and <a href="/serverless/coldstarts">cold start</a> duration. The exact behavior is a black box and varies between region, AZ, and in time.</p>
 <p>There seems to be a fundamental opportunity to exploit the keep-warm behavior further. Each function instance has up to several gigabytes of memory, while our executable cache might only consume several megabytes. Can we use this memory to persist useful state?</p>
 <h3 id="in-memory-cache">In-memory Cache</h3>
 <p>The most straightforward way to use this capacity is to store reusable data between requests. If we need a piece of data from external storage, and that same piece is needed again and again, we could store it after the first load in a global in-memory hashmap. Think of a simple read-through cache backed by an external persistent data store.</p>
@@ -270,7 +271,7 @@
 <li>Scalability to hundreds or thousands of nodes</li>
 <li>Pay per request</li>
 </ul>
-<p>The most significant potential upside is related to the cost structure. The cache capacity is billed only when a request needs an object. Such a pay-per-request model significantly differentiates against conventional cloud storage or cache services, which typically charge for memory capacity on an hourly basis whether the cached objects are accessed or not.</p>
+<p>The most significant potential upside is related to the cost structure. The cache capacity is billed only when a request needs an object. Such a pay-per-request model significantly differentiates against conventional cluster-based cache services, which typically charge for memory capacity on an hourly basis whether the cached objects are accessed or not.</p>
 <h3 id="challenges">Challenges</h3>
 <p>However, once again, serverless functions were not designed for stateful use cases. Utilizing the memory of cloud functions for object caching introduces non-trivial challenges due to the limitations and constraints of serverless computing platforms. The following list is specific to AWS Lambda, but other providers have very similar setups.</p>
 <ul>
