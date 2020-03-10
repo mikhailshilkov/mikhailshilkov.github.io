@@ -214,26 +214,16 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>In my previous article, <a href="/2019/03/visualizing-cold-starts/">Visualizing Cold Starts</a>, I visually demonstrated the impact of <a href="/serverless/coldstarts/">serverless cold starts</a> on map loading time. When the serverless function serving the map tiles is cold, users experience a noticeable delay before they can see the selected map view.</p>
-
+                    <p>In my previous article, <a href="/2019/03/visualizing-cold-starts/">Visualizing Cold Starts</a>, I visually demonstrated the impact of <a href="/serverless/coldstarts/">serverless cold starts</a> on map loading time. When the serverless function serving the map tiles is cold, users experience a noticeable delay before they can see the selected map view.</p>
 <p>I then ran the map loading test on  AWS Lambda, Google Cloud Functions, and Azure Functions. The duration of the perceptible delay varied between cloud providers, ranging from 1.5 to 8 seconds.</p>
-
 <p>Is this effect unfortunately inherent to all Function-as-a-Service offerings? Or is it possible to avoid cold starts altogether?</p>
-
 <h2 id="binaris">Binaris</h2>
-
 <p><a href="https://www.binaris.com/">Binaris</a> is a new player in the serverless functions market. Binaris removes performance barriers to improve developer productivity and enable any application to be built on top of cloud functions.</p>
-
 <p>One of the clear benefits and differentiators from other providers is the absence of cold starts in Binaris functions:</p>
-
 <blockquote class="twitter-tweet"><p lang="en" dir="ltr">Another great post by Mikhail. Cold start is a deal breaker for many apps, especially anything user facing. Check out <a href="https://twitter.com/gobinaris?ref_src=twsrc%5Etfw">@gobinaris</a> if you&#39;re looking for serverless but want to get rid of cold starts altogether. <a href="https://t.co/3MGH9gEr4c">https://t.co/3MGH9gEr4c</a></p>&mdash; Avner Braverman (@avnerbraverman) <a href="https://twitter.com/avnerbraverman/status/1106616656602685440?ref_src=twsrc%5Etfw">March 15, 2019</a></blockquote>
 <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
 
-
 <p>In light of this, I decided to rerun my map visualization using Binaris functions to illustrate the difference:</p>
-
 
 
 
@@ -242,59 +232,32 @@
     <img src="binaris.png" alt="Map loads from Binaris backend" data-alt="binaris.gif">
     <figcaption><h4>Map loads from Binaris backend (click to play or replay)</h4></figcaption>
 </figure>
-
 <p>The initial map loads immediately after redeployment of the Binaris function, so it would cause a cold start for other providers. There’s no noticeable delay for the Binaris function: All map tiles are loaded after 0.4 seconds, similar to the loading times on subsequent zoom levels during the same test.</p>
-
 <p>In case the warm-up happens during the deployment, I reran the experiment after several hours of inactivity. The idle function would have been &ldquo;frozen&rdquo; by other cloud providers,  but I got no cold start for my Binaris function.</p>
-
 <p>Note that the map tiles are stored in AWS S3. For fairness, the S3 resides in the same region where the Binaris function runs (us-east-1). The client ran on a VM in Azure’s US East region.</p>
-
 <h2 id="how-does-binaris-handle-parallel-requests">How does Binaris handle parallel requests?</h2>
-
 <p>The map control fires 12 parallel requests. Similar to the technique used in my initial <a href="/2019/03/visualizing-cold-starts/">Visualizing Cold Starts</a> article, I modified the function to color-code each tile based on the function’s instance ID and to overlay that ID on the image. This way, it’s easy to see how parallel requests were spread over the instances.</p>
-
 <p>As explained in <a href="/2019/03/concurrency-and-isolation-in-serverless-functions/">Serverless Concurrency Models</a>, Binaris functions can run in two concurrency modes: concurrent or exclusive.</p>
-
 <h3 id="concurrent-mode">Concurrent Mode</h3>
-
 <p>When a Binaris function is configured to run in the concurrent mode, the same instance (a.k.a. <em>function unit</em>) can handle up to 10 requests at the same time. For I/O-bound functions, this can lead to more efficient resource utilization and lower cost.</p>
-
 <p>When running in concurrent mode, a single instance may handle the entire color-coded map:</p>
-
-<p><img src="binaris-concurrent-mode.png" alt="Concurrent Mode" /></p>
-
+<p><img src="binaris-concurrent-mode.png" alt="Concurrent Mode"></p>
 <figcaption><h4>The same function unit served all 12 requests concurrently</h4></figcaption>
-
 <p>The maximum concurrency level is currently 10, so some of the tiles in the picture above must have been processed sequentially. Indeed, sometimes it happens that two instances return the tiles for the same view:</p>
-
-<p><img src="binaris-concurrent-mode-mixed.png" alt="Concurrent Mode Mixed" /></p>
-
+<p><img src="binaris-concurrent-mode-mixed.png" alt="Concurrent Mode Mixed"></p>
 <figcaption><h4>Two function units served 12 parallel requests</h4></figcaption>
-
 <p>How is the exclusive mode different?</p>
-
 <h3 id="exclusive-mode">Exclusive Mode</h3>
-
 <p>When a Binaris function is set to run in the exclusive mode, each instance handles a single request at a time. Therefore, multiple instances are needed to process concurrent requests.</p>
-
 <p>As expected, the map gets more colorful for functions in the exclusive mode:</p>
-
-<p><img src="binaris-exclusive-mode.png" alt="Exclusive Mode" /></p>
-
+<p><img src="binaris-exclusive-mode.png" alt="Exclusive Mode"></p>
 <figcaption><h4>Four function units served 12 parallel requests</h4></figcaption>
-
 <p>However, the number of instances doesn’t get close to the number of tiles: 12 tiles are usually served by 3-5 function units. I suspect this is partially explained by the fact that Binaris functions use HTTP/1.1 protocol, and the browser would only open a limited number of connections to the same host:</p>
-
-<p><img src="binaris-http-connections.png" alt="HTTP Connections to Binaris function" /></p>
-
+<p><img src="binaris-http-connections.png" alt="HTTP Connections to Binaris function"></p>
 <figcaption><h4>12 requests are cascaded by Chrome because they connect to the same host</h4></figcaption>
-
 <p>A switch to HTTP/2 would shave some extra latency off the overall map loading time.</p>
-
 <h2 id="conclusions">Conclusions</h2>
-
 <p>The cold start issue is getting less significant for all cloud providers over time. Binaris may be ahead of others in this race.</p>
-
 <p>My simple test does not necessarily prove the complete absence of cold starts in Binaris functions, but it looks optimistic. I look forward to a world where developers would be able to build applications, including user-facing latency-sensitive ones, out of composable managed serverless functions.</p>
 
                 </div>
@@ -339,11 +302,28 @@
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
             <div class="mb-5">
-                <h6 class="float-left">Responses</h6>
+                <h5 class="float-left">Responses</h5>
                 <div class="float-right"><a
                         href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/9'>Write a
                         response</a></div>

@@ -212,63 +212,42 @@
 
                 
                 <div class="article-post">
-                    
-
-<p><em>The post is a part of
+                    <p><em>The post is a part of
 <a href="https://sergeytihon.com/2019/11/05/f-advent-calendar-in-english-2019/">F# Advent Calendar 2019</a>.
 It&rsquo;s Christmas time!</em></p>
-
 <p>Cloud is everywhere, and yet it&rsquo;s still inaccessible to millions of developers and IT pros. With shining yet cloudy eyes return they from KubeCon&rsquo;s and re:Invent&rsquo;s, just to pick up an issue in Jira, fix yet another <code>SingletonProxyFactoryBean</code> in their J2EE application, commit it to SVN, and hope it will be delivered in three months to the data center in their HQ basement.</p>
-
 <p>But hey, it&rsquo;s December now, which means it&rsquo;s time to write a letter to Santa Cloud! Santa Cloud brings gifts to the homes of well-behaved engineers on the night of Christmas Eve. He accomplishes this feat with the aid of his elves, who make the toys in their glorious workshops in the State of Washington.</p>
-
-<p><img src="elves.jpg" alt="Cloud Elves" /></p>
-
+<p><img src="elves.jpg" alt="Cloud Elves"></p>
 <p>Here are some typical letters that Santa gets these days:</p>
-
 <blockquote>I maintain 15 different apps, and each one has a custom deployment workflow. If only I had a <b>Kubernetes</b> cluster, I would stick all the apps in it and let the blue/green deployments do the magic!</blockquote>
-
 <blockquote>My ten-year-old legacy application was designed for twenty users, and now it has to handle twenty thousand. It reached its performance limits! If only I could port it to <b>Serverless</b>, this would fix all my scalability issues.</blockquote>
-
 <blockquote>
 <p>We have 2 TB of data to analyze! Could you please send me a data lake and a <strong>Spark</strong> cluster? Actually, can I have two&hellip; or maybe three?</p>
 </blockquote>
-
 <p>There&rsquo;s enough cloud for everyone! Perhaps, a naughty engineer, who created a lot of technical debt and meeting invites, might only get a cozy single-core VM for their LAMP-stack website. But the lucky ones might get a whole Kubernetes cluster for themselves!</p>
-
 <h2 id="behind-the-snow-curtains">Behind the Snow Curtains</h2>
-
 <p>While cloud elves are good at provisioning the underlying hardware and providing services, Santa still needs to coordinate them to fulfill wishes. There are millions of aspiring cloud engineers, and all of them believe in Santa. It&rsquo;s not feasible to click the buttons in web portals or run ad-hoc scripts for each and every wishlist.</p>
-
 <p>Luckily, Santa Cloud is good at programming and automation. He codes in <a href="https://fsharp.org">F#</a>, and he&rsquo;s one of the early customers of the .NET SDK for <a href="https://pulumi.com">Pulumi</a>. Hey, it&rsquo;s my fairy tale, so I choose the tech stack, thank you. Worry not, even if you are not familiar with F# or Pulumi, you will be able to follow along.</p>
-
 <p>The workflow looks approximately like this:</p>
-
 <ul>
 <li>Represent a letter as a value in the program</li>
 <li>Pick an elf which can fulfill the desire</li>
 <li>Produce the resource</li>
 <li>Wrap a note to the recipient</li>
 </ul>
-
 <h3 id="parsing-wishlists">Parsing wishlists</h3>
-
 <p>Too bad, not every wishful engineer knows F#. Maybe, next year, Santa can make an online form that wouldn&rsquo;t accept anything but valid code. For now, it&rsquo;s the duty of Mrs. Cloud to read every letter and convert it to a list of records. Here is a sample:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> wishes = [
-    { Recipient = Person <span style="color:#a31515">&#34;Kelsey&#34;</span> ; Resource = Kubernetes (Nodes 25) }
-    { Recipient = Person <span style="color:#a31515">&#34;Jeff&#34;</span>   ; Resource = Serverless DotNet }
-    { Recipient = Person <span style="color:#a31515">&#34;Satoshi&#34;</span>; Resource = Blockchain Public }
-]</code></pre></div>
-<p>The value <code>wishes</code> is a strongly-typed list of records. Each record has multiple properties and utilizes &ldquo;algebraic data types&rdquo;: each type would have a label (&ldquo;Kubernetes&rdquo;) and an associated piece of data (25 nodes). The shape of data depends on the label: it&rsquo;s not possible to ask 25 nodes of serverless.</p>
-
+    { Recipient = Person <span style="color:#a31515">&#34;</span><span style="color:#a31515">Kelsey</span><span style="color:#a31515">&#34;</span> ; Resource = Kubernetes (Nodes 25) }
+    { Recipient = Person <span style="color:#a31515">&#34;</span><span style="color:#a31515">Jeff</span><span style="color:#a31515">&#34;</span>   ; Resource = Serverless DotNet }
+    { Recipient = Person <span style="color:#a31515">&#34;</span><span style="color:#a31515">Satoshi</span><span style="color:#a31515">&#34;</span>; Resource = Blockchain Public }
+]
+</code></pre></div><p>The value <code>wishes</code> is a strongly-typed list of records. Each record has multiple properties and utilizes &ldquo;algebraic data types&rdquo;: each type would have a label (&ldquo;Kubernetes&rdquo;) and an associated piece of data (25 nodes). The shape of data depends on the label: it&rsquo;s not possible to ask 25 nodes of serverless.</p>
 <p>When the list is defined and compiled, it goes to production. But first, we need to assign an elf to each item in the list.</p>
-
 <h3 id="elves">Elves</h3>
-
 <p>All-powerful craftselves are represented as another F# type: a function type.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Elf</span> = Wish -&gt; (<span style="color:#2b91af">unit</span> -&gt; Identifier) option</code></pre></div>
-<p>Here is what it tells us:</p>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Elf</span> = Wish -&gt; (<span style="color:#2b91af">unit</span> -&gt; Identifier) option
+</code></pre></div><p>Here is what it tells us:</p>
 <ul>
 <li>It&rsquo;s a function which expects a <code>Wish</code> as an input parameter</li>
 <li>It may return nothing if this elf can&rsquo;t fulfill the wish (represented by <code>option</code> type)</li>
@@ -276,35 +255,30 @@ It&rsquo;s Christmas time!</em></p>
 <li>This resulting function has a side effect (it accepts <code>unit</code>): the production of a cloud resource</li>
 <li>It returns an <code>Identifier</code> of that resource</li>
 </ul>
-
 <p>Whoa, that&rsquo;s a lot of information conveyed by a single-line type definition!</p>
-
 <p>In our program, each elf is a function, for example:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> aws (wish: Wish) =
     <span style="color:#00f">match</span> wish.Resource <span style="color:#00f">with</span>
     | Kubernetes k8s -&gt; makeEksCluster k8s |&gt; Some
     | Serverless s8s -&gt; makeAwsLambda s8s  |&gt; Some
     <span style="color:#008000">//|  ... more resource types
-</span><span style="color:#008000"></span>    | _ -&gt; None</code></pre></div>
-<p>The function matches the type of the desired resource and calls a corresponding resource provisioning routine.</p>
-
+</span><span style="color:#008000"></span>    | _ -&gt; None
+</code></pre></div><p>The function matches the type of the desired resource and calls a corresponding resource provisioning routine.</p>
 <h3 id="resource-provisioning">Resource provisioning</h3>
-
 <p>Pulumi handles the creation of cloud resources with its .NET SDKs spanning across all major cloud providers.</p>
-
 <p>Here is a snippet which defines an Azure Function App:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> makeFunctionApp (Person name) (runtime: Runtime) () =
     <span style="color:#00f">let</span> app =
         FunctionApp(name,
             FunctionAppArgs
                (ResourceGroupName = io resourceGroup.Name,
-                AppSettings = inputMap [<span style="color:#a31515">&#34;runtime&#34;</span>, runtime.ToString() |&gt; input],
+                AppSettings = inputMap [<span style="color:#a31515">&#34;</span><span style="color:#a31515">runtime</span><span style="color:#a31515">&#34;</span>, runtime.ToString() |&gt; input],
                 StorageConnectionString = io storageAccount.PrimaryConnectionString,
-                Version = input <span style="color:#a31515">&#34;~2&#34;</span>))
-    Url app.DefaultHostname</code></pre></div>
-<p>And here is a Google Kubernetes Engine cluster:</p>
+                Version = input <span style="color:#a31515">&#34;</span><span style="color:#a31515">~2</span><span style="color:#a31515">&#34;</span>))
+    Url app.DefaultHostname
+</code></pre></div><p>And here is a Google Kubernetes Engine cluster:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> makeGkeCluster (Person name) (Nodes nodeCount) () =
-    <span style="color:#00f">let</span> masterVersion = input <span style="color:#a31515">&#34;1.15.1&#34;</span>
+    <span style="color:#00f">let</span> masterVersion = input <span style="color:#a31515">&#34;</span><span style="color:#a31515">1.15.1</span><span style="color:#a31515">&#34;</span>
     <span style="color:#00f">let</span> cluster =
         Cluster(name,
             ClusterArgs
@@ -313,10 +287,10 @@ It&rsquo;s Christmas time!</em></p>
                 NodeVersion = masterVersion,
                 NodeConfig = input (
                     ClusterNodeConfigArgs
-                       (MachineType = input <span style="color:#a31515">&#34;n1-standard-1&#34;</span>))))
-    Url cluster.Endpoint</code></pre></div>
-<h3 id="production">Production</h3>
+                       (MachineType = input <span style="color:#a31515">&#34;</span><span style="color:#a31515">n1-standard-1</span><span style="color:#a31515">&#34;</span>))))
+    Url cluster.Endpoint
 
+</code></pre></div><h3 id="production">Production</h3>
 <p>The application logic of picking the right production facility and executing the order takes five lines of code.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> fulfill wish =
     <span style="color:#008000">// Randomize the order of elves, so that they get equal opportunities
@@ -328,40 +302,31 @@ It&rsquo;s Christmas time!</em></p>
     <span style="color:#008000">// Run the production!
 </span><span style="color:#008000"></span>    <span style="color:#00f">let</span> identifier = make()
 
-    wish.Recipient, identifier</code></pre></div>
-<p>We shuffle the order of elves to give them comparable workload, pick the first one in the list who agrees to execute the order, run the provisioning, and return the recipient name with their shiny resource identifier.</p>
-
+    wish.Recipient, identifier
+</code></pre></div><p>We shuffle the order of elves to give them comparable workload, pick the first one in the list who agrees to execute the order, run the provisioning, and return the recipient name with their shiny resource identifier.</p>
 <p>Go team Santa!</p>
-
 <h3 id="delivery">Delivery</h3>
-
 <p>For a nice personal touch, a card needs to be printed, gift-wrapped, and delivered by Santa and reindeers. Programming the reindeers is for another blog post. For now, we just return a list of tuples of person names and resource URLs:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> send (responses: Response <span style="color:#2b91af">list</span>) =
     responses
     |&gt; List.map (<span style="color:#00f">fun</span> (Person name, Url url) -&gt; name, url)
-    |&gt; dict</code></pre></div>
-<p>Finally, another line combines the steps into the workflow:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> santaCloud () = wishes |&gt; (List.map fulfill) |&gt; send</code></pre></div>
-<p>And the last line defines the entry point of the application:</p>
+    |&gt; dict
+</code></pre></div><p>Finally, another line combines the steps into the workflow:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> santaCloud () = wishes |&gt; (List.map fulfill) |&gt; send
+</code></pre></div><p>And the last line defines the entry point of the application:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">[&lt;EntryPoint&gt;]
-<span style="color:#00f">let</span> main _ = Deployment.run santaCloud</code></pre></div>
-<p>Running the program produces an output like this:</p>
-
-<p><img src="pulumiup.png" alt="Pulumi Console Output" /></p>
-
+<span style="color:#00f">let</span> main _ = Deployment.run santaCloud
+</code></pre></div><p>Running the program produces an output like this:</p>
+<p><img src="pulumiup.png" alt="Pulumi Console Output"></p>
 <h2 id="retrospective">Retrospective</h2>
-
 <p>Honestly, the system is brand-new this year, so we still need to see how it plays out on Christmas Eve. Regardless, we learned a thing or two today:</p>
-
 <ul>
 <li><strong>Types</strong>: F# has an excellent type system that allows expressing domain terms concisely and precisely.</li>
 <li><strong>Logic</strong>: The program workflow is expressed in terms of function calls, pattern matching, and collections manipulation.</li>
 <li><strong>Infrastructure</strong>: Cloud resources are defined in F# with Pulumi .NET SDK, which supports pretty much any resource in any cloud.</li>
 <li><strong>Application</strong>: Blended together, these components enable writing expressive, cohesive, maintainable, cloud-native applications using familiar and loved tools and practices.</li>
 </ul>
-
 <p>Learn more about <a href="https://pulumi.com/dotnet">Pulumi for .NET</a> or browse <a href="https://github.com/mikhailshilkov/fsharp-advent-pulumi">the full code</a> for this example.</p>
-
 <p>Merry Cloudsmas, ho-ho-ho!</p>
 
                 </div>
@@ -414,11 +379,28 @@ It&rsquo;s Christmas time!</em></p>
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
             <div class="mb-5">
-                <h6 class="float-left">Responses</h6>
+                <h5 class="float-left">Responses</h5>
                 <div class="float-right"><a
                         href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/25'>Write a
                         response</a></div>

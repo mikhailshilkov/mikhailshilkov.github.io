@@ -211,76 +211,52 @@ application-specific events. For instance, every time a data point from an
 IoT device comes in, we log an AppInsights event. Then we are able to
 aggregate the data and plot charts to derive trends and detect possible
 anomalies.</p>
-
 <p>And recently we found such anomaly, which looked like this:</p>
-
-<p><img src="dashboard-chart.png" alt="Amount of Events on Dashboard Chart" /></p>
-
+<p><img src="dashboard-chart.png" alt="Amount of Events on Dashboard Chart"></p>
 <p>This is a chart from our Azure dashboard, which shows the total amount of
 events of specific type received per day.</p>
-
 <p>The first two &ldquo;hills&rdquo; are two weeks, so we can clearly see that we get more
 events on business days compared to weekends.</p>
-
 <p>But then something happened on May 20: we started getting much less events,
 and the hill pattern disappeared, days looks much more alike.</p>
-
 <p>We haven&rsquo;t noticed any other problems in the system, but the trend looked
 quite bothering. Are we loosing data?</p>
-
 <p>I headed towards Analytics console of Application Insights to dig deeper.
 Here is the query that reproduces the problem:</p>
-
 <pre><code>customEvents
 | where name == &quot;EventXReceived&quot;
 | where timestamp &gt;= ago(22d)
 | project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]), timestamp
 | summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
 | render timechart
-</code></pre>
-
-<p>and I got the same chart as before:</p>
-
-<p><img src="analytics1.png" alt="Trend on Application Insights Analytics" /></p>
-
+</code></pre><p>and I got the same chart as before:</p>
+<p><img src="analytics1.png" alt="Trend on Application Insights Analytics"></p>
 <p>I checked the history of our source code repository and deployments and I
 figured out that we upgraded the version of Application Insights SDK from
 version 2.1 to version 2.3.</p>
-
 <p>My guess at this point was that Application Insights started sampling our
 data instead of sending all events to the server. After reading
 <a href="https://docs.microsoft.com/en-us/azure/application-insights/app-insights-sampling">Sampling in Application Insights</a>
 article, I came up with the following query to see the sampling rate:</p>
-
 <pre><code>customEvents
 | where name == &quot;EventXReceived&quot;
 | where timestamp &gt;= ago(22d)
 | summarize 100/avg(itemCount) by bin(timestamp, 1d) 
 | render areachart 
-</code></pre>
-
-<p>and the result is self-explanatory:</p>
-
-<p><img src="sampling-rate.png" alt="Sampling Rate" /></p>
-
+</code></pre><p>and the result is self-explanatory:</p>
+<p><img src="sampling-rate.png" alt="Sampling Rate"></p>
 <p>Clearly, the sampling rate dropped from 100% down to about 30% right when
 the anomaly started. The sampling-adjusted query (note <code>itemCount</code> multiplication)</p>
-
 <pre><code>customEvents
 | where name == &quot;EventXReceived&quot;
 | where timestamp &gt;= ago(22d)
 | project PointCount = todouble(customMeasurements[&quot;EventXReceived_Count&quot;]) * itemCount, timestamp
 | summarize EventXReceived = sum(PointCount) by bin(timestamp, 1d)
 | render timechart
-</code></pre>
-
-<p>puts us back to the point when results make sense:</p>
-
-<p><img src="analytics2.png" alt="Adjusted Trend on Application Insights Analytics" /></p>
-
+</code></pre><p>puts us back to the point when results make sense:</p>
+<p><img src="analytics2.png" alt="Adjusted Trend on Application Insights Analytics"></p>
 <p>The third week&rsquo;s Thursday was bank holiday in several European countries, so
 we got a drop there.</p>
-
 <p>Should Azure dashboard items take sampling into account - to avoid
 confusing people and to show more useful charts?</p>
 
@@ -313,6 +289,23 @@ confusing people and to show more useful charts?</p>
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             

@@ -225,31 +225,23 @@
 
                 
                 <div class="article-post">
-                    
-
-<p><em>The post is a part of
+                    <p><em>The post is a part of
 <a href="https://sergeytihon.com/2018/10/22/f-advent-calendar-in-english-2018/">F# Advent Calendar 2018</a>.
 It&rsquo;s Christmas time!</em></p>
-
 <p>This summer I was hired by the office of Santa Claus. Santa is not just a fairy tale
-character on his own&mdash;he leads a large organization that supplies gifts and happiness to millions of
+character on his own—he leads a large organization that supplies gifts and happiness to millions of
 children around the globe. Like any large organization, Santa&rsquo;s office employs an impressive number of
 IT systems.</p>
-
 <p>As part of its IT modernization
 effort, North Pole HQ restructured the whole supply chain of Christmas gifts. Many legacy components were moved from
-a self-managed data center at the North Pole&mdash;although the cooling is quite cheap there&mdash;to
+a self-managed data center at the North Pole—although the cooling is quite cheap there—to
 Azure cloud. Azure was an easy sell since Santa&rsquo;s techy elves use Office 365, SharePoint and
 the .NET development stack.</p>
-
 <p>One of the goals of the redesign was to leverage managed cloud services and serverless architecture
 wherever possible. Santa has no spare elves to keep reinventing IT wheels.</p>
-
 <h2 id="wish-fulfillment-service">Wish Fulfillment Service</h2>
-
 <p>My assignment was to redesign the <strong>Wish Fulfillment</strong> service. The service receives
 wish lists from clients (they call children &ldquo;clients&rdquo;):</p>
-
 <figure >
     
         <img src="wish-list.png"
@@ -262,26 +254,19 @@ wish lists from clients (they call children &ldquo;clients&rdquo;):</p>
     </figcaption>
     
 </figure>
-
 <p>Luckily, the list is already parsed by some other service, and also contains the metadata about
 the kid&rsquo;s background (age, gender, and so on) and preferences.</p>
-
 <p>For each item in the list, our service calls the <strong>Matching</strong> service, which uses machine learning,
 Azure Cognitive services, and a bit of magic to determine the actual products (they call gifts &ldquo;products&rdquo;)
 that best fit the client&rsquo;s expressed desire and profile. For instance, my son&rsquo;s wish for &ldquo;LEGO Draak&rdquo; matches
 to &ldquo;LEGO NINJAGO Masters of Spinjitzu Firstbourne Red Dragon&rdquo;. You get the point.</p>
-
 <p>There might be several matches for each desired item, and each result has an estimate of how
 likely it is to fulfill the original request and make the child happy.</p>
-
 <p>All the matching products are combined and sent over to the <strong>Gift Picking</strong> service. Gift Picking selects one
 of the options based on its price, demand, confidence level, and the Naughty-or-Nice score of the client.</p>
-
 <p>The last step of the workflow is to <strong>Reserve</strong> the selected gift in the warehouse and shipping system
 called &ldquo;Santa&rsquo;s Archive of Products&rdquo;, also referred to as SAP.</p>
-
 <p>Here is the whole flow in one picture:</p>
-
 <figure >
     
         <img src="gift-fulfillment-service.png"
@@ -294,31 +279,29 @@ called &ldquo;Santa&rsquo;s Archive of Products&rdquo;, also referred to as SAP.
     </figcaption>
     
 </figure>
-
 <p>How should we implement this service?</p>
-
 <h2 id="original-design">Original Design</h2>
-
 <p>The Wish Fulfillment service should run in the cloud and integrate with other services. It
 should be able to process millions of requests in December and stay very cheap to run during the
 rest of the year. We decided to leverage serverless architecture with
 <a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-overview">Azure Functions</a> on the
 <a href="https://azure.microsoft.com/en-us/pricing/details/functions/">Consumption Plan</a>. Serverless
 Functions are:</p>
-
 <ul>
-<li><p><strong>Fully Managed</strong>: the cloud provider provisions resources, scales them based on the load, takes
-care of uptime and reliability;</p></li>
-
-<li><p><strong>Event-Driven</strong>: for each serverless Function you have to define a specific trigger&mdash;the
-event type which causes it to run, be it an HTTP endpoint or a queue message;</p></li>
-
-<li><p><strong>Changed per Execution</strong>: it costs nothing to run the application if there is no usage,
-and the cost of busy applications is proportional to the actual resource utilization.</p></li>
+<li>
+<p><strong>Fully Managed</strong>: the cloud provider provisions resources, scales them based on the load, takes
+care of uptime and reliability;</p>
+</li>
+<li>
+<p><strong>Event-Driven</strong>: for each serverless Function you have to define a specific trigger—the
+event type which causes it to run, be it an HTTP endpoint or a queue message;</p>
+</li>
+<li>
+<p><strong>Changed per Execution</strong>: it costs nothing to run the application if there is no usage,
+and the cost of busy applications is proportional to the actual resource utilization.</p>
+</li>
 </ul>
-
 <p>Here is the diagram of the original design:</p>
-
 <figure >
     
         <img src="azure-functions-diagram.png"
@@ -331,89 +314,76 @@ and the cost of busy applications is proportional to the actual resource utiliza
     </figcaption>
     
 </figure>
-
 <p>We used Azure Storage Queues to keep the whole flow asynchronous and more resilient to failures
 and load fluctuation.</p>
-
 <p>This design would mostly work, but we found a couple of problems with it:</p>
-
 <ul>
-<li><p>The Functions were manually wired via storage queues and corresponding bindings. The workflow
-was spread over infrastructure definition and thus was hard to grasp.</p></li>
-
-<li><p>We had to pass all items of each wish list into a single invocation of Matching Function,
-otherwise combining the matching results from multiple queue messages would be tricky.</p></li>
-
-<li><p>Although not in scope for the initial release, there were plans to add manual elf
+<li>
+<p>The Functions were manually wired via storage queues and corresponding bindings. The workflow
+was spread over infrastructure definition and thus was hard to grasp.</p>
+</li>
+<li>
+<p>We had to pass all items of each wish list into a single invocation of Matching Function,
+otherwise combining the matching results from multiple queue messages would be tricky.</p>
+</li>
+<li>
+<p>Although not in scope for the initial release, there were plans to add manual elf
 intervention for poorly matched items. This feature would require a change in the flow design:
-it&rsquo;s not trivial to fit long-running processes into the pipeline.</p></li>
+it&rsquo;s not trivial to fit long-running processes into the pipeline.</p>
+</li>
 </ul>
-
 <p>To improve on these points, we decided to try
-<a href="https://docs.microsoft.com/azure/azure-functions/durable/durable-functions-overview">Durable Functions</a>&mdash;a library
+<a href="https://docs.microsoft.com/azure/azure-functions/durable/durable-functions-overview">Durable Functions</a>—a library
 that brings workflow orchestration to Azure Functions. It introduces several tools to define stateful,
 potentially long-running operations, and handles a lot of the mechanics of reliable communication
 and state management behind the scenes.</p>
-
 <p>If you want to know more about what Durable Functions are and why they might be a good idea,
 I invite you to read my article
 <a href="https://mikhail.io/2018/12/making-sense-of-azure-durable-functions/">Making Sense of Azure Durable Functions</a>
 (20 minutes read).</p>
-
 <p>For the rest of this post, I will walk you through the implementation of the Wish Fulfillment workflow
 with Azure Durable Functions.</p>
-
 <h2 id="domain-model">Domain Model</h2>
-
-<p>A good design starts with a decent domain model. Luckily, the project was built with F#&mdash;the language with
+<p>A good design starts with a decent domain model. Luckily, the project was built with F#—the language with
 the richest domain modeling capabilities in the .NET ecosystem.</p>
-
 <h3 id="types">Types</h3>
-
 <p>Our service is invoked with a wish list as the input parameter, so let&rsquo;s start with the type <code>WishList</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">WishList</span> =
 {
     Kid: Customer
     Wishes: <span style="color:#2b91af">string</span> <span style="color:#2b91af">list</span>
-}</code></pre></div>
-<p>It contains information about the author of the list and recognized &ldquo;order&rdquo; items. <code>Customer</code> is a custom type;
+}
+</code></pre></div><p>It contains information about the author of the list and recognized &ldquo;order&rdquo; items. <code>Customer</code> is a custom type;
 for now, it&rsquo;s not important what&rsquo;s in it.</p>
-
 <p>For each wish we want to produce a list of possible matches:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Match</span> =
 {
     Product: Product
     Confidence: Probability
-}</code></pre></div>
-<p>The product is a specific gift option from Santa&rsquo;s catalog, and the confidence is a number
+}
+</code></pre></div><p>The product is a specific gift option from Santa&rsquo;s catalog, and the confidence is a number
 from <code>0.0</code> to <code>1.0</code> of how strong the match is.</p>
-
 <p>The end goal of our service is to produce a <code>Reservation</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Reservation</span> =
 {
     Kid: Customer
     Product: Product
-}</code></pre></div>
-<p>It represents the exact product selection for the specific kid.</p>
-
+}
+</code></pre></div><p>It represents the exact product selection for the specific kid.</p>
 <h3 id="functions">Functions</h3>
-
 <p>The Wish Fulfillment service needs to perform three actions, which can be
 modeled with three strongly-typed asynchronous functions.</p>
-
 <p><em>Note: I use lowercase &ldquo;function&rdquo; for F# functions and capitalize &ldquo;Function&rdquo; for Azure Functions
 throughout the article to minimize confusion.</em></p>
-
 <p>The <strong>first action</strong> finds matches for each wish:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// string -&gt; Async&lt;Match list&gt;
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> findMatchingGift (wish: <span style="color:#2b91af">string</span>) = async {
     <span style="color:#008000">// Call a custom machine learning model
 </span><span style="color:#008000"></span>    <span style="color:#008000">// The real implementation uses the Customer profile to adjust decisions by age, etc.
 </span><span style="color:#008000"></span>    <span style="color:#008000">// but we&#39;ll keep the model simple for now.
-</span><span style="color:#008000"></span>}</code></pre></div>
-<p>The first line of all my function snippets shows the function type. In this case, it&rsquo;s a mapping
+</span><span style="color:#008000"></span>}
+</code></pre></div><p>The first line of all my function snippets shows the function type. In this case, it&rsquo;s a mapping
 from the text of the child&rsquo;s wish (<code>string</code>) to a list of matches (<code>Match list</code>).</p>
-
 <p>The <strong>second action</strong> takes the <em>combined</em> list of all matches of all wishes and picks one. Its
 real implementation is Santa&rsquo;s secret sauce, but my model just picks the one with the highest
 confidence level:</p>
@@ -422,17 +392,15 @@ confidence level:</p>
     candidates
     |&gt; List.sortByDescending (<span style="color:#00f">fun</span> x -&gt; x.Confidence)
     |&gt; List.head
-    |&gt; (<span style="color:#00f">fun</span> x -&gt; x.Product)</code></pre></div>
-<p>Given the picked <code>gift</code>, the reservation is merely <code>{ Kid = wishlist.Kid; Product = gift }</code>,
+    |&gt; (<span style="color:#00f">fun</span> x -&gt; x.Product)
+</code></pre></div><p>Given the picked <code>gift</code>, the reservation is merely <code>{ Kid = wishlist.Kid; Product = gift }</code>,
 not worthy of a separate action.</p>
-
 <p>The <strong>third action</strong> registers a reservation in the SAP system:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Reservation -&gt; Async&lt;unit&gt;
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> reserve (reservation: Reservation) = async {
     <span style="color:#008000">// Call Santa&#39;s Archive of Products
-</span><span style="color:#008000"></span>}</code></pre></div>
-<h3 id="workflow">Workflow</h3>
-
+</span><span style="color:#008000"></span>}
+</code></pre></div><h3 id="workflow">Workflow</h3>
 <p>The fulfillment service combines the three actions into one workflow:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// WishList -&gt; Async&lt;Reservation&gt;
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> workflow (wishlist: WishList) = async {
@@ -450,74 +418,58 @@ not worthy of a separate action.</p>
 </span><span style="color:#008000"></span>    <span style="color:#00f">let</span> reservation = { Kid = wishlist.Kid; Product = gift }
     <span style="color:#00f">do</span>! reserve reservation
     <span style="color:#00f">return</span> reservation
-}</code></pre></div>
-<p>The workflow implementation is a nice and concise summary of the actual domain flow.</p>
-
+}
+</code></pre></div><p>The workflow implementation is a nice and concise summary of the actual domain flow.</p>
 <p>Note that the Matching service is called multiple times in parallel, and then
 the results are easily combined by virtue of the <code>Async.Parallel</code> F# function.</p>
-
 <p>So how do we translate the domain model to the actual implementation on top of
 serverless Durable Functions?</p>
-
 <h2 id="classic-durable-functions-api">Classic Durable Functions API</h2>
-
 <p>C# was the first target language for Durable Functions; Javascript is now fully supported too.</p>
-
 <p>F# wasn&rsquo;t initially declared as officially supported, but since F# runs on top of the same .NET runtime
 as C#, it has always worked. I have a blog post about
 <a href="https://mikhail.io/2018/02/azure-durable-functions-in-fsharp/">Azure Durable Functions in F#</a> and
 have added <a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/samples/fsharp">F# samples</a>
 to the official repository.</p>
-
 <p>Here are two examples from that old F# code of mine (they have nothing to do with our
 gift fulfillment domain):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// 1. Simple sequencing of activities
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
-  <span style="color:#00f">let!</span> hello1 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;E1_SayHello&#34;</span>, <span style="color:#a31515">&#34;Tokyo&#34;</span>)
-  <span style="color:#00f">let!</span> hello2 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;E1_SayHello&#34;</span>, <span style="color:#a31515">&#34;Seattle&#34;</span>)
-  <span style="color:#00f">let!</span> hello3 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;E1_SayHello&#34;</span>, <span style="color:#a31515">&#34;London&#34;</span>)
+  <span style="color:#00f">let!</span> hello1 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;</span><span style="color:#a31515">E1_SayHello</span><span style="color:#a31515">&#34;</span>, <span style="color:#a31515">&#34;</span><span style="color:#a31515">Tokyo</span><span style="color:#a31515">&#34;</span>)
+  <span style="color:#00f">let!</span> hello2 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;</span><span style="color:#a31515">E1_SayHello</span><span style="color:#a31515">&#34;</span>, <span style="color:#a31515">&#34;</span><span style="color:#a31515">Seattle</span><span style="color:#a31515">&#34;</span>)
+  <span style="color:#00f">let!</span> hello3 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;</span><span style="color:#a31515">E1_SayHello</span><span style="color:#a31515">&#34;</span>, <span style="color:#a31515">&#34;</span><span style="color:#a31515">London</span><span style="color:#a31515">&#34;</span>)
   <span style="color:#00f">return</span> [hello1; hello2; hello3]
 }
 
 <span style="color:#008000">// 2. Parallel calls snippet
-</span><span style="color:#008000"></span><span style="color:#00f">let</span> tasks = Array.map (<span style="color:#00f">fun</span> f -&gt; context.CallActivityAsync&lt;<span style="color:#2b91af">int64</span>&gt;(<span style="color:#a31515">&#34;E2_CopyFileToBlob&#34;</span>, f)) files
-<span style="color:#00f">let!</span> results = Task.WhenAll tasks</code></pre></div>
-<p>This code works and does its job, but doesn&rsquo;t look like idiomatic F# code:</p>
-
+</span><span style="color:#008000"></span><span style="color:#00f">let</span> tasks = Array.map (<span style="color:#00f">fun</span> f -&gt; context.CallActivityAsync&lt;<span style="color:#2b91af">int64</span>&gt;(<span style="color:#a31515">&#34;</span><span style="color:#a31515">E2_CopyFileToBlob</span><span style="color:#a31515">&#34;</span>, f)) files
+<span style="color:#00f">let!</span> results = Task.WhenAll tasks
+</code></pre></div><p>This code works and does its job, but doesn&rsquo;t look like idiomatic F# code:</p>
 <ul>
 <li>No strong typing: Activity Functions are called by name and with types manually specified</li>
 <li>Functions are not curried, so partial application is hard</li>
 <li>The need to pass the <code>context</code> object around for any Durable operation</li>
 </ul>
-
 <p>Although not shown here, the other samples read input parameters, handle errors, and enforce
-timeouts&mdash;all look too C#-y.</p>
-
+timeouts—all look too C#-y.</p>
 <h2 id="better-durable-functions">Better Durable Functions</h2>
-
 <p>Instead of following the sub-optimal route, we implemented the service with a more F#-idiomatic API.
 I&rsquo;ll show the code first, and then I&rsquo;ll explain its foundation.</p>
-
 <p>The implementation consists of three parts:</p>
-
 <ul>
-<li><strong>Activity</strong> Functions&mdash;one per action from the domain model</li>
+<li><strong>Activity</strong> Functions—one per action from the domain model</li>
 <li><strong>Orchestrator</strong> Function defines the workflow</li>
 <li><strong><a href="https://docs.microsoft.com/en-us/azure/azure-functions/functions-triggers-bindings">Azure Functions bindings</a></strong>
 to instruct how to run the application in the cloud</li>
 </ul>
-
 <h3 id="activity-functions">Activity Functions</h3>
-
 <p>Each Activity Function defines one step of the workflow: Matching, Picking, and Reserving. We
 simply reference the F# functions of those actions in one-line definitions:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> findMatchingGiftActivity = Activity.defineAsync <span style="color:#a31515">&#34;FindMatchingGift&#34;</span> findMatchingGift
-<span style="color:#00f">let</span> pickGiftActivity = Activity.define <span style="color:#a31515">&#34;PickGift&#34;</span> pickGift
-<span style="color:#00f">let</span> reserveActivity = Activity.defineAsync <span style="color:#a31515">&#34;Reserve&#34;</span> reserve</code></pre></div>
-<p>Each activity is defined by a name and a function.</p>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> findMatchingGiftActivity = Activity.defineAsync <span style="color:#a31515">&#34;</span><span style="color:#a31515">FindMatchingGift</span><span style="color:#a31515">&#34;</span> findMatchingGift
+<span style="color:#00f">let</span> pickGiftActivity = Activity.define <span style="color:#a31515">&#34;</span><span style="color:#a31515">PickGift</span><span style="color:#a31515">&#34;</span> pickGift
+<span style="color:#00f">let</span> reserveActivity = Activity.defineAsync <span style="color:#a31515">&#34;</span><span style="color:#a31515">Reserve</span><span style="color:#a31515">&#34;</span> reserve
+</code></pre></div><p>Each activity is defined by a name and a function.</p>
 <h3 id="orchestrator">Orchestrator</h3>
-
 <p>The Orchestrator calls Activity Functions to produce the desired outcome of the service. The code
 uses a custom computation expression:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> workflow wishlist = orchestrator {
@@ -531,9 +483,8 @@ uses a custom computation expression:</p>
     <span style="color:#00f">let</span> reservation = { Kid = wishlist.Kid; Product = gift }
     <span style="color:#00f">do</span>! Activity.call reserveActivity reservation
     <span style="color:#00f">return</span> reservation
-}</code></pre></div>
-<p>Notice how closely it matches the workflow definition from our domain model:</p>
-
+}
+</code></pre></div><p>Notice how closely it matches the workflow definition from our domain model:</p>
 <figure >
     
         <img src="durable-orchestrator-vs-async.png"
@@ -546,43 +497,36 @@ uses a custom computation expression:</p>
     </figcaption>
     
 </figure>
-
 <p>The only differences are:</p>
-
 <ul>
 <li><code>orchestrator</code> computation expression is used instead of <code>async</code> because multi-threading is
 not allowed in Orchestrators</li>
 <li><code>Activity.call</code> replaces of direct invocations of functions</li>
 <li><code>Activity.all</code> substitutes <code>Async.Parallel</code></li>
 </ul>
-
 <h3 id="hosting-layer">Hosting layer</h3>
-
 <p>An Azure Function trigger needs to be defined to host any piece of code as a cloud Function. This can
 be done manually in <code>function.json</code>, or via trigger generation from .NET attributes. In my case
 I added the following four definitions:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">[&lt;FunctionName(<span style="color:#a31515">&#34;FindMatchingGift&#34;</span>)&gt;]
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">[&lt;FunctionName(<span style="color:#a31515">&#34;</span><span style="color:#a31515">FindMatchingGift</span><span style="color:#a31515">&#34;</span>)&gt;]
 <span style="color:#00f">let</span> FindMatchingGift([&lt;ActivityTrigger&gt;] wish) =
     Activity.run findMatchingGiftActivity wish
 
-[&lt;FunctionName(<span style="color:#a31515">&#34;PickGift&#34;</span>)&gt;]
+[&lt;FunctionName(<span style="color:#a31515">&#34;</span><span style="color:#a31515">PickGift</span><span style="color:#a31515">&#34;</span>)&gt;]
 <span style="color:#00f">let</span> PickGift([&lt;ActivityTrigger&gt;] matches) =
     Activity.run pickGiftActivity matches
 
-[&lt;FunctionName(<span style="color:#a31515">&#34;Reserve&#34;</span>)&gt;]
+[&lt;FunctionName(<span style="color:#a31515">&#34;</span><span style="color:#a31515">Reserve</span><span style="color:#a31515">&#34;</span>)&gt;]
 <span style="color:#00f">let</span> Reserve([&lt;ActivityTrigger&gt;] wish) =
     Activity.run reserveActivity wish
 
-[&lt;FunctionName(<span style="color:#a31515">&#34;WishlistFulfillment&#34;</span>)&gt;]
+[&lt;FunctionName(<span style="color:#a31515">&#34;</span><span style="color:#a31515">WishlistFulfillment</span><span style="color:#a31515">&#34;</span>)&gt;]
 <span style="color:#00f">let</span> Workflow ([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) =
-    Orchestrator.run (workflow, context)</code></pre></div>
-<p>The definitions are very mechanical and, again, strongly typed (apart from Functions&rsquo; names).</p>
-
+    Orchestrator.run (workflow, context)
+</code></pre></div><p>The definitions are very mechanical and, again, strongly typed (apart from Functions&rsquo; names).</p>
 <h3 id="ship-it">Ship It!</h3>
-
 <p>These are all the bits required to get our Durable Wish Fulfillment service up and running.
 From this point, we can leverage all the existing tooling of Azure Functions:</p>
-
 <ul>
 <li>Visual Studio and Visual Studio Code for development and debugging</li>
 <li><a href="https://github.com/Azure/azure-functions-core-tools">Azure Functions Core Tools</a> to run
@@ -590,52 +534,46 @@ the application locally and deploy it to Azure</li>
 <li>The latest version of the Core Tools has dedicated commands to
 <a href="https://docs.microsoft.com/en-us/azure/azure-functions/durable/durable-functions-instance-management">manage instances of Durable Functions</a></li>
 </ul>
-
 <p>There is a learning curve in the process of adopting the serverless architecture. However, a small
 project like ours is a great way to do the learning. It sets Santa&rsquo;s IT department on the road
 to success, and children will get better gifts more reliably!</p>
-
-<h2 id="durablefunctions-fsharp">DurableFunctions.FSharp</h2>
-
+<h2 id="durablefunctionsfsharp">DurableFunctions.FSharp</h2>
 <p>The above code was implemented with the library
 <a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp">DurableFunctions.FSharp</a>. I created
 this library as a thin F#-friendly wrapper around Durable Functions.</p>
-
 <p>Frankly speaking, the whole purpose of this article is to introduce the library and make you curious
 enough to give it a try. DurableFunctions.FSharp has several pieces in the toolbox:</p>
-
 <ul>
-<li><p><code>OrchestratorBuilder</code> and <code>orchestrator</code> computation expression which encapsulates proper
-usage of <code>Task</code>-based API of <code>DurableOrchestrationContext</code></p></li>
-
-<li><p><code>Activity</code> generic type to define activities as first-class values</p></li>
-
-<li><p><code>Activity</code> module with helper functions to call activities</p></li>
-
-<li><p>Adapters for Azure Functions definition for <code>Async</code> and <code>Orchestrator</code></p></li>
-
-<li><p>API of the original Durable Extensions is still available, so you can fall back to them if needed</p></li>
+<li>
+<p><code>OrchestratorBuilder</code> and <code>orchestrator</code> computation expression which encapsulates proper
+usage of <code>Task</code>-based API of <code>DurableOrchestrationContext</code></p>
+</li>
+<li>
+<p><code>Activity</code> generic type to define activities as first-class values</p>
+</li>
+<li>
+<p><code>Activity</code> module with helper functions to call activities</p>
+</li>
+<li>
+<p>Adapters for Azure Functions definition for <code>Async</code> and <code>Orchestrator</code></p>
+</li>
+<li>
+<p>API of the original Durable Extensions is still available, so you can fall back to them if needed</p>
+</li>
 </ul>
-
 <p>In my opinion, F# is a great language to develop serverless Functions. The simplicity of working with functions,
 immutability by default, strong type system, focus on data pipelines are all useful in the world of
 event-driven cloud applications.</p>
-
 <p>Azure Durable Functions brings higher-level abstractions to compose workflows out of simple building
 blocks. The goal of DurableFunctions.FSharp is to make such composition natural and enjoyable for F#
 developers.</p>
-
 <p><a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp#getting-started">Getting Started</a>
 is as easy as creating a new .NET Core project and referencing a NuGet package.</p>
-
 <p>I&rsquo;d love to get as much feedback as possible! Leave comments below, create issues
 on the <a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp">GitHub repository</a>, or open a PR.
 This would be super awesome!</p>
-
 <p>Happy coding, and Merry Christmas!</p>
-
 <h2 id="acknowledgments">Acknowledgments</h2>
-
 <p>Many thanks to <a href="https://twitter.com/kashimizMSFT">Katy Shimizu</a>, <a href="https://twitter.com/DevonBurriss">Devon Burriss</a>,
 <a href="https://twitter.com/iwasdavid">Dave Lowe</a>, <a href="https://twitter.com/cgillum">Chris Gillum</a>
 for reviewing the draft of this article and their valuable contributions and suggestions.</p>
@@ -697,6 +635,23 @@ for reviewing the draft of this article and their valuable contributions and sug
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             

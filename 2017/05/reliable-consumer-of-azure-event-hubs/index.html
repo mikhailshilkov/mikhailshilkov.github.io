@@ -208,17 +208,12 @@
 
                 
                 <div class="article-post">
-                    
-
-<p><a href="https://azure.microsoft.com/en-us/services/event-hubs/">Azure Event Hubs</a> is
+                    <p><a href="https://azure.microsoft.com/en-us/services/event-hubs/">Azure Event Hubs</a> is
 a log-based messaging system-as-a-service in Azure cloud. It&rsquo;s designed to be able to handle huge
 amount of data, and naturally supports multiple consumers.</p>
-
 <h2 id="event-hubs-and-service-bus">Event Hubs and Service Bus</h2>
-
 <p>While Event Hubs are formally part of Azure Service Bus family of products,
 in fact its model is quite different.</p>
-
 <p>&ldquo;Traditional&rdquo; Service Bus service is organized around queues (subscriptions
 are just queues with the topic being the source of messages). Each consumer
 can peek messages from the queue, do the required processing and then
@@ -226,45 +221,42 @@ complete the message to remove it from the queue, or abort the processing.
 Abortion will leave the message at the queue, or will move it to the Dead Letter
 Queue. Completion/abortion are granular per message; and the status of each
 message is managed by the Service Bus broker.</p>
-
-<p><img src="service-bus-processors.png" alt="Service Bus Processors" /></p>
-
+<p><img src="service-bus-processors.png" alt="Service Bus Processors"></p>
 <p>Event Hubs service is different. Each Hub represnts a log of messages.
 Event producer appends data to the end of the log, and consumers can read this log,
 but they can&rsquo;t remove or change the status of events there.</p>
-
 <p>Each event has an offset associated with it. And the only operation that is
 supported for consumers is &ldquo;give me some messages starting at the offset X&rdquo;.</p>
-
-<p><img src="event-hub-processors.png" alt="Event Hub Processors" /></p>
-
+<p><img src="event-hub-processors.png" alt="Event Hub Processors"></p>
 <p>While this approach might seem simplistic, it actually  makes consumers
 more powerful:</p>
-
 <ul>
-<li><p>The messages do not disappear from the Hub after being processed for the
+<li>
+<p>The messages do not disappear from the Hub after being processed for the
 first time. So, if needed, the consumer can go back and re-process older
-events again;</p></li>
-
-<li><p>Multiple consumers are always supported, out of the box. They just read
-the same log, after all;</p></li>
-
-<li><p>Each consumer can go at its own pace, drop and resume processing whenever
-needed, with no effect on other consumers.</p></li>
+events again;</p>
+</li>
+<li>
+<p>Multiple consumers are always supported, out of the box. They just read
+the same log, after all;</p>
+</li>
+<li>
+<p>Each consumer can go at its own pace, drop and resume processing whenever
+needed, with no effect on other consumers.</p>
+</li>
 </ul>
-
 <p>There are some disadvantages too:</p>
-
 <ul>
-<li><p>Consumers have to manage their own state of the processing progress, i.e.
-they have to save the offset of the last processed event;</p></li>
-
-<li><p>There is no way to mark any specific event as failed to be able to reprocess
-it later. There&rsquo;s no notion of Dead Letter Queue either.</p></li>
+<li>
+<p>Consumers have to manage their own state of the processing progress, i.e.
+they have to save the offset of the last processed event;</p>
+</li>
+<li>
+<p>There is no way to mark any specific event as failed to be able to reprocess
+it later. There&rsquo;s no notion of Dead Letter Queue either.</p>
+</li>
 </ul>
-
 <h2 id="event-processor-host">Event Processor Host</h2>
-
 <p>To overcome the first complication, Microsoft provides the consumer API called
 <a href="https://github.com/Microsoft/azure-docs/blob/master/articles/event-hubs/event-hubs-programming-guide.md">EventProcessorHost</a>.
 This API has an implementation of consumers based on checkpointing. All you
@@ -273,44 +265,42 @@ need to do is to provide a callback to process a batch of events, and then call
 into Azure Blob Storage. If the consumer restarts at any point in time, it will
 read the last checkpoint to find the current offset, and will then continue
 processing from that point on.</p>
-
 <p>It works great for some scenarios, but the event delivery/processing guarantees
 are relatively low in this case:</p>
-
 <ul>
-<li><p>Any failures are ignored: there&rsquo;s no retry or Dead Letter Queue</p></li>
-
-<li><p>There are no transactions between event hub checkpoints and the data sinks
+<li>
+<p>Any failures are ignored: there&rsquo;s no retry or Dead Letter Queue</p>
+</li>
+<li>
+<p>There are no transactions between event hub checkpoints and the data sinks
 that the processor works with (i.e. data stores where processed messages
-end up at)</p></li>
+end up at)</p>
+</li>
 </ul>
-
 <p>In this post I want to focus on a way to process events with higher consistency
 requirements, in particular:</p>
-
 <ul>
-<li><p>Event Hub processor modifies data in a SQL Database, and such
-processing is transactional per batch of messages</p></li>
-
-<li><p>Each event should be (successfully) processed exactly once</p></li>
-
-<li><p>If event processing failed, it should be marked as failed and kept
-available to be reprocessed at later point in time</p></li>
+<li>
+<p>Event Hub processor modifies data in a SQL Database, and such
+processing is transactional per batch of messages</p>
+</li>
+<li>
+<p>Each event should be (successfully) processed exactly once</p>
+</li>
+<li>
+<p>If event processing failed, it should be marked as failed and kept
+available to be reprocessed at later point in time</p>
+</li>
 </ul>
-
 <p>While end-to-end exactly-once processing would require changes of the
 producers too, we will only focus on consumer side in this post.</p>
-
 <h2 id="transactional-checkpoints-in-sql">Transactional Checkpoints in SQL</h2>
-
 <p>If checkpoint information is stored in Azure Blobs, there is no obvious way to
 implement distributed transactions between SQL Database and Azure Storage.</p>
-
 <p>However, we can override the default checkpointing mechanism and
 implement our own checkpoints based on a SQL table. This way each
 checkpoint update can become part of a SQL transaction and be committed
 or rolled back with normal guarantees provided by SQL Server.</p>
-
 <p>Here is a table that I created to hold my checkpoints:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">CREATE</span> <span style="color:#00f">TABLE</span> EventHubCheckpoint (
   Topic varchar(100) <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
@@ -318,27 +308,22 @@ or rolled back with normal guarantees provided by SQL Server.</p>
   SequenceNumber bigint <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
   <span style="color:#00f">Offset</span> varchar(20) <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
   <span style="color:#00f">CONSTRAINT</span> PK_EventHubCheckpoint <span style="color:#00f">PRIMARY</span> <span style="color:#00f">KEY</span> CLUSTERED (Topic, PartitionID)
-)</code></pre></div>
-<p>For each topic and partition of Event Hubs, we store two values: sequence
+)
+</code></pre></div><p>For each topic and partition of Event Hubs, we store two values: sequence
 number and offset, which together uniquely identify the consumer position.</p>
-
 <p>Conveniently, Event Host Processor provides an extensibility point to
 override the default checkpoint manager with a custom one. For that we
 need to implement <code>ICheckpointManager</code> interface to work with our SQL
 table.</p>
-
 <p>The implementation mainly consists of 3 methods: <code>CreateCheckpointIfNotExistsAsync</code>,
 <code>GetCheckpointAsync</code> and <code>UpdateCheckpointAsync</code>. The names are pretty
 much self-explanatory, and my Dapper-based implementation is quite trivial.
 You can find the code <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLCheckpointManager.cs">here</a>.</p>
-
 <p>For now, I&rsquo;m ignoring the related topic of lease management and corresponding
 interface <code>ILeaseManager</code>. It&rsquo;s quite a subject on its own; for the sake
 of simplicity I&rsquo;ll assume we have just one consumer process per partition,
 which makes proper lease manager redundand.</p>
-
 <h2 id="dead-letter-queue">Dead Letter Queue</h2>
-
 <p>Now, we want to be able to mark some messages as failed and to
 re-process them later. To make Dead Letters transactional, we need another
 SQL table to hold the failed events:</p>
@@ -350,16 +335,14 @@ SQL table to hold the failed events:</p>
   FailedAt datetime <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
   Error nvarchar(<span style="color:#00f">max</span>) <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
   <span style="color:#00f">CONSTRAINT</span> PK_EventHubDeadLetter <span style="color:#00f">PRIMARY</span> <span style="color:#00f">KEY</span> CLUSTERED (Topic, PartitionID)
-)</code></pre></div>
-<p>This table looks very similar to <code>EventHubCheckpoint</code> that I
+)
+</code></pre></div><p>This table looks very similar to <code>EventHubCheckpoint</code> that I
 defined above. That is because they are effectively storing pointers to
 events in a hub. Dead Letters have two additional columns to store error
 timestamp and text.</p>
-
 <p>There is no need to store the message content, because failed events still
 sit in the event hub anyway. You could still log it for diagnostics purpose - just make an extra
 <code>varbinary</code> column.</p>
-
 <p>There&rsquo;s no notion of dead letters in Event Hubs SDK, so I defined my own
 interface <code>IDeadLetterManager</code> with a single <code>AddFailedEvents</code> method:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> IDeadLetterManager
@@ -373,16 +356,12 @@ interface <code>IDeadLetterManager</code> with a single <code>AddFailedEvents</c
     <span style="color:#00f">public</span> DateTime FailureTime { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
     <span style="color:#00f">public</span> Exception Exception { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
-</code></pre></div>
-<p>Dapper-based implementation is trivial again, you can find the code
+</code></pre></div><p>Dapper-based implementation is trivial again, you can find the code
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/eventhubs-sqlcheckpoints/SQLDeadLetterManager.cs">here</a>.</p>
-
 <h2 id="putting-it-together-event-host">Putting It Together: Event Host</h2>
-
 <p>My final solution is still using <code>EventHostProcessor</code>. I pass <code>SQLCheckpointManager</code>
-into its constructor, and then I implement <code>IEventProcessor</code>&rsquo;s
+into its constructor, and then I implement <code>IEventProcessor</code>'s
 <code>ProcessEventsAsync</code> method in the following way:</p>
-
 <ol>
 <li>Instantiate a list of items to store failed events</li>
 <li>Start a SQL transaction</li>
@@ -393,7 +372,6 @@ into its constructor, and then I implement <code>IEventProcessor</code>&rsquo;s
 <li>Update the checkpoint pointer</li>
 <li>Commit the transaction</li>
 </ol>
-
 <p>The code block that illustrates this workflow:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">async</span> Task ProcessEventsAsync(
     PartitionContext context,
@@ -434,15 +412,12 @@ into its constructor, and then I implement <code>IEventProcessor</code>&rsquo;s
 </span><span style="color:#008000"></span>        scope.Complete();
     }
 }
-</code></pre></div>
-<h2 id="conclusion">Conclusion</h2>
-
+</code></pre></div><h2 id="conclusion">Conclusion</h2>
 <p>My implementation of Event Hubs consumer consists of 3 parts: checkpoint
 manager that saves processing progress per partition into a SQL table;
 dead letter manager that persists information about processing errors;
 and an event host which uses both to provide transactional processing
 of events.</p>
-
 <p>The transaction scope is limited to SQL Server databases, but it might be
 sufficient for many real world scenarios.</p>
 
@@ -482,6 +457,23 @@ sufficient for many real world scenarios.</p>
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             

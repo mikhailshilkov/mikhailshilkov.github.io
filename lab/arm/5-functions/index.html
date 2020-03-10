@@ -99,6 +99,10 @@
                 </li>
                  
                 <li class="nav-item ">
+                    <a class="nav-link" href="/lab/">LABS</a>
+                </li>
+                 
+                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -251,28 +255,19 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>We&rsquo;ve deployed our first resource - a Storage Account, but its definition has some drawbacks:</p>
-
+                    <p>We&rsquo;ve deployed our first resource - a Storage Account, but its definition has some drawbacks:</p>
 <ul>
 <li>The <code>location</code> is set to West US</li>
 <li>The <code>name</code> is hard-coded too, which means we wouldn&rsquo;t be able to deploy this to multiple resource groups (e.g., in a test, staging, and production environments)</li>
 </ul>
-
 <p>Let&rsquo;s solve these problems.</p>
-
 <h2 id="functions">Functions</h2>
-
 <p>Values in ARM templates may be defined in terms of fixed literals, as we did before. However, they also support <em>expressions</em>. An expression is wrapped with square brackets <code>[]</code>. Expressions may contain <em>function</em> invocations. Here is a call to an imaginary function <code>someFunction</code>:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json"><span style="">...</span>
-<span style="color:#a31515">&#34;value&#34;</span><span style="">:</span> <span style="color:#a31515">&#34;[someFunction(&#39;parameter1&#39;, &#39;parameter2&#39;).property1]&#34;</span><span style="">,</span></code></pre></div>
-<p>You can see that we can pass arguments and evaluate the properties of the result.</p>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json"><span style="">.</span><span style="">.</span><span style="">.</span>
+<span style="color:#a31515">&#34;value&#34;</span><span style="">:</span> <span style="color:#a31515">&#34;[someFunction(&#39;parameter1&#39;, &#39;parameter2&#39;).property1]&#34;</span><span style="">,</span>
+</code></pre></div><p>You can see that we can pass arguments and evaluate the properties of the result.</p>
 <h2 id="inherit-location-from-the-resource-group">Inherit Location from the resource group</h2>
-
 <p>One commonly-used function is <code>resourceGroup()</code>. It returns the properties of the current Resource Group that the template is deployed to.</p>
-
 <p>Most probably, we want to deploy the Storage Account into the same Azure region where the Resource Group resides. This goal can be achieved with the <code>resourceGroup()</code> function and the <code>location</code> property of its result:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
     &#34;type&#34;: <span style="color:#a31515">&#34;Microsoft.Storage/storageAccounts&#34;</span>,
@@ -283,23 +278,16 @@
     &#34;sku&#34;: {
         &#34;name&#34;: <span style="color:#a31515">&#34;Standard_LRS&#34;</span>
     }
-}</code></pre></div>
-<p>Try deploying the modified template.</p>
-
+}
+</code></pre></div><p>Try deploying the modified template.</p>
 <p>Unfortunately, you are going to get another error:</p>
-
 <pre><code>Azure Error: InvalidResourceLocation
 Message: The resource 'mysauniquename' already exists in location 'westus' in resource
 group 'arm-workshop'. A resource with the same name cannot be created in location
 'westeurope'. Please select a new resource name.
-</code></pre>
-
-<p>The good news is that the location has clearly changed. Let&rsquo;s do something with the account name.</p>
-
+</code></pre><p>The good news is that the location has clearly changed. Let&rsquo;s do something with the account name.</p>
 <h2 id="generating-a-unique-name">Generating a unique name</h2>
-
 <p>We could keep changing the name of the Storage Account, but that seems sub-optimal. This account is actually not our primary target: we just need it to start working with Azure Functions. It would be perfectly fine to give it some unique machine-generated name just to be able to proceed. The <code>uniquestring</code> function can do this for us.</p>
-
 <p>Change the account definition to the following:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
     &#34;type&#34;: <span style="color:#a31515">&#34;Microsoft.Storage/storageAccounts&#34;</span>,
@@ -310,24 +298,18 @@ group 'arm-workshop'. A resource with the same name cannot be created in locatio
     &#34;sku&#34;: {
         &#34;name&#34;: <span style="color:#a31515">&#34;Standard_LRS&#34;</span>
     }
-}</code></pre></div>
-<p>The <code>uniquestring</code> function performs a 64-bit hash of the provided strings to create a unique string. We provide the ID of the current Resource Group as the input argument, so the name is going to differ per Resource Group. Very useful for multiple deployments!</p>
-
+}
+</code></pre></div><p>The <code>uniquestring</code> function performs a 64-bit hash of the provided strings to create a unique string. We provide the ID of the current Resource Group as the input argument, so the name is going to differ per Resource Group. Very useful for multiple deployments!</p>
 <p>Rerun the deployment, and it should succeed this time.</p>
-
 <h2 id="checkpoint">Checkpoint</h2>
-
 <p>List the resources in your Resource Group.</p>
-
 <pre><code>$ az resource list -g arm-workshop -o table
 
 Name            ResourceGroup Location     Type
 --------------  ------------- -----------  ---------------------------------
 mysauniquename  arm-workshop  westus       Microsoft.Storage/storageAccounts
 42tsnvw2a6dlc   arm-workshop  westeurope   Microsoft.Storage/storageAccounts
-</code></pre>
-
-<p>You should see both a new account in the Resource Group&rsquo;s region, as well as the old one in West US. We&rsquo;ll remove the old account at the next step.</p>
+</code></pre><p>You should see both a new account in the Resource Group&rsquo;s region, as well as the old one in West US. We&rsquo;ll remove the old account at the next step.</p>
 
 
                     

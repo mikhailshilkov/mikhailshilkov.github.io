@@ -212,14 +212,10 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>I love functional programming for the simplicity that it brings.</p>
-
+                    <p>I love functional programming for the simplicity that it brings.</p>
 <p>But at the same time, I realize that learning functional programming is a challenging
 process. FP comes with a baggage of unfamiliar vocabulary that can be daunting for
 somebody coming from an object-oriented language like C#.</p>
-
 <figure >
     
         <img src="functional-programming-word-cloud.png"
@@ -232,80 +228,57 @@ somebody coming from an object-oriented language like C#.</p>
     </figcaption>
     
 </figure>
-
 <p>&ldquo;Monad&rdquo; is probably the most infamous term from the list above. Monads have reputation of being
 something very abstract and very confusing.</p>
-
 <h2 id="the-fallacy-of-monad-tutorials">The Fallacy of Monad Tutorials</h2>
-
 <p>Numerous attempts were made to explain monads in simple definitions; and monad tutorials have become a
 genre of its own. And yet, times and times again, they fail to enlighten the readers.</p>
-
 <p>The shortest explanation of monads looks like this:</p>
-
-<p><img src="monoid-endofunctors.png" alt="A Monad is just a monoid in the category of endofunctors" /></p>
-
+<p><img src="monoid-endofunctors.png" alt="A Monad is just a monoid in the category of endofunctors"></p>
 <p>It&rsquo;s both mathematically correct and totally useless to anybody learning functional programming. To
 understand this statement, one has to know the terms &ldquo;monoid&rdquo;, &ldquo;category&rdquo; and &ldquo;endofunctors&rdquo; and be able
 to mentally compose them into something meaningful.</p>
-
 <p>The same problem is apparent in most monad tutorials. They assume some pre-existing knowledge in
 heads of their readers, and if that assumption fails, the tutorial doesn&rsquo;t click.</p>
-
 <p>Focusing too much on mechanics of monads instead of explaining why they are important is another
 common problem.</p>
-
 <p>Douglas Crockford grasped this fallacy very well:</p>
-
 <blockquote>
 <p>The monadic curse is that once someone learns what monads are and how to use them, they lose the ability to explain them to other people</p>
 </blockquote>
-
 <p>The problem here is likely the following. Every person who understands monads had their own path to
 this knowledge. It hasn&rsquo;t come all at once, instead there was a series of steps, each giving an insight,
 until the last final step made the puzzle complete.</p>
-
 <p>But they don&rsquo;t remember the whole path anymore. They go online and blog about that very last step as
 the key to understanding, joining the club of flawed explanations.</p>
-
 <p>There is an actual <a href="http://tomasp.net/academic/papers/monads/monads-programming.pdf">academic paper from Tomas Petricek</a>
 that studies monad tutorials.</p>
-
 <p>I&rsquo;ve read that paper and a dozen of monad tutorials online. And of course, now I came up with my own.</p>
-
 <p>I&rsquo;m probably doomed to fail too, at least for some readers. Yet, I know that many people found the
 <a href="https://mikhail.io/2016/01/monads-explained-in-csharp/">previous version</a> of this article useful.</p>
-
 <p>I based my explanation on examples from C# - the object-oriented language familiar to .NET developers.</p>
-
 <h2 id="story-of-composition">Story of Composition</h2>
-
 <p>The base element of each functional program is Function. In typed languages each function
 is just a mapping between the type of its input parameter and output parameter.
 Such type can be annotated as <code>func: TypeA -&gt; TypeB</code>.</p>
-
 <p>C# is object-oriented language, so we use methods to declare functions. There are two ways
 to define a method comparable to <code>func</code> function above. I can use static method:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Mapper</span>
 {
     <span style="color:#00f">static</span> ClassB func(ClassA a) { ... }
 }
-</code></pre></div>
-<p>&hellip; or instance method:</p>
+</code></pre></div><p>&hellip; or instance method:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">class</span> <span style="color:#2b91af">ClassA</span>
 {
     <span style="color:#008000">// Instance method
 </span><span style="color:#008000"></span>    ClassB func() { ... }
 }
-</code></pre></div>
-<p>Static form looks closer to the function annotation, but both ways are actually equivalent
+</code></pre></div><p>Static form looks closer to the function annotation, but both ways are actually equivalent
 for the purpose of our discussion. I will use instance methods in my examples, however all of
 them could be written as static extension methods too.</p>
-
 <p>How do we compose more complex workflows, programs and applications out of such simple
 building blocks? A lot of patterns both in OOP and FP worlds revolve around this question.
 And monads are one of the answers.</p>
-
 <p>My sample code is going to be about conferences and speakers. The method implementations
 aren&rsquo;t really important, just watch the types carefully. There are 4 classes (types) and
 3 methods (functions):</p>
@@ -325,8 +298,7 @@ aren&rsquo;t really important, just watch the types carefully. There are 4 class
 }
 
 <span style="color:#00f">class</span> <span style="color:#2b91af">City</span> { ... }
-</code></pre></div>
-<p>These methods are currently very easy to compose into a workflow:</p>
+</code></pre></div><p>These methods are currently very easy to compose into a workflow:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> City NextTalkCity(Speaker speaker)
 {
     Talk talk = speaker.NextTalk();
@@ -334,8 +306,7 @@ aren&rsquo;t really important, just watch the types carefully. There are 4 class
     City city = conf.GetCity();
     <span style="color:#00f">return</span> city;
 }
-</code></pre></div>
-<p>Because the return type of the previous step always matches the input type of the next step, we can
+</code></pre></div><p>Because the return type of the previous step always matches the input type of the next step, we can
 write it even shorter:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> City NextTalkCity(Speaker speaker)
 {
@@ -345,18 +316,13 @@ write it even shorter:</p>
         .GetConference()
         .GetCity();
 }
-</code></pre></div>
-<p>This code looks quite readable. It&rsquo;s concise and it flows from top to bottom, from left to right,
+</code></pre></div><p>This code looks quite readable. It&rsquo;s concise and it flows from top to bottom, from left to right,
 similar to how we are used to read any text. There is not much noise too.</p>
-
 <p>That&rsquo;s not what real codebases look like though, because there are multiple complications
 along the happy composition path. Let&rsquo;s look at some of them.</p>
-
 <h2 id="nulls">NULLs</h2>
-
 <p>Any class instance in C# can be <code>null</code>. In the example above I might get runtime errors if
 one of the methods ever returns <code>null</code> back.</p>
-
 <p>Typed functional programming always tries to be explicit about types, so I&rsquo;ll re-write the signatures
 of my methods to annotate the return types as nullables:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">class</span> <span style="color:#2b91af">Speaker</span>
@@ -375,11 +341,9 @@ of my methods to annotate the return types as nullables:</p>
 }
 
 <span style="color:#00f">class</span> <span style="color:#2b91af">City</span> { ... }
-</code></pre></div>
-<p>This is actually invalid syntax in current C# version, because <code>Nullable&lt;T&gt;</code> and its short form
+</code></pre></div><p>This is actually invalid syntax in current C# version, because <code>Nullable&lt;T&gt;</code> and its short form
 <code>T?</code> are not applicable to reference types. This <a href="https://blogs.msdn.microsoft.com/dotnet/2017/11/15/nullable-reference-types-in-csharp/">might change in C# 8</a>
 though, so bear with me.</p>
-
 <p>Now, when composing our workflow, we need to take care of <code>null</code> results:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> Nullable&lt;City&gt; NextTalkCity(Speaker speaker)
 {
@@ -392,10 +356,8 @@ though, so bear with me.</p>
     Nullable&lt;City&gt; city = conf.GetCity();
     <span style="color:#00f">return</span> city;
 }
-</code></pre></div>
-<p>It&rsquo;s still the same method, but it got more noise now. Even though I used short-circuit returns
+</code></pre></div><p>It&rsquo;s still the same method, but it got more noise now. Even though I used short-circuit returns
 and one-liners, it still got harder to read.</p>
-
 <p>To fight that problem, smart language designers came up with the Null Propagation Operator:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> Nullable&lt;City&gt; NextTalkCity(Speaker speaker)
 {
@@ -405,18 +367,13 @@ and one-liners, it still got harder to read.</p>
         ?.GetConference()
         ?.GetCity();
 }
-</code></pre></div>
-<p>Now we are almost back to our original workflow code: it&rsquo;s clean and concise, we just got
+</code></pre></div><p>Now we are almost back to our original workflow code: it&rsquo;s clean and concise, we just got
 3 extra <code>?</code> symbols around.</p>
-
 <p>Let&rsquo;s take another leap.</p>
-
 <h2 id="collections">Collections</h2>
-
 <p>Quite often a function returns a collection of items, not just a single item. To some extent,
 that&rsquo;s a generalization of <code>null</code> case: with <code>Nullable&lt;T&gt;</code> we might get 0 or 1 results back,
 while with a collection we can get <code>0</code> to any <code>n</code> results.</p>
-
 <p>Our sample API could look like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">class</span> <span style="color:#2b91af">Speaker</span>
 {
@@ -432,9 +389,7 @@ while with a collection we can get <code>0</code> to any <code>n</code> results.
 {
     List&lt;City&gt; GetCities() { ... }
 }
-</code></pre></div>
-<p>I used <code>List&lt;T&gt;</code> but it could be any class or plain <code>IEnumerable&lt;T&gt;</code> interface.</p>
-
+</code></pre></div><p>I used <code>List&lt;T&gt;</code> but it could be any class or plain <code>IEnumerable&lt;T&gt;</code> interface.</p>
 <p>How would we combine the methods into one workflow? Traditional version would look like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> List&lt;City&gt; AllCitiesToVisit(Speaker speaker)
 {
@@ -447,10 +402,8 @@ while with a collection we can get <code>0</code> to any <code>n</code> results.
 
     <span style="color:#00f">return</span> result;
 }
-</code></pre></div>
-<p>It reads ok-ish still. But the combination of nested loops and mutation with some conditionals sprinkled
+</code></pre></div><p>It reads ok-ish still. But the combination of nested loops and mutation with some conditionals sprinkled
 on them can get unreadable pretty soon. The exact workflow might be lost in the mechanics.</p>
-
 <p>As an alternative, C# language designers invented LINQ extension methods. We can write code like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> List&lt;City&gt; AllCitiesToVisit(Speaker speaker)
 {
@@ -461,8 +414,7 @@ on them can get unreadable pretty soon. The exact workflow might be lost in the 
         .SelectMany(conf =&gt; conf.GetCities())
         .ToList();
 }
-</code></pre></div>
-<p>Let me do one further trick and format the same code in an unusual way:</p>
+</code></pre></div><p>Let me do one further trick and format the same code in an unusual way:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> List&lt;City&gt; AllCitiesToVisit(Speaker speaker)
 {
     <span style="color:#00f">return</span>
@@ -471,14 +423,10 @@ on them can get unreadable pretty soon. The exact workflow might be lost in the 
         .GetConferences()    ).SelectMany(x =&gt; x
         .GetCities()         ).ToList();
 }
-</code></pre></div>
-<p>Now you can see the same original code on the left, combined with just a bit of technical repeatable
+</code></pre></div><p>Now you can see the same original code on the left, combined with just a bit of technical repeatable
 clutter on the right. Hold on, I&rsquo;ll show you where I&rsquo;m going.</p>
-
 <p>Let&rsquo;s discuss another possible complication.</p>
-
 <h2 id="asynchronous-calls">Asynchronous Calls</h2>
-
 <p>What if our methods need to access some remote database or service to produce the results? This
 should be shown in type signature, and C# has <code>Task&lt;T&gt;</code> for that:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">class</span> <span style="color:#2b91af">Speaker</span>
@@ -495,9 +443,7 @@ should be shown in type signature, and C# has <code>Task&lt;T&gt;</code> for tha
 {
     Task&lt;City&gt; GetCity() { ... }
 }
-</code></pre></div>
-<p>This change breaks our nice workflow composition again.</p>
-
+</code></pre></div><p>This change breaks our nice workflow composition again.</p>
 <p>We&rsquo;ll get back to async-await later, but the original way to combine <code>Task</code>-based
 methods was to use <code>ContinueWith</code> and <code>Unwrap</code> API:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> Task&lt;City&gt; NextTalkCity(Speaker speaker)
@@ -510,8 +456,7 @@ methods was to use <code>ContinueWith</code> and <code>Unwrap</code> API:</p>
         .ContinueWith(conf =&gt; conf.Result.GetCity())
         .Unwrap();
 }
-</code></pre></div>
-<p>Hard to read, but let me apply my formatting trick again:</p>
+</code></pre></div><p>Hard to read, but let me apply my formatting trick again:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> Task&lt;City&gt; NextTalkCity(Speaker speaker)
 {
     <span style="color:#00f">return</span>
@@ -520,14 +465,10 @@ methods was to use <code>ContinueWith</code> and <code>Unwrap</code> API:</p>
         .GetConference()   ).Unwrap().ContinueWith(x =&gt; x.Result
         .GetCity()         ).Unwrap();
 }
-</code></pre></div>
-<p>You can see that, once again, it&rsquo;s our nice readable workflow on the left + some mechanical repeatable
+</code></pre></div><p>You can see that, once again, it&rsquo;s our nice readable workflow on the left + some mechanical repeatable
 junction code on the right.</p>
-
 <h2 id="pattern">Pattern</h2>
-
 <p>Can you see a pattern yet?</p>
-
 <p>I&rsquo;ll repeat the <code>Nullable</code>-, <code>List</code>- and <code>Task</code>-based workflows again:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> Nullable&lt;City&gt; NextTalkCity(Speaker speaker)
 {
@@ -555,10 +496,8 @@ junction code on the right.</p>
         .GetConference()      ).Unwrap().ContinueWith(x =&gt; x.Result
         .GetCity()            ).Unwrap();
 }
-</code></pre></div>
-<p>In all 3 cases there was a complication which prevented us from sequencing method
+</code></pre></div><p>In all 3 cases there was a complication which prevented us from sequencing method
 calls fluently. In all 3 cases we found the gluing code to get back to fluent composition.</p>
-
 <p>Let&rsquo;s try to generalize this approach. Given some generic container type
 <code>WorkflowThatReturns&lt;T&gt;</code>, we have a method to combine an instance of such workflow with
 a function which accepts the result of that workflow and returns another workflow back:</p>
@@ -566,25 +505,27 @@ a function which accepts the result of that workflow and returns another workflo
 {
     WorkflowThatReturns&lt;U&gt; AddStep(Func&lt;T, WorkflowThatReturns&lt;U&gt;&gt; step);
 }
-</code></pre></div>
-<p>In case this is hard to grasp, have a look at the picture of what is going on:</p>
-
-<p><img src="monad-bind.png" alt="Monad Bind Internals" /></p>
-
+</code></pre></div><p>In case this is hard to grasp, have a look at the picture of what is going on:</p>
+<p><img src="monad-bind.png" alt="Monad Bind Internals"></p>
 <ol>
-<li><p>An instance of type <code>T</code> sits in a generic container.</p></li>
-
-<li><p>We call <code>AddStep</code> with a function, which maps <code>T</code> to <code>U</code> sitting inside yet another
-container.</p></li>
-
-<li><p>We get an instance of <code>U</code> but inside two containers.</p></li>
-
-<li><p>Two containers are automatically unwrapped into a single container to get back to the
-original shape.</p></li>
-
-<li><p>Now we are ready to add another step!</p></li>
+<li>
+<p>An instance of type <code>T</code> sits in a generic container.</p>
+</li>
+<li>
+<p>We call <code>AddStep</code> with a function, which maps <code>T</code> to <code>U</code> sitting inside yet another
+container.</p>
+</li>
+<li>
+<p>We get an instance of <code>U</code> but inside two containers.</p>
+</li>
+<li>
+<p>Two containers are automatically unwrapped into a single container to get back to the
+original shape.</p>
+</li>
+<li>
+<p>Now we are ready to add another step!</p>
+</li>
 </ol>
-
 <p>In the following code, <code>NextTalk</code> returns the first instance inside the container:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">WorkflowThatReturns&lt;City&gt; Workflow(Speaker speaker)
 {
@@ -594,53 +535,38 @@ original shape.</p></li>
         .AddStep(x =&gt; x.GetConference())
         .AddStep(x =&gt; x.GetCity());
 }
-</code></pre></div>
-<p>Subsequently, <code>AddStep</code> is called two times to transfer to <code>Conference</code> and then
+</code></pre></div><p>Subsequently, <code>AddStep</code> is called two times to transfer to <code>Conference</code> and then
 <code>City</code> inside the same container:</p>
-
-<p><img src="monad-two-binds.png" alt="Monad Bind Chaining" /></p>
-
+<p><img src="monad-two-binds.png" alt="Monad Bind Chaining"></p>
 <h2 id="finally-monads">Finally, Monads</h2>
-
 <p>The name of this pattern is <strong>Monad</strong>.</p>
-
 <p>In C# terms, a Monad is a generic class with two operations: constructor and bind.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">class</span> <span style="color:#2b91af">Monad</span>&lt;T&gt; {
     Monad(T instance);
     Monad&lt;U&gt; Bind(Func&lt;T, Monad&lt;U&gt;&gt; f);
 }
-</code></pre></div>
-<p>Constructor is used to put an object into container, <code>Bind</code> is used to replace one
+</code></pre></div><p>Constructor is used to put an object into container, <code>Bind</code> is used to replace one
 contained object with another contained object.</p>
-
-<p>It&rsquo;s important that <code>Bind</code>&rsquo;s argument returns <code>Monad&lt;U&gt;</code> and not just <code>U</code>. We can think
+<p>It&rsquo;s important that <code>Bind</code>'s argument returns <code>Monad&lt;U&gt;</code> and not just <code>U</code>. We can think
 of <code>Bind</code> as a combination of <code>Map</code> and <code>Unwrap</code> as defined per following signature:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">class</span> <span style="color:#2b91af">Monad</span>&lt;T&gt; {
     Monad(T instance);
     Monad&lt;U&gt; Map(Function&lt;T, U&gt; f);
     <span style="color:#00f">static</span> Monad&lt;U&gt; Unwrap(Monad&lt;Monad&lt;U&gt;&gt; nested);
 }
-</code></pre></div>
-<p>Even though I spent quite some time with examples, I expect you to be slightly confused
+</code></pre></div><p>Even though I spent quite some time with examples, I expect you to be slightly confused
 at this point. That&rsquo;s ok.</p>
-
 <p>Keep going and let&rsquo;s have a look at several sample implementations of Monad pattern.</p>
-
-<p><a name="maybe"></a></p>
-
-<h2 id="maybe-option">Maybe (Option)</h2>
-
+<h2 id="maybe-option"><a name="maybe"></a>
+Maybe (Option)</h2>
 <p>My first motivational example was with <code>Nullable&lt;T&gt;</code> and <code>?.</code>. The full pattern
 containing either 0 or 1 instance of some type is called <code>Maybe</code> (it maybe has a value,
 or maybe not).</p>
-
 <p><code>Maybe</code> is another approach to dealing with &lsquo;no value&rsquo; value, alternative to the
 concept of <code>null</code>.</p>
-
 <p>Functional-first language F# typically doesn&rsquo;t allow <code>null</code> for its types. Instead, F# has
 a maybe implementation built into the language:
 it&rsquo;s called <code>option</code> type.</p>
-
 <p>Here is a sample implementation in C#:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Maybe</span>&lt;T&gt; <span style="color:#00f">where</span> T : <span style="color:#00f">class</span>
 {
@@ -664,12 +590,10 @@ it&rsquo;s called <code>option</code> type.</p>
 
     <span style="color:#00f">public</span> <span style="color:#00f">static</span> Maybe&lt;T&gt; None() =&gt; <span style="color:#00f">new</span> Maybe&lt;T&gt;();
 }
-</code></pre></div>
-<p>When <code>null</code> is not allowed, any API contract gets more explicit: either you
+</code></pre></div><p>When <code>null</code> is not allowed, any API contract gets more explicit: either you
 return type <code>T</code> and it&rsquo;s always going to be filled, or you return <code>Maybe&lt;T&gt;</code>.
 The client will see that <code>Maybe</code> type is used, so it will be forced to handle
 the case of absent value.</p>
-
 <p>Given an imaginary repository contract (which does something with customers and
 orders):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> IMaybeAwareRepository
@@ -678,8 +602,7 @@ orders):</p>
     Maybe&lt;Address&gt; GetAddress(<span style="color:#2b91af">int</span> id);
     Maybe&lt;Order&gt; GetOrder(<span style="color:#2b91af">int</span> id);
 }
-</code></pre></div>
-<p>The client can be written with <code>Bind</code> method composition, without branching,
+</code></pre></div><p>The client can be written with <code>Bind</code> method composition, without branching,
 in fluent style:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">Maybe&lt;Shipper&gt; shipperOfLastOrderOnCurrentAddress =
     repo.GetCustomer(customerId)
@@ -688,25 +611,19 @@ in fluent style:</p>
         .Bind(a =&gt; a.LastOrder)
         .Bind(lo =&gt; repo.GetOrder(lo.Id))
         .Bind(o =&gt; o.Shipper);
-</code></pre></div>
-<p>As we saw above, this syntax looks very much like a LINQ query with a bunch
+</code></pre></div><p>As we saw above, this syntax looks very much like a LINQ query with a bunch
 of <code>SelectMany</code> statements. One of the common
 implementations of <code>Maybe</code> implements <code>IEnumerable</code> interface to enable
 a more C#-idiomatic binding composition. Actually:</p>
-
-<h2 id="enumerable-selectmany-is-a-monad">Enumerable + SelectMany is a Monad</h2>
-
+<h2 id="enumerable--selectmany-is-a-monad">Enumerable + SelectMany is a Monad</h2>
 <p><code>IEnumerable</code> is an interface for enumerable containers.</p>
-
 <p>Enumerable containers can be created - thus the constructor monadic operation.</p>
-
 <p>The <code>Bind</code> operation is defined by the standard LINQ extension method, here
 is its signature:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> IEnumerable&lt;U&gt; SelectMany&lt;T, U&gt;(
     <span style="color:#00f">this</span> IEnumerable&lt;T&gt; first,
     Func&lt;T, IEnumerable&lt;U&gt;&gt; selector)
-</code></pre></div>
-<p>Direct implementation is quite straightforward:</p>
+</code></pre></div><p>Direct implementation is quite straightforward:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Enumerable</span>
 {
     <span style="color:#00f">public</span> <span style="color:#00f">static</span> IEnumerable&lt;U&gt; SelectMany(
@@ -718,24 +635,19 @@ is its signature:</p>
                 <span style="color:#00f">yield</span> <span style="color:#00f">return</span> subItem;
     }
 }
-</code></pre></div>
-<p>And here is an example of composition:</p>
+</code></pre></div><p>And here is an example of composition:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">IEnumerable&lt;Shipper&gt; shippers =
     customers
         .SelectMany(c =&gt; c.Addresses)
         .SelectMany(a =&gt; a.Orders)
         .SelectMany(o =&gt; o.Shippers);
-</code></pre></div>
-<p>The query has no idea about how the collections are stored (encapsulated in
+</code></pre></div><p>The query has no idea about how the collections are stored (encapsulated in
 containers). We use functions <code>T -&gt; IEnumerable&lt;U&gt;</code> to produce new enumerables
 (<code>Bind</code> operation).</p>
-
 <h2 id="task-future">Task (Future)</h2>
-
 <p>In C# <code>Task&lt;T&gt;</code> type is used to denote asynchronous computation which will eventually
 return an instance of <code>T</code>. The other names for similar concepts in other languages
 are <code>Promise</code> and <code>Future</code>.</p>
-
 <p>While the typical usage of <code>Task</code> in C# is different from the Monad pattern we
 discussed, I can still come up with a <code>Future</code> class with the familiar structure:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Future</span>&lt;T&gt;
@@ -763,8 +675,7 @@ discussed, I can still come up with a <code>Future</code> class with the familia
         <span style="color:#00f">this</span>.instance.ContinueWith(t =&gt; action(t.Result));
     }
 }
-</code></pre></div>
-<p>Effectively, it&rsquo;s just a wrapper around the <code>Task</code> which doesn&rsquo;t add too much value,
+</code></pre></div><p>Effectively, it&rsquo;s just a wrapper around the <code>Task</code> which doesn&rsquo;t add too much value,
 but it&rsquo;s a useful illustration because now we can do:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">repository
     .LoadSpeaker()
@@ -772,26 +683,18 @@ but it&rsquo;s a useful illustration because now we can do:</p>
     .Bind(talk =&gt; talk.GetConference())
     .Bind(conference =&gt; conference.GetCity())
     .OnComplete(city =&gt; reservations.BookFlight(city));
-</code></pre></div>
-<p>We are back to the familiar structure. Time for some more complications.</p>
-
+</code></pre></div><p>We are back to the familiar structure. Time for some more complications.</p>
 <h2 id="non-sequential-workflows">Non-Sequential Workflows</h2>
-
 <p>Up until now, all the composed workflows had very liniar, sequential
 structure: the output of a previous step was always the input for the next step.
 That piece of data could be discarded after the first use because it was never needed
 for later steps:</p>
-
-<p><img src="linear-workflow.png" alt="Linear Workflow" /></p>
-
+<p><img src="linear-workflow.png" alt="Linear Workflow"></p>
 <p>Quite often though, this might not be the case. A workflow step might need data
 from two or more previous steps combined.</p>
-
 <p>In the example above, <code>BookFlight</code> method might actually need both <code>Speaker</code> and
 <code>City</code> objects:</p>
-
-<p><img src="non-linear-workflow.png" alt="Non Linear Workflow" /></p>
-
+<p><img src="non-linear-workflow.png" alt="Non Linear Workflow"></p>
 <p>In this case, we would have to use closure to save <code>speaker</code> object until we get
 a <code>talk</code> too:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">repository
@@ -803,12 +706,9 @@ a <code>talk</code> too:</p>
             .Bind(conference =&gt; conference.GetCity())
             .OnComplete(city =&gt; reservations.BookFlight(speaker, city))
         );
-</code></pre></div>
-<p>Obviously, this gets ugly very soon.</p>
-
+</code></pre></div><p>Obviously, this gets ugly very soon.</p>
 <p>To solve this structural problem, C# language got its <code>async</code>-<code>await</code> feature,
 which is now being reused in more languages including Javascript.</p>
-
 <p>If we move back to using <code>Task</code> instead of our custom <code>Future</code>, we are able to
 write</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> speaker = <span style="color:#00f">await</span> repository.LoadSpeaker();
@@ -816,23 +716,17 @@ write</p>
 <span style="color:#2b91af">var</span> conference = <span style="color:#00f">await</span> talk.GetConference();
 <span style="color:#2b91af">var</span> city = <span style="color:#00f">await</span> conference.GetCity();
 <span style="color:#00f">await</span> reservations.BookFlight(speaker, city);
-</code></pre></div>
-<p>Even though we lost the fluent syntax, at least the block has just one level,
+</code></pre></div><p>Even though we lost the fluent syntax, at least the block has just one level,
 which makes it easier to navigate.</p>
-
 <h2 id="monads-in-functional-languages">Monads in Functional Languages</h2>
-
 <p>So far we learned that</p>
-
 <ul>
 <li>Monad is a workflow composition pattern</li>
 <li>This pattern is used in functional programming</li>
 <li>Special syntax helps simplify the usage</li>
 </ul>
-
 <p>It should come at no surprise that functional languages support monads on syntactic
 level.</p>
-
 <p>F# is a functional-first language running on .NET framework. F# had its own way of
 doing workflows comparable to <code>async</code>-<code>await</code> before C# got it. In F#, the above
 code would look like this:</p>
@@ -842,22 +736,20 @@ code would look like this:</p>
     <span style="color:#00f">let!</span> conf = talk.getConference()
     <span style="color:#00f">let!</span> city = conf.getCity()
     <span style="color:#00f">do</span>! bookFlight(speaker, city)
-}</code></pre></div>
-<p>Apart from syntax (<code>!</code> instead of <code>await</code>), the major difference to C# is that
+}
+</code></pre></div><p>Apart from syntax (<code>!</code> instead of <code>await</code>), the major difference to C# is that
 <code>async</code> is just one possible monad type to be used this way. There are many
 other monads in F# standard library (they are called Computation Expressions).</p>
-
 <p>The best part is that any developer can create their own monads, and then use
 all the power of language features.</p>
-
 <p>Say, we want a hand-made <code>Maybe</code> computation expressoin in F#:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> nextTalkCity (speaker: Speaker) = maybe {
     <span style="color:#00f">let!</span> talk = speaker.nextTalk()
     <span style="color:#00f">let!</span> conf = talk.getConference()
     <span style="color:#00f">let!</span> city = conf.getCity(talk)
     <span style="color:#00f">return</span> city
-}</code></pre></div>
-<p>To make this code runnable, we need to define Maybe computation expression
+}
+</code></pre></div><p>To make this code runnable, we need to define Maybe computation expression
 builder:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">MaybeBuilder</span>() =
 
@@ -869,29 +761,25 @@ builder:</p>
     <span style="color:#00f">member</span> this.Return(x) =
         Some x
 
-<span style="color:#00f">let</span> maybe = <span style="color:#00f">new</span> MaybeBuilder()</code></pre></div>
-<p>I won&rsquo;t explain the details of what happens here, but you can see that the code is
+<span style="color:#00f">let</span> maybe = <span style="color:#00f">new</span> MaybeBuilder()
+</code></pre></div><p>I won&rsquo;t explain the details of what happens here, but you can see that the code is
 quite trivial. Note the presence of <code>Bind</code> operation (and <code>Return</code> operation being
 the monad constructor).</p>
-
 <p>The feature is widely used by third-party F# libraries. Here is an actor definition
 in Akka.NET F# API:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> loop () = actor {
     <span style="color:#00f">let!</span> message = mailbox.Receive()
     <span style="color:#00f">match</span> message <span style="color:#00f">with</span>
-    | Greet(name) -&gt; printfn <span style="color:#a31515">&#34;Hello %s&#34;</span> name
-    | Hi -&gt; printfn <span style="color:#a31515">&#34;Hello from F#!&#34;</span>
+    | Greet(name) -&gt; printfn <span style="color:#a31515">&#34;</span><span style="color:#a31515">Hello %s</span><span style="color:#a31515">&#34;</span> name
+    | Hi -&gt; printfn <span style="color:#a31515">&#34;</span><span style="color:#a31515">Hello from F#!</span><span style="color:#a31515">&#34;</span>
     <span style="color:#00f">return</span>! loop ()
-}</code></pre></div>
-<h2 id="monad-laws">Monad Laws</h2>
-
+}
+</code></pre></div><h2 id="monad-laws">Monad Laws</h2>
 <p>There are a couple laws that constructor and <code>Bind</code> need to adhere to, so
 that they produce a proper monad.</p>
-
 <p>A typical monad tutorial will make a lot of emphasis on the laws, but I find them
 less important to explain to a beginner. Nonetheless, here they are for the sake
 of completeness.</p>
-
 <p><strong>Left Identity law</strong> says that Monad constructor is a neutral operation: you can safely
 run it before <code>Bind</code>, and it won&rsquo;t change the result of the function call:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Given
@@ -900,16 +788,14 @@ Func&lt;T, Monad&lt;U&gt;&gt; f;
 
 <span style="color:#008000">// Then (== means both parts are equivalent)
 </span><span style="color:#008000"></span><span style="color:#00f">new</span> Monad&lt;T&gt;(<span style="color:#00f">value</span>).Bind(f) == f(<span style="color:#00f">value</span>)
-</code></pre></div>
-<p><strong>Right Identity law</strong> says that given a monadic value, wrapping its contained data
+</code></pre></div><p><strong>Right Identity law</strong> says that given a monadic value, wrapping its contained data
 into another monad of same type and then <code>Bind</code>ing it, doesn&rsquo;t change the original value:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Given
 </span><span style="color:#008000"></span>Monad&lt;T&gt; monadicValue;
 
 <span style="color:#008000">// Then (== means both parts are equivalent)
 </span><span style="color:#008000"></span>monadicValue.Bind(x =&gt; <span style="color:#00f">new</span> Monad&lt;T&gt;(x)) == monadicValue
-</code></pre></div>
-<p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
+</code></pre></div><p><strong>Associativity law</strong> means that the order in which <code>Bind</code> operations
 are composed does not matter:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Given
 </span><span style="color:#008000"></span>Monad&lt;T&gt; m;
@@ -918,21 +804,16 @@ Func&lt;U, Monad&lt;V&gt;&gt; g;
 
 <span style="color:#008000">// Then (== means both parts are equivalent)
 </span><span style="color:#008000"></span>m.Bind(f).Bind(g) == m.Bind(a =&gt; f(a).Bind(g))
-</code></pre></div>
-<p>The laws may look complicated, but in fact they are very natural
+</code></pre></div><p>The laws may look complicated, but in fact they are very natural
 expectations that any developer has when working with monads, so don&rsquo;t
 spend too much mental effort on memorizing them.</p>
-
 <h2 id="conclusion">Conclusion</h2>
-
 <p>You should not be afraid of the &ldquo;M-word&rdquo; just because you are a C# programmer.</p>
-
 <p>C# does not have a notion of monads as predefined language constructs, but
 that doesn&rsquo;t mean we can&rsquo;t borrow some ideas from the functional world. Having
 said that, it&rsquo;s also true that C# is lacking some powerful ways to combine
 and generalize monads that are available in functional programming
 languages.</p>
-
 <p>Go learn some more Functional Programming!</p>
 
                 </div>
@@ -985,6 +866,23 @@ languages.</p>
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             

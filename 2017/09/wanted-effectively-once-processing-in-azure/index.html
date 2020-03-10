@@ -210,33 +210,27 @@
 
                 
                 <div class="article-post">
-                    
-
-<p><em>This experimental post is a question. The question is too broad for StackOverflow, so I&rsquo;m posting it here. Please engage in the comments section, or forward the link to subject experts.</em></p>
-
+                    <p><em>This experimental post is a question. The question is too broad for StackOverflow, so I&rsquo;m posting it here. Please engage in the comments section, or forward the link to subject experts.</em></p>
 <p>TL;DR: Are there any known patterns / tools / frameworks to provide scalable, stateful, effectively-once, end-to-end
 processing of messages, to be hosted in Azure, preferably on PaaS-level of service?</p>
-
 <h2 id="motivational-example">Motivational Example</h2>
-
 <p>Let&rsquo;s say we are making a TODO app. There is a constant flow of requests
 to create a TODO in the system. Each request contains just two fields:
 a title and a project ID which TODO should belong to. Here is the definition:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">TodoRequest</span> = {
   ProjectId: int
   Title: <span style="color:#2b91af">string</span>
-}</code></pre></div>
-<p>Now, we want to process the request and assign each TODO an identifier,
+}
+</code></pre></div><p>Now, we want to process the request and assign each TODO an identifier,
 which should be an auto-incremented integer. Numeration is unique per project,
 so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Todo</span> = {
   ProjectId: int
   Id: int
   Title: <span style="color:#2b91af">string</span>
-}</code></pre></div>
-<p>Now, instead of relying on some database sequences, I want to describe this
-transformation as a function. The function has the type <code>(TodoRequest, int) -&gt;
-(Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
+}
+</code></pre></div><p>Now, instead of relying on some database sequences, I want to describe this
+transformation as a function. The function has the type <code>(TodoRequest, int) -&gt; (Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
 state (last generated ID) to a tuple of a TODO and post-processing state:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> create (request: TodoRequest, state: int) =
   <span style="color:#00f">let</span> nextId = state + 1
@@ -245,113 +239,92 @@ state (last generated ID) to a tuple of a TODO and post-processing state:</p>
     Id = nextId
     Title = request.Title
   }
-  todo, nextId</code></pre></div>
-<p>This is an extremely simple function, and I can use it to great success to
+  todo, nextId
+</code></pre></div><p>This is an extremely simple function, and I can use it to great success to
 process local, non-durable data.</p>
-
 <p>But if I need to make a reliable distributed application out of it, I need
 to take care of lots of things:</p>
-
 <ol>
-<li><p>No request should be lost. I need to persist all the requests into
-a durable storage in case of processor crash.</p></li>
-
-<li><p>Similarly, I need to persist TODO&rsquo;s too. Presumably, some downstream
-logic will use the persisted data later on in TODO&rsquo;s lifecycle.</p></li>
-
-<li><p>The state (the counter) must be durable too. In case of crash of processing
-function, I want to be able to restart processing after recovery.</p></li>
-
-<li><p>Processing of the requests should be sequential per project ID. Otherwise
+<li>
+<p>No request should be lost. I need to persist all the requests into
+a durable storage in case of processor crash.</p>
+</li>
+<li>
+<p>Similarly, I need to persist TODO&rsquo;s too. Presumably, some downstream
+logic will use the persisted data later on in TODO&rsquo;s lifecycle.</p>
+</li>
+<li>
+<p>The state (the counter) must be durable too. In case of crash of processing
+function, I want to be able to restart processing after recovery.</p>
+</li>
+<li>
+<p>Processing of the requests should be sequential per project ID. Otherwise
 I might get a clash of ID&rsquo;s in case two requests belonging to the same
-project are processed concurrently.</p></li>
-
-<li><p>I still want requests to different projects to be processed in parallel,
-to make sure the system scales up with the growth of project count.</p></li>
-
-<li><p>There must be no holes or duplicates in TODO numbering per project, even
+project are processed concurrently.</p>
+</li>
+<li>
+<p>I still want requests to different projects to be processed in parallel,
+to make sure the system scales up with the growth of project count.</p>
+</li>
+<li>
+<p>There must be no holes or duplicates in TODO numbering per project, even
 in face of system failures. In worst case, I agree to tolerate a duplicated
 entry in the output log, but it must be exactly the same entry (i.e. two
-entries with same project id, id and title).</p></li>
-
-<li><p>The system should tolerate a permanent failure of any single hardware
-dependency and automatically fail-over within reasonable time.</p></li>
+entries with same project id, id and title).</p>
+</li>
+<li>
+<p>The system should tolerate a permanent failure of any single hardware
+dependency and automatically fail-over within reasonable time.</p>
+</li>
 </ol>
-
 <p>It&rsquo;s not feasible to meet all of those requirements without relying on some
 battle-tested distributed services or frameworks.</p>
-
 <p>Which options do I know of?</p>
-
 <h2 id="transactions">Transactions</h2>
-
 <p>Traditionally, this kind of requirements were solved by using transactions
 in something like SQL Server. If I store requests, TODO&rsquo;s and current ID per
 project in the same relational database, I can make each processing step a
 single atomic transaction.</p>
-
 <p>This addresses all the concerns, as long as we can stay inside the single
 database. That&rsquo;s probably a viable option for the TODO app, but less of so
 if I convert my toy example to some real applications like IoT data
 processing.</p>
-
 <p>Can we do the same for distributed systems at scale?</p>
-
 <h2 id="azure-event-hubs">Azure Event Hubs</h2>
-
 <p>Since I touched IoT space, the logical choice would be to store our entries
 in Azure Event Hubs. That works for many criteria, but I don&rsquo;t see any available
 approach to make such processing consistent in the face of failures.</p>
-
 <p>When processing is done, we need to store 3 pieces: generated TODO event,
 current processing offset and current ID. Event goes to another event hub,
 processing offset is stored in Blob Storage and ID can be saved to something
 like Table Storage.</p>
-
 <p>But there&rsquo;s no way to store those 3 pieces atomically. Whichever order we
 choose, we are bound to get anomalies in some specific failure modes.</p>
-
 <h2 id="azure-functions">Azure Functions</h2>
-
 <p>Azure Functions don&rsquo;t solve those problems. But I want to mention this
 Function-as-a-Service offering because they provide an ideal programming
 model for my use case.</p>
-
 <p>I need to take just one step from my domain function to Azure Function:
 to define bindings for e.g. Event Hubs and Table Storage.</p>
-
 <p>However, reliability guarantees will stay poor. I won&rsquo;t get neither sequential
 processing per Event Hub partition key, nor atomic state commit.</p>
-
 <h2 id="azure-service-fabric">Azure Service Fabric</h2>
-
 <p>Service Fabric sounds like a good candidate service for reliable processing.
 Unfortunately, I don&rsquo;t have much experience with it to judge.</p>
-
 <p>Please leave a comment if you do.</p>
-
 <h2 id="jvm-world">JVM World</h2>
-
 <p>There are products in JVM world which claim to solve my problem perfectly.</p>
-
 <p>Apache Kafka was the inspiration for Event Hubs log-based messaging. The recent
 Kafka release provides effectively-once processing semantics as long as
 data stay inside Kafka. Kafka does that with atomic publishing to multiple
 topics, and state storage based on compacted topics.</p>
-
 <p>Apache Flink has similar guarantees for its stream processing APIs.</p>
-
 <p>Great, but how do I get such awesomeness in .NET code, and without installing
 expensive ZooKeeper-managed clusters?</p>
-
 <h2 id="call-for-feedback">Call for Feedback</h2>
-
 <p>Do you know a solution, product or service?</p>
-
 <p>Have you developed effectively-once processing on .NET / Azure stack?</p>
-
 <p>Are you in touch with somebody who works on such framework?</p>
-
 <p>Please leave a comment, or ping me on Twitter.</p>
 
                 </div>
@@ -397,6 +370,23 @@ expensive ZooKeeper-managed clusters?</p>
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             

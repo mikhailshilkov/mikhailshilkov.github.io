@@ -212,58 +212,42 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>Every non-trivial application relies on configuration values that may depend on the current execution environment. Some of these values contain sensitive information that shouldn&rsquo;t be shared publicly. In general, the fewer parties that have access to those secret values, the safer the application will be&mdash;in fact, in an ideal world, no one would be granted direct access to those secrets.</p>
-
+                    <p>Every non-trivial application relies on configuration values that may depend on the current execution environment. Some of these values contain sensitive information that shouldn&rsquo;t be shared publicly. In general, the fewer parties that have access to those secret values, the safer the application will be—in fact, in an ideal world, no one would be granted direct access to those secrets.</p>
 <p>Examples of secret configuration values include:</p>
-
 <ul>
 <li>A connection string to a message bus or a database</li>
 <li>A SAS Token to an Azure Storage account</li>
 <li>An access key for a third-party service</li>
 </ul>
-
 <p>There&rsquo;s no one universal way to manage secrets, as a lot depends on the context in which they are used. In this article, I go through seven ways to use secret values in a .NET Core application running in Azure. I start with naively hard-coded strings and build up from there to more secure options.</p>
-
 <p>While the concepts are universally applicable, my code samples focus on a .NET application running in <strong>Azure App Service</strong> and configured with Pulumi.</p>
-
 <h2 id="1-hard-coded-secrets">1. Hard-coded Secrets</h2>
-
-<p>Whenever you want to try a new API requiring a secret access token, it&rsquo;s natural to copy-paste that secret into your code and run it&mdash;simply to make sure that the setup works.</p>
-
+<p>Whenever you want to try a new API requiring a secret access token, it&rsquo;s natural to copy-paste that secret into your code and run it—simply to make sure that the setup works.</p>
 <p>For example, you are testing integration with a payment service:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> apiKey = <span style="color:#a31515">&#34;payment-service-key&#34;</span>;
 <span style="color:#2b91af">var</span> paymentService = <span style="color:#00f">new</span> PaymentService(apiKey);
-</code></pre></div>
-<p>or you want to start sending messages to an <strong>Azure Storage Queue</strong>:</p>
+</code></pre></div><p>or you want to start sending messages to an <strong>Azure Storage Queue</strong>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> connectionString = <span style="color:#a31515">&#34;DefaultEndpointsProtocol=https;AccountName=account-name;AccountKey=account-key&#34;</span>;
 <span style="color:#2b91af">var</span> storageAccount = CloudStorageAccount.Parse(connectionString);
 <span style="color:#2b91af">var</span> queueClient = storageAccount.CreateCloudQueueClient();
-</code></pre></div>
-<p>Both snippets are fine for a Hello-World application with a lifespan of two hours. However, I would strongly discourage doing so in any code that can potentially be checked into a source control system, even for a 10-minute experiment. Don&rsquo;t copy-paste secrets into files which are part of a git repository. One accidental <code>git commit &amp; git push</code>&mdash;and the secrets are compromised.</p>
-
+</code></pre></div><p>Both snippets are fine for a Hello-World application with a lifespan of two hours. However, I would strongly discourage doing so in any code that can potentially be checked into a source control system, even for a 10-minute experiment. Don&rsquo;t copy-paste secrets into files which are part of a git repository. One accidental <code>git commit &amp; git push</code>—and the secrets are compromised.</p>
 <p>Avoid the &ldquo;Secrets as Code&rdquo; practice: there are bots scanning your GitHub repository for those.</p>
-
 <h2 id="2-configuration-files">2. Configuration Files</h2>
-
 <p>Traditionally, putting secrets in a configuration file is considered more secure. For classic .NET applications, this would be an <code>app.config</code> or a <code>web.config</code> file. The idea is that the values on a developer machine are different from the values in the production environment. Non-sensitive development settings are kept on disk and maybe in source control, while the real secrets are only injected by a deployment script or a CI/CD system, so they are not exposed publicly.</p>
-
 <p>In the .NET Core world, a configuration is usually stored in an <code>appsettings.json</code> file:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
    &#34;MyConfig&#34;: {
        &#34;PaymentApiKey&#34;: <span style="color:#a31515">&#34;payment-service-key&#34;</span>,
        &#34;StorageConnectionString&#34;: <span style="color:#a31515">&#34;DefaultEndpointsProtocol=https;AccountName=account-name;AccountKey=account-key&#34;</span>
   }
-}</code></pre></div>
-<p>which is then mapped to a plain C# object in code:</p>
+}
+</code></pre></div><p>which is then mapped to a plain C# object in code:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">MyConfig</span>
 {
    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> PaymentApiKey { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> StorageConnectionString { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
-</code></pre></div>
-<p>With some configuration not shown here, the properties are filled at startup time and can be used in the code as a plain object:</p>
+</code></pre></div><p>With some configuration not shown here, the properties are filled at startup time and can be used in the code as a plain object:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> apiKey = config.PaymentApiKey;
 <span style="color:#2b91af">var</span> paymentService = <span style="color:#00f">new</span> PaymentService(apiKey);
 <span style="color:#008000">// ...
@@ -271,22 +255,16 @@
 <span style="color:#2b91af">var</span> connectionString = config.StorageConnectionString;
 <span style="color:#2b91af">var</span> storageAccount = CloudStorageAccount.Parse(connectionString);
 <span style="color:#2b91af">var</span> queueClient = storageAccount.CreateCloudQueueClient();
-</code></pre></div>
-<p>In my experience, such setup still poses substantial risks. <code>appsettings.production.json</code> may still be accidentally checked into the source control. Developers tend to use real cloud resources for their local and test environments, which do contain sensitive information that can be exploited when leaked.</p>
-
-<p>On top of that, it doesn&rsquo;t feel right to mix configuration&mdash;how many threads to run, or how big the message batches should be&mdash;with secret connection strings and API keys in the same file. These are separate kinds of configuration, and they warrant different workflows.</p>
-
+</code></pre></div><p>In my experience, such setup still poses substantial risks. <code>appsettings.production.json</code> may still be accidentally checked into the source control. Developers tend to use real cloud resources for their local and test environments, which do contain sensitive information that can be exploited when leaked.</p>
+<p>On top of that, it doesn&rsquo;t feel right to mix configuration—how many threads to run, or how big the message batches should be—with secret connection strings and API keys in the same file. These are separate kinds of configuration, and they warrant different workflows.</p>
 <h2 id="3-environment-variables-and-application-settings">3. Environment Variables and Application Settings</h2>
-
 <p>One alternative approach is to read the secret values from environment variables. .NET Core configuration system can parse environment variables instead of, or in addition to the settings files. Likewise, one could read such values with a one-liner in C#:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> apiKey = Environment.GetEnvironmentVariable(<span style="color:#a31515">&#34;PAYMENT_API_KEY&#34;</span>);
 <span style="color:#008000">// ...
 </span><span style="color:#008000"></span>
 <span style="color:#2b91af">var</span> connectionString = Environment.GetEnvironmentVariable(<span style="color:#a31515">&#34;STORAGE_CONNECTION_STRING&#34;</span>);
 <span style="color:#008000">// ...
-</span></code></pre></div>
-<p>Your CI/CD system should inject those values as part of the deployment pipeline.</p>
-
+</span></code></pre></div><p>Your CI/CD system should inject those values as part of the deployment pipeline.</p>
 <p>The App Service gives you the ability to set environment variables via <strong>Application Settings</strong>. Here is a snippet of a Pulumi program that passes both secret values to <code>appSettings</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> cfg = <span style="color:#00f">new</span> pulumi.Config();
 <span style="color:#00f">const</span> paymentApiKey = cfg.requireSecret(<span style="color:#a31515">&#34;paymentApiKey&#34;</span>);
@@ -304,17 +282,12 @@
        <span style="color:#a31515">&#34;PAYMENT_API_KEY&#34;</span>: paymentApiKey,
        <span style="color:#a31515">&#34;STORAGE_CONNECTION_STRING&#34;</span>: storageAccount.primaryConnectionString,
    },
-});</code></pre></div>
-<p>The Storage connection string is produced by the Pulumi program directly, so it doesn&rsquo;t have to be placed anywhere outside the program itself.</p>
-
+});
+</code></pre></div><p>The Storage connection string is produced by the Pulumi program directly, so it doesn&rsquo;t have to be placed anywhere outside the program itself.</p>
 <p>The payment service key is provided by a third party, so its encrypted value is stored in Pulumi configuration. Read <a href="https://www.pulumi.com/blog/managing-secrets-with-pulumi/">Managing Secrets with Pulumi</a> to learn about security options available for secrets in Pulumi config.</p>
-
 <h2 id="4-azure-key-vault">4. Azure Key Vault</h2>
-
 <p>In the previous example, both secrets end up in Application Settings. Every person with sufficient permissions may go to the App Service and see them in clear text. While this can be restricted, it&rsquo;s a good idea to grant full read access to the application developers and operators of the App Service to give them the full picture when troubleshooting issues.</p>
-
 <p>In some cases, compliance to a certain standard may <em>require</em> the use of a certified key management service offering enhanced security for sensitive secrets.</p>
-
 <p>Azure has a dedicated service for storing secrets, <strong>Azure Key Vault</strong>. You can create and populate a Key Vault with all the secrets from the same Pulumi program:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> vault = <span style="color:#00f">new</span> azure.keyvault.KeyVault(<span style="color:#a31515">&#34;vault&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -334,20 +307,16 @@
 <span style="color:#00f">const</span> secret = <span style="color:#00f">new</span> azure.keyvault.Secret(<span style="color:#a31515">&#34;paymentApiKey&#34;</span>, {
    keyVaultId: <span style="color:#2b91af">vault.id</span>,
    value: <span style="color:#2b91af">paymentApiKey</span>,
-});</code></pre></div>
-<p>Additionally, one or many <strong>Service Principals</strong> (SP) should be configured to access the Key Vault. One SP which has been granted secret management access deploys the infrastructure by running the Pulumi program. That&rsquo;s why the snippet above assigns an access policy to <code>currentPrincipal</code>.</p>
-
+});
+</code></pre></div><p>Additionally, one or many <strong>Service Principals</strong> (SP) should be configured to access the Key Vault. One SP which has been granted secret management access deploys the infrastructure by running the Pulumi program. That&rsquo;s why the snippet above assigns an access policy to <code>currentPrincipal</code>.</p>
 <p>Another SP is used by the application itself to read the secret values. The Client ID and Client Secret parameters are placed in the application configuration. Finally, .NET Core configuration gets hooked to the Key Vault at startup:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs">builder.AddAzureKeyVault(
    <span style="color:#a31515">$&#34;https://{config[&#34;</span>azureKeyVault:vault<span style="color:#a31515">&#34;]}.vault.azure.net/&#34;</span>,
    config[<span style="color:#a31515">&#34;azureKeyVault:clientId&#34;</span>],
    config[<span style="color:#a31515">&#34;azureKeyVault:clientSecret&#34;</span>]
 );
-</code></pre></div>
-<p>This solution is not entirely satisfying though, since we&rsquo;ve traded storing the secrets for storing SP credentials. Is that a big enough win?  Luckily, it&rsquo;s easy to get rid of those credentials with Managed identities.</p>
-
+</code></pre></div><p>This solution is not entirely satisfying though, since we&rsquo;ve traded storing the secrets for storing SP credentials. Is that a big enough win?  Luckily, it&rsquo;s easy to get rid of those credentials with Managed identities.</p>
 <h2 id="5-accessing-key-vault-with-managed-identities">5. Accessing Key Vault with Managed Identities</h2>
-
 <p>With <strong>Managed identities</strong>, Azure takes care of creating a Service Principal, passing the credentials, rotating secrets, and so on. Enabling a managed identity on App Service is just an extra option:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.AppService(<span style="color:#a31515">&#34;app&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -356,8 +325,8 @@
 </span><span style="color:#008000"></span>   identity: {
        type: <span style="color:#a31515">&#34;SystemAssigned&#34;</span>,
    },
-});</code></pre></div>
-<p>On top of that, the managed principal must be granted access to the Key Vault:</p>
+});
+</code></pre></div><p>On top of that, the managed principal must be granted access to the Key Vault:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> principalId = app.identity.apply(id =&gt; id.principalId);
 
 <span style="color:#008000">// Grant App Service access to KV secrets
@@ -366,19 +335,16 @@
    tenantId: <span style="color:#2b91af">tenantId</span>,
    objectId: <span style="color:#2b91af">principalId</span>,
    secretPermissions: [<span style="color:#a31515">&#34;get&#34;</span>],
-});</code></pre></div>
-<p>Now, the configuration block in the .NET Core app doesn&rsquo;t need to retrieve any secrets. <code>AzureServiceTokenProvider</code> helps with the authentication process:</p>
+});
+</code></pre></div><p>Now, the configuration block in the .NET Core app doesn&rsquo;t need to retrieve any secrets. <code>AzureServiceTokenProvider</code> helps with the authentication process:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> azureServiceTokenProvider = <span style="color:#00f">new</span> AzureServiceTokenProvider();
 <span style="color:#2b91af">var</span> keyVaultClient = <span style="color:#00f">new</span> KeyVaultClient(
    <span style="color:#00f">new</span> KeyVaultClient.AuthenticationCallback(
        azureServiceTokenProvider.KeyVaultTokenCallback));
 builder.AddAzureKeyVault(
    keyVaultEndpoint, keyVaultClient, <span style="color:#00f">new</span> DefaultKeyVaultSecretManager());
-</code></pre></div>
-<p>That&rsquo;s quite a bit of a boilerplate, but there is a way to get rid of it.</p>
-
+</code></pre></div><p>That&rsquo;s quite a bit of a boilerplate, but there is a way to get rid of it.</p>
 <h2 id="6-accessing-key-vault-from-application-settings">6. Accessing Key Vault from Application Settings</h2>
-
 <p>App Service has a neat feature of integrating its Application Settings with Key Vault. It allows us to combine #3 and #5&rsquo;s approaches and get the best of both:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#008000">// Produce a URI of the KV secret defined above
 </span><span style="color:#008000"></span><span style="color:#00f">const</span> secretUri = pulumi.interpolate<span style="color:#a31515">`</span><span style="color:#a31515">${</span>secret.vaultUri<span style="color:#a31515">}</span><span style="color:#a31515">secrets/</span><span style="color:#a31515">${</span>secret.name<span style="color:#a31515">}</span><span style="color:#a31515">/</span><span style="color:#a31515">${</span>secret.version<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
@@ -392,23 +358,20 @@ builder.AddAzureKeyVault(
    },
    appSettings: {
        <span style="color:#008000">// The setting points directly to the KV setting
-</span><span style="color:#008000"></span>       <span style="color:#a31515">&#34;PAYMENT_API_KEY&#34;</span>: pulumi.interpolate<span style="color:#a31515">`@Microsoft.KeyVault(SecretUri=</span><span style="color:#a31515">${</span>secretUri<span style="color:#a31515">}</span><span style="color:#a31515">)`</span>,
+</span><span style="color:#008000"></span>       <span style="color:#a31515">&#34;PAYMENT_API_KEY&#34;</span>: pulumi.interpolate<span style="color:#a31515">`</span><span style="color:#a31515">@Microsoft.KeyVault(SecretUri=</span><span style="color:#a31515">${</span>secretUri<span style="color:#a31515">}</span><span style="color:#a31515">)</span><span style="color:#a31515">`</span>,
    }
-});</code></pre></div>
-<p>With that, the API key is loaded into the App Service environment variable without its value being publicly exposed anywhere!</p>
-
+});
+</code></pre></div><p>With that, the API key is loaded into the App Service environment variable without its value being publicly exposed anywhere!</p>
 <h2 id="7-role-based-access-control">7. Role-based Access Control</h2>
-
 <p>What is the most secure way to deal with secrets? <em>Have no secrets</em>. The Storage Account connection string is a great example when it&rsquo;s possible to avoid storing and reading the sensitive value altogether.</p>
-
 <p><strong>Role-based access control</strong> (RBAC) of <strong>Azure Active Directory</strong> (AAD) is a great tool to manage permissions in a declarative way. Let&rsquo;s assume our application only needs to send messages to one Storage Queue. Instead of storing a full connection string with an access token, the connection string should point to the account, and the identity behind the App Service should be granted write permissions to the required Storage Queue:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> permission = <span style="color:#00f">new</span> azure.role.Assignment(<span style="color:#a31515">&#34;send&#34;</span>, {
    principalId,
    scope: <span style="color:#2b91af">pulumi.interpolate</span><span style="color:#a31515">`</span><span style="color:#a31515">${</span>storageAccount.id<span style="color:#a31515">}</span><span style="color:#a31515">/queueServices/default/queues/</span><span style="color:#a31515">${</span>queue.name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>,
    roleDefinitionName: <span style="color:#a31515">&#34;Storage Queue Data Message Sender&#34;</span>,
-});</code></pre></div>
-<p>We can put the queue URL into Application Settings because there&rsquo;s nothing secret in it:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> queueUri = pulumi.interpolate<span style="color:#a31515">`</span><span style="color:#a31515">${</span>storageAccount.primaryQueueEndpoint<span style="color:#a31515">}${</span>queue.name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
+});
+</code></pre></div><p>We can put the queue URL into Application Settings because there&rsquo;s nothing secret in it:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> queueUri = pulumi.interpolate<span style="color:#a31515">`</span><span style="color:#a31515">${</span>storageAccount.primaryQueueEndpoint<span style="color:#a31515">}</span><span style="color:#a31515">${</span>queue.name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
 
 <span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.AppService(<span style="color:#a31515">&#34;app&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -418,8 +381,8 @@ builder.AddAzureKeyVault(
    },
    appSettings: {
        <span style="color:#a31515">&#34;STORAGE_QUEUE_URL&#34;</span>: queueUri,
-   },</code></pre></div>
-<p>It takes a bit of C# boilerplate to send a message with role-based authorization:</p>
+   },
+</code></pre></div><p>It takes a bit of C# boilerplate to send a message with role-based authorization:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> provider = <span style="color:#00f">new</span> AzureServiceTokenProvider();
 <span style="color:#2b91af">string</span> accessToken = <span style="color:#00f">await</span> provider.GetAccessTokenAsync(<span style="color:#a31515">&#34;https://storage.azure.com/&#34;</span>);
 <span style="color:#2b91af">var</span> tokenCredential = <span style="color:#00f">new</span> TokenCredential(accessToken);
@@ -427,19 +390,14 @@ builder.AddAzureKeyVault(
 <span style="color:#2b91af">var</span> url = Environment.GetEnvironmentVariable(<span style="color:#a31515">&#34;StorageBlobUrl&#34;</span>);
 <span style="color:#2b91af">var</span> queue = <span style="color:#00f">new</span> CloudQueue(<span style="color:#00f">new</span> Uri(url), storageCredentials);
 queue.AddMessage(<span style="color:#00f">new</span> CloudQueueMessage(<span style="color:#a31515">&#34;Hello&#34;</span>));
-</code></pre></div>
-<p>Let&rsquo;s hope another quality-of-life improvement is on the way.</p>
-
+</code></pre></div><p>Let&rsquo;s hope another quality-of-life improvement is on the way.</p>
 <h2 id="role-of-infrastructure-as-code">Role of Infrastructure as Code</h2>
-
 <p>While security practices may vary depending on application requirements, Pulumi plays an essential role in the appropriate setup of service configuration and environment:</p>
-
 <ul>
 <li>It links an output of one resource to another one&rsquo;s input, avoiding the need to store the values.</li>
 <li>It provides a built-in mechanism to manage external secrets.</li>
 <li>It is a great way to take advantage of Azure features like Managed identities and RBAC in a cohesive way.</li>
 </ul>
-
 <p>Infrastructure as Code helps make your applications secure and reliable. Refer to <a href="https://github.com/pulumi/examples/tree/master/azure-ts-msi-keyvault-rbac">this full example</a> of using Key Vault, Managed identities, RBAC with App Service and Pulumi.</p>
 
                 </div>
@@ -478,11 +436,28 @@ queue.AddMessage(<span style="color:#00f">new</span> CloudQueueMessage(<span sty
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
             <div class="mb-5">
-                <h6 class="float-left">Responses</h6>
+                <h5 class="float-left">Responses</h5>
                 <div class="float-right"><a
                         href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/16'>Write a
                         response</a></div>

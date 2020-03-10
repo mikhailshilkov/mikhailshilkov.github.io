@@ -212,102 +212,100 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>The power of cloud computing comes from its elasticity and ability to adapt to changing
+                    <p>The power of cloud computing comes from its elasticity and ability to adapt to changing
 load. Most Azure services can be scaled up or down manually: by human interaction in the
 portal, or by running a command or a script.</p>
-
 <p>Some services in Azure also support Autoscaling, i.e. they may change the resource
 allocation dynamically, based on predefined rules and current operational metrics.</p>
-
 <p>Azure App Service is one example of such service: it supports
 <a href="https://docs.microsoft.com/en-us/azure/monitoring-and-diagnostics/insights-how-to-scale#scaling-based-on-a-pre-set-metric">Scaling based on a pre-set metric</a>.
 This is a powerful option that enables website or webjobs to react on varying load,
 e.g. based on CPU utilization.</p>
-
 <p>At the same time, the flexibility of the built-in autoscaling is somewhat
 limited:</p>
-
 <ul>
-<li><p>Only a handful of metrics is supported: for instance, Service Bus Queues
-are supported as metric source, while Service Bus Subscriptions are not;</p></li>
-
-<li><p>It&rsquo;s not possible to combine several metrics in one rule: e.g. scale down only if
-several queues are empty at the same time, not just one of them;</p></li>
-
-<li><p>Thresholds are the same for any number of instances: I can&rsquo;t define
-a scale down rule threshold to be 60% for 8 instances but 30% for 2 instances;</p></li>
-
-<li><p>The minimum time of reaction is limited to 5 minutes.</p></li>
+<li>
+<p>Only a handful of metrics is supported: for instance, Service Bus Queues
+are supported as metric source, while Service Bus Subscriptions are not;</p>
+</li>
+<li>
+<p>It&rsquo;s not possible to combine several metrics in one rule: e.g. scale down only if
+several queues are empty at the same time, not just one of them;</p>
+</li>
+<li>
+<p>Thresholds are the same for any number of instances: I can&rsquo;t define
+a scale down rule threshold to be 60% for 8 instances but 30% for 2 instances;</p>
+</li>
+<li>
+<p>The minimum time of reaction is limited to 5 minutes.</p>
+</li>
 </ul>
-
 <p>Other services, like SQL Database and Cosmos DB, don&rsquo;t have the built-in autoscaling
 functionality at all.</p>
-
 <p>This post starts the series of articles about custom implementation
 of autoscaling. The implementation will be based on Azure Functions as building
 blocks of scaling workflows.</p>
-
 <h2 id="goal">Goal</h2>
-
 <p>To keep the task very specific for now, I want the following from my first
 custom autoscaling implementation:</p>
-
 <ul>
-<li><p>Be able to scale the amount of instances up and down in a given App Service
-Plan;</p></li>
-
-<li><p>Do so based on the given Service Bus Subscription backlog (amount of messages
-pending to be processed);</p></li>
-
-<li><p>Scale up, if the average backlog during any 10 minutes is above a threshold;</p></li>
-
-<li><p>Scale down, if the maximum backlog during any 10 minutes is below another
-(lower) threshold;</p></li>
-
-<li><p>After scaling up or down, take a cooldown period of 10 minutes;</p></li>
-
-<li><p>Have a log of scaling decisions and numbers behind;</p></li>
-
-<li><p>Scaling rules should be extensible to allow more complex calculation later
-on.</p></li>
+<li>
+<p>Be able to scale the amount of instances up and down in a given App Service
+Plan;</p>
+</li>
+<li>
+<p>Do so based on the given Service Bus Subscription backlog (amount of messages
+pending to be processed);</p>
+</li>
+<li>
+<p>Scale up, if the average backlog during any 10 minutes is above a threshold;</p>
+</li>
+<li>
+<p>Scale down, if the maximum backlog during any 10 minutes is below another
+(lower) threshold;</p>
+</li>
+<li>
+<p>After scaling up or down, take a cooldown period of 10 minutes;</p>
+</li>
+<li>
+<p>Have a log of scaling decisions and numbers behind;</p>
+</li>
+<li>
+<p>Scaling rules should be extensible to allow more complex calculation later
+on.</p>
+</li>
 </ul>
-
 <h2 id="architecture">Architecture</h2>
-
 <p>I decided that the scaling rules should be written in a general-purpose programming language
 (C# for this post), instead of just picking from a limited list of configurations.</p>
-
 <p>I chose Azure Functions as the mechanism to host and run this logic in Azure cloud.</p>
-
 <p>Here is a diagram of Functions that I ended up creating:</p>
-
-<p><img src="AutoscalingArchitecture.png" alt="Autoscaling Architecture" /></p>
-
+<p><img src="AutoscalingArchitecture.png" alt="Autoscaling Architecture"></p>
 <p>The components of my autoscaling app are:</p>
-
 <ul>
-<li><p><strong>Metric Collector</strong> function is based on Timer trigger: it fires every minute and collects
-the subscription backlog metric from a given Service Bus Subscription;</p></li>
-
-<li><p>Collector then sends this metric to the <strong>Metrics</strong> storage queue;</p></li>
-
-<li><p><strong>Scaling Logic</strong> function pulls the metric from the queue. It maintains the
+<li>
+<p><strong>Metric Collector</strong> function is based on Timer trigger: it fires every minute and collects
+the subscription backlog metric from a given Service Bus Subscription;</p>
+</li>
+<li>
+<p>Collector then sends this metric to the <strong>Metrics</strong> storage queue;</p>
+</li>
+<li>
+<p><strong>Scaling Logic</strong> function pulls the metric from the queue. It maintains the
 metric values for 10 minutes, calculates average/maximum value, and if they hit
-thresholds - issues a command to scale App Service Plan up or down;</p></li>
-
-<li><p>The command is sent to <strong>Actions</strong> storage queue;</p></li>
-
-<li><p><strong>Scaler</strong> function receives the commands from the queue and executes
-the re-scaling action on App Service Plan using Azure Management SDK.</p></li>
+thresholds - issues a command to scale App Service Plan up or down;</p>
+</li>
+<li>
+<p>The command is sent to <strong>Actions</strong> storage queue;</p>
+</li>
+<li>
+<p><strong>Scaler</strong> function receives the commands from the queue and executes
+the re-scaling action on App Service Plan using Azure Management SDK.</p>
+</li>
 </ul>
-
 <p>The implementation of this workflow is discussed below. I am using Visual Studio 2017 Version 15.3
 Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</p>
-
 <h2 id="metric-collector">Metric Collector</h2>
-
 <p>First, let&rsquo;s define <code>MetricValue</code> class, which simply holds time and value:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">MetricValue</span>
 {
@@ -321,8 +319,7 @@ Preview 4.0 to author pre-compiled Azure Functions with nice built-in tooling.</
 
     <span style="color:#00f">public</span> <span style="color:#2b91af">int</span> Value { <span style="color:#00f">get</span>; }
 }
-</code></pre></div>
-<p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
+</code></pre></div><p>and <code>Metric</code> class which extends the value with resource name (e.g. App Service
 Plan name) and measured parameter name:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Metric</span>
 {
@@ -339,8 +336,7 @@ Plan name) and measured parameter name:</p>
 
     <span style="color:#00f">public</span> MetricValue Value { <span style="color:#00f">get</span>; }
 }
-</code></pre></div>
-<p>The function definition has two associated bindings: timer trigger (runs every
+</code></pre></div><p>The function definition has two associated bindings: timer trigger (runs every
 minute) and return binding to the storage queue:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[FunctionName(&#34;MetricCollector&#34;)]
 [return: Queue(&#34;Metrics&#34;)]
@@ -360,9 +356,7 @@ minute) and return binding to the storage queue:</p>
     <span style="color:#2b91af">var</span> <span style="color:#00f">value</span> = <span style="color:#00f">new</span> MetricValue(DateTime.Now, (<span style="color:#2b91af">int</span>)backlog);
     <span style="color:#00f">return</span> <span style="color:#00f">new</span> Metric(resource, <span style="color:#a31515">$&#34;{topic}-{subscription}-backlog&#34;</span>, <span style="color:#00f">value</span>);
 }
-</code></pre></div>
-<p>The function executes the following steps:</p>
-
+</code></pre></div><p>The function executes the following steps:</p>
 <ul>
 <li>Reads configuration value for Service Bus parameters;</li>
 <li>Connects to Service Bus and retrieves <code>ActiveMessageCount</code> for the given
@@ -370,21 +364,17 @@ subscription;</li>
 <li>Logs the value for tracing and debugging;</li>
 <li>Returns the metric value mentioning which resource it&rsquo;s intended for.</li>
 </ul>
-
 <h2 id="scaling-logic">Scaling Logic</h2>
-
 <p>The core of autoscaling implementation resides in <code>ScalingLogic</code> function.</p>
-
-<p>The function defines 4 (oh my!) bindings:
-- Queue trigger to react on messages from the collector;
-- Output queue binding to send commands with action to execute;
-- Combination of input and output bindings to the same row in Table Storage to
-keep the state in between function calls.</p>
-
+<p>The function defines 4 (oh my!) bindings:</p>
+<ul>
+<li>Queue trigger to react on messages from the collector;</li>
+<li>Output queue binding to send commands with action to execute;</li>
+<li>Combination of input and output bindings to the same row in Table Storage to
+keep the state in between function calls.</li>
+</ul>
 <p>The bindings are illustrated on the following picture:</p>
-
-<p><img src="ScalingLogicBindings.png" alt="Binding of Scaling Logic Function" /></p>
-
+<p><img src="ScalingLogicBindings.png" alt="Binding of Scaling Logic Function"></p>
 <p>And here is the corresponding Function signature:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[FunctionName(&#34;ScalingLogic&#34;)]
 [return: Queue(&#34;Actions&#34;)]
@@ -393,12 +383,9 @@ keep the state in between function calls.</p>
     [Table(&#34;Scaling&#34;, &#34;{ResourceName}&#34;, &#34;{Name}&#34;)] ScalingStateEntity stateEntity, 
     [Table(&#34;Scaling&#34;, &#34;{ResourceName}&#34;, &#34;{Name}&#34;)] <span style="color:#00f">out</span> ScalingStateEntity newStateEntity,
     TraceWriter log)
-</code></pre></div>
-<p>Table storage is partitioned per scalable resource, and state is stored per metric;
+</code></pre></div><p>Table storage is partitioned per scalable resource, and state is stored per metric;
 thus multiple resources and metrics are supported out of the box.</p>
-
 <p>The function implementation is relatively complex, so I&rsquo;ll describe it in parts.</p>
-
 <p><code>ScaleAction</code> is a simple message class:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">enum</span> ScaleActionType
 {
@@ -418,24 +405,20 @@ thus multiple resources and metrics are supported out of the box.</p>
 
     <span style="color:#00f">public</span> ScaleActionType Type { <span style="color:#00f">get</span>; }
 }
-</code></pre></div>
-<p>Table Storage only allows primitive types for its columns, like strings.
+</code></pre></div><p>Table Storage only allows primitive types for its columns, like strings.
 So I had to create a separate Table Storage entity class:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ScalingStateEntity</span> : TableEntity
 {
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> SerializedState { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
-</code></pre></div>
-<p>which stores serialized state, from the state class itself:</p>
+</code></pre></div><p>which stores serialized state, from the state class itself:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ScalingState</span>
 {
     <span style="color:#00f">public</span> List&lt;MetricValue&gt; History { <span style="color:#00f">get</span>; } = <span style="color:#00f">new</span> List&lt;MetricValue&gt;();
 
     <span style="color:#00f">public</span> DateTime LastScalingActionTime { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; } = DateTime.MinValue;
 }
-</code></pre></div>
-<p>Now let&rsquo;s look at the function body. It consists of four blocks.</p>
-
+</code></pre></div><p>Now let&rsquo;s look at the function body. It consists of four blocks.</p>
 <p>The first block retrieves the previous values of the metric and logs it too:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// 1. Deserialize state
 </span><span style="color:#008000"></span><span style="color:#2b91af">var</span> state = stateEntity?.SerializedState != <span style="color:#00f">null</span> 
@@ -443,14 +426,12 @@ So I had to create a separate Table Storage entity class:</p>
     : <span style="color:#00f">new</span> ScalingState();
 <span style="color:#2b91af">var</span> history = state.History;
 log.Info(<span style="color:#a31515">$&#34;Scaling logic: Received {metric.Name}, previous state is {string.Join(&#34;</span>, <span style="color:#a31515">&#34;, history)}&#34;</span>);
-</code></pre></div>
-<p>The second block adds the current metric value and removes all metrics which are
+</code></pre></div><p>The second block adds the current metric value and removes all metrics which are
 not in the target period of 10 minutes anymore:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// 2. Add current metric value, remove old values
 </span><span style="color:#008000"></span>history.Add(metric.Value);
 history.RemoveAll(e =&gt; e.Time &lt; metric.Value.Time.Substract(period));
-</code></pre></div>
-<p>Now, the actual logic finally kicks in and produces the scaling action if average
+</code></pre></div><p>Now, the actual logic finally kicks in and produces the scaling action if average
 or maximum value is above or below respective thresholds. For my implementation I also
 chose to apply this rule after 5th data point. Cooldown period is also respected:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// 3. Compare the aggregates to thresholds, produce scaling action if needed
@@ -473,20 +454,16 @@ chose to apply this rule after 5th data point. Cooldown period is also respected
         action = <span style="color:#00f">new</span> ScaleAction(metric.ResourceName, ScaleActionType.Down);
     }
 }
-</code></pre></div>
-<p>Finally, the state is serialized back to table entity and action is returned:</p>
+</code></pre></div><p>Finally, the state is serialized back to table entity and action is returned:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// 4. Serialize the state back and return the action
 </span><span style="color:#008000"></span>newStateEntity = stateEntity != <span style="color:#00f">null</span> 
     ? stateEntity 
     : <span style="color:#00f">new</span> ScalingStateEntity { PartitionKey = metric.ResourceName, RowKey = metric.Name };
 newStateEntity.SerializedState = JsonConvert.SerializeObject(state);
 <span style="color:#00f">return</span> action;
-</code></pre></div>
-<p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message
+</code></pre></div><p>Note, that if no scaling action is warranted, the function simply returns <code>null</code> and no message
 gets sent to the output queue.</p>
-
 <h2 id="scaler">Scaler</h2>
-
 <p>The last function of the workflow is called <code>Scaler</code>: it listens for scaling commands and executes them.
 I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[FunctionName(&#34;Scaler&#34;)]
@@ -511,32 +488,24 @@ I am using Azure Management Fluent SDK to scale the App Service Plan capacity:</
         .WithCapacity(newCapacity)
         .Apply();
 }
-</code></pre></div>
-<p>The functionality is pretty straightforward. Here are some links where you can read more about
+</code></pre></div><p>The functionality is pretty straightforward. Here are some links where you can read more about
 <a href="https://docs.microsoft.com/en-us/dotnet/azure/dotnet-sdk-azure-authenticate?view=azure-dotnet#a-namemgmt-authaazure-management-libraries-for-net-authentication">Authentication in Azure Management libraries</a>
 and <a href="https://github.com/Azure-Samples/app-service-dotnet-scale-web-apps">Managing Web App with Fluent SDK</a>.</p>
-
 <h2 id="conclusion-and-further-steps">Conclusion and Further Steps</h2>
-
 <p>This was quite a lot of code for a single blog post, but most of it was
 fairly straightforward. You can find the full implemenation in
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/customautoscaling/servicebussubscription-to-appserviceplan/MetricCollector.cs">my github</a>.</p>
-
 <p>Overall, I&rsquo;ve established an application based on Azure Functions, which
 watches the predefined metrics and scales the specified resource up and down
 based on target metric values.</p>
-
 <p>The current example works only for the combination of Service Bus Subscription
 and App Service Plan, but it is clear how to extend it to more scenarios.</p>
-
 <p>The flexibility of such autoscaling solution exceeds the built-in functionality
 that is available in Azure Portal.</p>
-
 <p>The most complex part of my Autoscaling application is the Scaling Logic
 function. In the next article of the series, I will refactor it to use
 <a href="https://azure.github.io/azure-functions-durable-extension/index.html">Durable Functions</a> -
 the upcoming Orchestration framework for Function Apps.</p>
-
 <p>Stay tuned, and happy scaling!</p>
 
                 </div>
@@ -589,6 +558,23 @@ the upcoming Orchestration framework for Function Apps.</p>
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             

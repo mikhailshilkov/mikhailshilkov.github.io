@@ -208,19 +208,15 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>So you are a C# developer. And you need to read the code and understand its
+                    <p>So you are a C# developer. And you need to read the code and understand its
 structure. Maybe you&rsquo;ve just joined the project, or it&rsquo;s your own code you
 wrote 1 year ago. In any case, reading code is hard.</p>
-
 <p>Luckily, some good thought was applied to this particular piece of code.
 It&rsquo;s all broken down into small classes (they might even be SOLID!), and all
 the dependencies are injected via constructors. It looks like it&rsquo;s your
 code indeed.</p>
-
 <p>So, you figured out that the entry point for your current use case is the
-class called <code>ThingService</code>. It&rsquo;s probably doing something with <code>Thing</code>&rsquo;s
+class called <code>ThingService</code>. It&rsquo;s probably doing something with <code>Thing</code>'s
 and that&rsquo;s what you need. The signature of the class constructor looks
 like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> ThingService(
@@ -230,8 +226,7 @@ like this:</p>
     IThingChangeDetector thingChangeDetector,
     IMap&lt;Thing, ThingDTO&gt; thingToDtoMapper,
     IMap&lt;<span style="color:#2b91af">int</span>, ThingDTO, Thing&gt; dtoToThingMapper)
-</code></pre></div>
-<p>OK, so we clearly have 6 dependencies here, and they are all interfaces.
+</code></pre></div><p>OK, so we clearly have 6 dependencies here, and they are all interfaces.
 We don&rsquo;t know where those interfaces are implemented, but hey - we&rsquo;ve got
 the best tooling in the industry, so right click on <code>IGetThings</code>, then
 <code>Go To Implementation</code>.</p>
@@ -240,111 +235,91 @@ the best tooling in the industry, so right click on <code>IGetThings</code>, the
     IDatabaseConnectionFactory connectionFactory,
     IMap&lt;Thing, ThingRow&gt; thingRowMapper,
     IMap&lt;ThingRow, Thing&gt; thingMapper)
-</code></pre></div>
-<p>Now we know that we get <code>Thing</code> from Dapper, so probably from a SQL database.
+</code></pre></div><p>Now we know that we get <code>Thing</code> from Dapper, so probably from a SQL database.
 Let&rsquo;s go one level deeper and check where those Mappers are implemented.
 Right click, <code>Go To Implementation</code>&hellip; But instead of navigating to another code
 file you see</p>
-
 <pre><code>Find Symbol Result - 28 matches found
-</code></pre>
-
-<p>Oh, right, looks like we use <code>IMap&lt;T, U&gt;</code> in more places. OK, we&rsquo;ll find the
+</code></pre><p>Oh, right, looks like we use <code>IMap&lt;T, U&gt;</code> in more places. OK, we&rsquo;ll find the
 right one later, let&rsquo;s first check the connection factory&hellip;
 Right click, <code>Go To Implementation</code>. Nah:</p>
-
 <pre><code>The symbol has no implementation
-</code></pre>
-
-<p>What? But the application works! Ah, <code>IDatabaseConnectionFactory</code> comes
+</code></pre><p>What? But the application works! Ah, <code>IDatabaseConnectionFactory</code> comes
 from an internal library, so most probably the implementation is also
 inside that library.</p>
-
 <p>Clearly, navigation doesn&rsquo;t go that well so far.</p>
-
 <h2 id="dependency-graph">Dependency Graph</h2>
-
 <p>When code reading gets tricky, usually an image can boost the understanding.
 The picture below actually shows the graph of class dependencies from our
 example:</p>
-
-<p><img src="class-dependency-graph.png" alt="Class Dependency Graph" /></p>
-
+<p><img src="class-dependency-graph.png" alt="Class Dependency Graph"></p>
 <p>Each node is a class, each arrow is a dependency - an interface injected
 into the constructor.</p>
-
 <p>Just by looking at the picture for a minute of two you can start seeing some
 structure, and get at least the high-level opinion about the application
 complexity and class relationships.</p>
-
 <p>Picture is also a great way of communication. Once you understand the structure,
 you can explain it to a colleague much easier with boxes and lines
 on the screen in addition to a plain wall of code.</p>
-
 <p>You can enrich such picture with comments at the time of writing and leave
 it to your future self or anyone who would read the code in 2 years time.</p>
-
 <p>But now the question is - what&rsquo;s the easiest way to draw such dependency graph?</p>
-
 <h2 id="di-container">DI Container</h2>
-
 <p>The assumption of this post is that a dependency injection (DI) container
 of some kind is used in the project. If so, chances are that you can get such
 dependency graph from the container registrations.</p>
-
 <p>My example is based on <a href="https://simpleinjector.org/">Simple Injector</a> DI
 container which is used by ourselves. So, further on I will explain how to
 draw a dependency graph from Simple Injector container.</p>
-
 <p>My guess is that any mature DI library will provide you with such possibility,
 mostly because the dependency graphs are built internally by any container
 during its normal operations.</p>
-
 <h2 id="implementation">Implementation</h2>
-
 <p>The implementation idea of dependency graph visualization is quite simple, as
 the biggest chunk of work is done by Simple Injector itself. Here are the steps:</p>
-
 <ol>
-<li><p>Run all your DI registrations as you do in the actual application. This will
-initialize Container to the desired state.</p></li>
-
-<li><p>Define which class should be the root of the dependency tree under study.
-You can refine later, but you need to start somewhere.</p></li>
-
-<li><p>Call <code>GetRegistration</code> method of DI container for the selected type. An instance
-of <code>InstanceProducer</code> type is returned.</p></li>
-
-<li><p>Call <code>GetRelationships</code> method of the instance producer to retrieve all
+<li>
+<p>Run all your DI registrations as you do in the actual application. This will
+initialize Container to the desired state.</p>
+</li>
+<li>
+<p>Define which class should be the root of the dependency tree under study.
+You can refine later, but you need to start somewhere.</p>
+</li>
+<li>
+<p>Call <code>GetRegistration</code> method of DI container for the selected type. An instance
+of <code>InstanceProducer</code> type is returned.</p>
+</li>
+<li>
+<p>Call <code>GetRelationships</code> method of the instance producer to retrieve all
 interface/class pairs that the given type depends on. Save each relation into
-your output list.</p></li>
-
-<li><p>Navigate through each dependency recursively to load further layers of the graph.
-Basically, do the depth-first search and save all found relations.</p></li>
-
-<li><p>Convert the list of found relations into <a href="https://en.wikipedia.org/wiki/Graphviz">GraphViz</a>
-textual graph description.</p></li>
-
-<li><p>Use a tool like <a href="http://www.webgraphviz.com/">WebGraphviz</a> do the actual
-visualization by converting text to picture.</p></li>
+your output list.</p>
+</li>
+<li>
+<p>Navigate through each dependency recursively to load further layers of the graph.
+Basically, do the depth-first search and save all found relations.</p>
+</li>
+<li>
+<p>Convert the list of found relations into <a href="https://en.wikipedia.org/wiki/Graphviz">GraphViz</a>
+textual graph description.</p>
+</li>
+<li>
+<p>Use a tool like <a href="http://www.webgraphviz.com/">WebGraphviz</a> do the actual
+visualization by converting text to picture.</p>
+</li>
 </ol>
-
 <p>There are several potential pitfalls on the way, like cyclic graphs, decorator
 registrations etc. To help you avoid those I&rsquo;ve created a small library to automate
 steps 3 to 6 from the list above. See my
 <a href="https://github.com/mikhailshilkov/SimpleInjector.Visualization">SimpleInjector.Visualization github repo</a>
 and let me know if you find it useful.</p>
-
 <h2 id="conclusion">Conclusion</h2>
-
 <p>People are good at making sense of visual representations - use that skill to
 improve understanding and communication within your development team.</p>
-
 <p>Dependency injection practice requires a lot of ceremony to set it up and
 running. Leverage this work for the best: check what kind of insights you
 can get from that setup. Dependency graph visualization is one example of
 such leverage, but there might be other gems in there.</p>
-
 <p>Just keep searching!</p>
 
                 </div>
@@ -383,6 +358,23 @@ such leverage, but there might be other gems in there.</p>
         </div>
     </div>
     <div class="container">
+    <div id="sharepane" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Mikhail Shilkov</h5>
+                    <p>
+                        <div>Hi, I'm Mikhail Shilkov, I write this blog and work as a software engineer at Pulumi.</div>
+                        <div>I am a Microsoft Azure MVP but I love all the clouds!</div>
+                        <div>Cloud is amazing, now I'm trying to make it simple and fun too.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
