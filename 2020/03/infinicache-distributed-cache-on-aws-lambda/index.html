@@ -334,6 +334,7 @@
 </figure>
 <p>It&rsquo;s now the responsibility of the proxy to distribute blobs between Lambdas and persist their addresses between the requests.</p>
 <p>There may be multiple proxies for large deployments. InfiniCache&rsquo;s client library determines the destination proxy (and therefore its backing Lambda pool) by using a consistent hashing-based load balancing approach.</p>
+<p>On the other side, for smaller deployments, the proxy could be placed directly on the client machine to save cost and an extra network hop.</p>
 <h3 id="backward-connections">Backward Connections</h3>
 <p>Firing a new Lambda invocation for each cache request proves to be inefficient: You pay for the minimum of 100 ms and block the entire instance for the single execution. Therefore, InfiniCache authors use a sophisticated hand-crafted model with two channels for proxy-to-lambda communication.</p>
 <p>Traditional Lambda invocations are used only for activation and billed duration control. The same invocation is potentially reused to serve multiple cache requests via a separate TCP channel.</p>
@@ -431,6 +432,7 @@ If more than one request can be served within the current billing cycle, the heu
 <blockquote>
 <p>The hourly cost increases monotonically with the access rate, and eventually overshoots ElastiCache when the access rate exceeds 312 K requests per hour (86 requests per second).</p>
 </blockquote>
+<p>Another gotcha is that the cost above does not include the price of a proxy: the proxy was co-located with the single client VM. A dedicated proxy running on an EC2 instance would increase the total price considerably.</p>
 <h3 id="performance">Performance</h3>
 <p>Here are the key conclusions based on a production-like test of InfiniCache:</p>
 <ul>
