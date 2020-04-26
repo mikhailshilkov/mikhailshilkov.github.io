@@ -259,34 +259,51 @@
 
                 
                 <div class="article-post">
-                    <p>We created a working Pulumi program that generates a random name for the Function App. This might not be desirable: maybe, we want to control the name. Hard-coding the name in the program may limit its reusability: for example, you wouldn&rsquo;t be able to use the same program to deploy to multiple environments like production and staging.</p>
+                    
+
+<p>We created a working Pulumi program that generates a random name for the Function App. This might not be desirable: maybe, we want to control the name. Hard-coding the name in the program may limit its reusability: for example, you wouldn&rsquo;t be able to use the same program to deploy to multiple environments like production and staging.</p>
+
 <p>The same applies to the name and location of the Resource Group. Environments would clash on the name. If you choose to deploy to another Azure region, you have to change the code.</p>
+
 <p>Let&rsquo;s learn how to parameterize your Pulumi program.</p>
+
 <h2 id="config-command">Config command</h2>
+
 <p>The <code>pulumi config</code> CLI command can save some values as configuration parameters. Run the following commands to set the names for the Resource Group and the Function App:</p>
+
 <pre><code>$ pulumi config set rgName pulumi-workshop
 $ pulumi config set appName &lt;myuniquename&gt;
-</code></pre><p>You have to come up with a globally unique name for the Function App.</p>
+</code></pre>
+
+<p>You have to come up with a globally unique name for the Function App.</p>
+
 <p>There are also several built-in configuration values. For example, <code>azure:location</code> setting defines the default Azure region for all Resource Groups that don&rsquo;t have an explicit <code>location</code> value:</p>
+
 <pre><code>$ pulumi config set azure:location westus
-</code></pre><h2 id="read-config-values">Read config values</h2>
+</code></pre>
+
+<h2 id="read-config-values">Read config values</h2>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> config = <span style="color:#00f">new</span> pulumi.Config();
 <span style="color:#00f">const</span> rgName = config.get(<span style="color:#a31515">&#34;rgName&#34;</span>);
-<span style="color:#00f">const</span> appName = config.get(<span style="color:#a31515">&#34;appName&#34;</span>);
-</code></pre></div><p>Now change the definition of the Resource Group:</p>
+<span style="color:#00f">const</span> appName = config.get(<span style="color:#a31515">&#34;appName&#34;</span>);</code></pre></div>
+<p>Now change the definition of the Resource Group:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;pulumi-workshop&#34;</span>, {
     name: <span style="color:#2b91af">rgName</span>,
-});
-</code></pre></div><p>and the Function App:</p>
+});</code></pre></div>
+<p>and the Function App:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.FunctionApp(<span style="color:#a31515">&#34;fa&#34;</span>, {
     resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
     name: <span style="color:#2b91af">appName</span>,
     ...
-});
-</code></pre></div><p>Note that <code>get</code> reads an optional value: if you omit the configuration value, the names fall back to auto-generated ones. <code>config.require</code> can be used to read the mandatory values.</p>
+});</code></pre></div>
+<p>Note that <code>get</code> reads an optional value: if you omit the configuration value, the names fall back to auto-generated ones. <code>config.require</code> can be used to read the mandatory values.</p>
+
 <p>We don&rsquo;t set the <code>location</code> property of any of our resources anymore. Therefore, the <code>azure:location</code> configuration value is required now.</p>
+
 <h2 id="apply-the-changes">Apply the changes</h2>
+
 <p>Run `pulumi preview command to see which changes are planned. You should get this output:</p>
+
 <pre><code>Previewing update (dev):
     Type                             Name                 Plan        Info
     pulumi:pulumi:Stack              pulumi-workshop-dev
@@ -294,9 +311,14 @@ $ pulumi config set appName &lt;myuniquename&gt;
 
     +-1 to replace
     4 unchanged
-</code></pre><p>Note that I kept the logical names of the Resource Group and the Function App: <code>pulumi-workshop</code> and <code>fa</code>. Pulumi keeps the previous state of all resources in its state file, so it&rsquo;s able to compare the old state with the new program and calculate the transition plan. I haven&rsquo;t renamed my Resource Group, but the name of the Function App has changed from an auto-generated one to the configured one. Therefore, Pulumi is about to re-create the Function App with a new physical name.</p>
+</code></pre>
+
+<p>Note that I kept the logical names of the Resource Group and the Function App: <code>pulumi-workshop</code> and <code>fa</code>. Pulumi keeps the previous state of all resources in its state file, so it&rsquo;s able to compare the old state with the new program and calculate the transition plan. I haven&rsquo;t renamed my Resource Group, but the name of the Function App has changed from an auto-generated one to the configured one. Therefore, Pulumi is about to re-create the Function App with a new physical name.</p>
+
 <p>If you preview matches these expectations, go ahead and run <code>pulumi up</code>. In general, you should always understand the preview before you hit &lsquo;yes&rsquo;.</p>
+
 <h2 id="checkpoint">Checkpoint</h2>
+
 <p>Send an HTTP request to the new application endpoint and make sure it still returns a greeting.</p>
 
 
