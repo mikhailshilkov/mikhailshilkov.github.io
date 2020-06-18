@@ -3,7 +3,7 @@
     <generator>Hugo -- gohugo.io</generator>
     <title>Mikhail Shilkov</title><link href="https://mikhail.io/tags/talk/feed" rel="self" />
     <link href="https://mikhail.io/tags/talk/"/>
-    <updated>2020-05-25T15:15:15+02:00</updated>
+    <updated>2020-06-18T10:48:09+02:00</updated>
     <author>
             <name>Mikhail Shilkov</name>
             </author>
@@ -135,8 +135,592 @@
             <link href="https://mikhail.io/2020/"/>
             <id>https://mikhail.io/2020/</id>
             
-            <published>2020-05-21T00:00:00+00:00</published>
-            <updated>2020-05-21T00:00:00+00:00</updated>
+            <published>2020-06-18T00:00:00+00:00</published>
+            <updated>2020-06-18T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Azure]]></title>
+            <link href="https://mikhail.io/tags/azure/"/>
+            <id>https://mikhail.io/tags/azure/</id>
+            
+            <published>2020-06-18T00:00:00+00:00</published>
+            <updated>2020-06-18T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Azure Functions]]></title>
+            <link href="https://mikhail.io/tags/azure-functions/"/>
+            <id>https://mikhail.io/tags/azure-functions/</id>
+            
+            <published>2020-06-18T00:00:00+00:00</published>
+            <updated>2020-06-18T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Eliminate Cold Starts by Predicting Invocations of Serverless Functions]]></title>
+            <link href="https://mikhail.io/2020/06/eliminate-cold-starts-by-predicting-invocations-of-serverless-functions/"/>
+            <id>https://mikhail.io/2020/06/eliminate-cold-starts-by-predicting-invocations-of-serverless-functions/</id>
+            
+            <published>2020-06-18T00:00:00+00:00</published>
+            <updated>2020-06-18T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Azure Functions introduce a data-driven strategy to pre-warm serverless applications right before the next request comes in</blockquote>
+
+<p>Developers and decision-makers often mention <a href="/serverless/coldstarts/">cold starts</a> as a significant drawback of serverless functions. Cloud providers continually invest in reducing the latency of a cold start, but they haven&rsquo;t done much to prevent them altogether. The most common technique is to keep a worker alive for 10-20 minutes after each request, hoping that another request comes in and benefits from the warm instance.</p>
+
+<p>This simple strategy works to some extent, but it&rsquo;s both wasteful in terms of resource utilization and not particularly helpful for low-usage applications. Is there an alternative strategy that could adapt to the workload, reduce the frequency of cold starts, <em>and</em> be more efficient?</p>
+
+<p>In <a href="/2020/05/serverless-in-the-wild-azure-functions-usage-stats">Azure Functions Production Usage Statistics</a>, I reviewed the first part of the <a href="https://arxiv.org/pdf/2003.03423.pdf">Serverless in the Wild</a> paper, which outlines statistics of Azure Functions running in production. Actually, the ultimate goal of that paper is to suggest an improvement to the cold start mitigation policy and validate the proposed strategy based on the data.</p>
+
+<p>This article is my second installment of the paper review. I focus on the idea of predicting future invocations and pre-warming of serverless workers. I describe the current state of cold starts, then explain the suggested improvements from the paper. Finally, I present my own take on those ideas.</p>
+
+<p>The new policy is definitely worth studying because it will be applied to your Azure Functions soon!</p>
+
+<h2 id="challenges">Challenges</h2>
+
+<p>As the statistics show, many Azure Function Apps are called very infrequently. Let&rsquo;s consider a concrete example: an HTTP-triggered function that runs approximately once per hour and returns current data for a report.</p>
+
+<p>Currently, every invocation of such a function would hit a cold start. Specifically, Azure uses a fixed “keep-alive” policy that retains the resources in memory for 20 minutes after execution. This isn&rsquo;t helpful in our scenario since requests come every 60 minutes.</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="scenario.png"
+            alt="Warm instances are recycled after 20 minutes, so an hourly request hits a cold start"
+             />
+        
+    
+    <figcaption>
+        <h4>Warm instances are recycled after 20 minutes, so an hourly request hits a cold start</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>In this specific case, the fixed policy is problematic for everyone:</p>
+
+<ul>
+<li>Users hit a cold start every time, which significantly increases the response time.</li>
+<li>Azure wastes resources on keeping a warm instance in memory for 20 minutes every hour without any benefits.</li>
+</ul>
+
+<p>Indeed, cloud providers seek to achieve high function performance at the lowest possible resource cost. They can&rsquo;t keep all functions in memory all the time: as the stats show, most functions run very seldom, so keeping all of them warm would be a massive waste of resources.</p>
+
+<p>What if the cloud provider could observe each application and adapt the policy for each application workload according to its actual invocation frequency and pattern?</p>
+
+<h2 id="optimal-strategy-predicts-the-future">Optimal Strategy Predicts The Future</h2>
+
+<p>Let&rsquo;s start with a hypothetical ideal solution for our specific one-call-per-hour example. Instead of keeping a warm instance for a fixed period after each invocation, an efficient policy would shut down the instance immediately after each execution. Then, it would boot a new instance right before the next invocation is about to come in.</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="prewarming.png"
+            alt="A new instance is pre-warmed right before the request comes in and recycled immediately after the execution is complete"
+             />
+        
+    
+    <figcaption>
+        <h4>A new instance is pre-warmed right before the request comes in and recycled immediately after the execution is complete</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>This solves both problems above. Now, all requests are served quickly because Azure creates a fresh instance <em>before</em> a request comes in. Also, Azure saves resources because it can pre-warm the instance shortly before each request and shut it down immediately after the invocation is completed.</p>
+
+<p>This ideal case only works in the world of perfect information. Of course, Azure can&rsquo;t perfectly predict the future and spin up a new instance right before the next HTTP request. Instead, it would need to learn the workload and try to predict the next invocation probabilistically. That&rsquo;s the essence of the policy that the authors of &ldquo;Serverless in the Wild&rdquo; suggest.</p>
+
+<p>Predicting arbitrary workloads can be pretty hard. Every application is unique, and invocations are caused by external events like human behavior or actions in business processes.</p>
+
+<p>Also, there are limits to resources that a prediction policy may consume. The policy calculation should be efficient and not have a significant impact on the system&rsquo;s overall performance. A practical policy would have low overhead both in terms of the size of data structures and the CPU usage overhead.</p>
+
+<h2 id="proposed-policy">Proposed Policy</h2>
+
+<p>The paper suggests a practical policy that tries to predict future invocations without being too expensive.</p>
+
+<p>Let&rsquo;s start at the point when a new application has just been deployed. Azure knows nothing about its invocation patterns yet. The new policy would default to the traditional fixed &ldquo;keep-alive&rdquo; interval but would keep an instance running for a generous 4 hours. Simultaneously, it starts learning the workload.</p>
+
+<p>Every time a new request comes in, the policy calculates how many minutes passed since the end of the previous invocation and records this value in a histogram. The histogram&rsquo;s bins have one-minute granularity. So, in my example, if an invocation came 60 minutes after the previous one, the value for the bin <code>60</code> will increase by one.</p>
+
+<p>At some point, the policy would decide that it knows enough to start predicting future invocations. The histogram for my application may look like this:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="histogram.png"
+            alt="Every column shows how many requests landed on minute X after a previous execution"
+             />
+        
+    
+    <figcaption>
+        <h4>Every column shows how many requests landed on minute X after a previous execution</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>The new adaptive policy kicks in. Now, it shuts down the active instance after each request, because it knows that the next invocation is unlikely to come any time soon. Then, it uses two cut-off points to plan the warming strategy:</p>
+
+<ul>
+<li>The <strong>head cut-off</strong> point is when a new warm instance should be ready. Calculated as 5th percentile minus 10% margin. Approximately 53 minutes in my example.</li>
+<li>The <strong>tail cut-off</strong> point is when to kill the warm instance if no request comes in. Calculated as 95th percentile plus 10% margin. Approximately 67 minutes in my example.</li>
+</ul>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="cutoff.png"
+            alt="An adaptive policy pre-warms an instance at the head cut-off and keeps it until a request comes or until the tail cut-off"
+             />
+        
+    
+    <figcaption>
+        <h4>An adaptive policy pre-warms an instance at the head cut-off and keeps it until a request comes or until the tail cut-off</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>Because my specific workload is highly predictable, it would enjoy the absence of cold starts. Would the policy work for other scenarios?</p>
+
+<h2 id="scenarios">Scenarios</h2>
+
+<p>The suggested policy makes sense for the example we considered so far. However, real-life workloads are very diverse. Let&rsquo;s try to generalize and consider several possible scenarios and how the policy handles them.</p>
+
+<h4 id="regular-cadence">Regular cadence</h4>
+
+<p>Consistent intervals between invocations are the ideal match for the suggested policy. If a histogram is well-shaped and relatively narrow, both head and tail cut-offs are easy to identify. These distributions produce the ideal situation: long shutdown periods and short keep-alive windows.</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="regular.png"
+            alt="Well-shaped narrow distribution produces clear cut-off points"
+             />
+        
+    
+    <figcaption>
+        <h4>Well-shaped narrow distribution produces clear cut-off points</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>My example above falls into this category.</p>
+
+<h4 id="frequent-invocations">Frequent invocations</h4>
+
+<p>Many applications would invoke functions frequently, so, many measured intervals would be close to zero.</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="frequent.png"
+            alt="In this case, instances are not unloaded after a request is executed and wait for another one, or the tail cut-off moment"
+             />
+        
+    
+    <figcaption>
+        <h4>In this case, instances are not unloaded after a request is executed and wait for another one, or the tail cut-off moment</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>In these cases, the head cut-off is rounded down to zero. The policy does not shut down the application after a function execution but keeps it alive until the next execution, or until the tail cut-off.</p>
+
+<h4 id="inconsistent-invocations-or-not-enough-data">Inconsistent invocations or not enough data</h4>
+
+<p>The policy needs a certain amount of quality data to start being useful in predicting the next invocation.
+The application may be recently deployed and may not have enough points yet:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="sparse.png"
+            alt="Too few data to make reliable predictions: wait and learn while using the default policy"
+             />
+        
+    
+    <figcaption>
+        <h4>Too few data to make reliable predictions: wait and learn while using the default policy</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>Alternatively, data points might not come in a well-shaped cluster:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="random.png"
+            alt="No definite shape of the histogram: fall back to the default policy"
+             />
+        
+    
+    <figcaption>
+        <h4>No definite shape of the histogram: fall back to the default policy</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>In both of these cases, the policy reverts to a default approach: no shutdown and a long keep-alive window. This puts an extra burden on the cloud provider, but the idea is that these scenarios would be rare enough to allow the policy to stay practical.</p>
+
+<h4 id="invocations-beyond-4-hours">Invocations beyond 4 hours</h4>
+
+<p>The policy defines a maximum value for histogram data to limit the storage capacity for the histogram. The paper suggests a maximum of 4 hours. All intervals beyond that threshold are recorded in a special overflow bin.</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="outofbounds.png"
+            alt="Values beyond the 4-hour limit end up in a special &#34;everything else&#34; overflow bin"
+             />
+        
+    
+    <figcaption>
+        <h4>Values beyond the 4-hour limit end up in a special &#34;everything else&#34; overflow bin</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>If a lot of values start to fall into that range, the bin-based policy can&rsquo;t perform well anymore. For this category of applications, the paper suggests switching to time-series analysis to predict the next interval duration. They mention the <a href="https://en.wikipedia.org/wiki/Autoregressive_integrated_moving_average">autoregressive integrated moving average</a> model without providing many details.</p>
+
+<p>As invocations of this type are infrequent, the overall overhead of such a model would stay relatively low.</p>
+
+<h2 id="evaluation">Evaluation</h2>
+
+<p>The authors evaluated the policy based on recorded <a href="/2020/05/serverless-in-the-wild-azure-functions-usage-stats">production usage statistics</a>. The evaluation consists of two parts:</p>
+
+<ul>
+<li>A simulation that iterates through the data, calculates the policy models, and evaluates whether each invocation would yield a cold starts with the new policy.</li>
+<li>A replay of the recorded invocation trace on a modified version of Apache OpenWhisk, an open-source FaaS platform. The controller was modified to use the new policy while managing workers. The trace was scaled down by randomly selecting applications with mid-range popularity.</li>
+</ul>
+
+<p>Both parts showed similarly promising results of reducing the cold start frequency and resource waste. The new policy reduced the average and 99-percentile function execution time 33% and 82%, respectively, while also reducing the average memory consumption of workers by 16%.</p>
+
+<p>The overhead of the policy looks manageable too. The controller&rsquo;s policy implementation adds less than 1 ms to the end-to-end latency and only a 5% increase in controller&rsquo;s CPU utilization.</p>
+
+<p>By tuning the parameters of the policy (default window, cut-off points, granularity), its implementation can achieve the same number of cold starts at much lower resource cost, or keep the same resource cost but reduce the frequency of cold starts significantly.</p>
+
+<h2 id="production-implementation">Production Implementation</h2>
+
+<p>Encouraged by the position evaluation, the team implemented the policy in Azure Functions for HTTP-triggered applications, it will be rolling out to production in stages starting this month (June 2020).</p>
+
+<p>Here are some implementation details:</p>
+
+<ul>
+<li>Each histogram contains data for 4 hours, filling up 960 bytes per application.</li>
+<li>The histogram is stored in memory and backed up to a database once per hour.</li>
+<li>A new histogram is started every day with a history of previous values stored for two weeks.</li>
+<li>Worker warming is scheduled for the calculated head cut-off point minus 90 seconds.</li>
+<li>Pre-warming loads function dependencies and performs JIT where possible.</li>
+<li>All policy decisions are asynchronous, off the critical path to minimize the latency impact on the invocation.</li>
+</ul>
+
+<p>I look forward to testing this new policy once it&rsquo;s rolled out. Expect a follow-up blog post!</p>
+
+<h2 id="open-questions">Open Questions</h2>
+
+<p>Everything above is my summary of the &ldquo;Serverless in the Wild&rdquo; paper&rsquo;s ideas and findings. I want to close the blog post with some questions that I still have, personally.</p>
+
+<p>Whether true in practice or not, the public opinion strongly perceives cold starts as a notable obstacle to serverless adoption. It&rsquo;s great to see some concrete suggestions driven by data that may improve cold starts in serverless functions.</p>
+
+<p>The sweet spot of the suggested policy is applications with relatively regular intervals between invocations below several hours. I think the practical effect of the strategy might still be limited. Here are some concerns that I see.</p>
+
+<p><em>The authors reviewed my questions and provided their answers, which I&rsquo;m including in the text below.</em></p>
+
+<h4 id="who-benefits">Who benefits?</h4>
+
+<p>Not every serverless function is sensitive to cold starts.</p>
+
+<p>The policy favors functions with predictable intervals. Timer-based schedules (whether functions with timer trigger or external timers sending requests to the app or IoT devices communicating periodically) may produce perfect histograms. And yet, those functions are not damaged by a cold start and may entirely live with it.</p>
+
+<p>On the other side, human-initiated requests that care about cold starts are likely to be less predictable. Does it mean they don&rsquo;t enjoy much improvement with the new policy?</p>
+
+<p>The Azure Functions team is rolling the policy out for HTTP functions, so they do expect it to be useful. We will know soon!</p>
+
+<h5 id="response-from-the-authors">Response from the authors:</h5>
+
+<blockquote>
+<p>There is a large fraction of the applications that will likely benefit. Because for many applications the keep-alive interval can drastically reduce, the provider can afford to increase the keep-alive for other applications. About 50% of the applications have average inter-invocation times of 30 minutes of more. These incur many cold starts in the fixed policy, and will likely see a reduction in cold starts because their keep-alive intervals will be able to grow. Applications with idle times longer than 4 hours can also benefit because of the ARIMA time-series prediction.</p>
+</blockquote>
+
+<h4 id="is-it-flexible-enough">Is it flexible enough?</h4>
+
+<p>The policy assumes that the interval distribution is stable over time. How will this hold in practice over more extended periods?</p>
+
+<p>Imagine an application that is only used during business hours. Or, an application that is mostly idle but is sporadically applied for a specific business process. Or, a demo app that you want to show to your colleagues during a planning meeting. Likely, all of them would still hit cold starts at the beginning of a session.</p>
+
+<p>Maybe that&rsquo;s why the production implementation begins with a clean histogram every day. They will watch and learn, and may use data for the last two weeks to improve later on.</p>
+
+<h5 id="response-from-the-authors-1">Response from the authors:</h5>
+
+<blockquote>
+<p>The policy does not have to assume a stationary distribution of arrival patterns. In the traces analyzed in the paper there was not a significant enough variation in the distributions to enable a deep investigation. With the production deployment, we will investigate different policies to decay information from previous histograms.</p>
+</blockquote>
+
+<h4 id="what-about-function-warming">What about function warming?</h4>
+
+<p>There&rsquo;s the elephant in the room of cold starts: function &ldquo;warming&rdquo;. Warming is a trick when a developer adds an extra timer-based function to their Function App so that the timer triggers every few minutes. This way, the runtime would never unload it, and an instance would always be ready.</p>
+
+<p>I suspect that this simple trick still outperforms the suggested histogram-based policy in terms of cold-start prevention. Obviously, it doesn&rsquo;t help the cloud provider to save costs.</p>
+
+<p>Is there a way to combine two approaches and get the benefits of both?</p>
+
+<h5 id="response-from-the-authors-2">Response from the authors:</h5>
+
+<blockquote>
+<p>The results in the paper take into account user-generated warm-up functions that are present in the data. If the hybrid policy is successful in preventing cold starts, there will be no need for users to create periodic warm-up functions, which represent extra effort and higher costs.</p>
+</blockquote>
+
+<h4 id="what-about-the-scale-out-cold-start">What about the scale-out cold start?</h4>
+
+<p>The paper focuses on applications that are invoked rarely. However, even applications with higher utilization may still hit cold starts when scaled out on multiple instances. Every new instance would need to boot, and the requests would still be waiting.</p>
+
+<p>The suggested policy does not address cold starts beyond the first instance, even though they do occur and potentially have a more significant impact on latency percentiles of real-world human-facing applications.</p>
+
+<h5 id="response-from-the-authors-3">Response from the authors:</h5>
+
+<blockquote>
+<p>We didn’t address scale-out cold starts in the paper. We can pre-warm the scale-out instances by forcing the scale out to happen slightly before it normally would. For example, when the scale out is triggered by a threshold number of concurrent invocations, we can lower the threshold slightly. We will be experimenting with such techniques in our implementation in Azure Functions.</p>
+</blockquote>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Despite several open questions above, I&rsquo;m delighted that the paper was published. I welcome any structured effort that focuses on cold start optimization. The paper highlights usage statistics, the challenges of the cold start problem, and suggests several improvements.</p>
+
+<p>It&rsquo;s even more exciting to see the finding being applied in Azure in production!</p>
+
+<p>If you want to learn more, you can read the full paper here: <a href="https://arxiv.org/pdf/2003.03423.pdf">Serverless in the Wild: Characterizing and Optimizing the Serverless Workload at a Large Cloud Provider</a>.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/serverless" term="serverless" label="Serverless" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure-functions" term="azure-functions" label="Azure Functions" />
+                             
+                                <category scheme="https://mikhail.io/tags/paper-review" term="paper-review" label="Paper review" />
+                            
+                        
+                    
+                
+            
+        </entry>
+    
+    
+        
+        
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Paper review]]></title>
+            <link href="https://mikhail.io/tags/paper-review/"/>
+            <id>https://mikhail.io/tags/paper-review/</id>
+            
+            <published>2020-06-18T00:00:00+00:00</published>
+            <updated>2020-06-18T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Serverless]]></title>
+            <link href="https://mikhail.io/tags/serverless/"/>
+            <id>https://mikhail.io/tags/serverless/</id>
+            
+            <published>2020-06-18T00:00:00+00:00</published>
+            <updated>2020-06-18T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Tags]]></title>
+            <link href="https://mikhail.io/tags/"/>
+            <id>https://mikhail.io/tags/</id>
+            
+            <published>2020-06-18T00:00:00+00:00</published>
+            <updated>2020-06-18T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -193,9 +777,6 @@
     
     
         
-        
-    
-        
         <entry>
             <title type="html"><![CDATA[Pulumi]]></title>
             <link href="https://mikhail.io/tags/pulumi/"/>
@@ -227,216 +808,6 @@
             
             
             <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Tags]]></title>
-            <link href="https://mikhail.io/tags/"/>
-            <id>https://mikhail.io/tags/</id>
-            
-            <published>2020-05-21T00:00:00+00:00</published>
-            <updated>2020-05-21T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Temporal: Open Source Workflows as Code]]></title>
-            <link href="https://mikhail.io/2020/05/temporal/"/>
-            <id>https://mikhail.io/2020/05/temporal/</id>
-            
-            <published>2020-05-21T00:00:00+00:00</published>
-            <updated>2020-05-21T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[
-
-<p>Regular readers of my blog may recognize me as a big fan of <a href="https://docs.microsoft.com/azure/azure-functions/durable/durable-functions-overview">Azure Durable Functions</a>. Durable Functions is an extension of Azure Functions that lets you write <strong>stateful</strong> functions and <strong>workflows</strong>. The SDK does a lot behind the scenes: it manages state, checkpoints, and restarts for you, allowing you to focus on business logic.</p>
-
-<p>However, many people have a hard time understanding what Durable Functions are and, especially, when they are useful. I tried to help spread the ideas: I wrote an extensive article <a href="/2018/12/making-sense-of-azure-durable-functions/">Making Sense of Azure Durable Functions</a>, published <a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp">DurableFunctions.FSharp</a> library, presented a few conference talks.</p>
-
-<h2 id="beyond-the-scope-of-durable-functions">Beyond The Scope of Durable Functions</h2>
-
-<p>While Durable Functions are great and pretty simple to get started with, their reliance on Azure services implies limitations on applicability.</p>
-
-<p>First, <strong>.NET</strong> and <strong>Node.js</strong> are the only supported runtimes at the moment, and even Node.js sometimes lags in terms of features. <strong>Python</strong> support may come later this year, two years after Durable Functions were introduced. Anyway, it&rsquo;s safe to assume that C# developers are still the primary audience.</p>
-
-<p>Besides, Durable Functions are designed to run inside the Azure cloud. While you don&rsquo;t have to run functions in a serverless compute model, the durability features rely heavily on <strong>Azure Storage</strong>. There was an initiative to bring Redis as an alternative backend, but the attempt has seemingly stagnated.</p>
-
-<p>Ideally, a durable workflow library would not tie into any specific hosting model (Function Apps), programming model (Azure Functions SDK), or storage backend (Azure Storage).</p>
-
-<p>Recently, I&rsquo;ve been hopping between different languages and cloud providers. Are there other solutions that could help address similar challenges of stateful data processing?</p>
-
-<p>In turns out, yes! My friend and tech blogger <a href="https://twitter.com/taillogs">Ryland</a> introduced me to <a href="https://www.temporal.io/">Temporal</a>&mdash;an open-source library to build workflows in code and operate resilient applications using developer-friendly primitives.</p>
-
-<p>Before discussing Temporal, let&rsquo;s define what a workflow is.</p>
-
-<h2 id="you-are-already-running-workflows">You Are Already Running Workflows</h2>
-
-<p>The word &ldquo;workflow&rdquo; has this unfortunate connotation coming from business process automation, BizTalk, and BPMN tools. This scope is too narrow and boring compared to what I&rsquo;m thinking of here.</p>
-
-<p>For me, workflows can be anything that matches three criteria:</p>
-
-<ul>
-<li><strong>Multi-step</strong>. Several related actions need to run towards a common goal.</li>
-<li><strong>Distributed</strong>. Actions run across multiple servers and services, bringing all the hard problems of distributed systems.</li>
-<li><strong>Arbitrary long</strong>. While workflows may complete in less than a second, they may also span days or even years. They are not a part of a request-response flow.</li>
-</ul>
-
-<p>This definition is very open. Running in the cloud? You probably implement workflows. Doing microservices? I bet you have tons of workflows in there. Event-driven? Aggregating data? Running cron jobs? Anything to do with the money? Queues? Event streams? Automation? Customer relations? Workflows, workflows, workflows all the way.</p>
-
-<p>However, when it comes to implementation, most of these workflows are defined implicitly. Processes are running in the system, but they aren&rsquo;t defined in a single place. Instead, multiple pieces are spread over distributed components that have to do precisely the right thing for the workflow to complete.</p>
-
-<p>The challenges of reliability, consistency, correctness are therefore addressed in an ad-hoc best-effort, poorly structured manner. These responsibilities are everyone&rsquo;s and no one&rsquo;s job at the same time.</p>
-
-<h2 id="temporal-workflow-as-code">Temporal: Workflow as Code</h2>
-
-<p>Temporal is an open-source tool focused on first-class support of workflows in a sense described above. The workflows are functions in a general-purpose programming language. Temporal comes with developer SDKs and a backend service that takes care of state management and event handling.</p>
-
-<p>Each workflow is a cohesive function defining the whole scenario out of provided building blocks. While some learning and onboarding are required, the &ldquo;Workflow as Code&rdquo; concept feels natural to developers.</p>
-
-<p>Let&rsquo;s take a look at an example.</p>
-
-<h2 id="example-subscription-management">Example: Subscription Management</h2>
-
-<p>We all buy subscriptions to online services these days, and many of us had to <em>implement</em> subscription management as part of the business applications we develop. An onboarding flow for a SaaS product (Spotify, Netflix, Dropbox, etc.) could look like this:</p>
-
-<pre><code>function subscribe(customerIdentifier) {
-    onboardToFreeTrial(customerIdentifier);
-
-    events.onCancellation(
-        processSubscriptionCancellation(customerIdentifier)
-        stopWorkflow;
-    );
-
-    wait(60 * days);
-    upgradeFromTrialToPaid(customerIdentifier);
-    forever {
-        wait(30 * days);
-        chargeMonthlyFee(customerIdentifier);
-    }
-}
-</code></pre>
-
-<p>I wrote this snippet in pseudocode, and it reflects how a developer might <em>think</em> about the workflow. The code relies on several building blocks:</p>
-
-<ul>
-<li>Domain-specific actions: <code>onboardToFreeTrial</code>, <code>chargeMonthlyFee</code>, and others;</li>
-<li>Time scheduling with <code>wait</code> and <code>forever</code>;</li>
-<li>External events to handle user&rsquo;s action with <code>onCancellation</code> and <code>stopWorkflow</code> to stop any further processing.</li>
-</ul>
-
-<p>The snippet is concise and pretty easy to read. However, it&rsquo;s seemingly impossible to convert it to real code as-is. Once invoked, this function may need to run for months or years. We can&rsquo;t run a function on the same server for years: it would constantly consume resources and crash on any reboot or hardware failure.</p>
-
-<h3 id="ad-hoc-implementation">Ad-hoc implementation</h3>
-
-<p>Instead, state of the art is to design a distributed asynchronous event-driven bespoke solution. There are multiple options, but here is one of them:</p>
-
-<ul>
-<li>Store the status and renewal schedule of each subscription in a <strong>database</strong>.</li>
-<li>Have a <strong>cron job</strong> that runs periodically, queries the database for subscriptions due, and sends commands to charge a fee.</li>
-<li>The commands are processed by background <strong>workers</strong> triggered off a persistent queue.</li>
-<li>A separate <strong>queue</strong> handles cancellation requests and updates subscriptions in the database.</li>
-<li>A frontend service provides external <strong>APIs</strong> to interact with the components above.</li>
-</ul>
-
-<p><img src="todo" alt="Picture of the ad-hoc solution" /></p>
-
-<p>This approach may work, but it&rsquo;s a radical departure from the original snippet in terms of complexity. We have to manage a few durable stores, and several components have to play nicely together. Failure scenarios are numerous, and, anecdotally, not many applications get this 100% right.</p>
-
-<p>More importantly, all the machinery consumes expensive developer&rsquo;s time and yields no business value beyond what would be delivered by the single function perpetually running on a hypothetical error-free and limitless server.</p>
-
-<h3 id="temporal-workflow">Temporal workflow</h3>
-
-<p>Temporal provides a solution where your actual production code looks similar to the original pseudocode. Instead of synchronously running it forever, Temporal SDK would pause the execution when needed, create a checkpoint to store the status, and resume the execution automatically when required.</p>
-
-<p>Temporal currently has two language SDKs: <strong>Go</strong> and <strong>Java</strong>, while more languages are on the way. Meanwhile, here is our workflow in Go:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#00f">func</span> SubscriptionWorkflow(ctx workflow.Context, customerId <span style="color:#2b91af">string</span>) <span style="color:#2b91af">error</span> {
-  <span style="color:#00f">var</span> err <span style="color:#2b91af">error</span>
-  <span style="color:#00f">if</span> err = workflow.ExecuteActivity(ctx, OnboardToFreeTrial, customerId).Get(ctx, <span style="color:#00f">nil</span>); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
-  <span style="color:#00f">defer</span> <span style="color:#00f">func</span>() {
-    <span style="color:#00f">if</span> err != <span style="color:#00f">nil</span> &amp;&amp; temporal.IsCanceledError(err) {
-      workflow.ExecuteActivity(ctx, ProcessSubscriptionCancellation, customerId).Get(ctx, <span style="color:#00f">nil</span>)
-    }
-  }()
-  <span style="color:#00f">if</span> err = workflow.Sleep(ctx, 60*24*time.Hour); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
-  <span style="color:#00f">if</span> err = workflow.ExecuteActivity(ctx, UpgradeFromTrialToPaid, customerId).Get(ctx, <span style="color:#00f">nil</span>); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
-  <span style="color:#00f">for</span> {
-    <span style="color:#00f">if</span> err = workflow.Sleep(ctx, 30*24*time.Hour); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
-    <span style="color:#00f">if</span> err = workflow.ExecuteActivity(ctx, ChargeMonthlyFee, customerId).Get(ctx, <span style="color:#00f">nil</span>); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
-  }
-}</code></pre></div>
-<p>And here is the Java version:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">SubscriptionWorkflowImpl</span> <span style="color:#00f">implements</span> SubscriptionWorkflow {
-  <span style="color:#00f">public</span> <span style="color:#2b91af">void</span> execute(String customerIdentifier) {
-    activities.onboardToFreeTrial(customerIdentifier);
-    <span style="color:#00f">try</span> {
-      Workflow.sleep(Duration.ofDays(60));
-      activities.upgradeFromTrialToPaid(customerIdentifier);
-      <span style="color:#00f">while</span> (<span style="color:#00f">true</span>) {
-        Workflow.sleep(Duration.ofDays(30));
-        activities.chargeMonthlyFee(customerIdentifier);
-      }
-    } <span style="color:#00f">catch</span> (CancellationException e) {
-      activities.processSubscriptionCancellation(customerIdentifier);
-    }
-  }
-}</code></pre></div>
-<p>It&rsquo;s not the same code as the prototype sketch, but the structure is strikingly similar. Both languages have their ways to handle errors producing some nuance and visual noise, but those ways are native and intimately familiar to developers in respective ecosystems.</p>
-
-<p>The benefits of the Temporal&rsquo;s approach are quite clear:</p>
-
-<ul>
-<li>The flow is explicitly defined in a single place and can be formally reasoned through.</li>
-<li>There&rsquo;s no bespoke infrastructure to manage beyond a worker running the code and the backend service (more on those below).</li>
-<li>Temporal takes care of state management, queueing, resilience, deduplication, and other safety properties.</li>
-</ul>
-
-<p>Temporal workflows use the same pause-resume-replay approach as Azure Durable Functions. For example, a call to <code>Workflow.sleep</code> doesn&rsquo;t pause the current thread for 60 days. Instead, the actual Java method call completes, and Temporal schedules another execution in 60 days. The new execution has the history of previous runs, so it replays to the point where the last execution stopped and takes the next step.</p>
-
-<h2 id="how-temporal-works">How Temporal Works</h2>
-
-<p>There&rsquo;s no voodoo here, so a backend service and a data store are required to support the almost-magical workflow execution. Any Temporal environment includes <strong>workers</strong>, a <strong>backend service</strong>, and a <strong>data store</strong>.</p>
-
-<p><img src="todo" alt="Picture of workers, service, database" /></p>
-
-<p>Workers execute the end user&rsquo;s code as the one shown above. The user is responsible for running enough workers, which can be any long-lived compute nodes: VMs, containers, Kubernetes pods, etc.</p>
-
-<p>Each worker connects to the service via a gRPC protocol. The service provides scheduling, queueing, and state manipulation primitives to distribute the workload between workers and ensure liveness and safety guarantees of the system.</p>
-
-<p>The service saves its data in persistent external storage, which currently can be <strong>Cassandra</strong>, <strong>MySQL</strong>, or <strong>PostgreSQL</strong>.</p>
-
-<p>The service is designed for multi-tenant usage, so your organization only needs a single instance up and running, and multiple applications can benefit. I suspect there will be a managed SaaS option somewhere in the future.</p>
-
-<h2 id="conclusion">Conclusion</h2>
-
-<p>Microservices, serverless functions, cloud-native applications&mdash;distributed event-driven business applications are hot, and we will deal with them for years. I worry that the application development industry underestimates the complexity of such systems. Ad-hoc solutions to common problems may rapidly increase the technical debt and slow down the ability to innovate.</p>
-
-<p>I&rsquo;m excited to see tools like Temporal enter the space of open-source workflows, or rather the space of asynchronous data processing. My firm belief is that every developer can benefit from a higher-level framework that guarantees that developers can focus on business logic. And the business logic is still written in code with languages that they know and love.</p>
-
-<p>In future installments, I plan to explore Temporal in a deeper way, including different usage scenarios, getting up and running in the cloud, SDK features, query APIs, and more. Stay tuned!</p>
-
-<p>If you want to give Temporal a try, head to the <a href="https://docs.temporal.io/docs/overview/">docs site</a>, explore the code at <a href="https://github.com/temporalio/temporal">GitHub</a> or ask questions in <a href="https://join.slack.com/t/temporalio/shared_invite/zt-c1e99p8g-beF7~ZZW2HP6gGStXD8Nuw">Slack</a>.</p>
-]]></content>
             
                  
                     
@@ -1420,90 +1791,6 @@ Total tests: 5
                                 <category scheme="https://mikhail.io/tags/fsharp" term="fsharp" label="FSharp" />
                             
                         
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Azure]]></title>
-            <link href="https://mikhail.io/tags/azure/"/>
-            <id>https://mikhail.io/tags/azure/</id>
-            
-            <published>2020-05-05T00:00:00+00:00</published>
-            <updated>2020-05-05T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Azure Functions]]></title>
-            <link href="https://mikhail.io/tags/azure-functions/"/>
-            <id>https://mikhail.io/tags/azure-functions/</id>
-            
-            <published>2020-05-05T00:00:00+00:00</published>
-            <updated>2020-05-05T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Paper review]]></title>
-            <link href="https://mikhail.io/tags/paper-review/"/>
-            <id>https://mikhail.io/tags/paper-review/</id>
-            
-            <published>2020-05-05T00:00:00+00:00</published>
-            <updated>2020-05-05T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Serverless]]></title>
-            <link href="https://mikhail.io/tags/serverless/"/>
-            <id>https://mikhail.io/tags/serverless/</id>
-            
-            <published>2020-05-05T00:00:00+00:00</published>
-            <updated>2020-05-05T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
                     
                 
             
