@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -112,10 +112,6 @@
                 </li>
                  
                 <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
-                </li>
-                 
-                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -212,13 +208,18 @@
 
                 
                 <div class="article-post">
-                    <p>Out of curiosity, I&rsquo;m currently investigating cold starts of Function-as-a-Service platforms of major cloud providers. Basically,
+                    
+
+<p>Out of curiosity, I&rsquo;m currently investigating cold starts of Function-as-a-Service platforms of major cloud providers. Basically,
 if a function is not called for several minutes, the cloud instance behind it might be recycled, and then the next request will
 take longer because a new instance will need to be provisioned.</p>
+
 <p>Recently, Jeremy Daly <a href="https://www.jeremydaly.com/lambda-warmer-optimize-aws-lambda-function-cold-starts/">posted</a> a nice
 article about the proper way to keep AWS Lambda instances &ldquo;warm&rdquo; to (mostly) prevent cold starts with minimal overhead.
 Chris Munns <a href="https://twitter.com/chrismunns/status/1017777028274294784">endorsed</a> the article, so we know it&rsquo;s the right way.</p>
+
 <p>The amount of actions to be taken is quite significant:</p>
+
 <ul>
 <li>Define a CloudWatch event which would fire every 5 minutes</li>
 <li>Bind this event as another trigger for your Lambda</li>
@@ -227,23 +228,32 @@ Chris Munns <a href="https://twitter.com/chrismunns/status/1017777028274294784">
 <li>(Bonus point) If you want to keep multiple instances alive, do some extra dancing with calling itself N times in parallel,
 provided by an extra permission to do so.</li>
 </ul>
+
 <h2 id="pursuing-reusability">Pursuing Reusability</h2>
+
 <p>To simplify this for his readers, Jeremy was so kind to</p>
+
 <ul>
 <li>Create an NPM package which you can install and then call from a function-to-be-warmed</li>
 <li>Provide SAM and Serverless Framework templates to automate Cloud Watch integration</li>
 </ul>
+
 <p>Those are still two distinct steps: writing the code (JS + NPM) and provisioning the cloud resources (YAML + CLI). There are some
 drawbacks to that:</p>
+
 <ul>
 <li>You need to change two parts, which don&rsquo;t look like each other</li>
 <li>They have to work in sync, e.g. Cloud Watch event must provide the right payload for the handler</li>
 <li>There&rsquo;s still some boilerplate for every new Lambda</li>
 </ul>
+
 <h2 id="pulumi-components">Pulumi Components</h2>
+
 <p>Pulumi takes a different approach. You can blend the application code and infrastructure management code
 into one cohesive cloud application.</p>
+
 <p>Related resources can be combined together into reusable components, which hide repetitive stuff behind code abstractions.</p>
+
 <p>One way to define an AWS Lambda with Typescript in Pulumi is the following:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> handler = (event: <span style="color:#2b91af">any</span>, context: <span style="color:#2b91af">any</span>, callback: (error: <span style="color:#2b91af">any</span>, result: <span style="color:#2b91af">any</span>) =&gt; <span style="color:#00f">void</span>) =&gt; {
     <span style="color:#00f">const</span> response = {
@@ -254,20 +264,25 @@ into one cohesive cloud application.</p>
     callback(<span style="color:#00f">null</span>, response);
 };
 
-<span style="color:#00f">const</span> lambda = <span style="color:#00f">new</span> aws.serverless.Function(<span style="color:#a31515">&#34;my-function&#34;</span>, { <span style="color:#008000">/* options */</span> }, handler);
-</code></pre></div><p>The processing code <code>handler</code> is just passed to infrastructure code as a parameter.</p>
+<span style="color:#00f">const</span> lambda = <span style="color:#00f">new</span> aws.serverless.Function(<span style="color:#a31515">&#34;my-function&#34;</span>, { <span style="color:#008000">/* options */</span> }, handler);</code></pre></div>
+<p>The processing code <code>handler</code> is just passed to infrastructure code as a parameter.</p>
+
 <p>So, if I wanted to make reusable API for an &ldquo;always warm&rdquo; function, how would it look like?</p>
+
 <p>From the client code perspective, I just want to be able to do the same thing:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> lambda = <span style="color:#00f">new</span> mylibrary.WarmLambda(<span style="color:#a31515">&#34;my-warm-function&#34;</span>, { <span style="color:#008000">/* options */</span> }, handler);
-</code></pre></div><p>CloudWatch? Event subscription? Short-circuiting? They are implementation details!</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> lambda = <span style="color:#00f">new</span> mylibrary.WarmLambda(<span style="color:#a31515">&#34;my-warm-function&#34;</span>, { <span style="color:#008000">/* options */</span> }, handler);</code></pre></div>
+<p>CloudWatch? Event subscription? Short-circuiting? They are implementation details!</p>
+
 <h2 id="warm-lambda">Warm Lambda</h2>
+
 <p>Here is how to implement such component. The declaration starts with a Typescript class:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">export</span> <span style="color:#00f">class</span> WarmLambda <span style="color:#00f">extends</span> pulumi.ComponentResource {
     <span style="color:#00f">public</span> lambda: <span style="color:#2b91af">aws.lambda.Function</span>;
 
     <span style="color:#008000">// Implementation goes here...
-</span><span style="color:#008000"></span>}
-</code></pre></div><p>We expose the raw Lambda Function object, so that it could be used for further bindings and retrieving outputs.</p>
+</span><span style="color:#008000"></span>}</code></pre></div>
+<p>We expose the raw Lambda Function object, so that it could be used for further bindings and retrieving outputs.</p>
+
 <p>The constructor accepts the same parameters as <code>aws.serverless.Function</code> provided by Pulumi:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">constructor</span>(name: <span style="color:#2b91af">string</span>,
         options: <span style="color:#2b91af">aws.serverless.FunctionOptions</span>,
@@ -275,13 +290,13 @@ into one cohesive cloud application.</p>
         opts?: <span style="color:#2b91af">pulumi.ResourceOptions</span>) {
 
     <span style="color:#008000">// Subresources are created here...
-</span><span style="color:#008000"></span>}
-</code></pre></div><p>We start resource provisioning by creating the CloudWatch rule to be triggered every 5 minutes:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> eventRule = <span style="color:#00f">new</span> aws.cloudwatch.EventRule(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-warming-rule</span><span style="color:#a31515">`</span>, 
+</span><span style="color:#008000"></span>}</code></pre></div>
+<p>We start resource provisioning by creating the CloudWatch rule to be triggered every 5 minutes:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> eventRule = <span style="color:#00f">new</span> aws.cloudwatch.EventRule(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-warming-rule`</span>, 
     { scheduleExpression: <span style="color:#a31515">&#34;rate(5 minutes)&#34;</span> },
     { parent: <span style="color:#2b91af">this</span>, ...opts }
-);
-</code></pre></div><p>Then goes the cool trick. We substitute the user-provided handler with our own &ldquo;outer&rdquo; handler. This handler closes
+);</code></pre></div>
+<p>Then goes the cool trick. We substitute the user-provided handler with our own &ldquo;outer&rdquo; handler. This handler closes
 over <code>eventRule</code>, so it can use the rule to identify the warm-up event coming from CloudWatch. If such is identified,
 the handler short-circuits to the callback. Otherwise, it passes the event over to the original handler:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> outerHandler = (event: <span style="color:#2b91af">any</span>, context: <span style="color:#2b91af">aws.serverless.Context</span>, callback: (error: <span style="color:#2b91af">any</span>, result: <span style="color:#2b91af">any</span>) =&gt; <span style="color:#00f">void</span>) =&gt;
@@ -293,26 +308,29 @@ the handler short-circuits to the callback. Otherwise, it passes the event over 
         console.log(<span style="color:#a31515">&#39;Running the real handler...&#39;</span>);
         handler(event, context, callback);
     }
-};
-</code></pre></div><p>That&rsquo;s a great example of synergy enabled by doing both application code and application infrastructure in a
+};</code></pre></div>
+<p>That&rsquo;s a great example of synergy enabled by doing both application code and application infrastructure in a
 single program. I&rsquo;m free to mix and match objects from both worlds.</p>
+
 <p>It&rsquo;s time to bind both <code>eventRule</code> and <code>outerHandler</code> to a new serverless function:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> func = <span style="color:#00f">new</span> aws.serverless.Function(
-    <span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-warmed</span><span style="color:#a31515">`</span>, 
+    <span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-warmed`</span>, 
     options, 
     outerHandler, 
     { parent: <span style="color:#2b91af">this</span>, ...opts });
-<span style="color:#00f">this</span>.lambda = func.lambda;            
-</code></pre></div><p>Finally, I create an event subscription from CloudWatch schedule to Lambda:</p>
+<span style="color:#00f">this</span>.lambda = func.lambda;            </code></pre></div>
+<p>Finally, I create an event subscription from CloudWatch schedule to Lambda:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">this</span>.subscription = <span style="color:#00f">new</span> serverless.cloudwatch.CloudwatchEventSubscription(
-    <span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-warming-subscription</span><span style="color:#a31515">`</span>, 
+    <span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-warming-subscription`</span>, 
     eventRule,
     <span style="color:#00f">this</span>.lambda,
     { },
-    { parent: <span style="color:#2b91af">this</span>, ...opts });
-</code></pre></div><p>And that&rsquo;s all we need for now! See the full code
+    { parent: <span style="color:#2b91af">this</span>, ...opts });</code></pre></div>
+<p>And that&rsquo;s all we need for now! See the full code
 <a href="https://github.com/mikhailshilkov/pulumi-serverless-examples/blob/master/WarmedLambda-TypeScript/warmLambda.ts">here</a>.</p>
+
 <p>Here is the output of <code>pulumi update</code> command for my sample &ldquo;warm&rdquo; lambda application:</p>
+
 <pre><code>     Type                                                      Name                            Plan
  +   pulumi:pulumi:Stack                                       WarmLambda-WarmLambda-dev       create
  +    samples:WarmLambda                                       i-am-warm                       create
@@ -322,23 +340,35 @@ single program. I&rsquo;m free to mix and match objects from both worlds.</p>
  +      aws:cloudwatch:EventRule                               i-am-warm-warming-rule          create
  +      aws:serverless:Function                                i-am-warm-warmed                create
  +         aws:lambda:Function                                 i-am-warm-warmed                create
-</code></pre><p>7 Pulumi components and 4 AWS cloud resources are provisioned by one <code>new WarmLambda()</code> line.</p>
+</code></pre>
+
+<p>7 Pulumi components and 4 AWS cloud resources are provisioned by one <code>new WarmLambda()</code> line.</p>
+
 <h2 id="multi-instance-warming">Multi-Instance Warming</h2>
+
 <p>Jeremy&rsquo;s library supports warming several instances of Lambda by issuing parallel self-calls.</p>
+
 <p>Reproducing the same with Pulumi component should be fairly straightforward:</p>
+
 <ul>
 <li>Add an extra constructor option to accept the number of instances to keep warm</li>
 <li>Add a permission to call Lambda from itself</li>
 <li>Fire N calls when warming event is triggered</li>
 <li>Short-circuit those calls in each instance</li>
 </ul>
+
 <p>Note that only the first item would be visible to the client code. That&rsquo;s the power of componentization
 and code reuse.</p>
+
 <p>I didn&rsquo;t need multi-instance warming, so I&rsquo;ll leave the implementation as exercise for the reader.</p>
+
 <h2 id="conclusion">Conclusion</h2>
+
 <p>Obligatory note: most probably, you don&rsquo;t need to add warming to your AWS Lambdas.</p>
+
 <p>But whatever advanced scenario you might have, it&rsquo;s likely that it is easier to express the scenario
 in terms of general-purpose reusable component, rather than a set of guidelines or templates.</p>
+
 <p>Happy hacking!</p>
 
                 </div>

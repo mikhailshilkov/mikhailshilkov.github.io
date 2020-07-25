@@ -3,7 +3,7 @@
     <generator>Hugo -- gohugo.io</generator>
     <title>Mikhail Shilkov</title><link href="https://mikhail.io/tags/application-insights/feed" rel="self" />
     <link href="https://mikhail.io/tags/application-insights/"/>
-    <updated>2020-07-14T10:07:16+02:00</updated>
+    <updated>2020-07-25T09:58:44+02:00</updated>
     <author>
             <name>Mikhail Shilkov</name>
             </author>
@@ -131,6 +131,201 @@
     
         
         <entry>
+            <title type="html"><![CDATA[Drafts]]></title>
+            <link href="https://mikhail.io/drafts/"/>
+            <id>https://mikhail.io/drafts/</id>
+            
+            <published>2020-07-21T00:00:00+00:00</published>
+            <updated>2020-07-21T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Draining a List of .NET Tasks to Completion]]></title>
+            <link href="https://mikhail.io/drafts/while-await/"/>
+            <id>https://mikhail.io/drafts/while-await/</id>
+            
+            <published>2020-07-21T00:00:00+00:00</published>
+            <updated>2020-07-21T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[
+
+<p>The Pulumi .NET SDK has interesting asynchronicity model. The operations of resource declaration are synchronous and complete almost intantaneously. The actual operation of resource creation is scheduled within a task which is not directly visible to the end user. Therefore, the user does not await these tasks.</p>
+
+<p>Nonetheless, we must not quit from the program until all the tasks are completed. So, the SDK itself should collect all open tasks and await them in a single place.</p>
+
+<p>This can be illustrated with the following model:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">async</span> Task Main()
+{
+    <span style="color:#00f">for</span> (<span style="color:#2b91af">int</span> i = 0; i &lt; N; i++)
+        DoWork(<span style="color:#a31515">$&#34;Job {i}&#34;</span>); <span style="color:#008000">// creates a Task and returns immediately
+</span><span style="color:#008000"></span>
+    <span style="color:#00f">await</span> WaitForAllOpenTasksToComplete();
+}
+
+<span style="color:#00f">static</span> <span style="color:#00f">void</span> DoWork(<span style="color:#2b91af">string</span> message)
+{
+    RegisterTask(<span style="color:#a31515">$&#34;{message} handled&#34;</span>, RunAsync());
+    <span style="color:#00f">async</span> Task RunAsync()
+    {
+        <span style="color:#2b91af">var</span> delay = <span style="color:#00f">new</span> Random().Next(1000);
+        <span style="color:#00f">await</span> Task.Delay(delay).ConfigureAwait(<span style="color:#00f">false</span>);
+        Log(<span style="color:#a31515">$&#34;{message} finishing&#34;</span>);
+    }
+}
+</code></pre></div>
+<p>The <code>DoWork</code> method creates a <code>Task</code> which waits for a random delay below one second. It passes that task to a <code>RegisterTask</code> method (to be defined) and returns without awaiting.</p>
+
+<p>In our real use case, tasks may also produce new tasks, which can produce even more tasks, and so on. I emulate this by extending the <code>DoWork</code> method with an extra parameter asking to schedule more work:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">void</span> DoWork(<span style="color:#2b91af">string</span> message, <span style="color:#2b91af">bool</span> moreWork = <span style="color:#00f">true</span>)
+{
+    RegisterTask(<span style="color:#a31515">$&#34;{message} handled&#34;</span>, RunAsync());
+    <span style="color:#00f">async</span> Task RunAsync()
+    {
+        <span style="color:#2b91af">var</span> delay = <span style="color:#00f">new</span> Random().Next(1000);
+        <span style="color:#00f">await</span> Task.Delay(delay).ConfigureAwait(<span style="color:#00f">false</span>);
+        Log(<span style="color:#a31515">$&#34;{message} finishing&#34;</span>);
+        
+        <span style="color:#00f">if</span> (moreWork)
+        {
+            <span style="color:#00f">for</span> (<span style="color:#2b91af">int</span> i = 0; i &lt; N; i++)
+                DoWork(<span style="color:#a31515">$&#34;{message}.{i}&#34;</span>, <span style="color:#00f">false</span>);
+        }
+    }
+}
+</code></pre></div>
+<p>The <code>Main</code> method creates a bunch of initial work items and needs to await the completion of all of the tasks, immediate or descendant ones, with <code>WaitForAllOpenTasksToComplete</code>.</p>
+
+<p>Let&rsquo;s look at several options of how to implement this processing.</p>
+
+<h2 id="registering-tasks">Registering Tasks</h2>
+
+<p>First thing, I need to store the in-flight tasks somewhere, so I&rsquo;ll have a static collection for that. I want to keep a description with each task, so my collection is a dictionary:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">readonly</span> Dictionary&lt;Task, <span style="color:#2b91af">string</span>&gt; _inFlightTasks = <span style="color:#00f">new</span> Dictionary&lt;Task, <span style="color:#2b91af">string</span>&gt;();
+</code></pre></div>
+<p>Now I can implement a method to register a new task:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">void</span> RegisterTask(<span style="color:#2b91af">string</span> description, Task task)
+{
+    <span style="color:#00f">lock</span> (_inFlightTasks)
+    {
+        <span style="color:#008000">// Duplicates may happen if we try registering things like Task.CompletedTask.
+</span><span style="color:#008000"></span>        <span style="color:#008000">// We&#39;ll ignore duplicates for now.
+</span><span style="color:#008000"></span>        <span style="color:#00f">if</span> (!_inFlightTasks.ContainsKey(task))
+        {
+            _inFlightTasks.Add(task, description);
+        }
+    }
+}
+</code></pre></div>
+<p>Now, how do we implement awaiting of these tasks?</p>
+
+<h2 id="awating-the-tasks">Awating the Tasks</h2>
+
+<p>We can&rsquo;t wait for the tasks just once, because new tasks may be coming over time. Therefore, the <code>WaitForAllOpenTasksToComplete</code> is going to have a loop which waits until the in-flight tasks are drained. Here is a draft without the actual awaiting yet:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task WaitForAllOpenTasksToComplete_Draft()
+{
+    <span style="color:#008000">// Keep looping as long as there are outstanding tasks that are still running.
+</span><span style="color:#008000"></span>    <span style="color:#00f">while</span> (<span style="color:#00f">true</span>)
+    {
+        <span style="color:#2b91af">var</span> tasks = <span style="color:#00f">new</span> List&lt;Task&gt;();
+        <span style="color:#00f">lock</span> (_inFlightTasks)
+        {
+            <span style="color:#00f">if</span> (_inFlightTasks.Count == 0)
+            {
+                <span style="color:#008000">// No more tasks in flight: exit the loop.
+</span><span style="color:#008000"></span>                <span style="color:#00f">return</span>;
+            }
+
+            <span style="color:#008000">// Grab all the tasks we currently have running.
+</span><span style="color:#008000"></span>            tasks.AddRange(_inFlightTasks.Keys);
+        }
+
+        <span style="color:#008000">// TODO: await tasks, then proceed to the next iteration
+</span><span style="color:#008000"></span>    }
+}
+</code></pre></div>
+<p>How do we await these tasks?</p>
+
+<h2 id="use-whenall">Use WhenAll</h2>
+
+<p>The obvious option is to use <code>WhenAll</code> and then remove all the tasks from the in-flight collections:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#008000">// ... we are inside the loop
+</span><span style="color:#008000"></span>
+<span style="color:#00f">await</span> Task.WhenAll(tasks).ConfigureAwait(<span style="color:#00f">false</span>);
+        
+<span style="color:#00f">lock</span> (_inFlightTasks)
+{
+    <span style="color:#00f">foreach</span> (<span style="color:#2b91af">var</span> task <span style="color:#00f">in</span> tasks)
+    {
+        Log(_inFlightTasks[task]);
+        _inFlightTasks.Remove(task);
+    }
+}
+
+<span style="color:#008000">// ... the loop continues
+</span></code></pre></div>
+<p>Let&rsquo;s run the program for <code>N</code> = 2 (two parent tasks, each creating two child tasks) and log the messages and timings:</p>
+
+<pre><code>0.048: Job 0 finishing
+0.464: Job 0.0 finishing
+0.539: Job 0.1 finishing
+0.660: Job 1 finishing
+0.661: Job 0 handled
+0.661: Job 1 handled
+0.910: Job 1.1 finishing
+1.372: Job 1.0 finishing
+1.372: Job 0.0 handled
+1.372: Job 0.1 handled
+1.372: Job 1.0 handled
+1.372: Job 1.1 handled
+1.373: Done!
+</code></pre>
+
+<p>The awaiting loop works, but it has a significant downside. After a task completes, we may not be able to respond to its completion until all the other tasks of the same batch complete too.</p>
+
+<p>This is not desirable for Pulumi&rsquo;s scenario. If two resources are created in parallel, we want to report and success as soon as it happens. Even more importantly, we want to respond to the first error that occurs.</p>
+
+<p>How can we respond to tasks one-by-one?</p>
+
+<h2 id="use-whenany">Use WhenAny</h2>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> task = <span style="color:#00f">await</span> Task.WhenAny(tasks).ConfigureAwait(<span style="color:#00f">false</span>);
+                
+<span style="color:#00f">lock</span> (_inFlightTasks)
+{
+    Log(_inFlightTasks[task]);
+    _inFlightTasks.Remove(task);
+}
+
+<span style="color:#008000">// Now actually await the returned task and realize any exceptions it may have thrown.
+</span><span style="color:#008000"></span><span style="color:#00f">await</span> task.ConfigureAwait(<span style="color:#00f">false</span>);
+</code></pre></div>]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        
+    
+        
+        <entry>
             <title type="html"><![CDATA[2020s]]></title>
             <link href="https://mikhail.io/2020/"/>
             <id>https://mikhail.io/2020/</id>
@@ -191,9 +386,6 @@
             
         </entry>
     
-    
-        
-        
     
         
         <entry>
@@ -30687,27 +30879,6 @@ Although it&rsquo;s less fascinating, e.g. because of no harcore clock sync usag
             <title type="html"><![CDATA[Categories]]></title>
             <link href="https://mikhail.io/categories/"/>
             <id>https://mikhail.io/categories/</id>
-            
-            <published>0001-01-01T00:00:00+00:00</published>
-            <updated>0001-01-01T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Drafts]]></title>
-            <link href="https://mikhail.io/drafts/"/>
-            <id>https://mikhail.io/drafts/</id>
             
             <published>0001-01-01T00:00:00+00:00</published>
             <updated>0001-01-01T00:00:00+00:00</updated>

@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -110,10 +110,6 @@
                 </li>
                  
                 <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
-                </li>
-                 
-                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -210,24 +206,34 @@
 
                 
                 <div class="article-post">
-                    <p>For a small research project of mine, I needed to create HTTP triggered
+                    
+
+<p>For a small research project of mine, I needed to create HTTP triggered
 AWS Lambda&rsquo;s in all supported programming languages.</p>
+
 <p>I&rsquo;m not a power AWS user, so I get easily confused about the configuration
 of things like IAM roles or API Gateway. Moreover, I wanted my environment to
 be reproducible, so manual AWS Console wasn&rsquo;t a good option.</p>
+
 <p>I decided it was a good job for Pulumi. They pay a lot of attention to
 serverless and especially AWS Lambda, and I love the power of
 configuration as code.</p>
+
 <p>I created a Pulumi program which provisions Lambda&rsquo;s running on Javascript,
 .NET, Python, Java and Go. Pulumi program itself is written in Javascript.</p>
+
 <p>I&rsquo;m describing the resulting code below in case folks need to do the same thing.
 The code itself is on <a href="https://github.com/mikhailshilkov/pulumi-aws-serverless-examples">my github</a>.</p>
+
 <h2 id="javascript">Javascript</h2>
+
 <p>Probably, the vast majority of Pulumi + AWS Lambda users will be using
 Javascript as programming language for their serverless functions.</p>
+
 <p>No wonder that this scenario is the easiest to start with. There is a
 high-level package <code>@pulumi/cloud-aws</code> which hides all the AWS machinery from
 a developer.</p>
+
 <p>The simplest function will consist of just several lines:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-js" data-lang="js"><span style="color:#00f">const</span> cloud = require(<span style="color:#a31515">&#34;@pulumi/cloud-aws&#34;</span>);
 
@@ -237,19 +243,25 @@ api.get(<span style="color:#a31515">&#34;/js&#34;</span>, (req, res) =&gt; {
 });
 
 exports.endpointJs = api.publish().url;
-</code></pre></div><p>Configure your Pulumi stack, run <code>pulumi update</code> and a Lambda
+</code></pre></div>
+<p>Configure your Pulumi stack, run <code>pulumi update</code> and a Lambda
 is up, running and accessible via HTTP.</p>
+
 <h2 id="net-core">.NET Core</h2>
+
 <p>.NET is my default development environment and AWS Lambda supports .NET Core
 as execution runtime.</p>
+
 <p>Pulumi program is still Javascript, so it can&rsquo;t mix C# code in. Thus, the setup
 looks like this:</p>
+
 <ul>
 <li>There is a .NET Core 2.0 application written in C# and utilizing
 <code>Amazon.Lambda.*</code> NuGet packages</li>
 <li>I build and publish this application with <code>dotnet</code> CLI</li>
 <li>Pulumi then utilizes the published binaries to create deployment artifacts</li>
 </ul>
+
 <p>C# function looks like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Functions</span>
 {
@@ -263,7 +275,8 @@ looks like this:</p>
         };
     }
 }
-</code></pre></div><p>For non-Javascript lambdas I utilize <code>@pulumi/aws</code> package. It&rsquo;s of lower level
+</code></pre></div>
+<p>For non-Javascript lambdas I utilize <code>@pulumi/aws</code> package. It&rsquo;s of lower level
 than <code>@pulumi/cloud-aws</code>, so I had to setup IAM first:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-js" data-lang="js"><span style="color:#00f">const</span> aws = require(<span style="color:#a31515">&#34;@pulumi/aws&#34;</span>);
 
@@ -283,7 +296,8 @@ than <code>@pulumi/cloud-aws</code>, so I had to setup IAM first:</p>
 <span style="color:#00f">const</span> role = <span style="color:#00f">new</span> aws.iam.Role(<span style="color:#a31515">&#34;precompiled-lambda-role&#34;</span>, {
     assumeRolePolicy: JSON.stringify(policy),
 });
-</code></pre></div><p>And then I did a raw definition of AWS Lambda:</p>
+</code></pre></div>
+<p>And then I did a raw definition of AWS Lambda:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-js" data-lang="js"><span style="color:#00f">const</span> pulumi = require(<span style="color:#a31515">&#34;@pulumi/pulumi&#34;</span>);
 
 <span style="color:#00f">const</span> csharpLambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;aws-hellolambda-csharp&#34;</span>, {
@@ -295,8 +309,10 @@ than <code>@pulumi/cloud-aws</code>, so I had to setup IAM first:</p>
     handler: <span style="color:#a31515">&#34;app::app.Functions::GetAsync&#34;</span>,
     role: role.arn
 });
-</code></pre></div><p>Note the path to <code>publish</code> folder, which should match the path created by
+</code></pre></div>
+<p>Note the path to <code>publish</code> folder, which should match the path created by
 <code>dotnet publish</code>, and the handler name matching C# class/method.</p>
+
 <p>Finally, I used <code>@pulumi/aws-serverless</code> to define API Gateway endpoint for
 the lambda:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-js" data-lang="js"><span style="color:#00f">const</span> serverless = require(<span style="color:#a31515">&#34;@pulumi/aws-serverless&#34;</span>);
@@ -306,21 +322,25 @@ the lambda:</p>
         { method: <span style="color:#a31515">&#34;GET&#34;</span>, path: <span style="color:#a31515">&#34;/csharp&#34;</span>, handler: csharpLambda },
     ],
 });
-</code></pre></div><p>That&rsquo;s definitely more ceremony compared to Javascript version. But hey, it&rsquo;s
+</code></pre></div>
+<p>That&rsquo;s definitely more ceremony compared to Javascript version. But hey, it&rsquo;s
 code, so if you find yourself repeating the same code, go ahead and make a
 higher order component out of it, incapsulating the repetitive logic.</p>
+
 <h2 id="python">Python</h2>
+
 <p>Pulumi supports Python as scripting language, but I&rsquo;m sticking to Javascript
 for uniform experience.</p>
+
 <p>In this case, the flow is similar to .NET but simpler: no compilation step
 is required. Just define a <code>handler.py</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#00f">def</span> handler(event, context): 
     <span style="color:#00f">return</span> {
-        <span style="color:#a31515"></span><span style="color:#a31515">&#39;</span><span style="color:#a31515">statusCode</span><span style="color:#a31515">&#39;</span>: 200,
-        <span style="color:#a31515"></span><span style="color:#a31515">&#39;</span><span style="color:#a31515">headers</span><span style="color:#a31515">&#39;</span>: {<span style="color:#a31515"></span><span style="color:#a31515">&#39;</span><span style="color:#a31515">Content-Type</span><span style="color:#a31515">&#39;</span>: <span style="color:#a31515"></span><span style="color:#a31515">&#39;</span><span style="color:#a31515">application/json</span><span style="color:#a31515">&#39;</span>},
-        <span style="color:#a31515"></span><span style="color:#a31515">&#39;</span><span style="color:#a31515">body</span><span style="color:#a31515">&#39;</span>: <span style="color:#a31515"></span><span style="color:#a31515">&#39;</span><span style="color:#a31515">&#34;</span><span style="color:#a31515">Hi from Python lambda</span><span style="color:#a31515">&#34;</span><span style="color:#a31515">&#39;</span>
-    }
-</code></pre></div><p>and package it into zip in AWS lambda definition:</p>
+        <span style="color:#a31515">&#39;statusCode&#39;</span>: 200,
+        <span style="color:#a31515">&#39;headers&#39;</span>: {<span style="color:#a31515">&#39;Content-Type&#39;</span>: <span style="color:#a31515">&#39;application/json&#39;</span>},
+        <span style="color:#a31515">&#39;body&#39;</span>: <span style="color:#a31515">&#39;&#34;Hi from Python lambda&#34;&#39;</span>
+    }</code></pre></div>
+<p>and package it into zip in AWS lambda definition:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-js" data-lang="js"><span style="color:#00f">const</span> pythonLambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;aws-hellolambda-python&#34;</span>, {
     runtime: aws.lambda.Python3d6Runtime,
     code: <span style="color:#00f">new</span> pulumi.asset.AssetArchive({
@@ -330,11 +350,15 @@ is required. Just define a <code>handler.py</code>:</p>
     handler: <span style="color:#a31515">&#34;handler.handler&#34;</span>,
     role: role.arn
 });
-</code></pre></div><p>I&rsquo;m reusing the <code>role</code> definition from above. The API definition will also
+</code></pre></div>
+<p>I&rsquo;m reusing the <code>role</code> definition from above. The API definition will also
 be the same as for .NET.</p>
+
 <h2 id="go">Go</h2>
+
 <p>Golang is a compiled language, so the approach is similar to .NET: write code,
 build, reference the built artifact from Pulumi.</p>
+
 <p>My Go function looks like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#00f">func</span> Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, <span style="color:#2b91af">error</span>) {
 
@@ -343,15 +367,15 @@ build, reference the built artifact from Pulumi.</p>
   StatusCode: 200,
  }, <span style="color:#00f">nil</span>
 
-}
-</code></pre></div><p>Because I&rsquo;m on Windows but AWS Lambda runs on Linux, I had to use
+}</code></pre></div>
+<p>Because I&rsquo;m on Windows but AWS Lambda runs on Linux, I had to use
 <a href="https://github.com/aws/aws-lambda-go"><code>build-lambda-zip</code></a>
 tool to make the package compatible. Here is the PowerShell build script:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-powershell" data-lang="powershell">$env:GOOS = <span style="color:#a31515">&#34;</span><span style="color:#a31515">linux</span><span style="color:#a31515">&#34;</span>
-$env:GOARCH = <span style="color:#a31515">&#34;</span><span style="color:#a31515">amd64</span><span style="color:#a31515">&#34;</span>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-powershell" data-lang="powershell">$env:GOOS = <span style="color:#a31515">&#34;linux&#34;</span>
+$env:GOARCH = <span style="color:#a31515">&#34;amd64&#34;</span>
 go build -o main main.go
-~\Go\bin\build-lambda-zip.exe -o main.zip main
-</code></pre></div><p>and Pulumi function definition:</p>
+~\Go\bin\build-lambda-zip.exe -o main.zip main</code></pre></div>
+<p>and Pulumi function definition:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-js" data-lang="js"><span style="color:#00f">const</span> golangLambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;aws-hellolambda-golang&#34;</span>, {
     runtime: aws.lambda.Go1dxRuntime,
     code: <span style="color:#00f">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./go/main.zip&#34;</span>),
@@ -359,7 +383,9 @@ go build -o main main.go
     handler: <span style="color:#a31515">&#34;main&#34;</span>,
     role: role.arn
 });
-</code></pre></div><h2 id="java">Java</h2>
+</code></pre></div>
+<h2 id="java">Java</h2>
+
 <p>Java class implements an interface from AWS SDK:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Hello</span> <span style="color:#00f">implements</span> RequestStreamHandler {
 
@@ -375,10 +401,11 @@ go build -o main main.go
         writer.write(responseJson.toJSONString());  
         writer.close();
     }
-}
-</code></pre></div><p>I compiled this code with Maven (<code>mvn package</code>), which produced a <code>jar</code> file. AWS Lambda accepts
+}</code></pre></div>
+<p>I compiled this code with Maven (<code>mvn package</code>), which produced a <code>jar</code> file. AWS Lambda accepts
 <code>jar</code> directly, but Pulumi&rsquo;s <code>FileArchive</code> is unfortunately crashing on trying
 to read it.</p>
+
 <p>As a workaround, I had to define a <code>zip</code> file with <code>jar</code> placed inside <code>lib</code>
 folder:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-js" data-lang="js"><span style="color:#00f">const</span> javaLambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;aws-coldstart-java&#34;</span>, {
@@ -390,13 +417,18 @@ folder:</p>
     handler: <span style="color:#a31515">&#34;example.Hello&#34;</span>,
     role: role.arn
 });
-</code></pre></div><h2 id="conclusion">Conclusion</h2>
+</code></pre></div>
+<h2 id="conclusion">Conclusion</h2>
+
 <p>The complete code for 5 lambda functions in 5 different programming languages
 can be found in <a href="https://github.com/mikhailshilkov/pulumi-aws-serverless-examples">my github repository</a>.</p>
+
 <p>Running <code>pulumi update</code> provisions 25 AWS resources in a matter of 1 minute,
 so I can start playing with my test lambdas in no time.</p>
+
 <p>And the best part: when I don&rsquo;t need them anymore, I run <code>pulumi destroy</code> and
 my AWS Console is clean again!</p>
+
 <p>Happy serverless moments!</p>
 
                 </div>

@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -102,10 +102,6 @@ Automatic elastic scaling is a built-in feature of Serverless computing paradigm
                  
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
-                </li>
-                 
-                <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
                 </li>
                  
                 <li class="nav-item ">
@@ -205,156 +201,194 @@ Automatic elastic scaling is a built-in feature of Serverless computing paradigm
 
                 
                 <div class="article-post">
-                    <p><em>Updated results are available at
+                    
+
+<p><em>Updated results are available at
 <a href="https://mikhail.io/2017/12/azure-functions-get-more-scalable-and-elastic/">Azure Functions Get More Scalable and Elastic</a>.</em></p>
+
 <p>Automatic elastic scaling is a built-in feature of Serverless computing
 paradigm. One doesn&rsquo;t have to provision servers anymore, they just need to
 write code that will be provisioned on as many servers as needed based on the
 actual load. That&rsquo;s the theory.</p>
+
 <p>In particular, Azure Functions can be hosted on the Consumption plan:</p>
+
 <blockquote>
 <p>The Consumption plan automatically allocates compute power when your
 code is running, scales out as necessary to handle load, and then scales
 down when code is not running.</p>
 </blockquote>
+
 <p>In this post I will run a simple stress test to get a feel of how such
 automatic allocation works in practice and what kind of characteristics
 we can rely on.</p>
+
 <h2 id="setup">Setup</h2>
+
 <p>Here are the parameters that I chose for my test of today:</p>
+
 <ul>
 <li>Azure Function written in C# and hosted on Consumption plan</li>
 <li>Triggered by Azure Storage Queue binding</li>
 <li>Workload is strictly CPU-bound, no I/O is executed</li>
 </ul>
+
 <p>Specifically, each queue item represents one password that I need to hash.
 Each function call performs 12-round <a href="https://en.wikipedia.org/wiki/Bcrypt">Bcrypt</a>
 hashing. Bcrypt is a slow algorithm recommended for
 password hashing, because it makes potential hash collision attacks really
 hard and costly.</p>
+
 <p>My function is based on <a href="https://github.com/BcryptNet/bcrypt.net">Bcrypt.Net</a>
 implementation, and it&rsquo;s extremely simple:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> Run([QueueTrigger(<span style="color:#a31515">&#34;bcrypt-password&#34;</span>)] <span style="color:#2b91af">string</span> password)
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> Run([QueueTrigger(&#34;bcrypt-password&#34;)] <span style="color:#2b91af">string</span> password)
 {
     BCrypt.Net.BCrypt.HashPassword(password, 12);
 }
-</code></pre></div><p>It turns out that a single execution of this function takes approximately
+</code></pre></div>
+<p>It turns out that a single execution of this function takes approximately
 1 second on an instance of Consumption plan, and consumes 100% CPU during
 that second.</p>
+
 <p>Now, the challenge is simple. I send 100,000 passwords
 to the queue and see how long it will take to hash them, and also how the
 autoscaling will behave. I will run it two times, with different pace of
 sending messages to the queue.</p>
-<p>That sounds like a perfect job for a Function App on Consumption plan:</p>
-<ul>
-<li>Needs to scale based on load</li>
-<li>CPU intensive - easy to see how busy each server is</li>
-<li>Queue-based - easy to see the incoming vs outgoing rate</li>
-</ul>
+
+<p>That sounds like a perfect job for a Function App on Consumption plan:
+- Needs to scale based on load
+- CPU intensive - easy to see how busy each server is
+- Queue-based - easy to see the incoming vs outgoing rate</p>
+
 <p>Let&rsquo;s see how it went.</p>
+
 <h2 id="experiment-1-steady-load">Experiment 1: Steady Load</h2>
+
 <p>In my first run, I was sending messages at constant rate. 100,000 messages
 were sent within 2 hours, without spikes or drops in the pace.</p>
+
 <p>Sounds like an easy job for autoscaling facilities. But here is the actual
 chart of data processing:</p>
-<p><img src="FunctionAppScaling.png" alt="Function App Scaling"></p>
+
+<p><img src="FunctionAppScaling.png" alt="Function App Scaling" /></p>
+
 <p>The horizontal axis is time in minutes since the first message came in.</p>
+
 <p>The orange line shows the queue backlog - the amount of messages sitting in
 the queue at a given moment.</p>
+
 <p>The blue area represents the amount of instances (virtual servers) allocated
 to the function by Azure runtime (see the numbers at the right side).</p>
+
 <p>We can divide the whole process into 3 logical segments, approximately
 40 minutes each:</p>
+
 <p><strong>Laging behind</strong>. Runtime starts with 0 instances, and immediately switches
 to 1 when the first message comes in. However it&rsquo;s reluctant to add any more
 servers for the next 20 (!) minutes. The scaling heuristic is probably based
 on the past history for this queue/function, and it wasn&rsquo;t busy at all during
 the hours before.</p>
+
 <p>After 20 minutes, the runtime starts adding more instances: it goes up to 2,
 then jumps to 4, then reaches 5 at minute 40. The CPU is constantly at
 100% and the queue backlog grows linearly.</p>
+
 <p><strong>Rapid scale up</strong>. After minute 40, it looks like the runtime realizes
 that it needs more power. Much more power! The growth speeds up real quick
 and by minute 54 the backlog stops growing, even though the messages are still
 coming in. But there are now 21 instances working, which is enough to
 finally match and beat the rate of incoming messages.</p>
+
 <p>The runtime doesn&rsquo;t stop growing though. CPU&rsquo;s are still at 100%, and the backlog
 is still very high, so the scaling goes up and up. The amount of instances
 reaches astonishing 55, at which point all the backlog is processed and
 there are no messages in the queue.</p>
+
 <p><strong>Searching for balance</strong>. When queue is almost empty and CPU drops below
 100% for the first time, the runtime decides to scale down. It does that quickly
 and aggressively, switching from 55 to 21 instances in just 2 minutes.</p>
+
 <p>From there it keeps slowly reducing the number of instances until the backlog
 starts growing again. The runtime allows the backlog to grow a bit, but
 then figures out a balanced number of servers (17) to keep the backlog flat
 at around 2,000 messages.</p>
+
 <p>It stays at 17 until the producer stops sending new messages. The backlog
 goes to 0, and the amount of instances gradually drops to 0 within 10 minutes.</p>
+
 <p>The second chart from the same experiment looks very similar, but it shows
 different metrics:</p>
-<p><img src="FunctionAppDelay.png" alt="Function App Delay"></p>
+
+<p><img src="FunctionAppDelay.png" alt="Function App Delay" /></p>
+
 <p>The gray line is the delay in minutes since the currently processed message
 got enqueued (message &ldquo;age&rdquo;, in-queue latency). The blue line is the
 total processing rate, measured in messages per minute.</p>
+
 <p>Due to perfect scalability and stability of my function, both charts are almost
 exactly the same. I&rsquo;ve put it here so that you could see that the slowest
 message spent more than 40 minutes sitting inside the queue.</p>
+
 <h2 id="experiment-2-spiky-load">Experiment 2: Spiky Load</h2>
+
 <p>With the second run, I tried to emulate a spiky load profile. I was sending
 my 100,000 messages throughout 6 hours at lower pace than during the first
 run. But sometimes the producer switched to fast mode and sent a bigger bunch
 of messages in just several minutes. Here is the actual chart of incoming
 message rate:</p>
-<p><img src="SpikyLoad.png" alt="Spiky Load"></p>
+
+<p><img src="SpikyLoad.png" alt="Spiky Load" /></p>
+
 <p>It&rsquo;s easy to imagine some service which has a usage pattern like that, when
 spikes of the events happen from time to time, or in rush hours.</p>
+
 <p>This is how the Function App managed to process the messages:</p>
-<p><img src="SpikyLoadProcessing.png" alt="Spiky Load Processing Result"></p>
+
+<p><img src="SpikyLoadProcessing.png" alt="Spiky Load Processing Result" /></p>
+
 <p>The green line still shows the amount of incoming messages per minute. The
 blue line denotes how many messages were actually processed at that minute.
 And the orange bars are queue backlogs - the amount of messages pending.</p>
+
 <p>Here are several observations:</p>
+
 <ul>
-<li>
-<p>Obviously, processing latency is way too far from real time. There is
+<li><p>Obviously, processing latency is way too far from real time. There is
 constantly quite a significant backlog in the queue, and processing delay
-reaches 20 minutes at peak.</p>
-</li>
-<li>
-<p>It took the runtime 2 hours to clean the backlog for the first time. Even
+reaches 20 minutes at peak.</p></li>
+
+<li><p>It took the runtime 2 hours to clean the backlog for the first time. Even
 without any spikes during the first hour, the autoscaling algorithm needs
-time to get up to speed.</p>
-</li>
-<li>
-<p>Function App runtime is able to scale up quite fast (look at the reaction
-on the fourth spike), but it&rsquo;s not really willing to do that most of the time.</p>
-</li>
-<li>
-<p>The growth of the backlog after minute 280 is purely caused by wrong
+time to get up to speed.</p></li>
+
+<li><p>Function App runtime is able to scale up quite fast (look at the reaction
+on the fourth spike), but it&rsquo;s not really willing to do that most of the time.</p></li>
+
+<li><p>The growth of the backlog after minute 280 is purely caused by wrong
 decision of runtime. While the load is completely steady, the runtime
 decided to shut down most workers after 20 minutes of empty backlog, and could
-not recover for the next hour.</p>
-</li>
+not recover for the next hour.</p></li>
 </ul>
+
 <h2 id="conclusions">Conclusions</h2>
+
 <p>I tried to get a feeling about the ability of Azure Functions to scale
 on demand, adapting to the workload. The function under test was purely CPU-bound,
 and for that I can give two main conclusions:</p>
+
 <ul>
-<li>
-<p>Function Apps are able to scale to high amount of instances running at the
+<li><p>Function Apps are able to scale to high amount of instances running at the
 same time, and to eventually process large parallel jobs (at least up to 55
-instances).</p>
-</li>
-<li>
-<p>Significant processing delays are to be expected for heavy loads. Function
+instances).</p></li>
+
+<li><p>Significant processing delays are to be expected for heavy loads. Function
 App runtime has quite some inertia, and the resulting processing latency can
-easily go up to tens of minutes.</p>
-</li>
+easily go up to tens of minutes.</p></li>
 </ul>
+
 <p>If you know how these results can be improved, or why they are less than
 optimal, please leave a comment or contact me directly.</p>
+
 <p>I look forward to conducting more tests in the future!</p>
 
                 </div>

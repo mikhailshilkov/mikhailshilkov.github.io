@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -112,10 +112,6 @@
                 </li>
                  
                 <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
-                </li>
-                 
-                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -212,34 +208,49 @@
 
                 
                 <div class="article-post">
-                    <p><i>This is the fourth part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively easy and very enjoyable. Here are the previous parts:</i></p>
+                    
+
+<p><i>This is the fourth part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively easy and very enjoyable. Here are the previous parts:</i></p>
+
 <ul>
 <li><a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
 <li><a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
 <li><a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/"><em>Building a Poker Bot: Mouse Movements</em></a></li>
 </ul>
+
 <p>This post lays out the most exciting part of the bot. I&rsquo;ll compose the recognition, flow, decision and mouse clicking
 parts together into the bot application. The application is a console executable interacting with multiple
 windows of poker room software.</p>
+
 <h2 id="flow">Flow</h2>
+
 <p>The following picture shows the outline of the application data flow:</p>
-<p><img src="pokeractors.png" alt="Actor Diagram"></p>
+
+<p><img src="pokeractors.png" alt="Actor Diagram" /></p>
+
 <p><strong>Find Tables</strong> - Every half a second or so we scan all the windows and search for open poker tables among them.
 For each poker table we make a screenshot and send those to recognition.</p>
+
 <p><strong>Recognize Screen</strong> - Parse the data from the screenshot. Check whether it&rsquo;s our turn to make a play now, what
 the <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">hole cards</a> and
 <a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">stacks</a> are, produce the detailed
 screen information and send it to decision maker.</p>
+
 <p><strong>Make Decision</strong> - Understand if that&rsquo;s a new hand or there was a past history before. See
 what the villains did and which new cards we got. Here the secret sauce comes to play and produces
 a move to be made. Send the action to the mouse clicker.</p>
+
 <p><strong>Click Buttons</strong> - Based on the decision made, click the right buttons. It should be done with proper delays
 and <a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">human-like movements</a> so that the villain
 and poker room don&rsquo;t understand that it&rsquo;s bot who is playing.</p>
-<hr>
+
+<hr />
+
 <h2 id="let-the-actors-play">Let the Actors Play</h2>
+
 <p>Because of the multi-tabling, the application is intrinsically multi-threaded. At the same time,
 the different parts of the flow are executed at different cadence:</p>
+
 <ul>
 <li>Finding tables is triggered by time and is single-threaded</li>
 <li>Screen recognition, history detection and decision making run in sequence and can be executed in parallel
@@ -247,71 +258,97 @@ for multiple tables</li>
 <li>Clicking the buttons is again single-threaded, as it must synchronize the outputs from the previous steps,
 put them in sequence with appropriate delays</li>
 </ul>
+
 <p>Here are the other treats of the flow:</p>
+
 <ul>
 <li>It is reactive and event based</li>
 <li>The flow is unidirectional, the output of one step goes to the input of the next step</li>
 <li>Most steps are stateless, but the history state needs to be preserved and, ideally, isolated from the other
 steps</li>
 </ul>
+
 <p>This list of features made me pick the Actor-based <a href="http://getakka.net">Akka.NET</a> framework to implement the flow.</p>
+
 <p>For sure, the application could be done with a bunch of procedural code instead.
 But I found actors to be a useful modeling technique to be employed.
 It goes well with reactive nature of the application and builds the nice
 foundation for more complicated scenarios in the future.</p>
+
 <p>Also, I was curious how F# and Akka.NET would work together.</p>
+
 <h2 id="supervision-hierachy">Supervision Hierachy</h2>
+
 <p>In Akka.NET each actor has a supervisor actor who is managing its lifecycle. All actors together form a
 supervision tree. Here is the tree shown for the Player application:</p>
-<p><img src="actorhierachy.png" alt="Actor Hierachy"></p>
+
+<p><img src="actorhierachy.png" alt="Actor Hierachy" /></p>
+
 <p>There is just one copy of both Table Finder and Button Clicker actors and they are supervised by the root
 User actor.</p>
+
 <p>For each poker table a Recognizer actor gets created. These actors are managed by Table
 Finder.</p>
+
 <p>Each Recognizer actor creates an instance of Decision actor who keeps the hand history
 and makes decisions.</p>
+
 <p>Finally, all decisions are sent to one centralized Button Clicker actor whose job is
 to click all the tables with proper delays and in order.</p>
-<hr>
+
+<hr />
+
 <h2 id="implementation-patterns">Implementation Patterns</h2>
+
 <p>All actors are implemented with <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">Functional Actor Patterns</a>
 which are described in <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/">my previous post</a>.</p>
+
 <p>The basic idea is that each actor is defined in functional style with these
 building blocks:</p>
+
 <ul>
 <li>Type of incoming and, if needed, outgoing messages</li>
 <li>A domain function with business logic</li>
 <li>Actor function which puts those parts together</li>
 <li>Expression to spawn an actor based on actor function</li>
 </ul>
+
 <p>Let&rsquo;s look at the examples to understand this structure better.</p>
+
 <h2 id="table-finder">Table Finder</h2>
+
 <p>Table Finder does not have any meaningful input message. It gets a message from
 Akka.NET scheduling system just to be periodically activated.</p>
+
 <p>The domain function is called <code>findWindows</code> and has the type <code>unit -&gt; WindowInfo seq</code>.
 It returns the poker window screenshots and titles.</p>
+
 <p>Actor function of type <code>int -&gt; seq&lt;string * WindowInfo&gt;</code> is used by the
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to
 define the behavior. The ouput tuple defines an ID of an output actor and a
 message to send to it:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> findActor msg =
   findWindows ()
-  |&gt; Seq.map (<span style="color:#00f">fun</span> x -&gt; (<span style="color:#a31515">&#34;</span><span style="color:#a31515">recognizer-actor-</span><span style="color:#a31515">&#34;</span> + x.TableName, x))
-</code></pre></div><p>Here is how I spawn the singleton instance of this actor:</p>
+  |&gt; Seq.map (<span style="color:#00f">fun</span> x -&gt; (<span style="color:#a31515">&#34;recognizer-actor-&#34;</span> + x.TableName, x))</code></pre></div>
+<p>Here is how I spawn the singleton instance of this actor:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> tableFinderRef =
   actorOfRouteToChildren findActor (spawnChild recognizer)
-  |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">table-finder-actor</span><span style="color:#a31515">&#34;</span>
-</code></pre></div><p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
+  |&gt; spawn system <span style="color:#a31515">&#34;table-finder-actor&#34;</span></code></pre></div>
+<p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
 <code>spawn</code> function with proper parameter order:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> spawnChild childActor name (mailbox : Actor&lt;<span style="color:#00f">&#39;</span>a&gt;) =
-  spawn mailbox.Context name childActor
-</code></pre></div><p>We can also extend it to debug messages when new actors get created.</p>
+  spawn mailbox.Context name childActor</code></pre></div>
+<p>We can also extend it to debug messages when new actors get created.</p>
+
 <h2 id="recognizer">Recognizer</h2>
+
 <p>Recognizer receives the <code>WindowInfo</code> produced by the Table Finder.</p>
+
 <p>The domain function has the type of <code>Bitmap -&gt; Screen</code>. You can read more about table
 recognition in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Part 1</a> and
 <a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/">Part 2</a>
 of these series.</p>
+
 <p>Actor function is an implementation of
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern.
 The output is a decision message for Decision Maker actor which is a supervised
@@ -321,11 +358,13 @@ child of the Recognizer. Here is the actor function:</p>
   { WindowTitle = window.Title
     TableName = window.TableName
     Screen = result
-    Bitmap = window.Bitmap }
-</code></pre></div><p>And here is the spawn function:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> recognizer = actorOfConvertToChild recognizeActor (spawnChild decider <span style="color:#a31515">&#34;</span><span style="color:#a31515">decider</span><span style="color:#a31515">&#34;</span>)
-</code></pre></div><p>Notice how this expression was used in Table Finder instantiation above.</p>
+    Bitmap = window.Bitmap }</code></pre></div>
+<p>And here is the spawn function:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> recognizer = actorOfConvertToChild recognizeActor (spawnChild decider <span style="color:#a31515">&#34;decider&#34;</span>)</code></pre></div>
+<p>Notice how this expression was used in Table Finder instantiation above.</p>
+
 <h2 id="decision-maker">Decision Maker</h2>
+
 <p>Decision Maker actor function is an implementation of
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#StatefulConverter">Stateful Converter</a> pattern. It receives
 a decision message from a Recognizer. The output is a click message for a
@@ -333,6 +372,7 @@ singleton Clicker actor. It also needs to preserve some state between two calls.
 In the minimalistic implementation this state holds the previous screen that
 it received, so that if the same message is received twice, the later message is
 ignored.</p>
+
 <p>This way the actor function has the type of
 <code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code>
 and looks like this:</p>
@@ -343,33 +383,41 @@ and looks like this:</p>
   | _ -&gt;
     <span style="color:#00f">let</span> action = decide screen
     <span style="color:#00f">let</span> outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
-    (Some outMsg, Some screen)
-</code></pre></div><p>Here is the spawn function:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> decider = actorOfStatefulConvert decisionActor None clickerRef
-</code></pre></div><p>where <code>None</code> represents the initial state.</p>
+    (Some outMsg, Some screen)</code></pre></div>
+<p>Here is the spawn function:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> decider = actorOfStatefulConvert decisionActor None clickerRef</code></pre></div>
+<p>where <code>None</code> represents the initial state.</p>
+
 <h2 id="button-clicker">Button Clicker</h2>
+
 <p>Clicker actor has the simplest implementation because it does not send messages to other actors.
 Here is the message that it receives from Decision Maker:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">ClickTarget</span> = (int * int * int * int)
 <span style="color:#00f">type</span> <span style="color:#2b91af">ClickerMessage</span> = {
   WindowTitle: <span style="color:#2b91af">string</span>
   Clicks: ClickTarget[]
-}
-</code></pre></div><p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
+}</code></pre></div>
+<p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
 clicks as side effect. You can read more about the mouse movements in
 <a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">Part 3</a>
 of these series.</p>
+
 <p><a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
 pattern is used for this actor, so actor function isn&rsquo;t
 really needed. We spawn the singleton instance with the following statement:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> clickerRef = actorOfSink click |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">clicker-actor</span><span style="color:#a31515">&#34;</span>
-</code></pre></div><p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> clickerRef = actorOfSink click |&gt; spawn system <span style="color:#a31515">&#34;clicker-actor&#34;</span></code></pre></div>
+<p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
+
 <h2 id="conclusion">Conclusion</h2>
+
 <p>The top layer of poker player application is composed of small single-purpose
 actors which talk to each other by sending messages.</p>
+
 <p>Thanks to succinct F# language and functional actor patterns this layer is
 very thin, and thus easy to understand and maintain.</p>
+
 <p>The business logic is isolated and by itself has no dependency on Akka.NET.</p>
+
 <p><em>Proceed to <a href="/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Part 5 of Building a Poker Bot: Functional Fold as Decision Tree Pattern</a>.</em></p>
 
                 </div>

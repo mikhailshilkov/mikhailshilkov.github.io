@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -102,10 +102,6 @@
                  
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
-                </li>
-                 
-                <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
                 </li>
                  
                 <li class="nav-item ">
@@ -205,12 +201,18 @@
 
                 
                 <div class="article-post">
-                    <p>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
+                    
+
+<p>This is the second part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
 to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively easy and very enjoyable.</p>
+
 <p>Here is the first part: <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">Building a Poker Bot: Card Recognition</a></p>
+
 <h2 id="why-string-recognition">Why string recognition</h2>
+
 <p>Reading cards and other fixed images was the first step. The bot should also
 be able to read different text-based information from the screen, e.g.</p>
+
 <ul>
 <li>Current blind levels</li>
 <li>Current pot size</li>
@@ -219,11 +221,15 @@ be able to read different text-based information from the screen, e.g.</p>
 <li>Stack sizes</li>
 <li>Chat messages (for advanced scenarios)</li>
 </ul>
+
 <p>We need this vital information to make proper decisions, so let&rsquo;s look at
 how to parse the textual data.</p>
+
 <h2 id="new-challenges">New challenges</h2>
+
 <p>String recognition has some specific difficulties when compared to fixed
 images like cards:</p>
+
 <ul>
 <li>The size of a string is not predefined. Obviously, the longer the string, the
 more space it takes on the screen</li>
@@ -231,7 +237,9 @@ more space it takes on the screen</li>
 the center, others may diverge based on other variable parts like stakes or blinds</li>
 <li>Different strings might be rendered in different font size</li>
 </ul>
+
 <p>Here is what needs to be done to overcome these complications:</p>
+
 <ul>
 <li>Pick the layout which makes your life easier</li>
 <li>Adjust fonts and positions if possible</li>
@@ -239,27 +247,39 @@ the center, others may diverge based on other variable parts like stakes or blin
 <li>For each string define a region where it belongs to in 100% cases. The background
 of this region should be more or less evenly filled with a color in contrast to the font color.</li>
 </ul>
+
 <h2 id="string-recognition-steps">String recognition steps</h2>
+
 <p>We start with a screenshot of a poker table again:</p>
-<p><img src="table.png" alt="Poker table screenshot"></p>
+
+<p><img src="table.png" alt="Poker table screenshot" /></p>
+
 <p>We know our fixed regions where our labels are located, so we take those
 regions for processing:</p>
-<p><img src="regions.png" alt="Regions of string recognition"></p>
+
+<p><img src="regions.png" alt="Regions of string recognition" /></p>
+
 <p>For each region we trim away the blank margins around the text (i.e. left,
 top, right and bottom padding):</p>
-<p><img src="nomargin.png" alt="Margins being removed"></p>
+
+<p><img src="nomargin.png" alt="Margins being removed" /></p>
+
 <p>We find dark lines between bright symbols and we consider them as gaps
 between characters:</p>
-<p><img src="splitchars.png" alt="Split to characters"></p>
+
+<p><img src="splitchars.png" alt="Split to characters" /></p>
+
 <p>The final step is to compare each symbol to the known patterns and find the best
 match (in case of my layout the match for symbols is always 100% perfect). Let&rsquo;s
 look how these steps are implemented.</p>
+
 <h2 id="removing-padding-around-the-text">Removing padding around the text</h2>
+
 <p>Because the padding is removed from all 4 sides of the region, I decided to use
 <code>Array2D</code> data type to be able to iterate in different order. The whole algorithm operates
 with black or white points defined as a helper type:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">BW</span> = B | W
-</code></pre></div><p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">BW</span> = B | W</code></pre></div>
+<p>So the <code>removePadding</code> function has type of <code>BW[,] -&gt; BW[,]</code> and looks
 like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> removePadding pixels =
   <span style="color:#00f">let</span> allBlack s = Seq.exists ((=) W) s
@@ -276,17 +296,19 @@ like this:</p>
 
   <span style="color:#00f">match</span> (firstX, lastX, firstY, lastY) <span style="color:#00f">with</span>
   | (Some fx, Some lx, Some fy, Some ly) -&gt; pixels.[fx..lx, fy..ly]
-  | _ -&gt; Array2D.init 0 0 (<span style="color:#00f">fun</span> _ _ -&gt; B)
-</code></pre></div><p>The first part finds the amount of fully-black columns and rows in the array.
+  | _ -&gt; Array2D.init 0 0 (<span style="color:#00f">fun</span> _ _ -&gt; B)</code></pre></div>
+<p>The first part finds the amount of fully-black columns and rows in the array.
 Then, if white points are found, the second part returns a sub array based on
 the indices, otherwise empty array is returned.</p>
+
 <h2 id="split-the-text-into-characters">Split the text into characters</h2>
+
 <p>First, we convert our 2D array into the list of lists, where each item in the
 top-level list represents a single column of pixels:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> pixelColumns =
   [0..Array2D.length1 pixels - 1]
-  |&gt; Seq.map (<span style="color:#00f">fun</span> x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)
-</code></pre></div><p>Then we can fold this list of columns into the symbols, where each symbol itself
+  |&gt; Seq.map (<span style="color:#00f">fun</span> x -&gt; pixels.[x, 0..Array2D.length2 pixels - 1] |&gt; List.ofArray)</code></pre></div>
+<p>Then we can fold this list of columns into the symbols, where each symbol itself
 is the list of columns:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> splitIntoSymbols (e : BW <span style="color:#2b91af">list</span>) (state: BW <span style="color:#2b91af">list</span> <span style="color:#2b91af">list</span> <span style="color:#2b91af">list</span>) =
   <span style="color:#00f">match</span> state <span style="color:#00f">with</span>
@@ -298,12 +320,14 @@ is the list of columns:</p>
 </span><span style="color:#008000"></span>      <span style="color:#00f">else</span> (e::cur)::rest   <span style="color:#008000">// add e to current list
 </span><span style="color:#008000"></span>  | _ -&gt; [[e]]
 
-Seq.foldBack splitIntoSymbols pixelColumns []
-</code></pre></div><p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
+Seq.foldBack splitIntoSymbols pixelColumns []</code></pre></div>
+<p>The type of <code>state</code> is a bit of brain teaser, I guess it could be improved
 by introducing some intermediate type with descriptive name, but I decided
 to leave that part for now. Read it as list of symbols, which are lists of
 columns, which are lists of pixels.</p>
+
 <h2 id="match-the-symbols-vs-the-known-patterns">Match the symbols vs the known patterns</h2>
+
 <p>This part was already described in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">my first article</a>.
 Basically we compare the list of black or white points to the patterns of
 the known symbols:</p>
@@ -316,12 +340,13 @@ the known symbols:</p>
       |&gt; Array.filter (<span style="color:#00f">fun</span> p -&gt; List.length p.Pattern = List.length bws)
       |&gt; Array.filter (<span style="color:#00f">fun</span> p -&gt; samePatterns bws p.Pattern)
       |&gt; Array.tryHead
-  defaultArg (Option.map (<span style="color:#00f">fun</span> p -&gt; p.Char) matchingPattern) <span style="color:#a31515">&#39;?&#39;</span>
-</code></pre></div><h2 id="putting-it-all-together">Putting it all together</h2>
+  defaultArg (Option.map (<span style="color:#00f">fun</span> p -&gt; p.Char) matchingPattern) <span style="color:#a31515">&#39;?&#39;</span></code></pre></div>
+<h2 id="putting-it-all-together">Putting it all together</h2>
+
 <p>The <code>recognizeString</code> function accepts lower-order functions to match
 symbols and get pixels together with width and height of the region:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">recognizeString: (BW <span style="color:#2b91af">list</span> <span style="color:#2b91af">list</span> -&gt; <span style="color:#2b91af">char</span>) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; <span style="color:#2b91af">string</span>
-</code></pre></div><p>It builds an array of pixels, removes padding and folds with recognition.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">recognizeString: (BW <span style="color:#2b91af">list</span> <span style="color:#2b91af">list</span> -&gt; <span style="color:#2b91af">char</span>) -&gt; (int -&gt; int -&gt; color) -&gt; int -&gt; int -&gt; <span style="color:#2b91af">string</span></code></pre></div>
+<p>It builds an array of pixels, removes padding and folds with recognition.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> recognizeString matchSymbol getPixel width height =
 
   <span style="color:#00f">let</span> pixels =
@@ -335,17 +360,20 @@ symbols and get pixels together with width and height of the region:</p>
   Seq.foldBack splitIntoSymbols pixelColumns []
   |&gt; List.map matchSymbol
   |&gt; Array.ofSeq
-  |&gt; String.Concat
-</code></pre></div><p>Then we use it with a specific recognition patterns, e.g. known digits in case
+  |&gt; String.Concat</code></pre></div>
+<p>Then we use it with a specific recognition patterns, e.g. known digits in case
 of numbers recognition:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> recognizeNumber x =
-  recognizeString (getChar numberPatterns) x
-</code></pre></div><p>A way to produce these patterns is discussed in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
+  recognizeString (getChar numberPatterns) x</code></pre></div>
+<p>A way to produce these patterns is discussed in <a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/">the previous part</a>.</p>
+
 <h2 id="conclusion">Conclusion</h2>
+
 <p>String recognition takes a bit more steps to execute comparing to the recognition
 of fixed objects. Nevertheless it&rsquo;s pretty straightforward to implement once
 we split it into small and well-understood conversion steps. The full code
 for card recognition can be found in <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/StringRecognition.fs">my github repo</a>.</p>
+
 <p><em>Proceed to <a href="/2016/03/building-a-poker-bot-mouse-movements/">Part 3 of Building a Poker Bot: Mouse Movements</a>.</em></p>
 
                 </div>

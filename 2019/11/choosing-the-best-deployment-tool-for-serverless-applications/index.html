@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -116,10 +116,6 @@
                 </li>
                  
                 <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
-                </li>
-                 
-                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -218,40 +214,76 @@
 
                 
                 <div class="article-post">
-                    <p>Function-as-a-Service solutions, such as AWS Lambda and Azure Functions, are a great way to build modern, scalable, and affordable cloud-native applications. By delegating routine work to cloud providers, serverless applications focus on custom logic to provide the ultimate business value. But, in fact, serverless is more than cloud functions. It&rsquo;s storage, HTTP gateways, databases, queues, monitoring, and security&mdash;and your serverless applications are likely to use multiple managed services and consist of many moving parts.</p>
+                    
+
+<p>Function-as-a-Service solutions, such as AWS Lambda and Azure Functions, are a great way to build modern, scalable, and affordable cloud-native applications. By delegating routine work to cloud providers, serverless applications focus on custom logic to provide the ultimate business value. But, in fact, serverless is more than cloud functions. It&rsquo;s storage, HTTP gateways, databases, queues, monitoring, and security&mdash;and your serverless applications are likely to use multiple managed services and consist of many moving parts.</p>
+
 <p>So how do you deploy such applications reliably? There are multiple cloud deployment tools out there! In this article, I identify several criteria to consider when making your decision.</p>
+
 <h2 id="point-and-click-or-write-code">Point-and-Click or Write Code?</h2>
+
 <p>Most tutorials and getting-started guides use web portals, like AWS Management Console or Microsoft Azure portal, to create basic serverless applications and required infrastructure. The visual flow of solutions like these is simple for newcomers to understand, and they can take shortcuts and assume some sensible defaults to streamline the process.</p>
+
 <p>However, simply clicking through the online wizard won&rsquo;t produce reliable outcomes. Two weeks later, for example, you might not be able to follow the exact same sequence of steps to create a copy of your application when you need it. Now imagine if your colleague has to try!</p>
+
 <p>Instead of the manual provisioning process, you can define the infrastructure as code. I&rsquo;m using “code” in a broad sense here: It can be any machine-readable format that is written by a human and executed by an automated tool.</p>
+
 <p>I strongly recommend using the infrastructure-as-code approach for any application that&rsquo;s beyond simple demos and one-off trials. Put the code definition to the source control, and you&rsquo;ll get repeatable deployments, documentation, a history of changes, and reference materials&mdash;all in one step.</p>
+
 <h2 id="procedural-or-desired-state">Procedural or Desired State?</h2>
+
 <p>Bash or PowerShell scripts are the traditional way to automate. Every cloud provider has a command-line interface (CLI) to manage its resource portfolio, so it&rsquo;s entirely possible to script the provisioning of the entire infrastructure for your serverless application.</p>
+
 <p>However, there are a few downsides to this approach. Naturally, scripts are very imperative: You describe the exact steps to execute, in the required order. And if you need to change the state of an existing environment, you&rsquo;ll likely need to manage update scripts that bring the infrastructure through transition steps. Finally, it&rsquo;s hard to manage failures: If a script fails in the middle, the exact state of your resources will often be unknown.</p>
+
 <p>You can also try the declarative style of Desired State Configuration (DSC). The goal of DSC is to describe the complete state of the infrastructure, regardless of its current state. Then, it functions as an automated tool which reads the desired state, compares it to the current state, and figures out which steps to execute to reconcile the two.</p>
+
 <p>All the tools that I mention in the rest of the article follow the desired-state philosophy.</p>
+
 <h2 id="cloud-vendor-or-third-party">Cloud Vendor or Third Party?</h2>
+
 <p>Each cloud vendor has its own native tool to manage infrastructure as code: <a href="https://aws.amazon.com/cloudformation/">AWS CloudFormation</a>, <a href="https://docs.microsoft.com/en-us/azure/azure-resource-manager/template-deployment-overview">Azure Resource Manager (ARM) templates</a>, and <a href="https://cloud.google.com/deployment-manager/">Google Cloud Deployment Manager</a>, for example. These are all first-class services, so they have excellent feature coverage and are widely used, stable, and battle-tested.</p>
+
 <p>However, while the vendor tools are robust, they have a set of constraints. Obviously, each tool focuses on one cloud, so mastering CloudFormation won&rsquo;t make you an ARM guru. Also, the deployment managers are fundamental infrastructure components of their respective clouds. Because they need to support every service and feature, they tend to operate at a quite low level. Additionally, they must avoid breaking changes, so legacy features and issues tend to pile up over time. The tools may feel rigid, and because they are closed source and vendor managed, you don&rsquo;t have much influence.</p>
+
 <p>It&rsquo;s worth noting that numerous third-party infrastructure management tools try to compete with cloud vendors, and serverless apps can successfully use many of them. <a href="https://www.terraform.io/">HashiCorp&rsquo;s Terraform</a>, for example, is a cross-provider tool, which covers not only the majority of each cloud&rsquo;s features, but also the configuration of Kubernetes, Docker images, Kafka, monitoring tools, and some databases.</p>
+
 <p>The downside of third-party tools is that they may not offer support for some cloud features. For example, while using Terraform&rsquo;s AzureRM provider, I definitely bumped into missing features, especially for newer services or niche configurations. To compensate for these kinds of issues, third-party tools are usually open source and accept contributions, so an active community is an essential factor.</p>
+
 <h2 id="execution-on-the-client-or-in-the-cloud">Execution on the Client or in the Cloud?</h2>
+
 <p>Cloud vendor tools take your definition files and run them from within the managed cloud service. For example, Azure creates a first-class object&mdash;deployment&mdash;which shows the deployed resources or problems that occurred. CloudFormation can automatically roll back a failed deployment to the previous well-known state.</p>
+
 <p>In contrast, CLI scripts, Terraform, and <a href="https://www.pulumi.com/">Pulumi</a> run the deployment from the client machine where they are executed, or, even better, from CI/CD servers for most production deployments. This means they have more granular control over the execution flow and error handling, but also that they aren&rsquo;t able to reuse the built-in deployment features of the native-cloud managers.</p>
+
 <p>Some tools, like <a href="https://github.com/cloudtools/troposphere">Troposphere</a>, <a href="https://aws.amazon.com/cdk/">AWS Cloud Development Kit (AWS CDK)</a>, and <a href="https://serverless.com/">Serverless Framework</a>, have their own way to describe the infrastructure. Still, they transpile these definitions to formats like CloudFormation to make use of the cloud deployment engines.</p>
+
 <h2 id="general-purpose-or-specialized">General Purpose or Specialized?</h2>
+
 <p>CloudFormation, ARM templates, and Terraform are all general-purpose tools: You can define serverless applications with them, but that&rsquo;s not their primary focus. Traditional infrastructure and networking solutions still have a far larger audience, so these scenarios attract more attention from the vendors. General-purpose tools lack higher-level abstractions, so the resource definitions tend to be verbose and repetitive.</p>
+
 <p>Instead of general-purpose tools, you can use a specialized solution that is inherently modeled around the concepts of serverless. Serverless Framework is a multi-provider tool, while <a href="https://aws.amazon.com/serverless/sam/">AWS Serverless Application Model (SAM)</a> is a comparable option from AWS. Another example is Claudia.js&mdash;a deployment tool for node-based AWS Lambda.</p>
+
 <p>It&rsquo;s easy to get started with specialized tools, and to use them for implementing basic scenarios. However, if your application is a combination of serverless features and traditional infrastructure, you may need to use more than one tool. In this case, make sure that the benefits of the specialized tools are enough to compensate for the complexity of using multiple options simultaneously.</p>
+
 <p>I struggled with trying to use Serverless Framework for Azure: The experience was not ideal, and some features were missing. Understandably, AWS is Serverless Framework&rsquo;s primary target, so plugins targeting other clouds may lag behind.</p>
+
 <h2 id="markup-or-programming-language">Markup or Programming Language?</h2>
+
 <p>If you settle for a desired-state configuration tool, you will likely use a markup language to define the cloud infrastructure. CloudFormation, Google Cloud Deployment Manager, and Serverless Framework use YAML, while ARM templates are defined in JSON. Terraform invented its own markup language called HCL. This language makes the definitions more succinct and expressive, but requires you to master a new language and toolchain.</p>
+
 <p>However, markup languages are lacking expressiveness to easily represent conditional shapes, multiple similar resources, or higher-level abstractions. They embed home-grown constructs inside YAML or JSON, or make you fall back to template-based generation. A newer class of tools is trying to address this limitation by using general-purpose programming languages to define cloud infrastructures. For example, AWS CDK uses TypeScript, Python, Java, and .NET to produce CloudFormation output.</p>
+
 <p>Pulumi takes this idea even further by providing support for a similar set of languages to provision infrastructure for any cloud&mdash;and many tools beyond the cloud. Developers can use their existing skills and tools to define type-safe and testable infrastructure and to create higher level abstractions with classes, components, and functions.</p>
+
 <p>Both Pulumi and AWS CDK have a set of components focusing on serverless applications, so they might be the best tools for providing both high-level expressive serverless components and low-level infrastructure resources, if needed.</p>
+
 <p>In the past, I deployed Azure resources with templates containing five thousand lines of JSON. It wasn&rsquo;t a great developer experience to write all those lines, and the application was mostly a bunch of web servers and SQL databases&mdash;nothing too fancy. When I define a similar infrastructure with TypeScript, the code size reduction is at least tenfold. <a href="https://mikhail.io/2019/02/from-yaml-to-typescript-developers-view-on-cloud-automation/">This post</a> gives an example of a similar transformation for an AWS serverless app.</p>
+
 <h2 id="conclusion">Conclusion</h2>
+
 <p>Serverless applications consist of many components, combining multiple managed services into one cohesive flow. Regardless of your preference for a specific tool, you should use the infrastructure-as-code approach to make your serverless applications reliable and maintainable in the long run.</p>
+
 <p>Cloud infrastructure tools are evolving quickly, and none of them are perfect just yet. To choose what&rsquo;s best for you, evaluate your needs and constraints, compare several options, and keep an eye on the field: More innovations are coming soon.</p>
 
                 </div>

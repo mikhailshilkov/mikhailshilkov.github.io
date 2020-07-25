@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -112,10 +112,6 @@
                 </li>
                  
                 <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
-                </li>
-                 
-                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -212,15 +208,20 @@
 
                 
                 <div class="article-post">
-                    <p>My exploration of Actor model started with <a href="http://getakka.net">Akka.NET</a> framework - a .NET port of
+                    
+
+<p>My exploration of Actor model started with <a href="http://getakka.net">Akka.NET</a> framework - a .NET port of
 JVM-based <a href="http://akka.io">Akka</a>. Actor programming model made a lot of sense to me, but once
 I started playing with it, some questions arose. Most of those questions were related to the
 following <a href="http://doc.akka.io/docs/akka/2.4.2/general/actors.html">definition</a>:</p>
+
 <blockquote>
 <p>An actor is a container for <code>State</code>, <code>Behavior</code>, a <code>Mailbox</code>, <code>Children</code> and a <code>Supervisor Strategy</code>.</p>
 </blockquote>
+
 <p>So, based on the <a href="https://github.com/petabridge/akka-bootcamp">Akka.NET Bootcamp</a> course I understood that
 an Actor</p>
+
 <ul>
 <li>knows what kind of messages it can accept</li>
 <li>does some processing of each message</li>
@@ -230,99 +231,129 @@ an Actor</p>
 <li>obtains references to other actors</li>
 <li>sends messages to children and other actors</li>
 </ul>
+
 <p>While it&rsquo;s nice that the framework enables us to develop for different aspects of actor
 behavior, it might also be dangerous in case you do all the things in one place. Ball of spaghetti mud
 was where I ended up during my first attempt. My actors were doing all the things from
 the above list and the code got messy very quick. So, the following questions popped up
 in my head:</p>
+
 <p><em>How do I avoid mixing several concerns in one piece of code?</em></p>
+
 <p><em>How do I make the code easily testable?</em></p>
+
 <p><em>How do I minimize the usage of mutable state?</em></p>
+
 <p><em>How do I avoid boilerplate code when it&rsquo;s not needed?</em></p>
+
 <h2 id="functional-actors">Functional Actors</h2>
+
 <p>I am now developing the actor-based application in F#, the functional first
 language. Functions are easy to reason about, reusable and testable. But the
 actors are usually defined in terms of objects and classes. F# supports classes
 but that&rsquo;s not the path that I&rsquo;m willing to go.</p>
+
 <p>How do we make actors out of functions? Well, most of the time actors don&rsquo;t
 need all the features of the framework. In this case we can define the required actor
 behavior in terms of a minimal function and then use creational patterns to
 spawn actor instances out of it.</p>
+
 <p>Let&rsquo;s look at some common patterns that I identified. For each pattern, I will
 define</p>
+
 <ul>
 <li>an example of a core function which implements the business logic</li>
 <li>a generic function to create actors with behavior of a core function</li>
 <li>an example of actor instantiation using the two functions above</li>
 </ul>
-<hr>
-<h2 id="message-sink"><a name="MessageSink"></a>
-Message Sink</h2>
+
+<hr />
+
+<p><a name="MessageSink"></a></p>
+
+<h2 id="message-sink">Message Sink</h2>
+
 <p>Stateless Message Sink is the simplest type of actor.</p>
-<p><img src="messagesink.png" alt="Message Sink actor"></p>
+
+<p><img src="messagesink.png" alt="Message Sink actor" /></p>
+
 <p>It receives a message and executes some action on it. The action is not related
 to any other actors, and there is no state, so the processing of each message
 is always the same. Obviously, it&rsquo;s related to some kind of side effects:
 logging the message, saving the data to the external storage and so on.</p>
+
 <p>So, we don&rsquo;t need the majority of actor features in this case. The whole actor
 processing could be represented by a function of type <code>'a -&gt; unit</code>. Here
 is an example of a core function:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> print msg =
-  printn <span style="color:#a31515">&#34;</span><span style="color:#a31515">Message received: %A</span><span style="color:#a31515">&#34;</span> msg
-</code></pre></div><p>So how do we make an actor out of this function? Well, it&rsquo;s already implemented
+  printn <span style="color:#a31515">&#34;Message received: %A&#34;</span> msg</code></pre></div>
+<p>So how do we make an actor out of this function? Well, it&rsquo;s already implemented
 as <code>actorOf</code> helper function in Akka.NET F# extensions:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> actorOfSink (f : <span style="color:#00f">&#39;</span>a -&gt; <span style="color:#2b91af">unit</span>) = actorOf f
-</code></pre></div><p>And here is how we spawn an actor instance:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> actorOfSink (f : <span style="color:#00f">&#39;</span>a -&gt; <span style="color:#2b91af">unit</span>) = actorOf f</code></pre></div>
+<p>And here is how we spawn an actor instance:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> printActorRef =
   actorOfSink print
-  |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">print-actor</span><span style="color:#a31515">&#34;</span>
+  |&gt; spawn system <span style="color:#a31515">&#34;print-actor&#34;</span>
 
 printActorRef &lt;! 3
-<span style="color:#008000">// &#34;Message received: 3&#34; is printed
-</span></code></pre></div><p>That&rsquo;s the simplicity that I&rsquo;m searching for. Let&rsquo;s look at a slightly more
+// <span style="color:#a31515">&#34;Message received: 3&#34;</span> is printed</code></pre></div>
+<p>That&rsquo;s the simplicity that I&rsquo;m searching for. Let&rsquo;s look at a slightly more
 complex example.</p>
-<hr>
-<h2 id="converter"><a name="Converter"></a>
-Converter</h2>
+
+<hr />
+
+<p><a name="Converter"></a></p>
+
+<h2 id="converter">Converter</h2>
+
 <p>Stateless Converter maps the incoming message into another message and sends
 it to another predefined actor.</p>
-<p><img src="converter.png" alt="Converter actor"></p>
+
+<p><img src="converter.png" alt="Converter actor" /></p>
+
 <p>The core of this actor is a classic function with one input and one output
 parameter (type <code>'a - 'b</code>):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> square msg =
-  msg * msg
-</code></pre></div><p>The actor function is similar to the one of Message Sink, but it also accepts
+  msg * msg</code></pre></div>
+<p>The actor function is similar to the one of Message Sink, but it also accepts
 a reference to the output actor and knows how to send messages to it:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> actorOfConvert f outputRef =
-  actorOf2 (<span style="color:#00f">fun</span> _ msg -&gt; outputRef &lt;! f msg)
-</code></pre></div><p>Here is how we spawn an instance of a Converter using our <code>print-actor</code> as the
+  actorOf2 (<span style="color:#00f">fun</span> _ msg -&gt; outputRef &lt;! f msg)</code></pre></div>
+<p>Here is how we spawn an instance of a Converter using our <code>print-actor</code> as the
 output:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> squareActorRef =
   actorOfConvert square printActorRef
-  |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">square-actor</span><span style="color:#a31515">&#34;</span>
+  |&gt; spawn system <span style="color:#a31515">&#34;square-actor&#34;</span>
 
 squareActorRef &lt;! 3
-<span style="color:#008000">// &#34;Message received: 9&#34; is printed
-</span></code></pre></div><p>Both actor patterns had no notion of state so far. Let&rsquo;s see how we can
+// <span style="color:#a31515">&#34;Message received: 9&#34;</span> is printed</code></pre></div>
+<p>Both actor patterns had no notion of state so far. Let&rsquo;s see how we can
 treat the statefulness in a functional way.</p>
-<hr>
+
+<hr />
+
 <h2 id="stateful-sink">Stateful Sink</h2>
+
 <p>Let&rsquo;s get back to our Message Sink actor with side-effects, and make it
 dependent on its internal state. The state is affected by the incoming
 messages and is preserved until the next message comes in.</p>
-<p><img src="statefulsink.png" alt="Stateful Sink actor"></p>
+
+<p><img src="statefulsink.png" alt="Stateful Sink actor" /></p>
+
 <p>Does not look very functional, right? But this impression is wrong in fact.
 We can represent the state before a message came in - as an extra input parameter,
 and  the state after the message got processed - as an output parameter.
 We start with an initial state and the output of the
 first message becomes the input state of the second message:</p>
-<p><img src="statefulsinkfunctional.png" alt="Stateful Sink functional actor"></p>
+
+<p><img src="statefulsinkfunctional.png" alt="Stateful Sink functional actor" /></p>
+
 <p>Here is an example of a function which prints out the index of a message together
 with the message contents:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> printIndex index msg =
-  printn <span style="color:#a31515">&#34;</span><span style="color:#a31515">Message [%i] received: %A</span><span style="color:#a31515">&#34;</span> index msg
-  index + 1
-</code></pre></div><p>For the actor implementation we need a recursive function so we can&rsquo;t use
+  printn <span style="color:#a31515">&#34;Message [%i] received: %A&#34;</span> index msg
+  index + 1</code></pre></div>
+<p>For the actor implementation we need a recursive function so we can&rsquo;t use
 <code>actorOf2</code> anymore. Actor workflow is a bit more lines but still very simple:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> actorOfStatefulSink f initialState (mailbox : Actor&lt;<span style="color:#00f">&#39;</span>a&gt;) =
 
@@ -333,31 +364,36 @@ with the message contents:</p>
       <span style="color:#00f">return</span>! imp newState
     }
 
-  imp initialState
-</code></pre></div><p>And here is a usage example:</p>
+  imp initialState</code></pre></div>
+<p>And here is a usage example:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> printIndexActorRef =
   actorOfSink printIndex 1
-  |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">print-ix-actor</span><span style="color:#a31515">&#34;</span>
+  |&gt; spawn system <span style="color:#a31515">&#34;print-ix-actor&#34;</span>
 
 printActorRef &lt;! 3
 <span style="color:#008000">// &#34;Message [1] received: 3&#34; is printed
 </span><span style="color:#008000"></span>
 printActorRef &lt;! 4
-<span style="color:#008000">// &#34;Message [2] received: 4&#34; is printed
-</span></code></pre></div><hr>
-<h2 id="stateful-converter"><a name="StatefulConverter"></a>
-Stateful Converter</h2>
+// <span style="color:#a31515">&#34;Message [2] received: 4&#34;</span> is printed</code></pre></div>
+<hr />
+
+<p><a name="StatefulConverter"></a></p>
+
+<h2 id="stateful-converter">Stateful Converter</h2>
+
 <p>By now, the core function of the Stateful Converter actor should be a no-brainer for you. The actor
 would have two input parameters and two outputs (in a tuple). One of the outputs
 is a message and goes to another actor, the other output becomes an input for the
 next actor:</p>
-<p><img src="statefulconverter.png" alt="Stateful Converter actor"></p>
+
+<p><img src="statefulconverter.png" alt="Stateful Converter actor" /></p>
+
 <p>Here is a function which squares the messaged number, then calculates the running total
 and sends it forward:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> squareAndSum sum msg =
   <span style="color:#00f">let</span> result = sum + msg*msg
-  (result, result)
-</code></pre></div><p>In this particular case the output message and state are equal, but they don&rsquo;t
+  (result, result)</code></pre></div>
+<p>In this particular case the output message and state are equal, but they don&rsquo;t
 have to be. Here is the actor implementation:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> actorOfStatefulConvert f initialState outputRef (mailbox : Actor&lt;<span style="color:#00f">&#39;</span>a&gt;) =
 
@@ -369,30 +405,37 @@ have to be. Here is the actor implementation:</p>
       <span style="color:#00f">return</span>! imp newState
     }
 
-  imp initialState
-</code></pre></div><p>And a usage example:</p>
+  imp initialState</code></pre></div>
+<p>And a usage example:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> squareAndSumActorRef =
   actorOfConvert square 0 printIndexActorRef
-  |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">square-sum-actor</span><span style="color:#a31515">&#34;</span>
+  |&gt; spawn system <span style="color:#a31515">&#34;square-sum-actor&#34;</span>
 
 squareAndSumActorRef &lt;! 3
 <span style="color:#008000">// &#34;Message [1] received: 9&#34; is printed
 </span><span style="color:#008000"></span>
 squareAndSumActorRef &lt;! 4
-<span style="color:#008000">// &#34;Message [2] received: 25&#34; is printed
-</span></code></pre></div><hr>
-<h2 id="converter-supervisor"><a name="ConverterSupervisor"></a>
-Converter-Supervisor</h2>
+// <span style="color:#a31515">&#34;Message [2] received: 25&#34;</span> is printed</code></pre></div>
+<hr />
+
+<p><a name="ConverterSupervisor"></a></p>
+
+<h2 id="converter-supervisor">Converter-Supervisor</h2>
+
 <p>In the previous patterns the Converter actors were sending messages
 to predefined actor references which were not managed (or supervised in Akka terms)
 by those actors. Now, let&rsquo;s say that the actor needs to create a child
 to send converted messages to it afterwards:</p>
-<p><img src="supervisedchild.png" alt="Supervised Child actor"></p>
+
+<p><img src="supervisedchild.png" alt="Supervised Child actor" /></p>
+
 <p>We can treat such child reference as the state and instantiate it when the first message
 comes in. (We can&rsquo;t spawn it before the first message because the
 <code>mailbox</code> object is required.) The message goes to the actor
 reference that we store in the state, something like this:</p>
-<p><img src="childasstate.png" alt="Supervised Child as State"></p>
+
+<p><img src="childasstate.png" alt="Supervised Child as State" /></p>
+
 <p>Here is the generic actor implementation:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> actorOfConvertToChild f spawnChild (mailbox : Actor&lt;<span style="color:#00f">&#39;</span>a&gt;) =
 
@@ -408,38 +451,48 @@ reference that we store in the state, something like this:</p>
       <span style="color:#00f">return</span>! imp (Some newstate)
     }
 
-  imp None
-</code></pre></div><p>The only difference is that we accept a <code>spawnChild</code> function instead of
+  imp None</code></pre></div>
+<p>The only difference is that we accept a <code>spawnChild</code> function instead of
 pre-baked actor reference. Here is the first calculator example refactored
 to Print actor being a child of Square actor.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> squareWithChildRef =
-  actorOfConvertToChild print (spawnChild square <span style="color:#a31515">&#34;</span><span style="color:#a31515">print-actor</span><span style="color:#a31515">&#34;</span>)
-  |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">square-with-child-actor</span><span style="color:#a31515">&#34;</span>
-</code></pre></div><p>Notice that the <code>square</code> and <code>print</code> functions have exactly the same signatures
+  actorOfConvertToChild print (spawnChild square <span style="color:#a31515">&#34;print-actor&#34;</span>)
+  |&gt; spawn system <span style="color:#a31515">&#34;square-with-child-actor&#34;</span></code></pre></div>
+<p>Notice that the <code>square</code> and <code>print</code> functions have exactly the same signatures
 and implementations as we used before, and the concern of actor hierarchy is
 completely separated from the business logic of the actors.</p>
+
 <p>This hierarchy is handy whenever you need multiple instances of one actor type
 (<code>f</code>-actor from the picture) and corresponding instances of another actor type
 (<code>g</code>-actor):</p>
-<p><img src="multiparents.png" alt="Multiple Parents and Children actor"></p>
-<hr>
-<h2 id="router-supervisor"><a name="RouterSupervisor"></a>
-Router-Supervisor</h2>
+
+<p><img src="multiparents.png" alt="Multiple Parents and Children actor" /></p>
+
+<hr />
+
+<p><a name="RouterSupervisor"></a></p>
+
+<h2 id="router-supervisor">Router-Supervisor</h2>
+
 <p>Routers are the kind of actors which forward each incoming message to one
 or more downstream actors. In this example the downstream actors are supervised
 by the Router itself.
 So, the Router-Supervisor can have multiple children and send the result of
 message processing to one or more of them:</p>
-<p><img src="router.png" alt="Router actor"></p>
+
+<p><img src="router.png" alt="Router actor" /></p>
+
 <p>To keep the spirit of functional actors, we represent the router logic with a function
 of type <code>'a -&gt; seq&lt;string * 'b&gt;</code>, where <code>'a</code> is the type of incoming messages,
 <code>'b</code> is the type of outgoing messages, and <code>string</code> represents the identifier of the
 actor to get the message. Here is a sample implementation:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> routeSensorData msg =
-  msg |&gt; Seq.map (<span style="color:#00f">fun</span> x -&gt; (<span style="color:#a31515">&#34;</span><span style="color:#a31515">sensor-actor-</span><span style="color:#a31515">&#34;</span> + x.SensorId, x.Temperature))
-</code></pre></div><p>Based on the incoming metadata (sensor identifier) the actor forwards its
+  msg |&gt; Seq.map (<span style="color:#00f">fun</span> x -&gt; (<span style="color:#a31515">&#34;sensor-actor-&#34;</span> + x.SensorId, x.Temperature))</code></pre></div>
+<p>Based on the incoming metadata (sensor identifier) the actor forwards its
 temperature to corresponding sensor-specific actor.</p>
+
 <p>Here is the implementation of the generic actor function:</p>
+
 <pre><code>let actorOfRouteToChildren f spawnChild (mailbox : Actor&lt;'a&gt;) =
 
   let getActor id =
@@ -457,17 +510,24 @@ temperature to corresponding sensor-specific actor.</p>
     }
 
   imp ()
-</code></pre><p>And a usage example:</p>
+</code></pre>
+
+<p>And a usage example:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> sensorRouterRef =
   actorOfRouteToChildren routeSensorData (spawnChild square)
-  |&gt; spawn system <span style="color:#a31515">&#34;</span><span style="color:#a31515">route-sensor-actor</span><span style="color:#a31515">&#34;</span>
-</code></pre></div><p>Note that <code>spawnChild</code> does not accept the child ID anymore because it&rsquo;s being
+  |&gt; spawn system <span style="color:#a31515">&#34;route-sensor-actor&#34;</span></code></pre></div>
+<p>Note that <code>spawnChild</code> does not accept the child ID anymore because it&rsquo;s being
 controlled by the router itself.</p>
-<hr>
+
+<hr />
+
 <h2 id="conclusion">Conclusion</h2>
+
 <p>With the patterns that we have so far we should be able to build quite powerful
 hierarchies like the one shown below:</p>
-<p><img src="usecase.png" alt="Actor use case"></p>
+
+<p><img src="usecase.png" alt="Actor use case" /></p>
+
 <p>There might be many other scenarios and types of actors that would make sense
 in your use case. I&rsquo;m just showing the basic patterns, but more importantly the way of
 reasoning about the code. Don&rsquo;t

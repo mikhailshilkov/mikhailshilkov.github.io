@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -112,10 +112,6 @@
                 </li>
                  
                 <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
-                </li>
-                 
-                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -214,54 +210,72 @@
 
                 
                 <div class="article-post">
-                    <p>In this post, we&rsquo;ll take a look at 10 &ldquo;pearls&rdquo;—bite-sized code snippets—that demonstrate using Pulumi to build serverless applications with Azure Functions and infrastructure as code. These pearls are organized into four categories, each demonstrating a unique scenario:</p>
+                    <p>In this post, we&rsquo;ll take a look at 10 &ldquo;pearls&rdquo;&mdash;bite-sized code snippets&mdash;that demonstrate using Pulumi to build serverless applications with Azure Functions and infrastructure as code. These pearls are organized into four categories, each demonstrating a unique scenario:</p>
+
 <ul>
 <li><strong>Function App Deployment</strong>: Deploy an existing Azure Functions application using infrastructure as code.</li>
 <li><strong>HTTP Functions as Callbacks</strong>: Mix JavaScript or TypeScript functions with your infrastructure definition to produce strongly-typed, self-contained, serverless HTTP endpoints.</li>
 <li><strong>Cloud Event Handling</strong>: Leverage a variety of event sources available to Azure Functions with lightweight event handlers.</li>
-<li><strong>Data Flows with Function Bindings</strong>: Take advantage of function bindings—declarative connectors to Azure services.</li>
+<li><strong>Data Flows with Function Bindings</strong>: Take advantage of function bindings&mdash;declarative connectors to Azure services.</li>
 </ul>
+
 <p>Our Azure Functions pearls are:</p>
+
 <p><a href="#function-app-deployment"><strong>Function App Deployment</strong></a></p>
+
 <ul>
 <li><a href="#1-deploy-a-net-function-app">Deploy a Function App written in .NET or any other supported runtime</a></li>
 <li><a href="#2-run-functions-using-an-elastic-premium-plan">Configure Functions to run on an Elastic Premium Plan</a></li>
 </ul>
+
 <p><a href="#http-functions-as-callbacks"><strong>HTTP Functions as Callbacks</strong></a></p>
+
 <ul>
 <li><a href="#3-define-node-js-functions-as-inline-callbacks">Define Node.js Functions as inline callbacks</a></li>
 <li><a href="#4-rest-apis-as-multiple-functions">Implement REST APIs as multiple Functions</a></li>
 <li><a href="#5-function-warming-with-a-timer-function">&ldquo;Warm&rdquo; the Functions to avoid Cold Starts</a></li>
 </ul>
+
 <p><a href="#cloud-event-handling"><strong>Cloud Event Handling</strong></a></p>
+
 <ul>
 <li><a href="#6-process-events-from-azure-event-hubs">Process events from Azure Event Hub</a></li>
 <li><a href="#7-subscribe-to-azure-event-grid">Subscribe to Blob creation with Azure Event Grid</a></li>
 <li><a href="#8-respond-to-resource-level-events">Run a Function every time an Azure resource is modified</a></li>
 </ul>
+
 <p><a href="#data-flows-with-function-bindings"><strong>Data Flows with Function Bindings</strong></a></p>
+
 <ul>
 <li><a href="#9-output-bindings">Push a message to a Storage Queue with an output binding</a></li>
 <li><a href="#10-input-bindings">Pull a Storage Table row with an input binding</a></li>
 </ul>
+
 <h2 id="function-app-deployment">Function App Deployment</h2>
+
 <p>Azure Functions can be written in many languages, and Pulumi supports whatever choice you make. You can take any existing serverless application and deploy it using infrastructure-as-code.</p>
+
 <h3 id="1-deploy-a-net-function-app">1. Deploy a .NET Function App</h3>
+
 <p>[ <a href="https://github.com/pulumi/examples/tree/master/azure-ts-functions-raw">Runnable Example</a> ]</p>
+
 <p>Many Function Apps are .NET applications created with native tooling like Visual Studio or the Functions CLI. Pulumi can simply deploy such an application in only a few lines of JavaScript:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> dotnetApp = <span style="color:#00f">new</span> azure.appservice.ArchiveFunctionApp(<span style="color:#a31515">&#34;http-dotnet&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
    archive: <span style="color:#2b91af">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./app/bin/Debug/netcoreapp2.1/publish&#34;</span>),
    appSettings: { runtime: <span style="color:#a31515">&#34;dotnet&#34;</span> },
-});
-</code></pre></div><p>There are only four things required:</p>
+});</code></pre></div>
+<p>There are only four things required:</p>
+
 <ul>
 <li>the Function App name (&ldquo;http-dotnet&rdquo;)</li>
 <li>the resource group it belongs to</li>
 <li>the path to the compiled .NET assemblies, and</li>
 <li>the desired runtime</li>
 </ul>
+
 <p>Pulumi takes care of the rest for you. It handles the following tasks:</p>
+
 <ul>
 <li>Creating a Storage Account and a Blob Container</li>
 <li>Zipping up the binaries and uploading them to the blob container</li>
@@ -269,10 +283,15 @@
 <li>Preparing a Consumption Plan and a Function App using this Consumption Plan</li>
 <li>Configuring the required application settings, including a reference to the zip archive with the SAS token</li>
 </ul>
-<p><img src="console.png" alt="Serverless Application deployed by Pulumi"></p>
+
+<p><img src="console.png" alt="Serverless Application deployed by Pulumi" /></p>
+
 <p>While a few values are required, you are not restricted to the default behavior and can change any setting.</p>
+
 <h3 id="2-run-functions-using-an-elastic-premium-plan">2. Run Functions using an Elastic Premium Plan</h3>
+
 <p>While the Consumption Plan is the ultimate serverless option, there are other ways to host Azure Functions. Azure also offers the Premium Plan: a combination of the power and guarantees of a fixed App Service Plan with the elasticity of Consumption.</p>
+
 <p>If you want to take advantage of a Premium Plan, go ahead and define it as a Pulumi resource, then link to it in the Function App definition:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> premiumPlan = <span style="color:#00f">new</span> azure.appservice.Plan(<span style="color:#a31515">&#34;my-premium&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -288,35 +307,47 @@
    plan: <span style="color:#2b91af">premiumPlan</span>,
    archive: <span style="color:#2b91af">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./java/target/functions/fabrikam&#34;</span>),
    appSettings: { runtime: <span style="color:#a31515">&#34;java&#34;</span> },
-});
-</code></pre></div><p>In this example, I deployed a Java application. The Premium Plan has a couple of configuration knobs: the <em>instance size</em> and the <em>maximum scale-out limit</em>.</p>
+});</code></pre></div>
+<p>In this example, I deployed a Java application. The Premium Plan has a couple of configuration knobs: the <em>instance size</em> and the <em>maximum scale-out limit</em>.</p>
+
 <h2 id="http-functions-as-callbacks">HTTP Functions as Callbacks</h2>
+
 <p>Node.js is another runtime supported by Azure Functions. Like before, you can use the <code>ArchiveFunctionApp</code> class to deploy the application from an external folder. However, Pulumi&rsquo;s Node.js SDK provides a way to mix the code of your functions directly into your infrastructure definition.</p>
-<h3 id="3-define-nodejs-functions-as-inline-callbacks">3. Define Node.js Functions as Inline Callbacks</h3>
+
+<h3 id="3-define-node-js-functions-as-inline-callbacks">3. Define Node.js Functions as Inline Callbacks</h3>
+
 <p>[ <a href="https://github.com/pulumi/examples/tree/master/azure-ts-functions">Runnable Example</a> ]</p>
+
 <p>A TypeScript or a JavaScript function becomes an Azure Function deployed to the cloud:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> greeting = <span style="color:#00f">new</span> azure.appservice.HttpEventSubscription(<span style="color:#a31515">&#39;greeting&#39;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
    callback: <span style="color:#2b91af">async</span> (context, req) =&gt; {
        <span style="color:#00f">return</span> {
            status: <span style="color:#2b91af">200</span>,
-           body: <span style="color:#a31515">`</span><span style="color:#a31515">Hello </span><span style="color:#a31515">${</span>req.query[<span style="color:#a31515">&#39;name&#39;</span>] || <span style="color:#a31515">&#39;World&#39;</span><span style="color:#a31515">}</span><span style="color:#a31515">!</span><span style="color:#a31515">`</span>,
+           body: <span style="color:#a31515">`Hello </span><span style="color:#a31515">${</span>req.query[<span style="color:#a31515">&#39;name&#39;</span>] || <span style="color:#a31515">&#39;World&#39;</span><span style="color:#a31515">}</span><span style="color:#a31515">!`</span>,
        };
    }
 });
 
-<span style="color:#00f">export</span> <span style="color:#00f">const</span> url = greeting.url;
-</code></pre></div><p>You are free to use any NPM module inside the callback, and the dependencies will be automatically packaged into the deployment artifact. Alternatively, you can extract the callback function into a separate file or package and import it from your infrastructure code.</p>
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> url = greeting.url;</code></pre></div>
+<p>You are free to use any NPM module inside the callback, and the dependencies will be automatically packaged into the deployment artifact. Alternatively, you can extract the callback function into a separate file or package and import it from your infrastructure code.</p>
+
 <p>While mixing infrastructure and application code in the same file may seem counterintuitive, it provides many benefits:</p>
+
 <ul>
 <li>Combined code binaries (data plane) and infrastructure (control plane) as a single unit of deployment</li>
 <li>Eliminate the need for boilerplate configuration like <code>host.json</code> and <code>function.json</code> files</li>
 <li>Robust typing out-of-the-box: For instance, you can flawlessly &ldquo;dot into&rdquo; the <code>content</code> and <code>req</code> object above.</li>
 </ul>
+
 <p>You can read more about the motivation in <a href="https://mikhail.io/2019/05/serverless-as-simple-callbacks-with-pulumi-and-azure-functions/">Serverless as Simple Callbacks with Pulumi and Azure Functions</a>.</p>
+
 <p>The previous example deployed a Function App with a single Function. However, Azure supports applications with multiple Functions bundled together.</p>
+
 <h3 id="4-rest-apis-as-multiple-functions">4. REST APIs as Multiple Functions</h3>
+
 <p>It&rsquo;s common to use Azure Functions for implementing RESTful APIs. As an API may consist of multiple endpoints, we may need to combine several HTTP Functions into a single deployment unit.</p>
+
 <p>To achieve that, we define an <code>HttpFunction</code> object per Azure Function, each with its callback and settings. Then, we pass an array of these objects into a <code>MultiCallbackFunctionApp</code> constructor. Each Function definition may have a specific route and HTTP methods to handle:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> get = <span style="color:#00f">new</span> azure.appservice.HttpFunction(<span style="color:#a31515">&#34;Read&#34;</span>, {
    route: <span style="color:#a31515">&#34;items&#34;</span>,
@@ -339,12 +370,17 @@
 <span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.MultiCallbackFunctionApp(<span style="color:#a31515">&#34;multi-app&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
    functions: [get, post],
-});
-</code></pre></div><p>You can combine as many Functions as you want, including functions of different types, as shown in the next example.</p>
+});</code></pre></div>
+<p>You can combine as many Functions as you want, including functions of different types, as shown in the next example.</p>
+
 <h3 id="5-function-warming-with-a-timer-function">5. Function &ldquo;Warming&rdquo; with a Timer Function</h3>
+
 <p>[ <a href="https://github.com/pulumi/pulumi-azure/blob/master/examples/http-multi">Runnable Example</a> ]</p>
+
 <p>Scheduled jobs are another frequent use case for serverless functions. It&rsquo;s possible to define a <a href="https://docs.microsoft.com/azure/azure-functions/functions-bindings-timer#cron-expressions"><em>cron expression</em></a> and get the code executed at designated intervals.</p>
+
 <p>The Consumption Plan disposes a worker if no Function runs in about 20 minutes. After disposal, the next execution will cause a <a href="https://mikhail.io/serverless/coldstarts/define/"><em>cold start</em></a>, and the response latency, will increase.</p>
+
 <p>In order to avoid this disposal, we can combine a target HTTP Function with a Timer Function. The body of the Timer Function is empty, since its sole purpose is to trigger the Function App and keep the worker &ldquo;warm&rdquo;:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> warmer = <span style="color:#00f">new</span> azure.appservice.TimerFunction(<span style="color:#a31515">&#34;warmer&#34;</span>, {
    schedule: <span style="color:#a31515">&#34;0 */5 * * * *&#34;</span>,
@@ -363,12 +399,17 @@
 <span style="color:#00f">const</span> app = <span style="color:#00f">new</span> azure.appservice.MultiCallbackFunctionApp(<span style="color:#a31515">&#34;always-warm-app&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
    functions: [http, warmer],
-});
-</code></pre></div><p>It&rsquo;s easy to imagine a custom component <code>WarmedFunctionApp</code> which appends a standard Timer Function to an array of Functions passed to its constructor.</p>
+});</code></pre></div>
+<p>It&rsquo;s easy to imagine a custom component <code>WarmedFunctionApp</code> which appends a standard Timer Function to an array of Functions passed to its constructor.</p>
+
 <h2 id="cloud-event-handling">Cloud Event Handling</h2>
+
 <p>While HTTP is a widespread use case, Azure Functions support many other trigger types too. <a href="https://mikhail.io/2019/05/serverless-as-simple-callbacks-with-pulumi-and-azure-functions/">The previous post</a> featured Storage Queues and ServiceBus Topics. Pulumi supports Timers, Events Hubs, Event Grid, Storage Blobs, Service Bus Queues, and Cosmos DB Change Feed events, too! Let&rsquo;s see how that looks using Azure Event Hubs.</p>
+
 <h3 id="6-process-events-from-azure-event-hubs">6. Process Events from Azure Event Hubs</h3>
+
 <p>[ <a href="https://github.com/pulumi/pulumi-azure/tree/master/examples/eventhub">Runnable Example</a> ]</p>
+
 <p>Azure Event Hubs is a fully-managed log-based messaging service comparable to Apache Kafka. In contrast to a self-hosted Kafka cluster, it only takes a few lines of JavaScript to create an Event Hub and start processing events:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> eventHub = <span style="color:#00f">new</span> eventhub.EventHub(<span style="color:#a31515">&#34;my-hub&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -379,11 +420,15 @@
 
 eventHub.onEvent(<span style="color:#a31515">&#34;MyHubEvent&#34;</span>, async (context, msg) =&gt; {
    console.log(<span style="color:#a31515">&#34;Event Hub message: &#34;</span> + JSON.stringify(msg));
-});
-</code></pre></div><p>Every time a new event comes in, be it once per hour or a thousand times a second, the Function is executed. Azure manages the scale-out for you.</p>
+});</code></pre></div>
+<p>Every time a new event comes in, be it once per hour or a thousand times a second, the Function is executed. Azure manages the scale-out for you.</p>
+
 <h3 id="7-subscribe-to-azure-event-grid">7. Subscribe to Azure Event Grid</h3>
+
 <p>[ <a href="https://github.com/pulumi/pulumi-azure/blob/master/examples/eventgrid">Runnable Example</a> ]</p>
+
 <p>Azure Event Grid is another trigger type for Azure Functions. It is a dispatcher service for distributing events from many other Azure services as well as external data sources.</p>
+
 <p>A classic example is subscribing to events from Azure Blob Storage. The Event Grid subscription connects to a given Storage Account and provides several handy options to filter the event stream. The following example subscribes to all JPG files created in any container of the account:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> storageAccount = <span style="color:#00f">new</span> azure.storage.Account(<span style="color:#a31515">&#34;eventgridsa&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -399,30 +444,39 @@ azure.eventgrid.events.onGridBlobCreated(<span style="color:#a31515">&#34;OnNewB
        subjectEndsWith: <span style="color:#a31515">&#34;.jpg&#34;</span>,
    },
    callback: <span style="color:#2b91af">async</span> (context, event) =&gt; {
-       context.log(<span style="color:#a31515">`</span><span style="color:#a31515">Subject: </span><span style="color:#a31515">${</span>event.subject<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
-       context.log(<span style="color:#a31515">`</span><span style="color:#a31515">File size: </span><span style="color:#a31515">${</span>event.data.contentLength<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
+       context.log(<span style="color:#a31515">`Subject: </span><span style="color:#a31515">${</span>event.subject<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
+       context.log(<span style="color:#a31515">`File size: </span><span style="color:#a31515">${</span>event.data.contentLength<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
    },
-});
-</code></pre></div><p>The <code>event</code> object is strongly typed: The snippet above logs the file size, but there are many other properties at your disposal. Code completion makes the discovery process painless.</p>
+});</code></pre></div>
+<p>The <code>event</code> object is strongly typed: The snippet above logs the file size, but there are many other properties at your disposal. Code completion makes the discovery process painless.</p>
+
 <p>It&rsquo;s worth mentioning that Pulumi does much of the work behind the scenes here, allowing you to focus on the important parts of the task at hand. In particular, Pulumi retrieves the appropriate secret key from Azure Functions ARM API and creates an Event Grid subscription which points to a specific webhook containing that key.</p>
+
 <h3 id="8-respond-to-resource-level-events">8. Respond to Resource-level Events</h3>
+
 <p>[ <a href="https://github.com/pulumi/pulumi-azure/blob/master/examples/eventgrid">Runnable Example</a> ]</p>
+
 <p>Here is a good illustration of the power of Event Grid. A callback function gets triggered for each change to any resource belonging to the target Resource Group:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;eventgrid-rg&#34;</span>);
 
 eventgrid.events.onResourceGroupEvent(<span style="color:#a31515">&#34;OnResourceChange&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
    callback: <span style="color:#2b91af">async</span> (context, event) =&gt; {
-       context.log(<span style="color:#a31515">`</span><span style="color:#a31515">Subject: </span><span style="color:#a31515">${</span>event.subject<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
-       context.log(<span style="color:#a31515">`</span><span style="color:#a31515">Event Type: </span><span style="color:#a31515">${</span>event.eventType<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
-       context.log(<span style="color:#a31515">`</span><span style="color:#a31515">Data: </span><span style="color:#a31515">${</span>JSON.stringify(event.data)<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
+       context.log(<span style="color:#a31515">`Subject: </span><span style="color:#a31515">${</span>event.subject<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
+       context.log(<span style="color:#a31515">`Event Type: </span><span style="color:#a31515">${</span>event.eventType<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
+       context.log(<span style="color:#a31515">`Data: </span><span style="color:#a31515">${</span>JSON.stringify(event.data)<span style="color:#a31515">}</span><span style="color:#a31515">`</span>);
    },
-});
-</code></pre></div><p>This simple piece of code is an easy launching point for many automation, auditing, and governance scenarios.</p>
+});</code></pre></div>
+<p>This simple piece of code is an easy launching point for many automation, auditing, and governance scenarios.</p>
+
 <h2 id="data-flows-with-function-bindings">Data Flows with Function Bindings</h2>
+
 <p>Azure Functions come with a powerful system of bindings. So far, we only saw examples of using event sources as trigger bindings. However, Azure also supports a powerful set of so called &ldquo;input&rdquo; and &ldquo;output&rdquo; bindings.</p>
+
 <h3 id="9-output-bindings">9. Output Bindings</h3>
+
 <p>[ <a href="https://github.com/pulumi/pulumi-azure/blob/master/examples/queue">Runnable Example</a> ]</p>
+
 <p>Output bindings enable developers to easily forward the data from an Azure Function to an arbitrary destination in a declarative manner. For instance, if a queue handler needs to send a message to another queue, we don&rsquo;t have to use cloud SDKs. Instead, we can return the message-to-be-sent from the callback and wire it to the output queue. Here is a quick example:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> incoming = <span style="color:#00f">new</span> azure.storage.Queue(<span style="color:#a31515">&#34;queue-in&#34;</span>, {
   storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
@@ -436,18 +490,23 @@ incoming.onEvent(<span style="color:#a31515">&#34;NewMessage&#34;</span>,  {
    outputs: [outgoing.output(<span style="color:#a31515">&#34;queueOut&#34;</span>)],
    callback: <span style="color:#2b91af">async</span> (context, person) =&gt; {
        <span style="color:#00f">return</span> {
-           queueOut: <span style="color:#a31515">`</span><span style="color:#a31515">${</span>person.name<span style="color:#a31515">}</span><span style="color:#a31515"> logged into the system</span><span style="color:#a31515">`</span>,
+           queueOut: <span style="color:#a31515">`</span><span style="color:#a31515">${</span>person.name<span style="color:#a31515">}</span><span style="color:#a31515"> logged into the system`</span>,
        };
    },
-});
-</code></pre></div><p>Two elements play together here:</p>
+});</code></pre></div>
+<p>Two elements play together here:</p>
+
 <ul>
 <li>The <code>outputs</code> property defines an output binding with the name <code>queueOut</code> and the destination to <code>outgoing</code></li>
 <li>The <code>queueOut</code> property of the resulting object contains the output message</li>
 </ul>
+
 <p>Note that the binding name must match the output property.</p>
+
 <h3 id="10-input-bindings">10. Input Bindings</h3>
+
 <p>[ <a href="https://github.com/pulumi/pulumi-azure/tree/master/examples/table">Runnable Example</a> ]</p>
+
 <p>Input bindings pull extra bits of information and pass them as input parameters to the callback. The exact usage depends on the trigger and binding types and might be tricky to get right with JSON configuration files. Here is one example of wiring done in a Pulumi program:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> values = <span style="color:#00f">new</span> azure.storage.Table(<span style="color:#a31515">&#34;values&#34;</span>, {
    storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
@@ -465,16 +524,21 @@ incoming.onEvent(<span style="color:#a31515">&#34;NewMessage&#34;</span>,  {
            body: <span style="color:#2b91af">entry.value</span>,
        };
    },
-});
-</code></pre></div><p>There are three crucial bits here:</p>
+});</code></pre></div>
+<p>There are three crucial bits here:</p>
+
 <ul>
 <li>The <code>route</code> property of this HTTP Function contains a template parameter <code>key</code>. The runtime extracts the actual <code>key</code> value from the HTTP request.</li>
 <li>The <code>inputs</code> option contains a reference to a Storage Table with a hardcoded <code>partitionKey</code> and a <code>rowKey</code> bound to the <code>key</code> template parameter. At execution time, a row is retrieved based on the combination of the keys. The entry, if found, is passed to the callback.</li>
 <li>The <code>callback</code> has three input parameters, while all previous examples had two. The third parameter contains the retrieved row.</li>
 </ul>
+
 <p>It&rsquo;s possible to have multiple input and output bindings, and any combination of those.</p>
+
 <h2 id="wrapping-up">Wrapping Up</h2>
+
 <p>In this post, we&rsquo;ve seen some of the exciting things you can do with Azure Functions in Pulumi. Developers use serverless functions as a glue between managed cloud services. Pulumi offers a compelling way to define the links between these pieces of cloud infrastructure in a simple and expressive way.</p>
+
 <p>For a streamlined Pulumi walkthrough, including language runtime installation and cloud configuration, see the  <a href="https://www.pulumi.com/docs/quickstart/azure/">Azure Quickstart</a>, check more examples at <a href="https://github.com/pulumi/pulumi-azure/tree/master/examples">Pulumi Azure GitHub</a>, and join the <a href="https://slack.pulumi.com/">Pulumi Community Slack</a>.</p>
                 </div>
 

@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -103,10 +103,6 @@
                  
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
-                </li>
-                 
-                <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
                 </li>
                  
                 <li class="nav-item ">
@@ -206,35 +202,46 @@
 
                 
                 <div class="article-post">
-                    <p>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
+                    
+
+<p>This is the third part of <strong>Building a Poker Bot</strong> series where I describe my experience developing bot software
 to play in online poker rooms. I&rsquo;m building the bot with .NET framework and F# language which makes the task relatively easy and very enjoyable.</p>
+
 <p>Here are the previous parts:</p>
+
 <ul>
 <li><a href="https://mikhail.io/2016/02/building-a-poker-bot-card-recognition/"><em>Building a Poker Bot: Card Recognition</em></a></li>
 <li><a href="https://mikhail.io/2016/02/building-a-poker-bot-string-recognition/"><em>Building a Poker Bot: String and Number Recognition</em></a></li>
 </ul>
+
 <p>In this short post I write about the last step of the poker bot flow: clicking
 the buttons. So, the screen is already recognized, the hand is understood,
 the decisions are made and now the bot needs to execute the actions. Except for
 the bet sizing, this simply means clicking the right button at the poker table.</p>
+
 <p>The stealthiness of such clicks is a valid concern here. Ideally, we want all
 the mouse movements to look as similar as possible to the movements produced
 by a human being. For this post, I will simplify the task to the following steps:</p>
+
 <ul>
 <li>Identify where the mouse cursor is right now</li>
 <li>Decide where the mouse should be moved to</li>
 <li>Gradually move the mouse cursor</li>
 <li>Click the button</li>
 </ul>
+
 <h2 id="cursor-position">Cursor Position</h2>
+
 <p>It&rsquo;s really easy to understand where the mouse cursor currently is: just
 use <code>Control.MousePosition</code> property from the standard library:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> currentPosition () =
   <span style="color:#00f">let</span> mp = System.Windows.Forms.Control.MousePosition
-  (mp.X, mp.Y)
-</code></pre></div><p>Note that your application doesn&rsquo;t have to be based on WinForms, just reference
+  (mp.X, mp.Y)</code></pre></div>
+<p>Note that your application doesn&rsquo;t have to be based on WinForms, just reference
 the required assembly.</p>
+
 <h2 id="move-the-cursor">Move the Cursor</h2>
+
 <p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a>
 library to control the mouse and the keyboard programmatically. It uses some
 weird coordinate system, so the function to move the mouse cursor looks like this:</p>
@@ -243,10 +250,12 @@ weird coordinate system, so the function to move the mouse cursor looks like thi
 <span style="color:#00f">let</span> moveTo x y =
   <span style="color:#00f">let</span> toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; <span style="color:#2b91af">float</span>)
   <span style="color:#00f">let</span> toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; <span style="color:#2b91af">float</span>)
-  simulator.Mouse.MoveMouseTo(toX, toY)
-</code></pre></div><p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at
+  simulator.Mouse.MoveMouseTo(toX, toY)</code></pre></div>
+<p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at
 the top-left corner of the screen.</p>
+
 <h2 id="move-it-smoothly">Move It Smoothly</h2>
+
 <p>Now we want to simulate the human-like movements. It won&rsquo;t be perfect, but
 at least it should look decent. For this gradual movement function I used
 a nice F# feature called asynchronous workflows. Effectively, it looks like
@@ -259,35 +268,40 @@ a loop with async sleep statements inside.</p>
     <span style="color:#00f">let</span> y = step fromY toY count i |&gt; <span style="color:#2b91af">float</span>
     moveTo x y
     <span style="color:#00f">do</span>! Async.Sleep 3
-  }
-</code></pre></div><p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
+  }</code></pre></div>
+<p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
 Basically, it calculates a coordinate for n-th step of the movement. We can
 plug different implementations of this function to find the right balance of
 the movement style. Here is the simplest linear implementation:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> linearStep from until max i =
-  from + (until - from) * i / max
-</code></pre></div><p>The sinus-based implementation is a bit more verbose because of float-int
+  from + (until - from) * i / max</code></pre></div>
+<p>The sinus-based implementation is a bit more verbose because of float-int
 conversions:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> sinStep (from:int) (until:int) (max:int) (index:int) =
   <span style="color:#00f">let</span> fromf = from |&gt; <span style="color:#2b91af">float</span>
   <span style="color:#00f">let</span> untilf = until |&gt; <span style="color:#2b91af">float</span>
   <span style="color:#00f">let</span> maxf = max |&gt; <span style="color:#2b91af">float</span>
   <span style="color:#00f">let</span> indexf = index |&gt; <span style="color:#2b91af">float</span>
-  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int
-</code></pre></div><p>The following animation illustrates the concept:</p>
-<svg width="778" height="190" viewBox="0 0 500 190">
+  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int</code></pre></div>
+<p>The following animation illustrates the concept:</p>
+
+<p><svg width="778" height="190" viewBox="0 0 500 190">
   <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png" />
   <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png" />
-  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png" />
-  <animate xlink:href="#mouse1" attributeName="x" from="0" to="0" values="0;450;0" keyTimes="0;0.5;1" repeatCount="indefinite" dur="2s" begin="0s" fill="none" calcMode="discrete" id="img-anim1"/>
+  <image id="mouse3" x="0" y="160" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png" /></p>
+
+<p><animate xlink:href="#mouse1" attributeName="x" from="0" to="0" values="0;450;0" keyTimes="0;0.5;1" repeatCount="indefinite" dur="2s" begin="0s" fill="none" calcMode="discrete" id="img-anim1"/>
   <animate xlink:href="#mouse2" attributeName="x" from="0" to="0" values="0;450;0" keyTimes="0;0.5;1" repeatCount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim2"/>
   <animate xlink:href="#mouse3" attributeName="x" from="0" to="0" values="0;70;139;204;264;318;364;401;428;444;450;380;311;246;186;132;86;49;22;6;0" keyTimes="0;0.05;0.1;0.15;0.2;0.25;0.3;0.35;0.4;0.45;0.5;0.55;0.6;0.65;0.7;0.75;0.8;0.85;0.9;0.95;1" repeatCount="indefinite" dur="2s" begin="0s" fill="none" id="img-anim3"/>
-</svg>
+</svg></p>
+
 <p>The top mouse cursor just
 jumps from left to right and back (no animation). The middle cursor moves with
 linear speed (<code>linearStep</code> function above). The bottom cursor moves based on
 the <code>sinStep</code> function derived from sinus of time.</p>
+
 <h2 id="click-the-button">Click the Button</h2>
+
 <p>A button is a rectangle and we want to click a random point inside it. So, all
 we need is to pick random coordinates, move the mouse there and send a
 click event via the simulator:</p>
@@ -295,12 +309,16 @@ click event via the simulator:</p>
   <span style="color:#00f">let</span> r = <span style="color:#00f">new</span> Random()
   <span style="color:#00f">let</span> p = (r.Next(minX, maxX), r.Next(minY, maxY))
   moveToWorkflow sinStep p |&gt; Async.RunSynchronously
-  simulator.Mouse.LeftButtonClick()
-</code></pre></div><h2 id="demo-time">Demo Time</h2>
+  simulator.Mouse.LeftButtonClick()</code></pre></div>
+<h2 id="demo-time">Demo Time</h2>
+
 <p>Here is the demo of the mouse movements:</p>
-<p><img src="mouseclicking.gif" alt="Mouse clicking the button"></p>
+
+<p><img src="mouseclicking.gif" alt="Mouse clicking the button" /></p>
+
 <p>It looks fun, doesn&rsquo;t it? The full code for the mouse movements can be found in
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Clicker.fs">my github repo</a>.</p>
+
 <p><em>Proceed to <a href="/2016/04/building-a-poker-bot-with-akka-net-actors/">Part 4 of Building a Poker Bot with Akka.NET Actor</a>.</em></p>
 
                 </div>

@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -100,10 +100,6 @@
                  
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
-                </li>
-                 
-                <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
                 </li>
                  
                 <li class="nav-item ">
@@ -203,10 +199,14 @@
 
                 
                 <div class="article-post">
-                    <p>Akka.NET and Service Fabric are the two actor frameworks that emerged in .NET world in the last year.
+                    
+
+<p>Akka.NET and Service Fabric are the two actor frameworks that emerged in .NET world in the last year.
 The two implementations of actor models are quite different. These differences are multi-faceted but
 today I want to focus on API to define an actor and to communicate to it.</p>
+
 <h2 id="service-fabric-actors">Service Fabric Actors</h2>
+
 <p>Every actor in Service Fabric has a public interface which describes its behaviour. For this article
 I&rsquo;m going to use a toy example based on weather reports. Our actor will be able to get whether reports
 and then return the maximum temperature for a given period. An instance of actor will be created
@@ -217,7 +217,8 @@ for each city (geo partitioning). Here is our interface in Service Fabric:</p>
 
     Task&lt;<span style="color:#2b91af">int?</span>&gt; GetMaxTemperature(Period period);
 }
-</code></pre></div><p>We have two operations: a command and a query. They are both async (return <code>Task</code>). The data classes
+</code></pre></div>
+<p>We have two operations: a command and a query. They are both async (return <code>Task</code>). The data classes
 are required to be mutable DTOs based on <code>DataContract</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[DataContract]
 <span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">WeatherReport</span>
@@ -238,7 +239,8 @@ are required to be mutable DTOs based on <code>DataContract</code>:</p>
     [DataMember]
     <span style="color:#00f">public</span> DateTime Until { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
-</code></pre></div><p>And here is the implementation of the weather actor:</p>
+</code></pre></div>
+<p>And here is the implementation of the weather actor:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">internal</span> <span style="color:#00f">class</span> <span style="color:#2b91af">WeatherActor</span> : StatefulActor&lt;List&lt;WeatherReport&gt;&gt;, IWeatherActor
 {
     <span style="color:#00f">public</span> Task AddWeatherReport(WeatherReport report)
@@ -256,7 +258,8 @@ are required to be mutable DTOs based on <code>DataContract</code>:</p>
             .Max(r =&gt; (<span style="color:#2b91af">int?</span>)r.Temperature));
     }
 }
-</code></pre></div><p>Service Fabric provides reliable storage out of the box, so we are using it to
+</code></pre></div>
+<p>Service Fabric provides reliable storage out of the box, so we are using it to
 store our reports. There&rsquo;s no code required to instantiate an actor. Here is the
 code to use it:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Submit a new report
@@ -267,7 +270,9 @@ actor.AddWeatherReport(
 <span style="color:#008000">// Make a query somewhere else
 </span><span style="color:#008000"></span>IWeatherActor actor = ActorProxy.Create&lt;IWeatherActor&gt;(<span style="color:#00f">new</span> ActorId(<span style="color:#a31515">&#34;Amsterdam&#34;</span>));
 <span style="color:#2b91af">var</span> result = actor.GetMaxTemperature(<span style="color:#00f">new</span> Period { From = monthAgo, Until = now });
-</code></pre></div><h2 id="akkanet-actors">Akka.NET Actors</h2>
+</code></pre></div>
+<h2 id="akka-net-actors">Akka.NET Actors</h2>
+
 <p>Actors in Akka.NET are message-based. The messages are immutable POCOs, which
 is a great design decision. Here are the messages for our scenario:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">WeatherReport</span>
@@ -295,8 +300,8 @@ is a great design decision. Here are the messages for our scenario:</p>
     <span style="color:#00f">public</span> DateTime From { <span style="color:#00f">get</span>; }
     <span style="color:#00f">public</span> DateTime Until { <span style="color:#00f">get</span>; }
 }
-
-</code></pre></div><p>There&rsquo;s no need to define any interfaces. The basic actor implementation derives from
+</code></pre></div>
+<p>There&rsquo;s no need to define any interfaces. The basic actor implementation derives from
 <code>ReceiveActor</code> and calls <code>Receive</code> generic method to setup a callback which is called
 when a message of specified type is received:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">WeatherActor</span> : ReceiveActor
@@ -322,21 +327,21 @@ when a message of specified type is received:</p>
         Sender.Tell(response, Self);
     }
 }
-</code></pre></div><p>Note a couple more differences in this implementation comparing to Fabric style:</p>
+</code></pre></div>
+<p>Note a couple more differences in this implementation comparing to Fabric style:</p>
+
 <ul>
-<li>
-<p>State is stored in a normal class field and is not persistent or replicated
+<li><p>State is stored in a normal class field and is not persistent or replicated
 by default. This can be solved by Akka.NET Persistence, which would save all
 messages (and potentially snapshots) to the external database. Still, it won&rsquo;t
-be the same level of convenience as in-built Service Fabric statefullness.</p>
-</li>
-<li>
-<p><code>GetMaxTemperature</code> method does not return anything, because nobody would look
+be the same level of convenience as in-built Service Fabric statefullness.</p></li>
+
+<li><p><code>GetMaxTemperature</code> method does not return anything, because nobody would look
 at the returned value. Instead, it sends yet another message to the sender actor.
 So, <code>Request-Response</code> workflow is supported but is a bit less convenient and
-explicit.</p>
-</li>
+explicit.</p></li>
 </ul>
+
 <p>Let&rsquo;s have a look at the client code. <code>ActorSelection</code> is the closest notion to
 Fabric&rsquo;s <code>ActorProxy</code>: it does not create an actor, but just gets an endpoint
 based on the name. Note that Akka.NET actor needs to be explicitly created by
@@ -345,16 +350,20 @@ it for now. Here is the report sender:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Submit a new report
 </span><span style="color:#008000"></span><span style="color:#2b91af">var</span> msg = <span style="color:#00f">new</span> WeatherReport { Moment = DateTime.Now, Temperature = 22, Humidity = 55 };
 Context.ActorSelection(<span style="color:#a31515">&#34;/user/weather/Amsterdam&#34;</span>).Tell(msg);
-</code></pre></div><p>Asking <code>ActorSelection</code> is not directly possible, we would need to setup an
+</code></pre></div>
+<p>Asking <code>ActorSelection</code> is not directly possible, we would need to setup an
 inbox and receive callback messages. We&rsquo;ll pretend that we have an <code>ActorRef</code>
 for the sake of simplicity:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Make a query somewhere else
 </span><span style="color:#008000"></span>ActoRef actor = ... ; <span style="color:#008000">// we have it
 </span><span style="color:#008000"></span><span style="color:#2b91af">var</span> result = <span style="color:#00f">await</span> actor.Ask(<span style="color:#00f">new</span> Period { From = monthAgo, Until = now });
-</code></pre></div><h2 id="the-best-of-two-worlds">The Best of Two Worlds</h2>
+</code></pre></div>
+<h2 id="the-best-of-two-worlds">The Best of Two Worlds</h2>
+
 <p>Now my goals is to come up with an implementation of Service Fabric actors with
 the properties that combine the good parts of both frameworks (without explicitly
 using Akka.NET), i.e.</p>
+
 <ul>
 <li>Use the full power of Service Fabric actors, including lifetime management,
 cluster management and reliable state</li>
@@ -362,6 +371,7 @@ cluster management and reliable state</li>
 <li>Support immutable POCO messages instead of <code>DataContract</code> DTOs</li>
 <li>Use <code>ReceiveActor</code>-like API for message processing</li>
 </ul>
+
 <p>Here is the third implementation of our Weather Actor (the definitions of messages
 from Akka.NET example are intact):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[ActorService(Name = &#34;WeatherActor&#34;)]
@@ -389,19 +399,22 @@ from Akka.NET example are intact):</p>
             .Max(r =&gt; (<span style="color:#2b91af">int?</span>)r.Temperature));
     }
 }
-</code></pre></div><p>The base <code>ReceiveActor</code> class is not defined yet, we&rsquo;ll do it in the next section. Here is
+</code></pre></div>
+<p>The base <code>ReceiveActor</code> class is not defined yet, we&rsquo;ll do it in the next section. Here is
 how it&rsquo;s being used:</p>
+
 <ul>
 <li>The base class is generic and it accepts the type of the state (similar to normal Fabric actors)</li>
 <li>Constructor registers two <code>Receive</code> handlers: message handler and request handler. Note
 that the later one accepts two type parameters: request type and response type</li>
 <li>Both handlers get the current state as the first argument instead of pulling it from the property of
 the base class</li>
-<li>The both return <code>Task</code>'ed data. Message handler is allowed to change the state, while
+<li>The both return <code>Task</code>&lsquo;ed data. Message handler is allowed to change the state, while
 request handler does  not change the state but just returns the response back</li>
 <li><code>ServiceName</code> attribute is required because there are (may be) multiple classes implementing
 the same interface</li>
 </ul>
+
 <p>The client code uses our own <code>MessageActorProxy</code> class to create non-generic proxies which
 are capable to <code>Tell</code> (send a message one way) and <code>Ask</code> (do request and wait for response):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Submit a new report
@@ -411,7 +424,9 @@ actor.Tell(<span style="color:#00f">new</span> WeatherReport { Moment = DateTime
 <span style="color:#008000">// Make a query somewhere else
 </span><span style="color:#008000"></span><span style="color:#2b91af">var</span> actor = MessageActorProxy.Create(<span style="color:#00f">new</span> ActorId(<span style="color:#a31515">&#34;Amsterdam&#34;</span>), <span style="color:#a31515">&#34;WeatherActor&#34;</span>);
 <span style="color:#2b91af">var</span> result = actor.Ask(<span style="color:#00f">new</span> Period { From = monthAgo, Until = now });
-</code></pre></div><h2 id="implementation-of-receiveactor">Implementation of ReceiveActor</h2>
+</code></pre></div>
+<h2 id="implementation-of-receiveactor">Implementation of ReceiveActor</h2>
+
 <p>Let&rsquo;s start with the interface definition:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> IReceiveActor : IActor
 {
@@ -420,9 +435,11 @@ actor.Tell(<span style="color:#00f">new</span> WeatherReport { Moment = DateTime
     [Readonly]
     Task&lt;<span style="color:#2b91af">byte</span>[]&gt; Ask(<span style="color:#2b91af">string</span> typeName, <span style="color:#2b91af">byte</span>[] message);
 }
-</code></pre></div><p>The two methods for <code>Tell</code> and <code>Ask</code> accept serializes data together with fully qualified
+</code></pre></div>
+<p>The two methods for <code>Tell</code> and <code>Ask</code> accept serializes data together with fully qualified
 type name. This will allow passing any kind of objects which can be handled by a serializer
 of choice (I used Newtonsoft JSON serializer).</p>
+
 <p>Actor implementation derives from <code>StatefulActor</code> and uses another type/bytes pair to store
 the serialized state:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">    <span style="color:#00f">public</span> <span style="color:#00f">abstract</span> <span style="color:#00f">class</span> <span style="color:#2b91af">StatefulReceiveActor</span> : StatefulActor&lt;StateContainer&gt;,
@@ -440,7 +457,8 @@ the serialized state:</p>
         [DataMember]
         <span style="color:#00f">public</span> <span style="color:#2b91af">byte</span>[] Data { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
     }
-</code></pre></div><p>The simplistic implementation of <code>Receive</code> generic methods uses two dictionaries
+</code></pre></div>
+<p>The simplistic implementation of <code>Receive</code> generic methods uses two dictionaries
 to store the handlers:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> Dictionary&lt;Type, Func&lt;<span style="color:#2b91af">object</span>, <span style="color:#2b91af">object</span>, Task&lt;<span style="color:#2b91af">object</span>&gt;&gt;&gt; handlers;
 <span style="color:#00f">private</span> Dictionary&lt;Type, Func&lt;<span style="color:#2b91af">object</span>, <span style="color:#2b91af">object</span>, Task&lt;<span style="color:#2b91af">object</span>&gt;&gt;&gt; askers;
@@ -456,8 +474,8 @@ to store the handlers:</p>
 
 <span style="color:#00f">protected</span> <span style="color:#00f">void</span> Receive&lt;TI, TO&gt;(Func&lt;<span style="color:#2b91af">object</span>, TI, Task&lt;TO&gt;&gt; asker)
     =&gt; <span style="color:#00f">this</span>.askers.Add(<span style="color:#00f">typeof</span>(TI), <span style="color:#00f">async</span> (s, m) =&gt; <span style="color:#00f">await</span> asker(s, (TI)m));
-
-</code></pre></div><p>The <code>Tell</code> method deserializes the message and state, then picks a handler based on
+</code></pre></div>
+<p>The <code>Tell</code> method deserializes the message and state, then picks a handler based on
 the message type, executes it and serializes the produced state back:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">async</span> Task Tell(<span style="color:#2b91af">string</span> typeName, <span style="color:#2b91af">byte</span>[] message)
 {
@@ -481,7 +499,8 @@ the message type, executes it and serializes the produced state back:</p>
             : <span style="color:#00f">null</span>;
     }
 }
-</code></pre></div><p>The implementation of <code>Ask</code> is almost identical, so I&rsquo;ll skip it. <code>MessageActorProxy</code>
+</code></pre></div>
+<p>The implementation of <code>Ask</code> is almost identical, so I&rsquo;ll skip it. <code>MessageActorProxy</code>
 encapsulates the serialization around passing data to normal <code>ActorProxy</code> class:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">MessageActorProxy</span>
 {
@@ -512,8 +531,11 @@ encapsulates the serialization around passing data to normal <code>ActorProxy</c
         <span style="color:#00f">return</span> <span style="color:#00f">new</span> MessageActorProxy(actorId, serviceType);
     }
 }
-</code></pre></div><p>Let&rsquo;s briefly wrap it up.</p>
+</code></pre></div>
+<p>Let&rsquo;s briefly wrap it up.</p>
+
 <h2 id="conclusion">Conclusion</h2>
+
 <p>At this stage Azure Service Fabric lacks support of some actor model best practices
 like message-based API and immutable POCO classes. At the same time, it provides
 super powerful setup regarding cluster resource management, state replication, fault

@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -102,10 +102,6 @@
                  
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
-                </li>
-                 
-                <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
                 </li>
                  
                 <li class="nav-item ">
@@ -205,16 +201,21 @@
 
                 
                 <div class="article-post">
-                    <p><a href="https://github.com/StackExchange/dapper-dot-net">Dapper</a> is a micro-ORM library which is
+                    
+
+<p><a href="https://github.com/StackExchange/dapper-dot-net">Dapper</a> is a micro-ORM library which is
 very simple and super fast. In our projects we use Dapper for the tasks where something like
 EntityFramework or NHibernate would be an overkill.</p>
+
 <p>Quite often the data access code is difficult to be unit tested. Objects like
 database connections, commands, transactions and contexts are hard to mock, and
 thus the data access code is not easily isolated. Dapper relies heavily on SQL
 statements inside C# code, which gives an extra complication. Some people would
 argue that unit tests are not warranted for data access layer, and integration
 tests should be used instead. Let&rsquo;s have a look at another possibility.</p>
+
 <h2 id="an-example-of-a-repository">An Example of a Repository</h2>
+
 <p>Let&rsquo;s say we have a simple class and we want to populate instances of this class
 from the database:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Product</span>
@@ -223,14 +224,16 @@ from the database:</p>
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Name { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Description { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
-</code></pre></div><p>To be able to use Dapper for data access, we need an instance of <code>IDbConnection</code>.
+</code></pre></div>
+<p>To be able to use Dapper for data access, we need an instance of <code>IDbConnection</code>.
 As we want to be able to mock the connection for unit tests, we need to create
 a factory interface to abstract it away:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> IDatabaseConnectionFactory
 {
     IDbConnection GetConnection();
 }
-</code></pre></div><p>Now the repository would get a connection from this factory and execute
+</code></pre></div>
+<p>Now the repository would get a connection from this factory and execute
 Dapper queries on it:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ProductRepository</span>
 {
@@ -247,14 +250,18 @@ Dapper queries on it:</p>
             <span style="color:#a31515">&#34;select * from Product&#34;</span>);
     }
 }
-</code></pre></div><h2 id="testing-without-a-real-database">Testing Without a real Database</h2>
+</code></pre></div>
+<h2 id="testing-without-a-real-database">Testing Without a real Database</h2>
+
 <p>Here is my approach to testing the repository:</p>
+
 <ol>
 <li>Use an in-memory <a href="https://www.sqlite.org/">SQLite3</a> database.</li>
 <li>Create a table there and put some data in.</li>
 <li>Run the repository against this database.</li>
 <li>Compare the result to the expected values.</li>
 </ol>
+
 <p>Here is a helper class which uses another micro-ORM library <a href="http://ormlite.com/">OrmLite</a> to talk
 to SQLite database:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">InMemoryDatabase</span>
@@ -276,7 +283,8 @@ to SQLite database:</p>
         }
     }
 }
-</code></pre></div><p>And here is the test for our <code>ProductRepository</code> class:</p>
+</code></pre></div>
+<p>And here is the test for our <code>ProductRepository</code> class:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[Test]
 <span style="color:#00f">public</span> <span style="color:#00f">async</span> Task QueryTest()
 {
@@ -296,13 +304,16 @@ to SQLite database:</p>
     <span style="color:#008000">// Assert
 </span><span style="color:#008000"></span>    result.ShouldBeEquivalentTo(products);
 }
-</code></pre></div><h2 id="is-it-a-unit-test">Is It a Unit Test?</h2>
+</code></pre></div>
+<h2 id="is-it-a-unit-test">Is It a Unit Test?</h2>
+
 <p>Well, not completely. This approach does not mock the database, but instead puts
 an in-memory database in place of the normal one. The problem is that we don&rsquo;t
 control all the details how it works, so it might not be as flexible as we need.
 For instance, SQLite type system is quite simplistic, so while <code>INT</code> and <code>BIGINT</code>
 are different column types in SQL Server, they are the same <code>INTEGER</code> type in
 SQLite. This can lead to false positive or false negative tests in edge cases.</p>
+
 <p>Nevertheless, the concept is simple and requires very little amount of code,
 so it&rsquo;s useful to have it in the toolbox anyway. The resulting tests are fast,
 have no external dependencies and are always consistent between multiple runs.

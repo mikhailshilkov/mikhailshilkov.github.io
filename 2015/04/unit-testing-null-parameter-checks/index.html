@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -106,10 +106,6 @@
                  
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
-                </li>
-                 
-                <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
                 </li>
                  
                 <li class="nav-item ">
@@ -209,7 +205,9 @@
 
                 
                 <div class="article-post">
-                    <p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
+                    
+
+<p>We use constructor dependency injection throughout our application. This means that most service classes have constructors, which accept all dependencies in form of interfaces. They are then saved to private fields to be used while class methods are executed. Here is an example (all examples below are in C#):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">VeryUsefulClass</span> : IVeryUsefulClass
 {
     <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> ISomething something;
@@ -228,7 +226,8 @@
         <span style="color:#00f">return</span> ...;
     }
 }
-</code></pre></div><p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
+</code></pre></div>
+<p>We also use TDD, which means we must write unit tests for every aspect of our code. So I want to discuss one specific aspect: guarding the constructor parameters from null values and testing this guard. Here is one possible way to write such tests (with NUnit and Moq):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[TestFixture]
 <span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">VeryUsefulClassTests</span>
 {
@@ -256,8 +255,11 @@
 
     ...
 }
-</code></pre></div><p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &ldquo;noise&rdquo;: too much service code around real code under test.</p>
+</code></pre></div>
+<p>The tests are small and each one tests just one thing. But it looks like we have a bit too much duplication and &ldquo;noise&rdquo;: too much service code around real code under test.</p>
+
 <h2 id="make-it-better">Make it better</h2>
+
 <p>Now let&rsquo;s say we need to introduce another dependency into our useful class: ISomethingNew. The constructor signature will change to</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> VeryUsefulClass(ISomething something,
     ISomethingElse somethingElse,
@@ -265,7 +267,8 @@
 {
     ...
 }
-</code></pre></div><p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&rsquo;s refactor the tests. First, let&rsquo;s declare all mocks as private fields and create them in set-up method:</p>
+</code></pre></div>
+<p>So, how many places do we have to change in our test class? One per each test, which includes one per each constructor parameter. Quite a lot! If we have a class with many dependencies, we are in trouble. So, before introducing the new dependency, let&rsquo;s refactor the tests. First, let&rsquo;s declare all mocks as private fields and create them in set-up method:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[TestFixture]
 <span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">VeryUsefulClassTests</span>
 {
@@ -279,12 +282,14 @@
         <span style="color:#00f">this</span>.somethingElse = <span style="color:#00f">new</span> Mock&lt;ISomethingElse&gt;();
     }
 ...
-</code></pre></div><p>This way the same clean mocks will be available for each and every test. To make use of them, let&rsquo;s create GetTarget method which will create an instance of class under test</p>
+</code></pre></div>
+<p>This way the same clean mocks will be available for each and every test. To make use of them, let&rsquo;s create GetTarget method which will create an instance of class under test</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> VeryUsefulClass GetTarget()
 {
     <span style="color:#00f">return</span> <span style="color:#00f">new</span> VeryUsefulClass(<span style="color:#00f">this</span>.something.Object, <span style="color:#00f">this</span>.somethingElse.Object);
 }
-</code></pre></div><p>Now we are ready to rewrite our test methods with less duplication</p>
+</code></pre></div>
+<p>Now we are ready to rewrite our test methods with less duplication</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[Test]
 <span style="color:#00f">public</span> <span style="color:#00f">void</span> WhenSomethingIsNullConstructorThrowsNullException()
 {
@@ -305,10 +310,15 @@
     <span style="color:#2b91af">var</span> target = <span style="color:#00f">this</span>.GetTarget();
     ...
 }
-</code></pre></div><p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
+</code></pre></div>
+<p>So, how many constructor calls do we have to change when we introduce a new dependency now? Just one for the complete test class!</p>
+
 <p>I strongly believe that readability of your test classes is very important. If you make your tests short, expressive and easy to read, your tests will have much higher value: not only the safety net for classes, but also nice documentation which is easy to use and support.</p>
+
 <h2 id="make-it-shine">Make it shine</h2>
+
 <p>I&rsquo;m still not quite satisfied with the amount of code we have to write for such a simple thing as the validation of ArgumentNullException being thrown from constructors. Imagine this: we have hundreds or thousands of classes which follow this same pattern, and we end up writing thousands tests which look almost exactly the same&hellip;</p>
+
 <p>I solved it with a simple helper method:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">void</span> ConstructorMustThrowArgumentNullException(Type type)
 {
@@ -345,9 +355,13 @@
         }
     }
 }
-</code></pre></div><p>It accepts a type as its only input parameter (obviously, it&rsquo;s easy to make it generic or an extension method). Then, using the reflection, it iterates through the input parameters of a constructor, and passes one null value and mocks all other parameters. It expects ArgumentNullException to be thrown on each call.</p>
+</code></pre></div>
+<p>It accepts a type as its only input parameter (obviously, it&rsquo;s easy to make it generic or an extension method). Then, using the reflection, it iterates through the input parameters of a constructor, and passes one null value and mocks all other parameters. It expects ArgumentNullException to be thrown on each call.</p>
+
 <p>You could write one test for all classes in a namespace or in assembly, if the pattern is applied consistently there! And it will let you know when one of your new classes violates the common rule, with zero extra effort.</p>
+
 <p>Does anyone know the library which would do that without me inventing the bicycle myself?</p>
+
 <p>Happy coding!</p>
 
                 </div>

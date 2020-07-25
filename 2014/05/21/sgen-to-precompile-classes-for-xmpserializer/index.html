@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -102,10 +102,6 @@
                  
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
-                </li>
-                 
-                <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
                 </li>
                  
                 <li class="nav-item ">
@@ -206,13 +202,19 @@
                 
                 <div class="article-post">
                     <p>During my investigation of our ASP.NET application performance issue, I&rsquo;ve found out that XmlSerializer may require a long warm-up. The first time, when it&rsquo;s used for a specific class (de-)serialization, can take up to 500 ms om my machine! We use XmlSerializer to encode/decode user preferences. Having 40 different classes being deserialized at user login lead to a massive delay of 14 seconds. This is only for the first user login after the application start-up, but you do quite a lot of &lsquo;first times&rsquo; every day while developing the application.</p>
+
 <p>These delays are caused by the runtime which prepares and compiles the strongly typed classes for serialization in runtime. Not sure why it&rsquo;s SO slow, but probably things might go wrong.</p>
+
 <p>There is a simple solution for this problem: create those helper classes at build time, pack it into an assembly and ship it as part of your .NET application. The tool that does this is called Sgen.exe, and it is a part of .NET SDK. So, we just need to use it in our project.</p>
-<p>The easiest way is to add a post-build event in your CS project properties. The event would look like</p>
-<pre>sgen.exe /force /assembly:"$(TargetPath)"</pre>
-<p>After re-compiling the project, you should see a new assembly in Bin directory, which has the name ending with XmlSerializers.dll. That&rsquo;s the new assembly which will save you several seconds on each application start-up. It will be automatically copied to Bin directory of the projects which reference the original assembly with your serializable classes, so no other actions needed.</p>
+
+<p>The easiest way is to add a post-build event in your CS project properties. The event would look like
+<pre>sgen.exe /force /assembly:&ldquo;$(TargetPath)&rdquo;</pre>
+After re-compiling the project, you should see a new assembly in Bin directory, which has the name ending with XmlSerializers.dll. That&rsquo;s the new assembly which will save you several seconds on each application start-up. It will be automatically copied to Bin directory of the projects which reference the original assembly with your serializable classes, so no other actions needed.</p>
+
 <p>However, this command might fail. Sgen tool will try to prepare the helper classes for each class in your assembly, which might not be possible. Then you&rsquo;ll get some error messages in Visual Studio. In this case, you might want to add a &ldquo;/types&rdquo; parameter, explicitly listing the class names to precompile. But I have a better solution for you.</p>
+
 <p>It&rsquo;s quite possible that you use MSBuild for regular automated builds of your project. We do. In this case a post-build event in the project properties won&rsquo;t work during those build. Then, do not add any post-build events, but instead open your .csproj file in plain text editor, and search for the following commented section:</p>
+
 <pre><code>&lt;!-- To modify your build process, add your task inside one of the targets below and uncomment it.
    Other similar extension points exist, see Microsoft.Common.targets.
 &lt;Target Name=&quot;BeforeBuild&quot;&gt;
@@ -221,7 +223,9 @@
 &lt;/Target&gt;
 --&gt;
 </code></pre>
+
 <p>Uncomment the second XML node and substitute it with something like this:</p>
+
 <pre><code>&lt;Target Name=&quot;AfterBuild&quot; DependsOnTargets=&quot;AssignTargetPaths;Compile;ResolveKeySource&quot; Inputs=&quot;$(MSBuildAllProjects);@(IntermediateAssembly)&quot; Outputs=&quot;$(OutputPath)$(_SGenDllName)&quot;&gt;
     &lt;ItemGroup&gt;
       &lt;SgenTypes Include=&quot;MyNamespace.MySerializableClass1&quot; /&gt;
@@ -234,6 +238,7 @@
     &lt;/SGen&gt;
 &lt;/Target&gt;
 </code></pre>
+
 <p>The ItemGroup lists all the classes that you need to precompile. You can omit this section and Types attribute of SGen node if you want to compile all classes in assembly.
 Have a nice application start-up boost!</p>
 

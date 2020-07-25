@@ -10,7 +10,7 @@
 	
 	
 	
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
 	
 	<link rel="stylesheet" href="/sass/main.css">
@@ -112,10 +112,6 @@
                 </li>
                  
                 <li class="nav-item ">
-                    <a class="nav-link" href="/lab/">LABS</a>
-                </li>
-                 
-                <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
                  
@@ -214,13 +210,22 @@
 
                 
                 <div class="article-post">
-                    <p>Static websites are back in the mainstream these days. Website generators like Jekyll, Hugo, or Gatsby, make it fairly easy to combine templates and markdown pages to produce static HTML files. Static assets are the simplest thing to serve and cache, so the whole setup ends up being fast and cost-efficient.</p>
+                    
+
+<p>Static websites are back in the mainstream these days. Website generators like Jekyll, Hugo, or Gatsby, make it fairly easy to combine templates and markdown pages to produce static HTML files. Static assets are the simplest thing to serve and cache, so the whole setup ends up being fast and cost-efficient.</p>
+
 <p>Many platforms offer services to host such static websites. This post explains the steps to create the infrastructure to do so on Microsoft Azure.</p>
+
 <p>Setting up the infrastructure to serve a static website doesn&rsquo;t sound like it would be all that difficult, but when you consider HTTPS certificates, content distribution networks, and attaching it to a custom domain, integrating all the components can be quite daunting.</p>
+
 <p>Fortunately, this is a task where Pulumi shines. Pulumi&rsquo;s code-centric approach not only makes configuring cloud resources easier to do and maintain, but it also eliminates the pain of integrating multiple services.</p>
+
 <h2 id="overview">Overview</h2>
-<p>Our goal is to create a static website with a custom domain—I&rsquo;ll use an imaginary <code>demo.pulumi.com</code> for this article. In 2019, my website has to support HTTPS, so we need to create a custom TLS certificate too.</p>
+
+<p>Our goal is to create a static website with a custom domain&mdash;I&rsquo;ll use an imaginary <code>demo.pulumi.com</code> for this article. In 2019, my website has to support HTTPS, so we need to create a custom TLS certificate too.</p>
+
 <p>The final solution consists of several Azure services:</p>
+
 <ul>
 <li>Static files will be stored in a <strong>Blob Container</strong> inside a <strong>Storage Account</strong></li>
 <li>The Storage Account will have <strong>Static Website feature</strong> enabled to have some basic URL rewrite rules</li>
@@ -228,40 +233,54 @@
 <li>Azure CDN will self-manage the TLS certificate</li>
 <li>Our custom DNS provider will have the rule to point to the CDN endpoint (that&rsquo;s a manual step)</li>
 </ul>
+
 <p>The diagram below outlines the interaction of these components:</p>
-<p><img src="pulumi-azure-static-website.png" alt="Static website running on Azure and defined in Pulumi"></p>
+
+<p><img src="pulumi-azure-static-website.png" alt="Static website running on Azure and defined in Pulumi" /></p>
+
 <figcaption><h4>Static website running on Azure and defined in Pulumi</h4></figcaption>
+
 <p>Let&rsquo;s break down how to configure each component using Pulumi.</p>
+
 <h2 id="resource-group">Resource Group</h2>
+
 <p>Let&rsquo;s start a new Pulumi program, import the Pulumi packages, and define a new resource group:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> pulumi from <span style="color:#a31515">&#34;@pulumi/pulumi&#34;</span>;
 <span style="color:#00f">import</span> * <span style="color:#00f">as</span> azure from <span style="color:#a31515">&#34;@pulumi/azure&#34;</span>;
 
 <span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;demo-rg&#34;</span>, {
    location: <span style="color:#2b91af">azure.WestEurope</span>,
-});
-</code></pre></div><h2 id="storage-account">Storage Account</h2>
+});</code></pre></div>
+<h2 id="storage-account">Storage Account</h2>
+
 <p>The Storage Account will contain our static website&rsquo;s assets:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> storageAccount = <span style="color:#00f">new</span> azure.storage.Account(<span style="color:#a31515">&#34;demopulumi&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
    accountReplicationType: <span style="color:#a31515">&#34;LRS&#34;</span>,
    accountTier: <span style="color:#a31515">&#34;Standard&#34;</span>,
    accountKind: <span style="color:#a31515">&#34;StorageV2&#34;</span>,
-});
-</code></pre></div><p>The only trick here is to make sure that the account kind is V2; otherwise, it won&rsquo;t support the static website feature.</p>
+});</code></pre></div>
+<p>The only trick here is to make sure that the account kind is V2; otherwise, it won&rsquo;t support the static website feature.</p>
+
 <h2 id="static-website-hosting-in-azure-storage">Static Website Hosting in Azure Storage</h2>
+
 <p>Any storage container could be exposed as a web endpoint. However, that&rsquo;s not flexible enough. The URL would always include the container name and the exact file name, so the user would have to ask for <code>https://demo.pulumi.com/containername/index.html</code> instead of simply <code>https://demo.pulumi.com/</code>.</p>
+
 <p>Enabling Static Website Hosting in Azure Storage improves this experience. A dedicated container <strong><code>$web</code></strong> gets automatically created, which also has special treatment for <code>index</code> and <code>404</code> documents.</p>
+
 <p>The bad news is that Static Website Hosting is not a part of Azure Resource Manager API, and therefore, it&rsquo;s not available out-of-the-box in ARM templates, Terraform, or Pulumi. We can enable this feature with Azure CLI, so the solution is to create a dynamic Pulumi resource which enables Pulumi experience while delegating the work to the CLI. You can find the full source code for the dynamic resource in <a href="https://github.com/pulumi/examples/blob/master/azure-ts-static-website/staticWebsite.ts">this example</a>, but the usage is quite trivial:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> staticWebsite = <span style="color:#00f">new</span> StorageStaticWebsite(<span style="color:#a31515">&#34;demopulumi-static&#34;</span>,
    { accountName: <span style="color:#2b91af">storageAccount.name</span> },
    { parent: <span style="color:#2b91af">storageAccount</span> });
 
 <span style="color:#008000">// Web endpoint to the website
-</span><span style="color:#008000"></span><span style="color:#00f">export</span> <span style="color:#00f">const</span> staticEndpoint = staticWebsite.endpoint;
-</code></pre></div><p>The last line exports the static website endpoint. It will look something like <code>https://demopulumi01234abc.z6.web.core.windows.net/</code>—no custom domain yet, but already functional—once we deploy some static files in there.</p>
+</span><span style="color:#008000"></span><span style="color:#00f">export</span> <span style="color:#00f">const</span> staticEndpoint = staticWebsite.endpoint;</code></pre></div>
+<p>The last line exports the static website endpoint. It will look something like <code>https://demopulumi01234abc.z6.web.core.windows.net/</code>&mdash;no custom domain yet, but already functional&mdash;once we deploy some static files in there.</p>
+
 <h2 id="static-files">Static Files</h2>
+
 <p>Now, it&rsquo;s time to upload the static files to the <code>$web</code> Blob Container.</p>
+
 <p>For this demo, I&rsquo;ve created a folder <code>wwwroot</code> with two files in it: <code>index.html</code> and <code>404.html</code>. I can upload those files with the following Pulumi snippet:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts">[<span style="color:#a31515">&#34;index.html&#34;</span>, <span style="color:#a31515">&#34;404.html&#34;</span>].map(name =&gt;
    <span style="color:#00f">new</span> azure.storage.Blob(name, {
@@ -270,12 +289,14 @@
        storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
        storageContainerName: <span style="color:#2b91af">staticWebsite.webContainerName</span>,
        type: <span style="color:#a31515">&#34;block&#34;</span>,
-       source: <span style="color:#a31515">`</span><span style="color:#a31515">./wwwroot/</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>,
+       source: <span style="color:#a31515">`./wwwroot/</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>,
        contentType: <span style="color:#a31515">&#34;text/html&#34;</span>,
    })
-);
-</code></pre></div><p>In practice, your static website might contain hundreds or thousands of files. At that point, you might want to split the file upload operation from Pulumi and do it as a separate step in your CI/CD pipeline.</p>
+);</code></pre></div>
+<p>In practice, your static website might contain hundreds or thousands of files. At that point, you might want to split the file upload operation from Pulumi and do it as a separate step in your CI/CD pipeline.</p>
+
 <h2 id="azure-cdn">Azure CDN</h2>
+
 <p>To make the static website files available over our custom domain and HTTPS, we need to create an Azure CDN Endpoint and to point it to the storage account:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> cdn = <span style="color:#00f">new</span> azure.cdn.Profile(<span style="color:#a31515">&#34;demo-cdn&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -296,16 +317,25 @@
 });
 
 <span style="color:#008000">// CDN endpoint to the website. Allow it some time after the deployment to get ready.
-</span><span style="color:#008000"></span><span style="color:#00f">export</span> <span style="color:#00f">const</span> cdnEndpoint = pulumi.interpolate<span style="color:#a31515">`</span><span style="color:#a31515">https://</span><span style="color:#a31515">${</span>endpoint.hostName<span style="color:#a31515">}</span><span style="color:#a31515">/</span><span style="color:#a31515">`</span>;
-</code></pre></div><p>I specified an explicit name for the CDN Endpoint: <code>demopulumi</code>. This name has to be globally unique because it is a part of the endpoint URL <code>https://demopulumi.azureedge.net</code>. Please pick a custom name before running the program.</p>
+</span><span style="color:#008000"></span><span style="color:#00f">export</span> <span style="color:#00f">const</span> cdnEndpoint = pulumi.interpolate<span style="color:#a31515">`https://</span><span style="color:#a31515">${</span>endpoint.hostName<span style="color:#a31515">}</span><span style="color:#a31515">/`</span>;</code></pre></div>
+<p>I specified an explicit name for the CDN Endpoint: <code>demopulumi</code>. This name has to be globally unique because it is a part of the endpoint URL <code>https://demopulumi.azureedge.net</code>. Please pick a custom name before running the program.</p>
+
 <p>I pointed the CDN origin to the static website name with <code>staticWebsite.hostName</code>. As usual, it&rsquo;s easy to link resources in Pulumi code!</p>
+
 <p>You might need to wait a few minutes before your content is visible as the CDN configuration is not immediately executed. I&rsquo;ve set <code>isHttpAllowed</code> to <code>true</code> because HTTP is available sooner than HTTPS; feel free to switch it off for your production configuration.</p>
+
 <h2 id="configure-a-domain-dns-rule">Configure a Domain DNS Rule</h2>
+
 <p>You&rsquo;ve probably registered your domain with some third-party provider. Follow the instructions of your provider to configure a CNAME rule for the website&rsquo;s DNS. For a custom domain <code>demo.pulumi.com</code>, the CNAME entry <code>demo</code> would be linked to the endpoint <code>demopulumi.azureedge.net</code>.</p>
+
 <p>CNAME entries don&rsquo;t support &ldquo;naked&rdquo; domains like <code>pulumi.com</code>. If you want to set up a top-level domain to be served from the static Azure website, you&rsquo;d have to use an <a href="https://support.dnsimple.com/articles/alias-record/">Alias DNS record</a>, which isn&rsquo;t supported by some DNS providers. Please check with your provider for available options.</p>
+
 <p>The following step assumes that a CNAME record is configured; otherwise, it would fail with a validation error.</p>
+
 <h2 id="custom-domain-and-tls">Custom Domain and TLS</h2>
+
 <p>The final step is to point our custom domain to the CDN endpoint and provision a TLS certificate to enable HTTPS support. Once again, these operations are not parts of the ARM API surface, so another <a href="https://github.com/pulumi/examples/blob/master/azure-ts-dynamicresource/cdnCustomDomain.ts">dynamic resource</a> was created to support them.</p>
+
 <p>The usage is quite straightforward, just make sure to use your own domain in the following snippet:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> customDomain = <span style="color:#00f">new</span> CDNCustomDomainResource(<span style="color:#a31515">&#34;cdn-custom-domain&#34;</span>, {
    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
@@ -318,10 +348,13 @@
 </span><span style="color:#008000"></span>   <span style="color:#008000">// The certificate is fully managed by Azure from provisioning to automatic renewal
 </span><span style="color:#008000"></span>   <span style="color:#008000">// at no additional cost to you.
 </span><span style="color:#008000"></span>   httpsEnabled: <span style="color:#2b91af">true</span>,
-}, { parent: <span style="color:#2b91af">endpoint</span> });
-</code></pre></div><h2 id="bring-it-live">Bring It Live!</h2>
+}, { parent: <span style="color:#2b91af">endpoint</span> });</code></pre></div>
+<h2 id="bring-it-live">Bring It Live!</h2>
+
 <p>And we are done! Run <code>pulumi up</code> and make sure that all resources get created successfully.</p>
-<p>Start testing with <code>staticEndpoint</code>—it&rsquo;s the first one to become available. <code>cdnEndpoint</code> might return some <code>404</code>'s at first, be patient. Then, try your custom domain with <code>HTTP</code>. Finally, the TLS certificate takes quite a while to be registered, so come back in an hour or so to test <code>HTTPS</code>.</p>
+
+<p>Start testing with <code>staticEndpoint</code>&mdash;it&rsquo;s the first one to become available. <code>cdnEndpoint</code> might return some <code>404</code>&rsquo;s at first, be patient. Then, try your custom domain with <code>HTTP</code>. Finally, the TLS certificate takes quite a while to be registered, so come back in an hour or so to test <code>HTTPS</code>.</p>
+
 <p>While a &ldquo;static website&rdquo; may sound simple, we went through a rather complicated process to wire all the components together. Some Azure services and features are more straightforward to automate than others, but in the end, we combined all of them into one cohesive Pulumi program to host a static website, served over HTTPS and from a worldwide CDN. That&rsquo;s the power of a general-purpose programming language applied to the task of sophisticated infrastructure automation. Once the reusable components are in place, reliable and reproducible deployments become a reality.</p>
 
                 </div>
