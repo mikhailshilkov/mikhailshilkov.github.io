@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>How to Drain a List of .NET Tasks to Completion | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="How to Drain a List of .NET Tasks to Completion" />
+	<meta property="og:description" content="Custom await logic for a dynamic list of .NET tasks, fast and on-time" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2020/09/how-to-drain-dotnet-tasks-to-completion/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2020/09/how-to-drain-dotnet-tasks-to-completion/teaser.jpg" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content=".NET" />
+	
+	<meta property="article:tag" content="CSharp" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2020/09/how-to-drain-dotnet-tasks-to-completion/teaser.jpg" />
+	
+	
+
+	<meta name="twitter:title" content="How to Drain a List of .NET Tasks to Completion"/>
+	<meta name="twitter:description" content="Custom await logic for a dynamic list of .NET tasks, fast and on-time"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=How%20to%20Drain%20a%20List%20of%20.NET%20Tasks%20to%20Completion%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2020%2f09%2fhow-to-drain-dotnet-tasks-to-completion%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">How to Drain a List of .NET Tasks to Completion</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Sep 3, 2020
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 0 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p>The Pulumi .NET SDK operates with an unusual asynchronicity model. Resource declarations are synchronous calls and complete instantaneously.</p>
+
+<p>Yet, they kick off the actual operations of resource creation as background tasks. An end-user does not see these tasks and does not await them.</p>
+
+<p>Nonetheless, Pulumi must not stop the program execution until all the tasks are completed. The SDK should collect all open tasks and reliably await them.</p>
+
+<p>The following model illustrates the goal:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">async</span> Task Main()
+{
+    <span style="color:#00f">for</span> (<span style="color:#2b91af">int</span> i = 0; i &lt; N; i++)
+        DoWork(<span style="color:#a31515">$&#34;Job {i}&#34;</span>); <span style="color:#008000">// creates a Task and returns immediately
+</span><span style="color:#008000"></span>
+    <span style="color:#00f">await</span> WaitForAllOpenTasksToComplete();
+}
+
+<span style="color:#00f">static</span> <span style="color:#00f">void</span> DoWork(<span style="color:#2b91af">string</span> message)
+{
+    RegisterTask(message, RunAsync());
+    <span style="color:#00f">async</span> Task RunAsync()
+    {
+        <span style="color:#2b91af">var</span> delay = <span style="color:#00f">new</span> Random().Next(1000);
+        <span style="color:#00f">await</span> Task.Delay(delay).ConfigureAwait(<span style="color:#00f">false</span>);
+        Log(<span style="color:#a31515">$&#34;{message} finishing&#34;</span>);
+    }
+}
+</code></pre></div>
+<p>The <code>DoWork</code> method creates a <code>Task</code> that pauses for a random delay below one second. It passes the task to a <code>RegisterTask</code> method (to be defined) and returns without awaiting.</p>
+
+<p>In our real use case, tasks may also produce new tasks, which can produce even more tasks, and so on. I emulate this by extending the <code>DoWork</code> method with an extra parameter asking to schedule more work:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">void</span> DoWork(<span style="color:#2b91af">string</span> message, <span style="color:#2b91af">bool</span> moreWork = <span style="color:#00f">true</span>)
+{
+    RegisterTask(message, RunAsync());
+    <span style="color:#00f">async</span> Task RunAsync()
+    {
+        <span style="color:#2b91af">var</span> delay = <span style="color:#00f">new</span> Random().Next(1000);
+        <span style="color:#00f">await</span> Task.Delay(delay).ConfigureAwait(<span style="color:#00f">false</span>);
+        Log(<span style="color:#a31515">$&#34;{message} finishing&#34;</span>);
+        
+        <span style="color:#00f">if</span> (moreWork)
+        {
+            <span style="color:#00f">for</span> (<span style="color:#2b91af">int</span> i = 0; i &lt; N; i++)
+                DoWork(<span style="color:#a31515">$&#34;{message}.{i}&#34;</span>, <span style="color:#00f">false</span>);
+        }
+    }
+}
+</code></pre></div>
+<p>The <code>Main</code> method creates initial work items and needs to await the completion of all of the tasks, immediate or descendant ones, with <code>WaitForAllOpenTasksToComplete</code>.</p>
+
+<p>Let&rsquo;s look at several options on how to implement such processing.</p>
+
+<h2 id="registering-tasks">Registering Tasks</h2>
+
+<p>First thing, I need to store the in-flight tasks somewhere, so I&rsquo;ll allocate a static collection for that. I want to keep a description with each task, so my collection is a dictionary:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">readonly</span> Dictionary&lt;Task, <span style="color:#2b91af">string</span>&gt; _inFlightTasks = <span style="color:#00f">new</span> Dictionary&lt;Task, <span style="color:#2b91af">string</span>&gt;();
+</code></pre></div>
+<p>Now I can implement a method to register a new task:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">void</span> RegisterTask(<span style="color:#2b91af">string</span> description, Task task)
+{
+    <span style="color:#00f">lock</span> (_inFlightTasks)
+    {
+        <span style="color:#008000">// Duplicates may happen if we try registering things like Task.CompletedTask.
+</span><span style="color:#008000"></span>        <span style="color:#008000">// We&#39;ll ignore duplicates for now.
+</span><span style="color:#008000"></span>        <span style="color:#00f">if</span> (!_inFlightTasks.ContainsKey(task))
+        {
+            _inFlightTasks.Add(task, description);
+        }
+    }
+}
+</code></pre></div>
+<p>Now, how do we implement the awaiting of these tasks?</p>
+
+<h2 id="awaiting-the-tasks">Awaiting the Tasks</h2>
+
+<p>We can&rsquo;t wait for the tasks just once, because new tasks may be coming over time. Therefore, the <code>WaitForAllOpenTasksToComplete</code> will have a loop to wait until all the in-flight tasks are drained. Here is a draft without the actual awaiting yet:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task WaitForAllOpenTasksToComplete_Draft()
+{
+    <span style="color:#008000">// Keep looping as long as there are outstanding tasks that are still running.
+</span><span style="color:#008000"></span>    <span style="color:#00f">while</span> (<span style="color:#00f">true</span>)
+    {
+        <span style="color:#2b91af">var</span> tasks = <span style="color:#00f">new</span> List&lt;Task&gt;();
+        <span style="color:#00f">lock</span> (_inFlightTasks)
+        {
+            <span style="color:#00f">if</span> (_inFlightTasks.Count == 0)
+            {
+                <span style="color:#008000">// No more tasks in flight: exit the loop.
+</span><span style="color:#008000"></span>                <span style="color:#00f">return</span>;
+            }
+
+            <span style="color:#008000">// Grab all the tasks we currently have running.
+</span><span style="color:#008000"></span>            tasks.AddRange(_inFlightTasks.Keys);
+        }
+
+        <span style="color:#008000">// TODO: await tasks, then proceed to the next iteration
+</span><span style="color:#008000"></span>    }
+}
+</code></pre></div>
+<p>How do we await these tasks?</p>
+
+<h2 id="use-whenall">Use WhenAll</h2>
+
+<p>The obvious option is to use <code>WhenAll</code> and then remove all the tasks from the in-flight collections:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#008000">// ... we are inside the loop
+</span><span style="color:#008000"></span>
+<span style="color:#00f">await</span> Task.WhenAll(tasks).ConfigureAwait(<span style="color:#00f">false</span>);
+        
+<span style="color:#00f">lock</span> (_inFlightTasks)
+{
+    <span style="color:#00f">foreach</span> (<span style="color:#2b91af">var</span> task <span style="color:#00f">in</span> tasks)
+    {
+        Log(<span style="color:#a31515">$&#34;{_inFlightTasks[task]} handled&#34;</span>);
+        _inFlightTasks.Remove(task);
+    }
+}
+
+<span style="color:#008000">// ... the loop continues
+</span></code></pre></div>
+<p>Let&rsquo;s run the program for <code>N</code> = 2 (two parent tasks, each creating two child tasks) and log the messages and timings:</p>
+
+<pre><code>0.048: Job 0 finishing
+0.464: Job 0.0 finishing
+0.539: Job 0.1 finishing
+0.660: Job 1 finishing
+0.661: Job 0 handled
+0.661: Job 1 handled
+0.910: Job 1.1 finishing
+1.372: Job 1.0 finishing
+1.372: Job 0.0 handled
+1.372: Job 0.1 handled
+1.372: Job 1.0 handled
+1.372: Job 1.1 handled
+1.373: Done!
+</code></pre>
+
+<p>The awaiting loop works, and the program quits correctly.</p>
+
+<p>There is a downside, though. After a task completes, we may not respond to its completion until all the other tasks of the same batch complete.</p>
+
+<p>This is not desirable for Pulumi&rsquo;s scenario when cloud operations may run for minutes. If two resources are created in parallel, we want to report success as soon as it happens. Even more importantly, we want to handle the errors as they occur.</p>
+
+<p>How can we respond to tasks one-by-one?</p>
+
+<h2 id="use-whenany">Use WhenAny</h2>
+
+<p>The next option is to use <code>Task.WhenAny</code> to handle the completion of tasks one-by-one. <code>WhenAny</code> accepts a collection of tasks and returns the first one that completes. After the <code>await</code> operator returns the first completed task, we can log it and exclude it from the in-flight tasks list. Then, we call <code>WhenAny</code> again with the list of all remaining tasks.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> task = <span style="color:#00f">await</span> Task.WhenAny(tasks).ConfigureAwait(<span style="color:#00f">false</span>);
+                
+<span style="color:#00f">lock</span> (_inFlightTasks)
+{
+    Log(<span style="color:#a31515">$&#34;{_inFlightTasks[task]} handled&#34;</span>);
+    _inFlightTasks.Remove(task);
+}
+
+<span style="color:#008000">// Now actually await the returned task and realize any exceptions it may have thrown.
+</span><span style="color:#008000"></span><span style="color:#00f">await</span> task.ConfigureAwait(<span style="color:#00f">false</span>);
+</code></pre></div>
+<p>Let&rsquo;s run the modified program and log messages again:</p>
+
+<pre><code>0308: Job 0 finishing
+0312: Job 0 handled
+0440: Job 0.1 finishing
+0440: Job 0.1 handled
+0899: Job 1 finishing
+0900: Job 1 handled
+0948: Job 1.0 finishing
+0948: Job 1.0 handled
+0957: Job 0.0 finishing
+0957: Job 0.0 handled
+0979: Job 1.1 finishing
+0979: Job 1.1 handled
+0979: Done!
+</code></pre>
+
+<p>This looks great! The code responds to each completion immediately, which meets our goal.</p>
+
+<p>The code works perfectly for the small number of tasks, but does it scale?</p>
+
+<h2 id="stress-test">Stress Test</h2>
+
+<p>We ran the test with <code>N=2</code> to create 6 tasks in total. No matter which <code>N</code> we choose, there are only two sequential tasks (a parent task and its child task). As each task completes within 1 second, the full test should finish in less than 2 seconds in theory.</p>
+
+<p>However, this does not hold for the <code>WhenAny</code>-based program. The plot below shows the test completion time, depending on the total number of tasks.</p>
+
+<figure >
+    
+        <img src="timing.png"
+            alt="Time to completion grows rapidly as the total number of tasks increases"
+             />
+        
+    
+    <figcaption>
+        <h4>Time to completion grows rapidly as the total number of tasks increases</h4>
+    </figcaption>
+    
+</figure>
+
+<p>The 2-second rule holds until ~8.000 tasks, but then the completion time is clearly quadratic from the number of tasks.</p>
+
+<p>The logs confirm that the last completed task is always at the 2 seconds mark, while the handler loop becomes excessively busy with awaiting.</p>
+
+<p>This makes sense. <code>WhenAny</code> doesn&rsquo;t have a constant complexity but at least <code>O(N)</code> complexity. Executing it in a loop gives us <code>O(N^2)</code>, demonstrated by the chart above.</p>
+
+<p>This means that large Pulumi programs managing thousands of resources would tend to complete notably slower than desired.</p>
+
+<p>Predictably, the implementation based on <code>WhenAll</code> doesn&rsquo;t have this problem: all the thousands of tasks complete in 2 seconds.</p>
+
+<p>How do we combine the benefits of both approaches?</p>
+
+<h2 id="custom-await-logic">Custom Await Logic</h2>
+
+<p>It looks like the standard library doesn&rsquo;t have a method that satisfies the requirements. The custom implementation consists of multiple parts.</p>
+
+<p>First, there is a <code>TaskCompletionSource</code> that tracks the overall task completion:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">private</span> <span style="color:#00f">static</span> TaskCompletionSource&lt;<span style="color:#2b91af">int</span>&gt; Tcs = <span style="color:#00f">new</span> TaskCompletionSource&lt;<span style="color:#2b91af">int</span>&gt;(TaskCreationOptions.RunContinuationsAsynchronously);
+</code></pre></div>
+<p>Now, all that the new <code>WaitForAllOpenTasksToComplete</code> does is waiting for this completion source to return:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task WaitForAllOpenTasksToComplete()
+{
+    <span style="color:#00f">await</span> Tcs.Task.ConfigureAwait(<span style="color:#00f">false</span>);
+}
+</code></pre></div>
+<p>It becomes the responsibility of the <code>RegisterTask</code> method to initiate the completion of the task:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">void</span> RegisterTask(<span style="color:#2b91af">string</span> description, Task task)
+{
+    <span style="color:#00f">lock</span> (_inFlightTasks)
+    {
+        <span style="color:#008000">// Duplicates may happen if we try registering things like Task.CompletedTask.
+</span><span style="color:#008000"></span>        <span style="color:#008000">// We&#39;ll ignore duplicates for now.
+</span><span style="color:#008000"></span>        <span style="color:#00f">if</span> (!_inFlightTasks.ContainsKey(task))
+        {
+            _inFlightTasks.Add(task, description);
+        }
+    }
+    HandleCompletion(task);
+}
+</code></pre></div>
+<p>All the actual logic resides in <code>HandleCompletion</code> method:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">static</span> <span style="color:#00f">async</span> <span style="color:#00f">void</span> HandleCompletion(Task task)
+{
+    <span style="color:#00f">try</span>
+    {
+        <span style="color:#008000">// Wait for the task completion.
+</span><span style="color:#008000"></span>        <span style="color:#00f">await</span> task.ConfigureAwait(<span style="color:#00f">false</span>);
+
+        Log(<span style="">$</span><span style="color:#a31515">&#34;{_inFlightTasks[task]} handled);
+</span><span style="color:#a31515"></span>    }
+    <span style="color:#00f">catch</span> (OperationCanceledException)
+    {
+        Tcs.TrySetCanceled();
+    }
+    <span style="color:#00f">catch</span> (Exception ex)
+    {
+        Tcs.TrySetException(ex);
+    }
+    <span style="color:#00f">finally</span>
+    {
+        <span style="color:#008000">// Once finished, remove the task from the set of tasks that are running.
+</span><span style="color:#008000"></span>        <span style="color:#00f">lock</span> (_inFlightTasks)
+        {
+            _inFlightTasks.Remove(task);
+
+            <span style="color:#008000">// Check if all the tasks are completed and signal the completion source if so.
+</span><span style="color:#008000"></span>            <span style="color:#00f">if</span> (_inFlightTasks.Count == 0)
+            {
+                Tcs.TrySetResult(0);
+            }
+        }
+    }
+}
+</code></pre></div>
+<h2 id="testing-it-out">Testing It Out</h2>
+
+<p>Let&rsquo;s make sure that the custom await logic works as desired. Here is the output for the N=2 case:</p>
+
+<pre><code>0549: Job 1 finishing
+0555: Job 1 handled
+0805: Job 0 finishing
+0805: Job 0 handled
+0851: Job 1.0 finishing
+0851: Job 1.0 handled
+1473: Job 1.1 finishing
+1474: Job 1.1 handled
+1582: Job 0.0 finishing
+1582: Job 0.0 handled
+1627: Job 0.1 finishing
+1627: Job 0.1 handled
+1629: Done!
+</code></pre>
+
+<p>As desired, the handling happens immediately after finishing a job. What about a large number of tasks?</p>
+
+<p>Even 100.000 tasks complete in 2 seconds! This looks great! Mission accomplished!</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>.NET standard library comes with great primitives to handle common patterns around tasks. However, sometimes one has to understand their limitations and create a new pattern implementation.</p>
+
+<p>Do you see a problem with the approach above? Do you know a more straightforward way to achieve both goals? Please respond below!</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/.net">.NET</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/csharp">C#</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                
+                <div class="ad-h">
+                    <a href="https://www.serverless360.com/lp/azure-serverless-operations-and-support?utm_source=mikhail-blog&utm_medium=blog-bottom-cta">
+                        <img src="/images/banner-h.png" alt="A sponsored link">
+                    </a>
+                </div>
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/43'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">43</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/43'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>
