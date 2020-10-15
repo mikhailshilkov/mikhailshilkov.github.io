@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Temporal: Open Source Workflows as Code | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Temporal: Open Source Workflows as Code" />
+	<meta property="og:description" content="Temporal reimagines state-dependent service-orchestrated application development" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2020/10/temporal-open-source-workflows-as-code/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2020/10/temporal-open-source-workflows-as-code/teaser.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="temporal" />
+	
+	<meta property="article:tag" content="workflows" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2020/10/temporal-open-source-workflows-as-code/teaser.png" />
+	
+	
+
+	<meta name="twitter:title" content="Temporal: Open Source Workflows as Code"/>
+	<meta name="twitter:description" content="Temporal reimagines state-dependent service-orchestrated application development"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Temporal%3a%20Open%20Source%20Workflows%20as%20Code%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2020%2f10%2ftemporal-open-source-workflows-as-code%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Temporal: Open Source Workflows as Code</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Oct 15, 2020
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 8 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p>Regular readers of my blog may recognize me as a big fan of <a href="https://docs.microsoft.com/azure/azure-functions/durable/durable-functions-overview">Azure Durable Functions</a>. Durable Functions are an extension of Azure Functions that lets you write <strong>stateful</strong> functions and <strong>workflows</strong>. The SDK does a lot behind the scenes allowing you to focus exclusively on business logic:</p>
+
+<ul>
+<li>State management</li>
+<li>Automatic checkpointing</li>
+<li>Handles restarts on your behalf</li>
+</ul>
+
+<p>However, many people have a hard time understanding what Durable Functions are and, especially, when they are useful. I tried to help spread the ideas: I wrote an extensive article <a href="/2018/12/making-sense-of-azure-durable-functions/">Making Sense of Azure Durable Functions</a>, published <a href="https://github.com/mikhailshilkov/DurableFunctions.FSharp">DurableFunctions.FSharp</a> library, presented a few conference talks.</p>
+
+<h2 id="beyond-the-scope-of-durable-functions">Beyond The Scope of Durable Functions</h2>
+
+<p>While Durable Functions are great and pretty simple to get started with, their reliance on Azure services implies limitations on applicability.</p>
+
+<p>Durable Functions are designed to run inside the Azure cloud. While you don&rsquo;t have to run functions in a serverless compute model, the durability features rely heavily on <strong>Azure Storage</strong>. There was an initiative to bring Redis as an alternative backend, but the attempt has seemingly stagnated.</p>
+
+<p>Ideally, a durable workflow library would not tie into any specific hosting model (Function Apps), programming model (Azure Functions SDK), or storage backend (Azure Storage).</p>
+
+<p>Besides, only a limited set of programming languages is supported. <strong>C#</strong> developers are the primary audience, but Node.js and Python SDKs are also available.</p>
+
+<p>Recently, I&rsquo;ve been hopping between different languages and cloud providers. Are there other solutions that could help address similar challenges of stateful data processing?</p>
+
+<p>In turns out, yes! My friend and tech blogger <a href="https://twitter.com/taillogs">Ryland</a> introduced me to <a href="https://www.temporal.io/">Temporal</a>&mdash;an open-source product to build workflows in code and operate resilient applications using developer-friendly primitives.</p>
+
+<p>Before discussing Temporal, let&rsquo;s define what a workflow is.</p>
+
+<h2 id="you-are-already-running-workflows">You Are Already Running Workflows</h2>
+
+<p>The word &ldquo;workflow&rdquo; has this unfortunate connotation coming from business process automation, BizTalk, and BPMN tools. This scope is too narrow and boring compared to what I&rsquo;m thinking of here.</p>
+
+<p>For me, workflows can be anything that matches three criteria:</p>
+
+<ul>
+<li><strong>Multi-step</strong>. Several related actions need to run towards a common goal.</li>
+<li><strong>Distributed</strong>. Actions run across multiple servers and services, bringing all the hard problems of distributed systems.</li>
+<li><strong>Arbitrary long</strong>. While workflows may complete in less than a second, they may also span days or even years. They are not a part of a request-response flow.</li>
+</ul>
+
+<p>This definition is very open. Running in the cloud? You probably implement workflows. Doing microservices? I bet you have tons of workflows in there. Event-driven? Aggregating data? Running cron jobs? Anything to do with the money? Queues? Event streams? Automation? Customer relations? Workflows, workflows, workflows all the way.</p>
+
+<p>However, when it comes to implementation, most of these workflows are defined implicitly. Processes are running in the system, but they aren&rsquo;t defined in a single place. Instead, multiple pieces are spread over distributed components that have to do precisely the right thing for the workflow to complete.</p>
+
+<p>The challenges of reliability, consistency, correctness are therefore addressed in an ad-hoc best-effort, poorly structured manner. These responsibilities are everyone&rsquo;s and no one&rsquo;s job at the same time.</p>
+
+<h2 id="temporal-workflow-as-code">Temporal: Workflow as Code</h2>
+
+<p>Temporal is an open-source tool focused on first-class support of workflows in a sense described above. The workflows are functions in a general-purpose programming language. Temporal comes with developer SDKs and a backend service that takes care of state management and event handling.</p>
+
+<p>Each workflow is a cohesive function defining the whole scenario out of provided building blocks. While some learning and onboarding are required, the &ldquo;Workflow as Code&rdquo; concept feels natural to developers.</p>
+
+<p>Let&rsquo;s take a look at an example.</p>
+
+<h2 id="example-subscription-management">Example: Subscription Management</h2>
+
+<p>We all buy subscriptions to online services these days, and many of us had to <strong>implement</strong> subscription management as part of the business applications we develop. An onboarding flow for a SaaS product (Spotify, Netflix, Dropbox, etc.) could look like this:</p>
+
+<pre><code>function subscribe(customerIdentifier) {
+    onboardToFreeTrial(customerIdentifier);
+
+    events.onCancellation(
+        processSubscriptionCancellation(customerIdentifier)
+        stopWorkflow;
+    );
+
+    wait(60 * days);
+    upgradeFromTrialToPaid(customerIdentifier);
+    forever {
+        wait(30 * days);
+        chargeMonthlyFee(customerIdentifier);
+    }
+}
+</code></pre>
+
+<p>I wrote this snippet in pseudocode, and it reflects how a developer might <strong>think</strong> about the workflow. The code relies on several building blocks:</p>
+
+<ul>
+<li>Domain-specific actions: <code>onboardToFreeTrial</code>, <code>chargeMonthlyFee</code>, and others;</li>
+<li>Time scheduling with <code>wait</code> and <code>forever</code>;</li>
+<li>External events to handle user&rsquo;s action with <code>onCancellation</code> and <code>stopWorkflow</code> to stop any further processing.</li>
+</ul>
+
+<p>The snippet is concise and easy to read. However, it&rsquo;s seemingly impossible to convert it to real code as-is. Once invoked, this function may need to run for months or years. We can&rsquo;t run a function on the same server for years: it would constantly consume resources and crash on any reboot or hardware failure.</p>
+
+<h3 id="ad-hoc-implementation">Ad-hoc implementation</h3>
+
+<p>Instead, state of the art is to design a distributed asynchronous event-driven bespoke solution. There are multiple options, but here is one of them:</p>
+
+<ul>
+<li>Store the status and renewal schedule of each subscription in a <strong>database</strong>.</li>
+<li>Have a <strong>cron job</strong> that runs periodically, queries the database for subscriptions due, and sends commands to charge a fee.</li>
+<li>The commands are processed by background <strong>workers</strong> triggered off a persistent queue.</li>
+<li>A separate <strong>queue</strong> handles cancellation requests and updates subscriptions in the database.</li>
+<li>A frontend service provides external <strong>APIs</strong> to interact with the components above.</li>
+</ul>
+
+<p><img src="./adhoc-workflow.png" alt="Picture of the ad-hoc solution" /></p>
+
+<p>This approach may work, but it&rsquo;s a radical departure from the original snippet in terms of complexity. We have to manage a few durable stores, and several components have to play nicely together. Failure scenarios are numerous, and, anecdotally, not many applications get this 100% right.</p>
+
+<p>More importantly, all the machinery consumes expensive developer&rsquo;s time and yields no business value beyond what would be delivered by the single function perpetually running on a hypothetical error-free and limitless server.</p>
+
+<h3 id="temporal-workflow">Temporal workflow</h3>
+
+<p>Temporal provides a solution where your actual production code looks similar to the original pseudocode. Instead of synchronously running it forever, Temporal SDK would pause the execution when needed, create a checkpoint to store the status, and resume the execution automatically when required.</p>
+
+<p>Temporal currently has two language SDKs: <strong>Go</strong> and <strong>Java</strong>, while more languages are on the way. Meanwhile, here is our workflow in Go:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#00f">func</span> SubscriptionWorkflow(ctx workflow.Context, customerId <span style="color:#2b91af">string</span>) <span style="color:#2b91af">error</span> {
+  <span style="color:#00f">var</span> err <span style="color:#2b91af">error</span>
+  <span style="color:#00f">if</span> err = workflow.ExecuteActivity(ctx, OnboardToFreeTrial, customerId).Get(ctx, <span style="color:#00f">nil</span>); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
+  <span style="color:#00f">defer</span> <span style="color:#00f">func</span>() {
+    <span style="color:#00f">if</span> err != <span style="color:#00f">nil</span> &amp;&amp; temporal.IsCanceledError(err) {
+      workflow.ExecuteActivity(ctx, ProcessSubscriptionCancellation, customerId).Get(ctx, <span style="color:#00f">nil</span>)
+    }
+  }()
+  <span style="color:#00f">if</span> err = workflow.Sleep(ctx, 60*24*time.Hour); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
+  <span style="color:#00f">if</span> err = workflow.ExecuteActivity(ctx, UpgradeFromTrialToPaid, customerId).Get(ctx, <span style="color:#00f">nil</span>); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
+  <span style="color:#00f">for</span> {
+    <span style="color:#00f">if</span> err = workflow.Sleep(ctx, 30*24*time.Hour); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
+    <span style="color:#00f">if</span> err = workflow.ExecuteActivity(ctx, ChargeMonthlyFee, customerId).Get(ctx, <span style="color:#00f">nil</span>); err != <span style="color:#00f">nil</span> { <span style="color:#00f">return</span> err }
+  }
+}</code></pre></div>
+<p>And here is the Java version:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">SubscriptionWorkflowImpl</span> <span style="color:#00f">implements</span> SubscriptionWorkflow {
+  <span style="color:#00f">public</span> <span style="color:#2b91af">void</span> execute(String customerIdentifier) {
+    activities.onboardToFreeTrial(customerIdentifier);
+    <span style="color:#00f">try</span> {
+      Workflow.sleep(Duration.ofDays(60));
+      activities.upgradeFromTrialToPaid(customerIdentifier);
+      <span style="color:#00f">while</span> (<span style="color:#00f">true</span>) {
+        Workflow.sleep(Duration.ofDays(30));
+        activities.chargeMonthlyFee(customerIdentifier);
+      }
+    } <span style="color:#00f">catch</span> (CancellationException e) {
+      activities.processSubscriptionCancellation(customerIdentifier);
+    }
+  }
+}</code></pre></div>
+<p>It&rsquo;s not the same code as the prototype sketch, but the structure is strikingly similar. Both languages have their ways to handle errors producing some nuance and visual noise, but those ways are native and intimately familiar to developers in respective ecosystems.</p>
+
+<p>The benefits of the Temporal&rsquo;s approach are quite clear:</p>
+
+<ul>
+<li>The flow is explicitly defined in a single place and can be formally reasoned through.</li>
+<li>There is no bespoke infrastructure to manage beyond a worker running the code and the backend service (more on those below).</li>
+<li>Temporal takes care of state management, queueing, resilience, deduplication, and other safety properties.</li>
+</ul>
+
+<p>Temporal workflows use the same pause-resume-replay approach as Azure Durable Functions. For example, a call to <code>Workflow.sleep</code> doesn&rsquo;t pause the current thread for 60 days. Instead, the actual Java method call completes, and Temporal schedules another execution in 60 days. The new execution has the history of previous runs, so it replays to the point where the last execution stopped and takes the next step.</p>
+
+<h2 id="how-temporal-works">How Temporal Works</h2>
+
+<p>There&rsquo;s no voodoo here, so a backend service and a data store are required to support the almost-magical workflow execution. Any Temporal environment includes <strong>workers</strong>, a <strong>backend service</strong>, and a <strong>data store</strong>.</p>
+
+<p><img src="components.png" alt="Picture of workers, service, database" /></p>
+
+<p>Workers execute the end user&rsquo;s code as the one shown above. The user is responsible for running enough workers, which can be any long-lived compute nodes: VMs, containers, Kubernetes pods, etc.</p>
+
+<p>Each worker connects to the service via a gRPC protocol. The service provides scheduling, queueing, and state manipulation primitives to distribute the workload between workers and ensure liveness and safety guarantees of the system.</p>
+
+<p>The service saves its data in persistent external storage, which currently can be <strong>Cassandra</strong> or <strong>MySQL</strong>.</p>
+
+<p>The service is designed for multi-tenant usage, so your organization only needs a single instance up and running, and multiple applications can benefit. I suspect there will be a managed SaaS option somewhere in the future.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Microservices, serverless functions, cloud-native applications&mdash;distributed event-driven business applications are hot, and we will deal with them for years. I worry that the application development industry underestimates the complexity of such systems. Ad-hoc solutions to common problems may rapidly increase the technical debt and slow down the ability to innovate.</p>
+
+<p>I&rsquo;m excited to see tools like Temporal enter the space of open-source workflows, or rather the space of asynchronous data processing. My firm belief is that every developer can benefit from a higher-level framework that helps them focus on business logic. And the business logic is still written in code with languages that they know and love.</p>
+
+<p>In future installments, I plan to explore Temporal in a deeper way, including different usage scenarios, getting up and running in the cloud, SDK features, query APIs, and more. Stay tuned!</p>
+
+<p>If you want to give Temporal a try, head to the <a href="https://docs.temporal.io/docs/overview/">docs site</a>, explore the code at <a href="https://github.com/temporalio/temporal">GitHub</a> or ask questions in <a href="https://community.temporal.io/">Discourse</a> and <a href="https://join.slack.com/t/temporalio/shared_invite/zt-c1e99p8g-beF7~ZZW2HP6gGStXD8Nuw">Slack</a>.</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/temporal">temporal</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/workflows">workflows</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                
+                <div class="ad-h">
+                    <a href="https://www.serverless360.com/lp/azure-serverless-operations-and-support?utm_source=mikhail-blog&utm_medium=blog-bottom-cta">
+                        <img src="/images/banner-h.png" alt="A sponsored link">
+                    </a>
+                </div>
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/45'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">45</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/45'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>
