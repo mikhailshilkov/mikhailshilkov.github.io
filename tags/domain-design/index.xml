@@ -3,7 +3,7 @@
     <generator>Hugo -- gohugo.io</generator>
     <title>Mikhail Shilkov</title><link href="https://mikhail.io/tags/domain-design/feed" rel="self" />
     <link href="https://mikhail.io/tags/domain-design/"/>
-    <updated>2020-10-15T08:22:23+02:00</updated>
+    <updated>2020-10-22T10:05:39+02:00</updated>
     <author>
             <name>Mikhail Shilkov</name>
             </author>
@@ -135,8 +135,8 @@
             <link href="https://mikhail.io/2020/"/>
             <id>https://mikhail.io/2020/</id>
             
-            <published>2020-10-15T00:00:00+00:00</published>
-            <updated>2020-10-15T00:00:00+00:00</updated>
+            <published>2020-10-22T00:00:00+00:00</published>
+            <updated>2020-10-22T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -144,6 +144,197 @@
                  
                     
                  
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[A Practical Approach to Temporal Architecture]]></title>
+            <link href="https://mikhail.io/2020/10/practical-approach-to-temporal-architecture/"/>
+            <id>https://mikhail.io/2020/10/practical-approach-to-temporal-architecture/</id>
+            
+            <published>2020-10-22T00:00:00+00:00</published>
+            <updated>2020-10-22T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>What it takes to get Temporal workflows up and running</blockquote>
+
+<p>Temporal enables developers to build highly reliable applications without having to worry about all the edge cases. Now that you&rsquo;re excited, I&rsquo;ll cover how you can get up and running with Temporal.</p>
+
+<p>Temporal consists of several components. In this post, I want to outline the primary building blocks and their interactions. By the end, you&rsquo;ll have a broad picture of Temporal and the considerations of deploying to development, staging, and production environments.</p>
+
+<h2 id="workers">Workers</h2>
+
+<p>Workers are compute nodes that run your Temporal application code. You compile your workflows and activities into a worker executable. Next you can run the worker executable in the background and it will listen for new tasks to process.</p>
+
+<p>Your first development environment will probably only need one worker that runs both workflows and activities in a single process. The worker can be hosted anywhere you wish: as a local process on your laptop, as an AWS Fargate task, as a pod in Kubernetes, and so on.</p>
+
+<figure >
+    
+        <img src="worker.png"
+            alt="A Temporal worker executes workflows and activities"
+             />
+        
+    
+    <figcaption>
+        <h4>A Temporal worker executes workflows and activities</h4>
+    </figcaption>
+    
+</figure>
+
+<p>Production deployments typically run numerous workflows with significant load, so you will likely need to run multiple workers in parallel. Ensuring that nodes are spread out over a compute cluster enables resiliency and scalability.</p>
+
+<figure >
+    
+        <img src="workers.png"
+            alt="Workload scaled out to several Temporal workers"
+             />
+        
+    
+    <figcaption>
+        <h4>Workload scaled out to several Temporal workers</h4>
+    </figcaption>
+    
+</figure>
+
+<p>Workers operate independently, each crunching through its share of the workload. Workers are logically &ldquo;stateless&rdquo;: they don&rsquo;t keep track of the past and future. Workers don&rsquo;t talk to each other directly, but they coordinate via a central Temporal service&mdash;the brain of the system.</p>
+
+<h2 id="temporal-service">Temporal Service</h2>
+
+<p>Temporal Service is a component provided by Temporal. Its purpose is to keep track of workflows, activities, and tasks and coordinate workers&rsquo; execution.</p>
+
+<p>Your early environments may have a single Service instance running in the background. A worker knows the Service&rsquo;s domain name (IP) and port and connects to the Service via gRPC.</p>
+
+<figure >
+    
+        <img src="service.png"
+            alt="Worker interacting with Temporal Service"
+             />
+        
+    
+    <figcaption>
+        <h4>Worker interacting with Temporal Service</h4>
+    </figcaption>
+    
+</figure>
+
+<p>Temporal Service itself consists of multiple components: a front-end, matching, history, and others. However, it&rsquo;s okay to treat it as a black-box &ldquo;Service&rdquo; for now.</p>
+
+<p>Once you start growing your workloads, you will need to scale the Service components out to multiple instances for high resilience and throughput. So, several workers are now talking to several service instances.</p>
+
+<figure >
+    
+        <img src="services.png"
+            alt="Temporal Cluster running multiple components"
+             />
+        
+    
+    <figcaption>
+        <h4>Temporal Cluster running multiple components</h4>
+    </figcaption>
+    
+</figure>
+
+<p>Temporal Service can tolerate node failures because it stores its state in an external storage.</p>
+
+<h2 id="data-store">Data Store</h2>
+
+<p>All the workflow data&mdash;task queues, execution state, activity logs&mdash;are stored in a persistent Data Store. Persistence technology is pluggable with two options currently officially supported: Cassandra and MySQL. More alternatives, including PostgreSQL, are on the way.</p>
+
+<p>A MySQL database completes the simplest Temporal deployment diagram.</p>
+
+<figure >
+    
+        <img src="mysql.png"
+            alt="MySQL as a Data Store for Temporal"
+             />
+        
+    
+    <figcaption>
+        <h4>MySQL as a Data Store for Temporal</h4>
+    </figcaption>
+    
+</figure>
+
+<p>For heavily distributed applications that experience high load, it may be better to use Cassandra instead. This database could be a cluster managed by yourself or a managed cloud service (like Azure Cosmos DB):</p>
+
+<figure >
+    
+        <img src="cassandra.png"
+            alt="Cassandra as a Data Store for Temporal"
+             />
+        
+    
+    <figcaption>
+        <h4>Cassandra as a Data Store for Temporal</h4>
+    </figcaption>
+    
+</figure>
+
+<p>Your code never interacts with the Data Store directly. Basically, it&rsquo;s a (rather important) implementation detail of the Temporal Service.</p>
+
+<h2 id="temporal-web-console">Temporal Web Console</h2>
+
+<p>Temporal provides a handy web console to view namespaces, workflows, and activity history. Technically, it&rsquo;s not a required component&mdash;but you probably want to have it under your belt for manual inspection and troubleshooting.</p>
+
+<p>You&rsquo;ll likely have other client components, for instance, to start workflow executions.</p>
+
+<h2 id="external-client">External Client</h2>
+
+<p>You need a client to start your very first workflow execution. It can be the Temporal command-line interface <code>tctl</code> or any custom code that you wrote with a call to initiate a workflow using an SDK or raw gRPC.</p>
+
+<p>Each client must connect to a Temporal Service in order to start or terminate workflows, wait for completion, list the results from the history, and so on. For instance, a web application could start a workflow execution every time it handles a particular HTTP endpoint.</p>
+
+<h2 id="put-it-all-together">Put It All Together</h2>
+
+<p>The following picture puts all the pieces covered above together.</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="components.png"
+            alt="High-level Temporal architecture"
+             />
+        
+    
+    <figcaption>
+        <h4>High-level Temporal architecture</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>As you can tell, there are quite a few components that go into making Temporal tick! Temporal is designed to handle millions of workflows reliably with high-performance guarantees while being open-source and portable across different infrastructure options. This dictates the usage of a multi-tier approach.</p>
+
+<p>You can deploy everything to your development machine with the <a href="[https://docs.temporal.io/docs/go-run-your-first-app/](https://docs.temporal.io/docs/go-run-your-first-app/)">getting started guide</a>. After that, you can start moving the components to your favorite cloud environment. Over the next weeks, I&rsquo;ll be working through automation scenarios and accompanying blog posts to help you manage typical deployment needs.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/temporal" term="temporal" label="Temporal" />
+                            
+                        
                     
                 
             
@@ -159,8 +350,29 @@
             <link href="https://mikhail.io/tags/"/>
             <id>https://mikhail.io/tags/</id>
             
-            <published>2020-10-15T00:00:00+00:00</published>
-            <updated>2020-10-15T00:00:00+00:00</updated>
+            <published>2020-10-22T00:00:00+00:00</published>
+            <updated>2020-10-22T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Temporal]]></title>
+            <link href="https://mikhail.io/tags/temporal/"/>
+            <id>https://mikhail.io/tags/temporal/</id>
+            
+            <published>2020-10-22T00:00:00+00:00</published>
+            <updated>2020-10-22T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -368,9 +580,9 @@
                         
                             
                              
-                                <category scheme="https://mikhail.io/tags/temporal" term="temporal" label="temporal" />
+                                <category scheme="https://mikhail.io/tags/temporal" term="temporal" label="Temporal" />
                              
-                                <category scheme="https://mikhail.io/tags/workflows" term="workflows" label="workflows" />
+                                <category scheme="https://mikhail.io/tags/workflows" term="workflows" label="Workflows" />
                             
                         
                     
@@ -381,28 +593,7 @@
     
         
         <entry>
-            <title type="html"><![CDATA[temporal]]></title>
-            <link href="https://mikhail.io/tags/temporal/"/>
-            <id>https://mikhail.io/tags/temporal/</id>
-            
-            <published>2020-10-15T00:00:00+00:00</published>
-            <updated>2020-10-15T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[workflows]]></title>
+            <title type="html"><![CDATA[Workflows]]></title>
             <link href="https://mikhail.io/tags/workflows/"/>
             <id>https://mikhail.io/tags/workflows/</id>
             
@@ -31098,6 +31289,22 @@ WL4   60    60+1.0∗t   120</p>
 <p>They measure success rate, latency, throughput, cost, and host number and distribution. They deploy to AWS Lambda, Azure Functions, Google Cloud Functions, IBM Cloud Functions.</p>
 
 <p>They then try to generalize the applicability of FaaS services to three real-world scenarios: web serving, exploratory data analysis, periodical batch processing.</p>
+
+<h2 id="a-lightweight-design-for-serverless-function-as-a-service">A lightweight design for serverless Function-as-a-Service</h2>
+
+<p><a href="https://arxiv.org/ftp/arxiv/papers/2010/2010.07115.pdf">https://arxiv.org/ftp/arxiv/papers/2010/2010.07115.pdf</a></p>
+
+<p>The paper &ldquo;A lightweight design for serverless Function-as-a-Service&rdquo; sounded ambitious but it wasn&rsquo;t exactly what I expected. <sup>1</sup>&frasl;<sub>4</sub></p>
+
+<p>My summary:
+- FaaS relies on Docker-like tech for isolation
+- Let&rsquo;s benchmark Docker vs. WebAssembly
+- WASM looks faster than Docker =&gt; FaaS should use WASM (when it&rsquo;s ready) <sup>2</sup>&frasl;<sub>4</sub></p>
+
+<p>Well, maybe, except none of FaaS in AWS, Azure, GCP actually uses Docker. So, I don&rsquo;t quite buy the conclusion &ldquo;We evaluated the use of WebAssembly runtimes in serverless FaaS&rdquo;. <sup>3</sup>&frasl;<sub>4</sub></p>
+
+<p>Anyway, if you are curious about WASM runtimes, have a look at the benchmark results /fin
+<a href="https://arxiv.org/ftp/arxiv/papers/2010/2010.07115.pdf">https://arxiv.org/ftp/arxiv/papers/2010/2010.07115.pdf</a></p>
 ]]></content>
             
                  
