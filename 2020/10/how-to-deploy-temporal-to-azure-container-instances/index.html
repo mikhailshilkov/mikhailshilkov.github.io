@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>How To Deploy Temporal to Azure Container Instances | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="How To Deploy Temporal to Azure Container Instances" />
+	<meta property="og:description" content="Get up and running with Temporal workflows in Azure in several CLI commands" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2020/10/how-to-deploy-temporal-to-azure-container-instances/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2020/10/how-to-deploy-temporal-to-azure-container-instances/teaser.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Temporal" />
+	
+	<meta property="article:tag" content="Azure" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2020/10/how-to-deploy-temporal-to-azure-container-instances/teaser.png" />
+	
+	
+
+	<meta name="twitter:title" content="How To Deploy Temporal to Azure Container Instances"/>
+	<meta name="twitter:description" content="Get up and running with Temporal workflows in Azure in several CLI commands"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=How%20To%20Deploy%20Temporal%20to%20Azure%20Container%20Instances%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2020%2f10%2fhow-to-deploy-temporal-to-azure-container-instances%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">How To Deploy Temporal to Azure Container Instances</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                    <span class="post-date">Published on Oct 28, 2020
+                                        
+                                        
+                                        &nbsp;&middot;&nbsp; 0 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<h1 id="how-to-deploy-temporal-to-azure-container-instances">How To Deploy Temporal to Azure Container Instances</h1>
+
+<p>In <a href="https://mikhail.io/2020/10/practical-approach-to-temporal-architecture/">my previous article</a>, I outlined the various components of <a href="https://temporal.io">Temporal</a> and how they interact. Today&rsquo;s blog builds on this knowledge and demonstrates an example Temporal deployment.</p>
+
+<p>It&rsquo;s a minimalistic deployment on Azure which combines a managed MySQL database with Azure Container Instances, suitable for simple experimentation and development. Here is a diagram of the cloud infrastructure:</p>
+
+<p><img src="./azure.png" alt="Azure Diagram" /></p>
+
+<p>This sample deployment is implemented as a <a href="https://pulumi.com">Pulumi</a> program in TypeScript. You can find the full code in <a href="https://github.com/mikhailshilkov/temporal-samples/tree/main/azure-aci">my GitHub</a>.</p>
+
+<h2 id="application-code">Application Code</h2>
+
+<p>The <code>workflow</code> folder contains all of the application code. The application is written with Go and consists of two source files:</p>
+
+<ol>
+<li><code>helloworld.go</code> - defines a workflow and an activity</li>
+<li><code>main.go</code> - application entry point.</li>
+</ol>
+
+<p>The example deploys a &ldquo;Hello World&rdquo; Temporal application copied from <a href="https://github.com/temporalio/samples-go/blob/master/helloworld/helloworld.go">this Go sample</a>. Once you get it up and running, you can certainly customize the code with your own workflow and activities.</p>
+
+<p>The <code>main.go</code> file does two things. First, it spins up a worker:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go">w := worker.New(c, <span style="color:#a31515">&#34;hello-world&#34;</span>, worker.Options{})
+w.RegisterWorkflow(helloworld.Workflow)
+w.RegisterActivity(helloworld.Activity)</code></pre></div>
+<p>Second, it launches an HTTP server in the same process. The server exposes endpoints to start workflows. The <code>/async?name=&lt;yourname&gt;</code> endpoint starts a new workflow and immediately returns, while the <code>/sync?name=&lt;yourname&gt;</code> blocks and waits for the result of the execution and returns the response. You can find the implementation in the <a href="https://github.com/mikhailshilkov/temporal-samples/blob/33024f614d4a99a7700eacf2142c8ef2b7cea0fc/azure-aci/workflow/main.go#L22"><code>start</code></a> function.</p>
+
+<h2 id="docker-image">Docker Image</h2>
+
+<p>Since the application is deployed to Azure Container Instances, we need to produce a custom Docker image. <a href="https://github.com/mikhailshilkov/temporal-samples/blob/33024f614d4a99a7700eacf2142c8ef2b7cea0fc/azure-aci/workflow/Dockerfile">The <code>Dockerfile</code></a> builds the Go application and exposes port <code>8080</code> to the outside world so we can access the starter HTTP endpoints.</p>
+
+<p>Pulumi deploys this <code>Dockerfile</code> to Azure in three steps:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/33024f614d4a99a7700eacf2142c8ef2b7cea0fc/azure-aci/temporal.ts#L99-L107">Deploy</a> an Azure Container Registry.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/33024f614d4a99a7700eacf2142c8ef2b7cea0fc/azure-aci/temporal.ts#L109-L115">Retrieve</a> the registry&rsquo;s admin credentials generated by Azure.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/33024f614d4a99a7700eacf2142c8ef2b7cea0fc/azure-aci/temporal.ts#L117-L125">Publish</a> the application image to the registry.</li>
+</ul>
+
+<h2 id="mysql-database">MySQL Database</h2>
+
+<p>There are several persistence options supported by Temporal. A straightforward option in Azure is to deploy an instance of Azure Database for MySQL. It&rsquo;s a fully managed database service where Azure is responsible for uptime and maintenance, and users pay a flat fee per hour.</p>
+
+<p>My example <a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/mysql.ts#L24-L50">provisions</a> an instance of MySQL 5.7 at the Basic tier. The database size is limited to 5 GB.</p>
+
+<p>A final tweak is to <a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/mysql.ts#L52-L58">add</a> a firewall rule for the IP address <code>0.0.0.0</code>, which enables network access to MySQL from any Azure service. Note that this option isn&rsquo;t secure for production workloads: read more in <a href="https://docs.microsoft.com/en-us/azure/mysql/concepts-firewall-rules#connecting-from-azure">Connecting from Azure</a>.</p>
+
+<h2 id="temporal-service-and-web-console">Temporal Service and Web Console</h2>
+
+<p>Next, we deploy the Temporal Service and Temporal Web Console as two Azure Container Instances.</p>
+
+<p>The Service container:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L56">Refers</a> to the <code>temporalio/server</code> Docker image provided by Temporal.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L34-L43">Sets up</a> environment variables to connect to MySQL.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L51-L52">Exposes</a> port <code>7233</code> to the outside world. Note that this is not secure for a production environment!</li>
+</ul>
+
+<p>The Web Console container:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L82">Refers</a> to the <code>temporalio/web</code> Docker image provided by Temporal.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L91">Connects</a> to the gRPC endpoint gathered from the Service container.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L77-L78">Exposes</a> port <code>8088</code> to the outside world. Note that this is not secure for a production environment!</li>
+</ul>
+
+<h2 id="temporal-worker">Temporal Worker</h2>
+
+<p>The final component is a Temporal worker that runs application workflows and activities. In my setup, the worker is another Azure Container Instance that pulls the custom Docker image from the container registry. The worker container:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L143">Refers</a> to the custom Docker image created above.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L152">Connects</a> to the gRPC endpoint gathered from the Service container.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L136-L140">Configures</a> registry credentials to access the private Azure Container Registry.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/f17738aff73ae88e1b5f503790e9247f40f88b38/azure-aci/temporal.ts#L77-L78">Exposes</a> the starter endpoints at the port <code>8080</code>.</li>
+</ul>
+
+<h2 id="get-started">Get Started</h2>
+
+<p>The Pulumi Command-Line Interface (CLI) runs the deployment. <a href="https://www.pulumi.com/docs/get-started/install/">Install Pulumi</a>, navigate to the folder where you have the example cloned, and run the following commands:</p>
+
+<ol>
+<li><p>Create a new stack (a Pulumi deployment environment):</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">pulumi stack init dev</code></pre></div></li>
+
+<li><p>Login to <a href="https://docs.microsoft.com/en-us/cli/azure/install-azure-cli">Azure CLI</a>:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">az login</code></pre></div></li>
+
+<li><p>Install NPM dependencies:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">npm install</code></pre></div></li>
+
+<li><p>Run <code>pulumi up</code> and confirm when asked if you want to deploy. Azure resources are provisioned:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ pulumi up
+...
+Performing changes:
+  Type                                                         Name                    Status
+  pulumi:pulumi:Stack                                          temporal-azure-aci-dev  created     
+  ├─ my:example:MySql                                          mysql                   created  
+  │  ├─ azure-nextgen:dbformysql/latest:Server                 mysql                   created
+  │  └─ azure-nextgen:dbformysql/latest:FirewallRule           mysql-allow-all         created
+  ├─ my:example:Temporal                                       temporal                created  
+  │  ├─ docker:image:Image                                     temporal-worker         created
+  │  ├─ azure-nextgen:containerregistry/latest:Registry        registry                created
+  │  ├─ azure-nextgen:containerinstance/latest:ContainerGroup  temporal-server         created
+  │  ├─ azure-nextgen:containerinstance/latest:ContainerGroup  temporal-web            created
+  │  └─ azure-nextgen:containerinstance/latest:ContainerGroup  temporal-worker         created
+  ├─ random:index:RandomString                                 resourcegroup-name      created  
+  ├─ random:index:RandomPassword                               mysql-password          created  
+  └─ azure-nextgen:resources/latest:ResourceGroup              rg                      created  
+    
+Outputs:
+    serverEndpoint : <span style="color:#a31515">&#34;21.55.179.245:7233&#34;</span>
+    starterEndpoint: <span style="color:#a31515">&#34;http://21.55.177.186:8080/async?name=&#34;</span>
+    webEndpoint    : <span style="color:#a31515">&#34;http://52.136.6.198:8088&#34;</span>
+
+Resources:
+    + 13 created
+
+Duration: 7m48s</code></pre></div></li>
+
+<li><p>The output above prints the endpoints to interact with the application. Run the following command to start a &ldquo;Hello World&rdquo; workflow:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">curl <span style="color:#00f">$(</span>pulumi stack output starterEndpoint<span style="color:#00f">)</span>World
+Started workflow ID=World, RunID=b4f6db00-bb2f-498b-b620-caad81c91a81%</code></pre></div></li>
+</ol>
+
+<p>Now, open the <code>webEndpoint</code> URL in your browser and find the workflow (it&rsquo;s probably already in the Completed state).</p>
+
+<h2 id="cost-security-and-further-steps">Cost, Security, and Further Steps</h2>
+
+<p>The deployment above provisions real Azure resources, so be mindful of the related costs. Here is an estimated calculation for the &ldquo;West US 2&rdquo; region:</p>
+
+<ul>
+<li>Azure Database for MySQL Gen5 Basic with 1 vCore and 5 GB of storage = $25.32/month</li>
+<li>Azure Container Instance with 1 vCPU and 1 GB of RAM: 3 x $32.36/month = $97.08/month</li>
+<li>Azure Container Registry Basic = $5.00/month</li>
+</ul>
+
+<p>The total cost for this example is approximately $127.40 per month.</p>
+
+<p>Whenever you are done experimenting, run <code>pulumi destroy</code> to delete the resources. Note that all the data will be lost after destruction.</p>
+
+<p>As noted in the sections above, the security setup is minimal and is not suitable for any environment that processes real data. In addition to a secure networking setup, a production environment would need to handle scalability, resilience, backups, observability, and so on.</p>
+
+<p>I plan to address those topics in future blog posts. Stay tuned!</p>
+
+<p>You can find the full code in <a href="https://github.com/mikhailshilkov/temporal-samples/tree/main/azure-aci">my GitHub</a>.</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/temporal">Temporal</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                
+                <div class="ad-h">
+                    <a href="https://www.serverless360.com/lp/azure-serverless-operations-and-support?utm_source=mikhail-blog&utm_medium=blog-bottom-cta">
+                        <img src="/images/banner-h.png" alt="A sponsored link">
+                    </a>
+                </div>
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/47'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">47</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/47'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div></div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>
