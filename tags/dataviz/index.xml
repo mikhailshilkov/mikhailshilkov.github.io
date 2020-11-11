@@ -3,7 +3,7 @@
     <generator>Hugo -- gohugo.io</generator>
     <title>Mikhail Shilkov</title><link href="https://mikhail.io/tags/dataviz/feed" rel="self" />
     <link href="https://mikhail.io/tags/dataviz/"/>
-    <updated>2020-10-28T13:14:56+01:00</updated>
+    <updated>2020-11-11T16:54:08+01:00</updated>
     <author>
             <name>Mikhail Shilkov</name>
             </author>
@@ -135,8 +135,8 @@
             <link href="https://mikhail.io/2020/"/>
             <id>https://mikhail.io/2020/</id>
             
-            <published>2020-10-28T00:00:00+00:00</published>
-            <updated>2020-10-28T00:00:00+00:00</updated>
+            <published>2020-11-11T00:00:00+00:00</published>
+            <updated>2020-11-11T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -156,8 +156,346 @@
             <link href="https://mikhail.io/tags/azure/"/>
             <id>https://mikhail.io/tags/azure/</id>
             
-            <published>2020-10-28T00:00:00+00:00</published>
-            <updated>2020-10-28T00:00:00+00:00</updated>
+            <published>2020-11-11T00:00:00+00:00</published>
+            <updated>2020-11-11T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[How To Deploy Temporal to Azure Kubernetes Service (AKS)]]></title>
+            <link href="https://mikhail.io/2020/11/how-to-deploy-temporal-to-azure-kubernetes-aks/"/>
+            <id>https://mikhail.io/2020/11/how-to-deploy-temporal-to-azure-kubernetes-aks/</id>
+            
+            <published>2020-11-11T00:00:00+00:00</published>
+            <updated>2020-11-11T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Get up and running with Temporal workflows in Azure and Kubernetes in several CLI commands</blockquote>
+
+<p>In my article <a href="https://mikhail.io/2020/10/practical-approach-to-temporal-architecture/">A Practical Approach to Temporal Architecture</a>, I outlined the various <a href="https://temporal.io/">Temporal</a> components and how they interact. Today’s blog builds on this knowledge and demonstrates an example of deploying Temporal to Kubernetes and, more specifically, to Azure Kubernetes Service (AKS).</p>
+
+<p>My example is self-contained: it provisions a full environment with all the required Azure resources, Temporal service, and application deployment artifacts. Here is a diagram of the cloud infrastructure:</p>
+
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="temporal-aks.png"
+            alt="Deployment architecture"
+             />
+        
+    
+    <figcaption>
+        <h4>Deployment architecture</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+
+<p>This sample deployment is implemented as a <a href="https://pulumi.com/">Pulumi</a> program in TypeScript. You can find the full code in <a href="https://github.com/mikhailshilkov/temporal-samples/tree/main/azure-aks">my GitHub</a>.</p>
+
+<h2 id="application-code">Application Code</h2>
+
+<p>The <code>workflow</code> folder contains all of the application code. The application is written with Go and consists of two source files:</p>
+
+<ol>
+<li><code>helloworld.go</code> - defines a workflow &amp; activity</li>
+<li><code>main.go</code> - application entry point.</li>
+</ol>
+
+<p>The example deploys a “Hello World” Temporal application copied from <a href="https://github.com/temporalio/samples-go/blob/master/helloworld/helloworld.go">this Go sample</a>. Once you get it up and running, you can certainly customize the code with your own workflow and activities.</p>
+
+<p>The <code>main.go</code> file does two things.</p>
+
+<p><strong>First</strong>, it spins up a worker:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go">w := worker.New(c, <span style="color:#a31515">&#34;hello-world&#34;</span>, worker.Options{})
+w.RegisterWorkflow(helloworld.Workflow)
+w.RegisterActivity(helloworld.Activity)</code></pre></div>
+<p><strong>Second</strong>, it launches an HTTP server in the same process. The server exposes endpoints to start workflows. The <code>/async?name=&lt;yourname&gt;</code> endpoint starts a new workflow and immediately returns, while the <code>/sync?name=&lt;yourname&gt;</code> blocks and waits for the result of the execution and returns the response.</p>
+
+<p>You can find the implementation in the <a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/workflow/main.go#L22"><code>start</code></a> function. Note that this simplistic starter is specifc to the &ldquo;Hello World&rdquo; workflow as it expects one argument and one result, both strings.</p>
+
+<h2 id="deployment-structure">Deployment Structure</h2>
+
+<p>My program combines three component resources: a MySQL Database, an AKS cluster, and a Temporal deployment. As a result, the main file deploy all of these resources to a single Azure Resource Group:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> resources.ResourceGroup(<span style="color:#a31515">&#34;resourceGroup&#34;</span>, {
+    resourceGroupName: <span style="color:#2b91af">resourceGroupName</span>,
+    location: <span style="color:#a31515">&#34;WestEurope&#34;</span>,
+});
+
+<span style="color:#00f">const</span> database = <span style="color:#00f">new</span> MySql(<span style="color:#a31515">&#34;mysql&#34;</span>, {
+    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+    location: <span style="color:#2b91af">resourceGroup.location</span>,
+    administratorLogin: <span style="color:#a31515">&#34;mikhail&#34;</span>,
+    administratorPassword: <span style="color:#2b91af">mysqlPassword</span>,
+});
+
+<span style="color:#00f">const</span> cluster = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;aks&#34;</span>, {
+    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+    location: <span style="color:#2b91af">resourceGroup.location</span>,
+    kubernetesVersion: <span style="color:#a31515">&#34;1.16.13&#34;</span>,
+    vmSize: <span style="color:#a31515">&#34;Standard_DS2_v2&#34;</span>,
+    vmCount: <span style="color:#2b91af">3</span>,
+});
+
+<span style="color:#00f">const</span> temporal = <span style="color:#00f">new</span> Temporal(<span style="color:#a31515">&#34;temporal&#34;</span>, {
+    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+    location: <span style="color:#2b91af">resourceGroup.location</span>,
+    version: <span style="color:#a31515">&#34;1.1.1&#34;</span>,
+    storage: {
+        type: <span style="color:#a31515">&#34;mysql&#34;</span>,
+        hostName: <span style="color:#2b91af">database.hostName</span>,
+        login: <span style="color:#2b91af">database.administratorLogin</span>,
+        password: <span style="color:#2b91af">database.administratorPassword</span>,
+    },
+    cluster: <span style="color:#2b91af">cluster</span>,
+    app: {
+        namespace: <span style="color:#a31515">&#34;temporal&#34;</span>,
+        folder: <span style="color:#a31515">&#34;./workflow&#34;</span>,
+        port: <span style="color:#2b91af">8080</span>,
+    },
+});
+
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> webEndpoint = temporal.webEndpoint;
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> starterEndpoint = temporal.starterEndpoint;</code></pre></div>
+<p>The rest of the article gives an overview of the building blocks of these three components.</p>
+
+<h2 id="docker-image">Docker Image</h2>
+
+<p>Since the application is deployed to Kubernetes, we need to produce a custom Docker image. The <a href="https://github.com/mikhailshilkov/temporal-samples/blob/main/azure-aks/workflow/Dockerfile"><code>Dockerfile</code></a> builds the Go application and exposes port <code>8080</code> to the outside world so we can access the starter HTTP endpoints.</p>
+
+<p>Pulumi deploys this <code>Dockerfile</code> to Azure in three steps:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L42-L50">Deploy</a> an Azure Container Registry.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L52-L58">Retrieve</a> the registry’s admin credentials generated by Azure.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L61-L69">Publish</a> the application image to the registry.</li>
+</ul>
+
+<h2 id="mysql-database">MySQL Database</h2>
+
+<p>There are several persistence options supported by Temporal. A straightforward option for Azure users is to deploy an instance of Azure Database for MySQL. It’s a fully managed database service where Azure is responsible for uptime and maintenance, and users pay a flat fee per hour.</p>
+
+<p>My example <a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/mysql.ts#L24-L50">provisions</a> an instance of MySQL 5.7 at the Basic tier. The database size is limited to 5 GB.</p>
+
+<p>A final tweak is to <a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/mysql.ts#L52-L58">add</a> a firewall rule for the IP address <code>0.0.0.0</code>, which enables network access to MySQL from any Azure service. Note that this option isn’t secure for production workloads: read more in <a href="https://docs.microsoft.com/en-us/azure/mysql/concepts-firewall-rules#connecting-from-azure">Connecting from Azure</a>.</p>
+
+<h2 id="azure-kubernetes-cluster">Azure Kubernetes Cluster</h2>
+
+<p>The example creates a new AKS cluster and deploys the Temporal service and applications components to that cluster.</p>
+
+<p>The <code>AksCluster</code> component:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L23-L39">Sets up</a> an Azure Active Directory Application and a Service Principal.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L42-L45">Creates</a> an SSH key for the cluster’s admin user profile.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L48-L86">Provisions</a> a managed Kubernetes cluster base on VM Scale Sets node pool. Feel free to adjust the VM size, count, and the Kubernetes version.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L88-L96">Builds</a> the Kubeconfig YAML to connect to the cluster and deploy application components.</li>
+</ul>
+
+<h2 id="temporal-service-and-web-console">Temporal Service and Web Console</h2>
+
+<p>Next, we deploy the Temporal Service and Temporal Web Console as two Kubernetes services.</p>
+
+<p>We start with sound groundwork:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L71-L78">Declare</a> a custom Pulumi Kubernetes provider and point it to the Kubeconfig string that we retrieved from the managed cluster.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L71-L78">Grant</a> permission for the managed cluster’s service principal to access images from the Azure Container Registry.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L85-L89">Define</a> a new Kubernetes namespace that contains all Temporal deployments and services.</li>
+</ul>
+
+<p>Then, we can deploy the Temporal Service:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L91-L103">Stores</a> the MySQL password as a Kubernetes secret.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L136">Refers</a> to the <code>temporalio/auto-setup</code> Docker image provided by Temporal. The image automatically populates the database schema during the first run.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L143-L163">Sets up</a> environment variables to connect to MySQL.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L186-L213">Deploys</a> a <code>ClusterIP</code> service using port <code>7233</code>.</li>
+</ul>
+
+<p>The Web Console follows:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L246">Refers</a> to the <code>temporalio/web</code> Docker image provided by Temporal.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L249-L252">Connects</a> to the gRPC endpoint of the Temporal Service.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L275-L301">Deploys</a> a <code>ClusterIP</code> service using port <code>8088</code>.</li>
+</ul>
+
+<h2 id="temporal-worker">Temporal Worker</h2>
+
+<p>The final component is a Temporal worker that runs application workflows and activities. In my setup, the worker is a Kubernetes deployment that pulls the custom Docker image from the container registry.</p>
+
+<p>The application component:</p>
+
+<ul>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L337">Refers</a> to the custom Docker image created above.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L337">Connects</a> to the gRPC endpoint of the Temporal Service.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L337">Deploys</a> a <code>ClusterIP</code> service using port <code>8080</code>.</li>
+</ul>
+
+<h2 id="get-started">Get Started</h2>
+
+<p>The Pulumi Command-Line Interface (CLI) runs the deployment. <a href="https://www.pulumi.com/docs/get-started/install/">Install Pulumi</a>, navigate to the folder where you have the example cloned, and run the following commands:</p>
+
+<ol>
+<li>Create a new stack (a Pulumi deployment environment):</li>
+</ol>
+
+<pre><code>pulumi stack init dev
+</code></pre>
+
+<ol>
+<li>Login to <a href="https://docs.microsoft.com/en-us/cli/azure/install-azure-cli">Azure CLI</a>:</li>
+</ol>
+
+<pre><code>az login
+</code></pre>
+
+<ol>
+<li>Install NPM dependencies:</li>
+</ol>
+
+<pre><code>npm install
+</code></pre>
+
+<ol>
+<li>Run <code>pulumi up</code> and confirm when asked if you want to deploy. Azure resources are provisioned:</li>
+</ol>
+
+<pre><code>$ pulumi up...
+Performing changes:...
+
+Outputs:
+    starterEndpoint: &quot;http://21.55.177.186:8080/async?name=&quot;
+    webEndpoint : &quot;http://52.136.6.198:8088&quot;
+
+Resources:+ 27 created
+Duration: 6m46s
+</code></pre>
+
+<ol>
+<li>The output above prints the endpoints to interact with the application. Run the following command to start a “Hello World” workflow:</li>
+</ol>
+
+<pre><code>curl $(pulumi stack output starterEndpoint)WorldStarted workflow ID=World, RunID=b4f6db00-bb2f-498b-b620-caad81c91a81%
+</code></pre>
+
+<p>Now, open the <code>webEndpoint</code> URL in your browser and find the workflow (it’s probably already in the Completed state).</p>
+
+<h2 id="cost-security-and-further-steps">Cost, Security, and Further Steps</h2>
+
+<p>The deployment above provisions real Azure resources, so be mindful of the related costs. Here is an estimated calculation for the “West US 2” region:</p>
+
+<ul>
+<li>Azure Database for MySQL Gen5 Basic with 1 vCore and 5 GB of storage = $25.32/month</li>
+<li>Azure Kubernetes Cluster of 3 VMs type Standard_DS2_v2: 3 x $83.22/month = $249.66/month (but feel free to adjust to your needs)</li>
+<li>Azure Container Registry Basic = $5.00/month</li>
+</ul>
+
+<p>The total cost for this example is approximately $280 per month.</p>
+
+<p>Whenever you are done experimenting, run <code>pulumi destroy</code> to delete the resources. Note that all the data will be lost after destruction.</p>
+
+<p>You can find the full code in <a href="https://github.com/mikhailshilkov/temporal-samples/tree/main/azure-aks">my GitHub</a>.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/temporal" term="temporal" label="Temporal" />
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/kubernetes" term="kubernetes" label="Kubernetes" />
+                            
+                        
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Kubernetes]]></title>
+            <link href="https://mikhail.io/tags/kubernetes/"/>
+            <id>https://mikhail.io/tags/kubernetes/</id>
+            
+            <published>2020-11-11T00:00:00+00:00</published>
+            <updated>2020-11-11T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Tags]]></title>
+            <link href="https://mikhail.io/tags/"/>
+            <id>https://mikhail.io/tags/</id>
+            
+            <published>2020-11-11T00:00:00+00:00</published>
+            <updated>2020-11-11T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Temporal]]></title>
+            <link href="https://mikhail.io/tags/temporal/"/>
+            <id>https://mikhail.io/tags/temporal/</id>
+            
+            <published>2020-11-11T00:00:00+00:00</published>
+            <updated>2020-11-11T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -182,8 +520,6 @@
             
             
             <content type="html"><![CDATA[<blockquote>Get up and running with Temporal workflows in Azure in several CLI commands</blockquote>
-
-<h1 id="how-to-deploy-temporal-to-azure-container-instances">How To Deploy Temporal to Azure Container Instances</h1>
 
 <p>In <a href="https://mikhail.io/2020/10/practical-approach-to-temporal-architecture/">my previous article</a>, I outlined the various components of <a href="https://temporal.io">Temporal</a> and how they interact. Today&rsquo;s blog builds on this knowledge and demonstrates an example Temporal deployment.</p>
 
@@ -345,51 +681,6 @@ Started workflow ID=World, RunID=b4f6db00-bb2f-498b-b620-caad81c91a81%</code></p
                                 <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
                             
                         
-                    
-                
-            
-        </entry>
-    
-    
-        
-        
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Tags]]></title>
-            <link href="https://mikhail.io/tags/"/>
-            <id>https://mikhail.io/tags/</id>
-            
-            <published>2020-10-28T00:00:00+00:00</published>
-            <updated>2020-10-28T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Temporal]]></title>
-            <link href="https://mikhail.io/tags/temporal/"/>
-            <id>https://mikhail.io/tags/temporal/</id>
-            
-            <published>2020-10-28T00:00:00+00:00</published>
-            <updated>2020-10-28T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
                     
                 
             
@@ -6787,27 +7078,6 @@ It&rsquo;s Christmas time!</em></p>
                                 <category scheme="https://mikhail.io/tags/pulumi" term="pulumi" label="Pulumi" />
                             
                         
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Kubernetes]]></title>
-            <link href="https://mikhail.io/tags/kubernetes/"/>
-            <id>https://mikhail.io/tags/kubernetes/</id>
-            
-            <published>2019-10-10T00:00:00+00:00</published>
-            <updated>2019-10-10T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
                     
                 
             
