@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Farmer or Pulumi? Why not both! | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Farmer or Pulumi? Why not both!" />
+	<meta property="og:description" content="Azure Infrastucture as Code using F#: combining Pulumi and Farmer" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2020/12/farmer-or-pulumi-why-not-both/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2020/12/farmer-or-pulumi-why-not-both/teaser.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Pulumi" />
+	
+	<meta property="article:tag" content="FSharp" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2020/12/farmer-or-pulumi-why-not-both/teaser.png" />
+	
+	
+
+	<meta name="twitter:title" content="Farmer or Pulumi? Why not both!"/>
+	<meta name="twitter:description" content="Azure Infrastucture as Code using F#: combining Pulumi and Farmer"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Farmer%20or%20Pulumi%3f%20Why%20not%20both%21%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2020%2f12%2ffarmer-or-pulumi-why-not-both%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Farmer or Pulumi? Why not both!</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Published on Dec 16, 2020
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 0 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    
+
+<p><em>The post is a part of
+<a href="https://sergeytihon.com/2020/10/22/f-advent-calendar-in-english-2020/">F# Advent Calendar 2020</a>.</em></p>
+
+<p>You are a proud F# developer. You deploy your applications to Microsoft Azure. You know that you should never right-click-deploy to production. You don&rsquo;t create important Azure resources via the Azure portal. You are awesome.</p>
+
+<p>You want to define your cloud resources with infrastructure as code tools. However, you do NOT enjoy writing large JSON files to deploy with the Azure Resource Manager (ARM) templates.</p>
+
+<p>It turns out there are at least two tools that enable you to use F# to define Azure resources: <a href="https://compositionalit.github.io/farmer/">Farmer</a> and <a href="https://pulumi.com">Pulumi</a>.</p>
+
+<p>In this article, I&rsquo;ll give a quick comparison of these two options. More excitingly, I&rsquo;ll show you how you could use both tools together in the same F# program!</p>
+
+<h2 id="what-is-farmer">What is Farmer?</h2>
+
+<p>Farmer is an F# library for rapidly authoring and deploying Azure architectures. It&rsquo;s a hand-crafted library that provides simple but powerful primitives to produce ARM Templates from F# code. Essentially, the result of a Farmer execution is a JSON ARM template that you can feed into Azure deployment tools.</p>
+
+<p>Farmer relies heavily on F# computation expressions and feels like a DSL but with strong type safety and excellent IDE support. It&rsquo;s open-source, free to use, and it&rsquo;s just a NuGet library to install.</p>
+
+<h2 id="what-is-pulumi">What is Pulumi?</h2>
+
+<p>Pulumi is a more ambitious tool for all aspects of modern infrastructure as code. It&rsquo;s designed to create, deploy, and manage infrastructure on any cloud using several programming languages.</p>
+
+<p>Pulumi comes with its own command-line interface (CLI) tool to orchestrate deployments, so it doesn&rsquo;t rely on ARM templates in any way. Pulumi supports Azure among other cloud providers, and the Azure SDK is automatically generated from formal specifications.</p>
+
+<h2 id="how-are-they-different">How are they different?</h2>
+
+<p>Farmer and Pulumi are different in many ways, but I want to focus on two aspects.</p>
+
+<h3 id="azure-vs-any-cloud">Azure vs. Any Cloud</h3>
+
+<p>Farmer is focused entirely on Azure, while Pulumi supports Azure, Azure Active Directory, AWS, Google Cloud, Kubernetes, Cloudflare, Digital Ocean, and several dozens of other deployment targets. A single Pulumi program can deploy resources to multiple environments, for instance, Azure, Azure AD, Kubernetes, and Cloudflare.</p>
+
+<p>Farmer relies on Azure deployment tools, while Pulumi comes with its own. There are pros and cons to both approaches.</p>
+
+<h3 id="hand-crafted-vs-auto-generated">Hand-crafted vs. Auto-Generated</h3>
+
+<p>Farmer&rsquo;s F# code is designed to be concise and look great. It&rsquo;s opinionated and makes the most common scenarios short and straightforward. More obscure deployments may not be expressible directly with Farmer, but the library provides escape hatches to fall back to JSON.</p>
+
+<p>Pulumi relies heavily on code generation. A resource definition is always a constructor call that accepts a bag of input properties and returns output properties. This means that you have access to the full API surface area, but you work on a low abstraction level.</p>
+
+<h2 id="can-i-use-both">Can I use both?</h2>
+
+<p>Essentially, Farmer is a DSL to build ARM Templates, while Pulumi is a deployment orchestration tool. They operate on a different level and aren&rsquo;t directly interchangeable.</p>
+
+<p>This also means that you may want to use both to combine their strengths and powers. Below, I show exactly this: I deploy a simple Farmer template from a Pulumi program.</p>
+
+<p><strong>Disclaimer</strong>: This is a proof-of-concept and can&rsquo;t be used for production deployments yet. See the &ldquo;How It Works&rdquo; section for details.</p>
+
+<p>Let&rsquo;s write a sample Pulumi-Farmer program to deploy a Web App!</p>
+
+<h3 id="resource-definitions">Resource Definitions</h3>
+
+<p>I created a .NET Core console application and referenced NuGet packages <code>Pulumi.AzureNextGen</code>, <code>Pulumi.FSharp</code>, and <code>Farmer</code>. Now, I can define resources with Farmer builders:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Create a storage account
+</span><span style="color:#008000"></span><span style="color:#00f">let</span> myStorageAccount = storageAccount {
+    name <span style="color:#a31515">&#34;farmerpulumisa&#34;</span>
+}
+
+<span style="color:#008000">// Create a web app with application insights that are connected to the storage account
+</span><span style="color:#008000"></span><span style="color:#00f">let</span> myWebApp = webApp {
+    name <span style="color:#a31515">&#34;farmerpulumiweb&#34;</span>
+    setting <span style="color:#a31515">&#34;storageKey&#34;</span> myStorageAccount.Key
+}</code></pre></div>
+<p>These definitions will result in four Azure resources: a Storage Account, an App Service Plan, an Application Insights component, and a Web App (App Service).</p>
+
+<h3 id="deployment">Deployment</h3>
+
+<p>The next step is to define a deployment with a target location and a list of resources to deploy:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Create an ARM template
+</span><span style="color:#008000"></span><span style="color:#00f">let</span> deployment = arm {
+    location Location.NorthEurope
+    add_resources [
+        myStorageAccount
+        myWebApp
+    ]
+}</code></pre></div>
+<h3 id="run-pulumi-deployment">Run Pulumi Deployment</h3>
+
+<p>The last step is to declare the application entry point. The application calls a helper function of mine called <code>FarmerDeploy.run</code>, which accepts a resource group name and the deployment object:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Deploy with Pulumi
+</span><span style="color:#008000"></span>[&lt;EntryPoint&gt;]
+<span style="color:#00f">let</span> main _ = FarmerDeploy.run <span style="color:#a31515">&#34;my-resource-group&#34;</span> deployment</code></pre></div>
+<p>Now, I navigate to the application folder in a command line and run <code>pulumi up</code> to deploy the program:</p>
+
+<pre><code>$ pulumi up
+
+Updating (dev)
+
+     Type                                               Name                  Status      
+ +   pulumi:pulumi:Stack                                azure-nextgen-fs-dev  created     
+ +   ├─ azure-nextgen:storage/v20190401:StorageAccount  farmerpulumisa        created     
+ +   ├─ azure-nextgen:web/v20180201:AppServicePlan      farmerpulumiwebFarm   created     
+ +   ├─ azure-nextgen:insights/v20150501:Component      farmerpulumiwebAi     created     
+ +   └─ azure-nextgen:web/v20160801:WebApp              farmerpulumiweb       created     
+ 
+Resources:
+    + 5 created
+
+Duration: 53s
+</code></pre>
+
+<p>Tada! The Farmer-Pulumi application is deployed to Azure!</p>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<p>Here is how this deployment worked:</p>
+
+<ol>
+<li>Pulumi orchestrates the deployment, so the project is a Pulumi F# project.</li>
+<li><code>FarmerDeploy.run</code> accepts a Farmer deployment and converts it to a raw JSON string.</li>
+<li>It sends the JSON to the Pulumi Azure NextGen provider (a plugin installed on my system).</li>
+<li>The provider uses <a href="https://github.com/pulumi/arm2pulumi">arm2pulumi</a> to parse the JSON template to the Pulumi resource model.</li>
+<li>The resource model is sent back to the F# program, which instantiates resources with proper arguments.</li>
+<li>The resources are registered with the Pulumi engine.</li>
+<li>The engine orchestrates the deployment and invokes Azure API to create the resources.</li>
+</ol>
+
+<p><strong>Note</strong>: The Pulumi Azure NextGen provider is currently in preview. In particular, steps 4 and 5 above and not production-ready yet. This means that the prototype may fall short for more sophisticated Farmer deployments (and, therefore, more sophisticated JSON templates).</p>
+
+<p>You can find the full example <a href="https://github.com/mikhailshilkov/fsharp-advent-pulumi/tree/master/2020">here</a>.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>More than anything, this article is a manifestation of the power of applying general-purpose programming languages to engineering cloud applications. Different tools and approaches may be combined in ways they were not initially designed for.</p>
+
+<p>If you are interested in a production-grade Farmer-in-Pulumi integration, consider leaving a comment below with a scenario you have in mind, or just hit the Heart button on the top-left. Thank you!</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/pulumi">Pulumi</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/fsharp">F#</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                
+                <div class="ad-h">
+                    <a href="https://www.serverless360.com/lp/azure-serverless-operations-and-support?utm_source=mikhail-blog&utm_medium=blog-bottom-cta">
+                        <img src="/images/banner-h.png" alt="A sponsored link">
+                    </a>
+                </div>
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/49'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">49</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/49'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+    </body>
+</html>

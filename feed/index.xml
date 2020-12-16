@@ -10,6 +10,525 @@
         <email></email>
     </author>
         <entry>
+            <title type="html"><![CDATA[Farmer or Pulumi? Why not both!]]></title>
+            <link href="https://mikhail.io/2020/12/farmer-or-pulumi-why-not-both/"/>
+            <id>https://mikhail.io/2020/12/farmer-or-pulumi-why-not-both/</id>
+            
+            <published>2020-12-16T00:00:00+00:00</published>
+            <updated>2020-12-16T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Azure Infrastucture as Code using F#: combining Pulumi and Farmer</blockquote>
+
+<p><em>The post is a part of
+<a href="https://sergeytihon.com/2020/10/22/f-advent-calendar-in-english-2020/">F# Advent Calendar 2020</a>.</em></p>
+
+<p>You are a proud F# developer. You deploy your applications to Microsoft Azure. You know that you should never right-click-deploy to production. You don&rsquo;t create important Azure resources via the Azure portal. You are awesome.</p>
+
+<p>You want to define your cloud resources with infrastructure as code tools. However, you do NOT enjoy writing large JSON files to deploy with the Azure Resource Manager (ARM) templates.</p>
+
+<p>It turns out there are at least two tools that enable you to use F# to define Azure resources: <a href="https://compositionalit.github.io/farmer/">Farmer</a> and <a href="https://pulumi.com">Pulumi</a>.</p>
+
+<p>In this article, I&rsquo;ll give a quick comparison of these two options. More excitingly, I&rsquo;ll show you how you could use both tools together in the same F# program!</p>
+
+<h2 id="what-is-farmer">What is Farmer?</h2>
+
+<p>Farmer is an F# library for rapidly authoring and deploying Azure architectures. It&rsquo;s a hand-crafted library that provides simple but powerful primitives to produce ARM Templates from F# code. Essentially, the result of a Farmer execution is a JSON ARM template that you can feed into Azure deployment tools.</p>
+
+<p>Farmer relies heavily on F# computation expressions and feels like a DSL but with strong type safety and excellent IDE support. It&rsquo;s open-source, free to use, and it&rsquo;s just a NuGet library to install.</p>
+
+<h2 id="what-is-pulumi">What is Pulumi?</h2>
+
+<p>Pulumi is a more ambitious tool for all aspects of modern infrastructure as code. It&rsquo;s designed to create, deploy, and manage infrastructure on any cloud using several programming languages.</p>
+
+<p>Pulumi comes with its own command-line interface (CLI) tool to orchestrate deployments, so it doesn&rsquo;t rely on ARM templates in any way. Pulumi supports Azure among other cloud providers, and the Azure SDK is automatically generated from formal specifications.</p>
+
+<h2 id="how-are-they-different">How are they different?</h2>
+
+<p>Farmer and Pulumi are different in many ways, but I want to focus on two aspects.</p>
+
+<h3 id="azure-vs-any-cloud">Azure vs. Any Cloud</h3>
+
+<p>Farmer is focused entirely on Azure, while Pulumi supports Azure, Azure Active Directory, AWS, Google Cloud, Kubernetes, Cloudflare, Digital Ocean, and several dozens of other deployment targets. A single Pulumi program can deploy resources to multiple environments, for instance, Azure, Azure AD, Kubernetes, and Cloudflare.</p>
+
+<p>Farmer relies on Azure deployment tools, while Pulumi comes with its own. There are pros and cons to both approaches.</p>
+
+<h3 id="hand-crafted-vs-auto-generated">Hand-crafted vs. Auto-Generated</h3>
+
+<p>Farmer&rsquo;s F# code is designed to be concise and look great. It&rsquo;s opinionated and makes the most common scenarios short and straightforward. More obscure deployments may not be expressible directly with Farmer, but the library provides escape hatches to fall back to JSON.</p>
+
+<p>Pulumi relies heavily on code generation. A resource definition is always a constructor call that accepts a bag of input properties and returns output properties. This means that you have access to the full API surface area, but you work on a low abstraction level.</p>
+
+<h2 id="can-i-use-both">Can I use both?</h2>
+
+<p>Essentially, Farmer is a DSL to build ARM Templates, while Pulumi is a deployment orchestration tool. They operate on a different level and aren&rsquo;t directly interchangeable.</p>
+
+<p>This also means that you may want to use both to combine their strengths and powers. Below, I show exactly this: I deploy a simple Farmer template from a Pulumi program.</p>
+
+<p><strong>Disclaimer</strong>: This is a proof-of-concept and can&rsquo;t be used for production deployments yet. See the &ldquo;How It Works&rdquo; section for details.</p>
+
+<p>Let&rsquo;s write a sample Pulumi-Farmer program to deploy a Web App!</p>
+
+<h3 id="resource-definitions">Resource Definitions</h3>
+
+<p>I created a .NET Core console application and referenced NuGet packages <code>Pulumi.AzureNextGen</code>, <code>Pulumi.FSharp</code>, and <code>Farmer</code>. Now, I can define resources with Farmer builders:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Create a storage account
+</span><span style="color:#008000"></span><span style="color:#00f">let</span> myStorageAccount = storageAccount {
+    name <span style="color:#a31515">&#34;farmerpulumisa&#34;</span>
+}
+
+<span style="color:#008000">// Create a web app with application insights that are connected to the storage account
+</span><span style="color:#008000"></span><span style="color:#00f">let</span> myWebApp = webApp {
+    name <span style="color:#a31515">&#34;farmerpulumiweb&#34;</span>
+    setting <span style="color:#a31515">&#34;storageKey&#34;</span> myStorageAccount.Key
+}</code></pre></div>
+<p>These definitions will result in four Azure resources: a Storage Account, an App Service Plan, an Application Insights component, and a Web App (App Service).</p>
+
+<h3 id="deployment">Deployment</h3>
+
+<p>The next step is to define a deployment with a target location and a list of resources to deploy:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Create an ARM template
+</span><span style="color:#008000"></span><span style="color:#00f">let</span> deployment = arm {
+    location Location.NorthEurope
+    add_resources [
+        myStorageAccount
+        myWebApp
+    ]
+}</code></pre></div>
+<h3 id="run-pulumi-deployment">Run Pulumi Deployment</h3>
+
+<p>The last step is to declare the application entry point. The application calls a helper function of mine called <code>FarmerDeploy.run</code>, which accepts a resource group name and the deployment object:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Deploy with Pulumi
+</span><span style="color:#008000"></span>[&lt;EntryPoint&gt;]
+<span style="color:#00f">let</span> main _ = FarmerDeploy.run <span style="color:#a31515">&#34;my-resource-group&#34;</span> deployment</code></pre></div>
+<p>Now, I navigate to the application folder in a command line and run <code>pulumi up</code> to deploy the program:</p>
+
+<pre><code>$ pulumi up
+
+Updating (dev)
+
+     Type                                               Name                  Status      
+ +   pulumi:pulumi:Stack                                azure-nextgen-fs-dev  created     
+ +   ├─ azure-nextgen:storage/v20190401:StorageAccount  farmerpulumisa        created     
+ +   ├─ azure-nextgen:web/v20180201:AppServicePlan      farmerpulumiwebFarm   created     
+ +   ├─ azure-nextgen:insights/v20150501:Component      farmerpulumiwebAi     created     
+ +   └─ azure-nextgen:web/v20160801:WebApp              farmerpulumiweb       created     
+ 
+Resources:
+    + 5 created
+
+Duration: 53s
+</code></pre>
+
+<p>Tada! The Farmer-Pulumi application is deployed to Azure!</p>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<p>Here is how this deployment worked:</p>
+
+<ol>
+<li>Pulumi orchestrates the deployment, so the project is a Pulumi F# project.</li>
+<li><code>FarmerDeploy.run</code> accepts a Farmer deployment and converts it to a raw JSON string.</li>
+<li>It sends the JSON to the Pulumi Azure NextGen provider (a plugin installed on my system).</li>
+<li>The provider uses <a href="https://github.com/pulumi/arm2pulumi">arm2pulumi</a> to parse the JSON template to the Pulumi resource model.</li>
+<li>The resource model is sent back to the F# program, which instantiates resources with proper arguments.</li>
+<li>The resources are registered with the Pulumi engine.</li>
+<li>The engine orchestrates the deployment and invokes Azure API to create the resources.</li>
+</ol>
+
+<p><strong>Note</strong>: The Pulumi Azure NextGen provider is currently in preview. In particular, steps 4 and 5 above and not production-ready yet. This means that the prototype may fall short for more sophisticated Farmer deployments (and, therefore, more sophisticated JSON templates).</p>
+
+<p>You can find the full example <a href="https://github.com/mikhailshilkov/fsharp-advent-pulumi/tree/master/2020">here</a>.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>More than anything, this article is a manifestation of the power of applying general-purpose programming languages to engineering cloud applications. Different tools and approaches may be combined in ways they were not initially designed for.</p>
+
+<p>If you are interested in a production-grade Farmer-in-Pulumi integration, consider leaving a comment below with a scenario you have in mind, or just hit the Heart button on the top-left. Thank you!</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/pulumi" term="pulumi" label="Pulumi" />
+                             
+                                <category scheme="https://mikhail.io/tags/fsharp" term="fsharp" label="FSharp" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
+            <title type="html"><![CDATA[Get Up and Running with Azure Synapse and Pulumi]]></title>
+            <link href="https://mikhail.io/2020/12/get-up-and-running-with-azure-synapse-and-pulumi/"/>
+            <id>https://mikhail.io/2020/12/get-up-and-running-with-azure-synapse-and-pulumi/</id>
+            
+            <published>2020-12-04T00:00:00+00:00</published>
+            <updated>2020-12-04T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Use infrastructure as code to automate deployment of an Azure Synapse workspace</blockquote>
+
+<p>Azure Synapse is an integrated analytics service that combines enterprise data warehousing of Azure SQL Data Warehouse and Big Data analytics of Apache Spark. Azure Synapse is a managed service well integrated with other Azure services for data ingestion and business analytics.</p>
+
+<p>You could use the Azure portal to get started with Azure Synapse, but it can be hard to define sophisticated infrastructure for your analytics pipeline using the portal alone, and many users need to apply version control to their cloud configurations.</p>
+
+<p>The alternative is to use an infrastructure as code tool to automate building and deploying cloud resources. This article demonstrates how to provision an Azure Synapse workspace using Pulumi and general-purpose programming languages like Python and C#.</p>
+
+<h2 id="azure-synapse-components">Azure Synapse Components</h2>
+
+<p>Let&rsquo;s start by introducing the components required to provision a basic Azure Synapse workspace. To follow along with the <a href="https://docs.microsoft.com/en-us/azure/synapse-analytics/get-started">Synapse Getting Started Guide</a>, you need the following key Azure infrastructure components:</p>
+
+<ul>
+<li><strong>Resource Group</strong> to contain all other resources.</li>
+<li><strong>Storage Account</strong> to store input data and analytics artifacts.</li>
+<li><strong>Azure Synapse Workspace</strong>&mdash;a collaboration boundary for cloud-based analytics in Azure.</li>
+<li><strong>SQL Pool</strong>&mdash;a dedicated Synapse SQL pool to run T-SQL based analytics.</li>
+<li><strong>Spark Pool</strong> to use Apache Spark analytics.</li>
+<li><strong>IP Filters</strong> and <strong>Role Assignments</strong> for secure access control.</li>
+</ul>
+
+<h2 id="infrastructure-as-code">Infrastructure as Code</h2>
+
+<p>Let&rsquo;s walk through the steps to build a workspace with all the components mentioned above. We&rsquo;ll use Pulumi to provision the necessary resources. Feel free to pick the language of your choice that will apply to all code snippets.</p>
+
+<p>You can check out the <a href="https://github.com/pulumi/examples/tree/master/aws-ts-lambda-thumbnailer">full source code</a> in the Pulumi Examples.</p>
+
+<h3 id="resource-group">Resource Group</h3>
+
+<p>Let&rsquo;s start by defining a resource group to contain all other resources. Be sure to adjust its name and region to your preferred values.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">resource_group = resources.ResourceGroup(<span style="color:#a31515">&#34;resourceGroup&#34;</span>,
+    resource_group_name=<span style="color:#a31515">&#34;synapse-rg&#34;</span>,
+    location=<span style="color:#a31515">&#34;westus2&#34;</span>)</code></pre></div>
+<h3 id="data-lake-storage-account">Data Lake Storage Account</h3>
+
+<p>Synapse workspace will store data in a data lake storage account. We use a Standard Read-Access Geo-Redundant Storage account (SKU <code>Standard_RAGRS</code>) for this purpose. Make sure to change the <code>accountName</code> to your own globally unique name.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">storage_account = storage.StorageAccount(<span style="color:#a31515">&#34;storageAccount&#34;</span>,
+    resource_group_name=resource_group.name,
+    location=resource_group.location,
+    account_name=<span style="color:#a31515">&#34;yoursynapsesa&#34;</span>,
+    access_tier=<span style="color:#a31515">&#34;Hot&#34;</span>,
+    enable_https_traffic_only=True,
+    is_hns_enabled=True,
+    kind=<span style="color:#a31515">&#34;StorageV2&#34;</span>,
+    sku=storage.SkuArgs(
+        name=<span style="color:#a31515">&#34;Standard_RAGRS&#34;</span>,
+    ))</code></pre></div>
+<p>We&rsquo;ll use the <code>users</code> blob container as the analytics file system.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">users = storage.BlobContainer(<span style="color:#a31515">&#34;users&#34;</span>,
+    resource_group_name=resource_group.name,
+    account_name=storage_account.name,
+    container_name=<span style="color:#a31515">&#34;users&#34;</span>,
+    public_access=<span style="color:#a31515">&#34;None&#34;</span>)</code></pre></div>
+<h3 id="synapse-workspace">Synapse Workspace</h3>
+
+<p>It&rsquo;s time to use all of the above to provision an Azure Synapse workspace! Adjust the name and the SQL credentials in the definition below.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">workspace = synapse.Workspace(<span style="color:#a31515">&#34;workspace&#34;</span>,
+    resource_group_name=resource_group.name,
+    location=resource_group.location,
+    workspace_name=<span style="color:#a31515">&#34;mysynapse&#34;</span>,
+    default_data_lake_storage=synapse.DataLakeStorageAccountDetailsArgs(
+        account_url=data_lake_storage_account_url,
+        filesystem=<span style="color:#a31515">&#34;users&#34;</span>,
+    ),
+    identity=synapse.ManagedIdentityArgs(
+        type=<span style="color:#a31515">&#34;SystemAssigned&#34;</span>,
+    ),
+    sql_administrator_login=<span style="color:#a31515">&#34;sqladminuser&#34;</span>,
+    sql_administrator_login_password=random.RandomPassword(<span style="color:#a31515">&#34;workspacePwd&#34;</span>, length=12).result)</code></pre></div>
+<blockquote>
+<p>Note that we also defined a system-assigned managed identity for the workspace.</p>
+</blockquote>
+
+<h3 id="security-setup">Security Setup</h3>
+
+<p>You need to allow access to the workspace with a firewall rule. The following is a blank access rule but feel free to restrict it to your target IP range.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">allow_all = synapse.IpFirewallRule(<span style="color:#a31515">&#34;allowAll&#34;</span>,
+    resource_group_name=resource_group.name,
+    workspace_name=workspace.name,
+    rule_name=<span style="color:#a31515">&#34;allowAll&#34;</span>,
+    end_ip_address=<span style="color:#a31515">&#34;255.255.255.255&#34;</span>,
+    start_ip_address=<span style="color:#a31515">&#34;0.0.0.0&#34;</span>)</code></pre></div>
+<p>The following snippet assigns the <strong>Storage Blob Data Contributor</strong> role to the workspace managed identity and your target user. If you use the Azure CLI, run <code>az ad signed-in-user show --query=objectId</code> to look up your user ID.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">subscription_id = resource_group.id.apply(<span style="color:#00f">lambda</span> id: id.split(<span style="color:#a31515">&#39;/&#39;</span>)[2])
+role_definition_id = subscription_id.apply(<span style="color:#00f">lambda</span> id: f<span style="color:#a31515">&#34;/subscriptions/{id}/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe&#34;</span>)
+
+authorization.RoleAssignment(<span style="color:#a31515">&#34;storageAccess&#34;</span>,
+    role_assignment_name=random.RandomUuid(<span style="color:#a31515">&#34;roleName&#34;</span>).result,
+    scope=storage_account.id,
+    principal_id=workspace.identity.principal_id.apply(<span style="color:#00f">lambda</span> v: v <span style="color:#00f">or</span> <span style="color:#a31515">&#34;&lt;preview&gt;&#34;</span>),
+    principal_type=<span style="color:#a31515">&#34;ServicePrincipal&#34;</span>,
+    role_definition_id=role_definition_id)
+
+authorization.RoleAssignment(<span style="color:#a31515">&#34;userAccess&#34;</span>,
+    role_assignment_name=random.RandomUuid(<span style="color:#a31515">&#34;userRoleName&#34;</span>).result,
+    scope=storage_account.id,
+    principal_id=config.get(<span style="color:#a31515">&#34;userObjectId&#34;</span>),
+    principal_type=<span style="color:#a31515">&#34;User&#34;</span>,
+    role_definition_id=role_definition_id)</code></pre></div>
+<h3 id="sql-and-spark-pools">SQL and Spark Pools</h3>
+
+<p>Finally, let&rsquo;s add two worker pools to the Synapse workspace. A SQL pool for T-SQL analytic queries&hellip;</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">sql_pool = synapse.SqlPool(<span style="color:#a31515">&#34;sqlPool&#34;</span>,
+    resource_group_name=resource_group.name,
+    location=resource_group.location,
+    workspace_name=workspace.name,
+    sql_pool_name=<span style="color:#a31515">&#34;SQLPOOL1&#34;</span>,
+    collation=<span style="color:#a31515">&#34;SQL_Latin1_General_CP1_CI_AS&#34;</span>,
+    create_mode=<span style="color:#a31515">&#34;Default&#34;</span>,
+    sku=synapse.SkuArgs(
+        name=<span style="color:#a31515">&#34;DW100c&#34;</span>,
+    ))</code></pre></div>
+<p>&hellip; and a Spark pool for Big Data analytics.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">spark_pool = synapse.BigDataPool(<span style="color:#a31515">&#34;sparkPool&#34;</span>,
+    resource_group_name=resource_group.name,
+    location=resource_group.location,
+    workspace_name=workspace.name,
+    big_data_pool_name=<span style="color:#a31515">&#34;Spark1&#34;</span>,
+    auto_pause=synapse.AutoPausePropertiesArgs(
+        delay_in_minutes=15,
+        enabled=True,
+    ),
+    auto_scale=synapse.AutoScalePropertiesArgs(
+        enabled=True,
+        max_node_count=3,
+        min_node_count=3,
+    ),
+    node_count=3,
+    node_size=<span style="color:#a31515">&#34;Small&#34;</span>,
+    node_size_family=<span style="color:#a31515">&#34;MemoryOptimized&#34;</span>,
+    spark_version=<span style="color:#a31515">&#34;2.4&#34;</span>)</code></pre></div>
+<h2 id="ready-to-dive-into-analytics">Ready to Dive into Analytics</h2>
+
+<p>Our resource definitions are ready. Run <code>pulumi up</code> to provision your Azure Synapse infrastructure.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">$ pulumi up
+...
+Do you want to perform this update? yes
+Updating (dev)
+
+     Type                                                            Name                  Plan
+ +   pulumi:pulumi:Stack                                             azure-py-synapse-dev  created
+ +   ├─ azure-nextgen:resources/latest:ResourceGroup                 resourceGroup         created
+ +   ├─ azure-nextgen:storage/latest:StorageAccount                  storageAccount        created
+ +   ├─ azure-nextgen:storage/latest:BlobContainer                   users                 created
+ +   ├─ azure-nextgen:synapse/v20190601preview:Workspace             workspace             created
+ +   ├─ random:index:RandomUuid                                      roleName              created
+ +   └─ azure-nextgen:authorization/v20200401preview:RoleAssignment  storageAccess         created
+ +   ├─ random:index:RandomUuid                                      userRoleName          created
+ +   ├─ azure-nextgen:authorization/v20200401preview:RoleAssignment  userAccess            created
+ +   ├─ azure-nextgen:synapse/v20190601preview:IpFirewallRule        allowAll              created
+ +   ├─ azure-nextgen:synapse/v20190601preview:SqlPool               sqlPool               created
+ +   ├─ azure-nextgen:synapse/v20190601preview:BigDataPool           sparkPool             created
+
+ Resources:
+    + 12 created
+
+Duration: 10m51s</code></pre></div>
+<p>You can now navigate to the <a href="https://docs.microsoft.com/en-us/azure/synapse-analytics/get-started-analyze-sql-pool">Azure Synapse Quickstart, Step 2</a>, and follow along with the data analysis tutorial.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Azure Synapse is a managed analytics service that accelerates time to insight across data warehouses and big data workloads. A Synapse workspace is a critical component of your cloud infrastructure that you should provision with infrastructure as code and other management best practices.</p>
+
+<p>Pulumi and Azure NextGen provider open up full access to all types of Azure resources using your favorite programming languages, including Python, C#, and TypeScript. Navigate to the complete Azure Synapse example in <a href="https://github.com/pulumi/examples/tree/master/azure-nextgen-py-synapse">Python</a>, <a href="https://github.com/pulumi/examples/tree/master/azure-nextgen-cs-synapse">C#</a>, or <a href="https://github.com/pulumi/examples/tree/master/azure-nextgen-ts-synapse">TypeScript</a> and get started today.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/azure" term="azure" label="Azure" />
+                             
+                                <category scheme="https://mikhail.io/tags/pulumi" term="pulumi" label="Pulumi" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
+            <title type="html"><![CDATA[Running Container Images in AWS Lambda]]></title>
+            <link href="https://mikhail.io/2020/12/aws-lambda-container-support/"/>
+            <id>https://mikhail.io/2020/12/aws-lambda-container-support/</id>
+            
+            <published>2020-12-01T00:00:00+00:00</published>
+            <updated>2020-12-01T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>AWS Lambda launches support for packaging and deploying functions as container images</blockquote>
+
+<p>When AWS Lambda launched in 2014, it pioneered the concept of Function-as-a-Service. Developers could write a function in one of the supported programming languages, upload it to AWS, and Lambda executes the function on every invocation.</p>
+
+<p>Ever since then, a zip archive of application code or binaries has been the only supported deployment option. Even AWS Lambda Layers&mdash;reusable components automatically merged into the application code&mdash;used the zip packaging format.</p>
+
+<p>Today, AWS announced that AWS Lambda now supports packaging serverless functions as container images. This means that you can deploy a custom Docker or OCI image as an AWS Lambda function.</p>
+
+<h2 id="why-use-container-images-for-aws-lambda">Why Use Container Images for AWS Lambda?</h2>
+
+<p>The first production-ready version of Docker was released in October 2014, just one month before the announcement of AWS Lambda. Container images are now the de-facto standard of application packaging. Containers run in local development loops, in Kubernetes clusters, including Amazon EKS, as well as in Amazon ECS and AWS Fargate. Docker is embraced across the cloud industry, for instance, Google Cloud Run is a serverless offering centered around container images.</p>
+
+<p>With today&rsquo;s launch, AWS Lambda can run functions packaged as container images, enabling customers to build serverless applications using familiar tools, preferred languages, and required dependencies.</p>
+
+<p>Here are essential scenarios enabled and improved by container image deployments:</p>
+
+<ul>
+<li><strong>Package binaries and libraries</strong> that may not be available as a NPM (or another package manager) module. Our video processing example below demonstrates this capability.</li>
+<li><strong>Code in an arbitrary programming language</strong>. While already possible with Lambda Layers and Runtime API, container images will streamline the experience of developing functions in languages not native to AWS Lambda.</li>
+<li><strong>Use custom OS and custom runtime versions</strong> to match requirements and standard practices in a given company.</li>
+<li><strong>Deploy large files and packages</strong>. Container images up to 10 GB are supported, as opposed to the previous hard limit of 250 MB of unzipped files.</li>
+<li><strong>Reuse existing base images</strong> to bring reliable and battle-tested implementations from the broad community or domain-specific scenarios.</li>
+<li><strong>Apply centralized container image building and packaging governance and security requirements</strong> to AWS Lambda deployments. This provides Enterprise customers with a higher level of control.</li>
+</ul>
+
+<p>AWS Lambda functions packaged as container images will continue to benefit from the event-driven execution model, consumption-based billing, automatic scaling, high availability, fast start-up, and native integrations with numerous AWS services.</p>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<p>You can get started with deploying containers to AWS Lambda in three steps:</p>
+
+<ol>
+<li><strong>Prepare a container definition</strong> that implements the Lambda Runtime Interface as explained below.</li>
+<li><strong>Build</strong> the container image and <strong>publish</strong> it to Amazon Elastic Container Registry (ECR).</li>
+<li><strong>Deploy an AWS Lambda</strong>, grant it access to the ECR, and point it to the container image.</li>
+</ol>
+
+<p><img src="lambdacontainers.png" alt="Lambda Function packaged as a Container" /></p>
+
+<p>Your container image has to implement AWS Lambda runtime API. Runtime API is a simple HTTP-based protocol with operations to retrieve invocation data, submit responses, and report errors.</p>
+
+<p>Therefore, not every container image may be deployed to AWS Lambda. You have two main options:</p>
+
+<ul>
+<li><strong>Choose a base image provided by AWS</strong>, which already includes the Runtime Interface Client (RIC). AWS provides base images for Node.js, Python, Java, Go, .NET Core, and Ruby.</li>
+<li><strong>Use an arbitrary base image</strong> and implement the API with an AWS Lambda runtime client SDK. Using a custom base image, you can leverage open-source AWS Lambda Runtime Interface Client to make the image compatible with Lambda’s runtime API.</li>
+</ul>
+
+<h2 id="container-images-in-aws-lambda-vs-aws-fargate">Container Images in AWS Lambda vs. AWS Fargate</h2>
+
+<p>Lambda Container image support further blurs the lines between Lambda and Fargate. It’s important to understand the remaining differences to decide which service to use in a given scenario:</p>
+
+<ul>
+<li><strong>Cost structure</strong>. Lambda is charged per execution, while Fargate has a fixed cost per vCPU per hour regardless of the actual workload. Depending on requests per second served by a single CPU, one model can be much more frugal than the other.</li>
+<li><strong>Scale to zero</strong>. Consequently, an idle Lambda function costs nothing while Fargate still incurs fixed minimal running costs. Therefore, breaking an application down to many small specialized Lambda functions is much more practical and common than micro Fargate instances.</li>
+<li><strong>Burst workloads</strong>. Lambda scales on a per-request basis and can go from zero to a thousand instances in seconds. It’s a great fit for applications with bursty workloads that need to switch from idle to full capacity and back.</li>
+<li><strong>Performance</strong>. Fargate runs on more dedicated resources, so overall performance will likely be better than on Lambda. For time-sensitive and critical APIs, Fargate may offer a fast and consistent experience superior to Lambda, especially on high percentiles.</li>
+<li><strong>Integration with AWS services</strong>. Lambda comes with native integration with 100+ AWS services. It’s straightforward to trigger a function for incoming SQS messages or new files in an S3 bucket, which requires more wiring for Fargate tasks.</li>
+<li><strong>Resource limits</strong>. Lambda executions are limited to 15 minutes and may only consume up to 10 GB of RAM. Fargate may be the only option for long-running resource-demanding jobs.</li>
+</ul>
+
+<p>Overall, Lambda shines for unpredictable or inconsistent workloads and applications easily expressed as isolated functions triggered by events in other AWS services.</p>
+
+<h2 id="example-serverless-video-thumbnailer-with-aws-lambda-and-pulumi">Example: Serverless Video Thumbnailer with AWS Lambda and Pulumi</h2>
+
+<p>Let&rsquo;s walk through the steps to build an example application with container-based AWS Lambda. In this scenario, a function runs every time a new video is uploaded to an Amazon S3 bucket. It relies on FFmpeg tools to produce a thumbnail of the uploaded video and uploads the thumbnail back to the same S3 bucket.</p>
+
+<p>We&rsquo;ll use Pulumi to provision the necessary resources. You can check out the <a href="https://github.com/pulumi/examples/tree/master/aws-ts-lambda-thumbnailer">full source code</a> in the Pulumi Examples.</p>
+
+<h3 id="define-a-dockerfile">Define a Dockerfile</h3>
+
+<p>Here are the key features of the container image for our Thumbnailer:</p>
+
+<ul>
+<li>Based on the <code>amazon/aws-lambda-nodejs:12</code> image</li>
+<li>Installs AWS CLI to copy objects to and from S3</li>
+<li>Installs FFmpeg to process video files</li>
+<li>Copies the <code>index.js</code> with function implementation</li>
+<li>Points the <code>index.handler</code> command</li>
+</ul>
+
+<p>You can find the full Dockerfile <a href="https://github.com/pulumi/examples/blob/master/aws-ts-lambda-thumbnailer/docker-ffmpeg-thumb/Dockerfile">here</a>.</p>
+
+<h3 id="create-an-s3-bucket">Create an S3 Bucket</h3>
+
+<p>Now, let&rsquo;s start composing our Pulumi program in TypeScript. The first step is to define an S3 bucket.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws from <span style="color:#a31515">&#34;@pulumi/aws&#34;</span>;
+
+<span style="color:#008000">// A bucket to store videos and thumbnails.
+</span><span style="color:#008000"></span><span style="color:#00f">const</span> bucket = <span style="color:#00f">new</span> aws.s3.Bucket(<span style="color:#a31515">&#34;bucket&#34;</span>);</code></pre></div>
+<h3 id="build-the-container-image-and-publish-it-to-ecr">Build the container image and publish it to ECR</h3>
+
+<p>We can use <a href="https://www.pulumi.com/docs/guides/crosswalk/aws/">Pulumi Crosswalk for AWS</a> to build the Docker image and publish it to a new ECR repository with just three lines of code.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> awsx from <span style="color:#a31515">&#34;@pulumi/awsx&#34;</span>;
+
+<span style="color:#00f">const</span> image = awsx.ecr.buildAndPushImage(<span style="color:#a31515">&#34;image&#34;</span>, {
+   context: <span style="color:#a31515">&#34;./docker-ffmpeg-thumb&#34;</span>,
+});</code></pre></div>
+<p>The local <code>docker-ffmpeg-thumb</code> folder contains the application files (<code>Dockerfile</code> and <code>index.js</code>).</p>
+
+<h3 id="setup-a-role">Setup a role</h3>
+
+<p>Next, we define an IAM role and a policy attachment to grant AWS Lambda access to ECR, CloudWatch, and other supporting services.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> role = <span style="color:#00f">new</span> aws.iam.Role(<span style="color:#a31515">&#34;thumbnailerRole&#34;</span>, {
+   assumeRolePolicy: <span style="color:#2b91af">aws.iam.assumeRolePolicyForPrincipal</span>({ Service: <span style="color:#a31515">&#34;lambda.amazonaws.com&#34;</span> }),
+});
+<span style="color:#00f">new</span> aws.iam.RolePolicyAttachment(<span style="color:#a31515">&#34;lambdaFullAccess&#34;</span>, {
+   role: <span style="color:#2b91af">role.name</span>,
+   policyArn: <span style="color:#2b91af">aws.iam.ManagedPolicies.AWSLambdaFullAccess</span>,
+});</code></pre></div>
+<h3 id="configure-your-aws-lambda-function">Configure your AWS Lambda function</h3>
+
+<p>It&rsquo;s time to define the AWS Lambda function itself! It&rsquo;s as simple as giving it a name and pointing to the image URI returned from the ECR. Also, we assign the role and increase the timeout to 15 minutes, as video processing may take a while.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> thumbnailer = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;thumbnailer&#34;</span>, {
+   packageType: <span style="color:#a31515">&#34;Image&#34;</span>,
+   imageUri: <span style="color:#2b91af">image.imageValue</span>,
+   role: <span style="color:#2b91af">role.arn</span>,
+   timeout: <span style="color:#2b91af">900</span>,
+});</code></pre></div>
+<h3 id="trigger-on-new-videos">Trigger on new videos</h3>
+
+<p>Finally, we can assign a trigger to the function using the <code>bucket.onObjectCreated</code> helper method. We want to limit the function to only process <code>mp4</code> files.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#008000">// When a new video is uploaded, run the FFMPEG task on the video file.
+</span><span style="color:#008000"></span>bucket.onObjectCreated(<span style="color:#a31515">&#34;onNewVideo&#34;</span>, thumbnailer, { filterSuffix: <span style="color:#a31515">&#34;.mp4&#34;</span> });</code></pre></div>
+<p>And that is it! We run <code>pulumi up</code> to get the thumbnailed service up and running.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Support for container images in AWS Lambda brings the power and usability of industry-standard packaging to serverless functions. It becomes easy to reuse application components packaged with the ubiquitous deployment format.</p>
+
+<p>In this post, we’ve shown how to use Pulumi to build a container image and configure an AWS Lambda to run it. Pulumi makes it easy to create artifacts and provision and manage cloud infrastructure on any cloud using familiar programming languages, including TypeScript, Python, Go and .NET. Docker images, ECR registries, and Lambda functions can be managed within the same infrastructure definition.</p>
+
+<p>Further steps:</p>
+
+<ul>
+<li>Check out the full <a href="https://github.com/pulumi/examples/tree/master/aws-ts-lambda-thumbnailer">Lambda + Docker example</a> in the Pulumi Examples.</li>
+<li><a href="https://www.pulumi.com/docs/get-started/aws/">Get Started</a> with Pulumi for AWS today.</li>
+</ul>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/aws" term="aws" label="AWS" />
+                             
+                                <category scheme="https://mikhail.io/tags/serverless" term="serverless" label="Serverless" />
+                             
+                                <category scheme="https://mikhail.io/tags/containers" term="containers" label="Containers" />
+                             
+                                <category scheme="https://mikhail.io/tags/pulumi" term="pulumi" label="Pulumi" />
+                            
+                        
+                    
+                
+            
+        </entry>
+        <entry>
             <title type="html"><![CDATA[How To Deploy Temporal to Azure Kubernetes Service (AKS)]]></title>
             <link href="https://mikhail.io/2020/11/how-to-deploy-temporal-to-azure-kubernetes-aks/"/>
             <id>https://mikhail.io/2020/11/how-to-deploy-temporal-to-azure-kubernetes-aks/</id>
