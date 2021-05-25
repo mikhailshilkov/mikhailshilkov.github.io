@@ -3,7 +3,7 @@
     <generator>Hugo -- gohugo.io</generator>
     <title>Mikhail Shilkov</title><link href="https://mikhail.io/tags/application-insights/feed" rel="self" />
     <link href="https://mikhail.io/tags/application-insights/"/>
-    <updated>2021-03-18T12:10:31+01:00</updated>
+    <updated>2021-05-25T17:18:39+02:00</updated>
     <author>
             <name>Mikhail Shilkov</name>
             </author>
@@ -135,8 +135,276 @@
             <link href="https://mikhail.io/2021/"/>
             <id>https://mikhail.io/2021/</id>
             
-            <published>2021-03-18T00:00:00+00:00</published>
-            <updated>2021-03-18T00:00:00+00:00</updated>
+            <published>2021-05-25T00:00:00+00:00</published>
+            <updated>2021-05-25T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Choosing the Number of Shards in Temporal History Service]]></title>
+            <link href="https://mikhail.io/2021/05/choose-the-number-of-shards-in-temporal-history-service/"/>
+            <id>https://mikhail.io/2021/05/choose-the-number-of-shards-in-temporal-history-service/</id>
+            
+            <published>2021-05-25T00:00:00+00:00</published>
+            <updated>2021-05-25T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Tuning the sharding configuration for the optimal cluster performance.</blockquote><p>Today, I&rsquo;m diving into the topic of tuning your Temporal clusters for optimal performance. More specifically, I will be discussing the single configuration option: the number of History service shards. Through a series of experiments, I’ll explain how a low number of shards can lead to contention, while a large number can cause excessive resource consumption.</p>
+<p>All the experimental data is collected with <a href="https://github.com/temporalio/maru/">Maru</a>—the open-source Temporal load simulator and benchmarking tool.</p>
+<p>Let&rsquo;s start with a hypothetical scenario that illustrates the struggle of a misconfigured Temporal cluster.</p>
+<h2 id="symptom-contention-in-history-service">Symptom: Contention in History Service</h2>
+<p>Imagine you are benchmarking your Temporal deployment. You are not entirely happy with the throughput yet, so you look into performance metrics. Storage utilization seems relatively low, and storage latency is excellent. CPU usage of Temporal services is low too. Where is the bottleneck?</p>
+<p>You start looking at response times and notice that the History service has high latency. Why is that the case? If the storage latency is good, what is the History service waiting for?</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="latency-pattern.png"
+            alt="Example of a problematic latency pattern"
+             />
+        
+    
+    <figcaption>
+        <h4>Example of a problematic latency pattern</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>If the latencies in your system look somewhat like the picture above, your cluster is probably not configured appropriately for the current workload. You are likely in a situation of lock contention due to an insufficient number of History shards.</p>
+<h2 id="theory-history-shards">Theory: History Shards</h2>
+<p>Temporal provides high guarantees around Workflow consistency. To achieve this goal, Temporal allocates a single host of the History service to process all events of a given Workflow execution.</p>
+<p>Each Workflow execution receives a unique identifier. Temporal calculates a hash for each identifier and allocates it to a specific <strong>shard</strong> based on the hash value. A shard is represented as a number from 1 to N. Executions with the same shard value are processed by the same host.</p>
+<p>The History service has a configuration value to define the total number of shards, set once and forever. Each instance of the History service obtains a lock on multiple shards and starts processing Workflow executions that belong to them.</p>
+<p>Shards are logically independent and isolated from each other. To achieve the consistency requirements with Cassandra, Temporal serializes all updates belonging to the same shard.</p>
+<p>Therefore, a shard is a unit of parallelism. Since each shard executes all updates under a single lock, all updates are sequential. The maximum theoretical throughput of a single shard is limited by the latency of a database operation. For example, if a single database update takes 10 ms, then a single shard can do a maximum of 100 updates per second. If you try to push more updates, you will see the History service latencies go up without database latency going up. Precisely the case illustrated in the chart above!</p>
+<h2 id="experiment-observe-history-service-contention">Experiment: Observe History Service Contention</h2>
+<p>Let&rsquo;s design an experiment to illustrate the impact of the number of History shards on cluster throughput and latency. I created a test Kubernetes cluster with three node pools: one for Cassandra, one for Elasticsearch, and one for Temporal services and workers. I deployed the datastores and Temporal cluster. For the sake of simplicity, every Temporal service has just one pod.</p>
+<p>Then, using <a href="https://github.com/temporalio/maru/">Maru</a>, I run a benchmark of 25,000 workflow executions to collect metrics around processing speed, response latency, and resource utilization. I conduct the same experiment several times but tweak just one configuration parameter: the number of History service shards.</p>
+<h3 id="single-shard">Single Shard</h3>
+<p>Let&rsquo;s start with a base case of just a single shard. All Workflow executions are assigned to the same shard and have to be serialized. As expected, the system throughput is quite limited, and it takes 28 minutes to complete the scenario:</p>
+<figure >
+    
+        <img src="1-workflow-rate.png"
+            alt="Workflow processing rates for a single-shard configuration"
+             />
+        
+    
+    <figcaption>
+        <h4>Workflow processing rates for a single-shard configuration</h4>
+    </figcaption>
+    
+</figure>
+<p>Due to the interference of read and write operations, the processing rate starts really low but goes up as the backlog decreases. This behavior makes sense for the high-contention scenario.</p>
+<p>Here is the latency chart of the History service versus the underlying Cassandra database:</p>
+<figure >
+    
+        <img src="1-latency.png"
+            alt="Database and service latencies for a single-shard configuration"
+             />
+        
+    
+    <figcaption>
+        <h4>Database and service latencies for a single-shard configuration</h4>
+    </figcaption>
+    
+</figure>
+<p>Cassandra&rsquo;s response time is very close to zero as compared to the History service response time. The vast majority of the latter is internal contention.</p>
+<p>The CPU utilization reasonably fairly low too:</p>
+<figure >
+    
+        <img src="1-cpu.png"
+            alt="Database and service CPU usage for a single-shard configuration"
+             />
+        
+    
+    <figcaption>
+        <h4>Database and service CPU usage for a single-shard configuration</h4>
+    </figcaption>
+    
+</figure>
+<p>Both the database and the service are underutilized, as the cluster spends the majority of time waiting.</p>
+<h3 id="increasing-the-number-of-shards">Increasing the Number of Shards</h3>
+<p>I re-ran the exact same experiment with 4, 8, 64, 512, and 4096 shards and correlated the shard number with the key metrics. Note that the horizontal axis is out of scale on all the charts below.</p>
+<p>The processing time goes down as the number of shards grows:</p>
+<figure >
+    
+        <img src="processing-time.png"
+            alt="Total time to process the workflows as a function of the number of shards"
+             />
+        
+    
+    <figcaption>
+        <h4>Total time to process the workflows as a function of the number of shards</h4>
+    </figcaption>
+    
+</figure>
+<p>The History service latency gets closer and closer to the persistence latency as the former decreases and the latter increases due to a higher load:</p>
+<figure >
+    
+        <img src="latency.png"
+            alt="Database and service latencies as functions of the number of shards"
+             />
+        
+    
+    <figcaption>
+        <h4>Database and service latencies as functions of the number of shards</h4>
+    </figcaption>
+    
+</figure>
+<p>The CPU utilization is pretty good for all experiments with 8 or more shards.</p>
+<figure >
+    
+        <img src="cpu.png"
+            alt="Database and service CPU usage as functions of the number of shards"
+             />
+        
+    
+    <figcaption>
+        <h4>Database and service CPU usage as functions of the number of shards</h4>
+    </figcaption>
+    
+</figure>
+<p>Adding more and more shards has diminishing returns: the difference between 1 and 4 or 4 and 8 is much more pronounced than 8 to 64 or 512 to 4096. However, it still looks like more shards are universally better than fewer shards. Would it be reasonable to set the shard number to an arbitrarily large number and be done with it?</p>
+<h2 id="too-many-shards">Too Many Shards</h2>
+<p>Can there be too many shards?</p>
+<p>Yes. Each shard consumes resources of History service pods and performs some background processing on the database. So, the system pays an overhead fee for each additional shard. Also, an excessive number of shards slows down node recovery as each shard has to load its state from the database on redistribution after a service host goes down.</p>
+<p>The next chart shows the distribution of memory consumption of the History service host across all experiments.</p>
+<figure >
+    
+        <img src="memory.png"
+            alt="Service memory consumption as functions of the number of shards"
+             />
+        
+    
+    <figcaption>
+        <h4>Service memory consumption as functions of the number of shards</h4>
+    </figcaption>
+    
+</figure>
+<p>In fact, I tried running the experiment with 32.768 shards, but it utterly failed because the History service pod consumed too much memory, and the controller kept evicting it.</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>The shard number of the History service is a critical configuration of a Temporal cluster. The configured value has a direct impact on throughput, latency, and resource utilization of the system.</p>
+<p>It&rsquo;s essential to get this configuration right for your setup and your performance targets. Even more so because the value can&rsquo;t be changed after the initial cluster deployment.</p>
+<p><a href="https://github.com/temporalio/maru/">Maru</a> is a performance testing tool that can help you determine the optimal configuration value empirically. You can use Maru to run multiple experiments with your cluster and application code, collect the results, and decide before going into production. The data in this article was collected with Maru.</p>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/temporal" term="temporal" label="Temporal" />
+                             
+                                <category scheme="https://mikhail.io/tags/workflows" term="workflows" label="Workflows" />
+                             
+                                <category scheme="https://mikhail.io/tags/performance" term="performance" label="Performance" />
+                            
+                        
+                    
+                
+            
+        </entry>
+    
+    
+        
+        
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Performance]]></title>
+            <link href="https://mikhail.io/tags/performance/"/>
+            <id>https://mikhail.io/tags/performance/</id>
+            
+            <published>2021-05-25T00:00:00+00:00</published>
+            <updated>2021-05-25T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Tags]]></title>
+            <link href="https://mikhail.io/tags/"/>
+            <id>https://mikhail.io/tags/</id>
+            
+            <published>2021-05-25T00:00:00+00:00</published>
+            <updated>2021-05-25T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Temporal]]></title>
+            <link href="https://mikhail.io/tags/temporal/"/>
+            <id>https://mikhail.io/tags/temporal/</id>
+            
+            <published>2021-05-25T00:00:00+00:00</published>
+            <updated>2021-05-25T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Workflows]]></title>
+            <link href="https://mikhail.io/tags/workflows/"/>
+            <id>https://mikhail.io/tags/workflows/</id>
+            
+            <published>2021-05-25T00:00:00+00:00</published>
+            <updated>2021-05-25T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -305,93 +573,6 @@
                                 <category scheme="https://mikhail.io/tags/performance" term="performance" label="Performance" />
                             
                         
-                    
-                
-            
-        </entry>
-    
-    
-        
-        
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Performance]]></title>
-            <link href="https://mikhail.io/tags/performance/"/>
-            <id>https://mikhail.io/tags/performance/</id>
-            
-            <published>2021-03-18T00:00:00+00:00</published>
-            <updated>2021-03-18T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Tags]]></title>
-            <link href="https://mikhail.io/tags/"/>
-            <id>https://mikhail.io/tags/</id>
-            
-            <published>2021-03-18T00:00:00+00:00</published>
-            <updated>2021-03-18T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Temporal]]></title>
-            <link href="https://mikhail.io/tags/temporal/"/>
-            <id>https://mikhail.io/tags/temporal/</id>
-            
-            <published>2021-03-18T00:00:00+00:00</published>
-            <updated>2021-03-18T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Workflows]]></title>
-            <link href="https://mikhail.io/tags/workflows/"/>
-            <id>https://mikhail.io/tags/workflows/</id>
-            
-            <published>2021-03-18T00:00:00+00:00</published>
-            <updated>2021-03-18T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
                     
                 
             
