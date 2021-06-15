@@ -18,7 +18,7 @@
 	
 	
 	<meta property="og:title" content="Choosing the Number of Shards in Temporal History Service" />
-	<meta property="og:description" content="Tuning the sharding configuration for the optimal cluster performance." />
+	<meta property="og:description" content="Tuning the sharding configuration for the optimal cluster performance with the numHistoryShards config." />
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content="https://mikhail.io/2021/05/choose-the-number-of-shards-in-temporal-history-service/" />
 
@@ -49,7 +49,7 @@
 	
 
 	<meta name="twitter:title" content="Choosing the Number of Shards in Temporal History Service"/>
-	<meta name="twitter:description" content="Tuning the sharding configuration for the optimal cluster performance."/>
+	<meta name="twitter:description" content="Tuning the sharding configuration for the optimal cluster performance with the numHistoryShards config."/>
 	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
 <body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
@@ -241,7 +241,7 @@
 <h2 id="theory-history-shards">Theory: History Shards</h2>
 <p>Temporal provides high guarantees around Workflow consistency. To achieve this goal, Temporal allocates a single host of the History service to process all events of a given Workflow execution.</p>
 <p>Each Workflow execution receives a unique identifier. Temporal calculates a hash for each identifier and allocates it to a specific <strong>shard</strong> based on the hash value. A shard is represented as a number from 1 to N. Executions with the same shard value are processed by the same host.</p>
-<p>The History service has a configuration value to define the total number of shards, set once and forever. Each instance of the History service obtains a lock on multiple shards and starts processing Workflow executions that belong to them.</p>
+<p>The History service has a configuration value <code>numHistoryShards</code> to define the total number of shards, set once and forever. Each instance of the History service obtains a lock on multiple shards and starts processing Workflow executions that belong to them.</p>
 <p>Shards are logically independent and isolated from each other. To achieve the consistency requirements with Cassandra, Temporal serializes all updates belonging to the same shard.</p>
 <p>Therefore, a shard is a unit of parallelism. Since each shard executes all updates under a single lock, all updates are sequential. The maximum theoretical throughput of a single shard is limited by the latency of a database operation. For example, if a single database update takes 10 ms, then a single shard can do a maximum of 100 updates per second. If you try to push more updates, you will see the History service latencies go up without database latency going up. Precisely the case illustrated in the chart above!</p>
 <h2 id="experiment-observe-history-service-contention">Experiment: Observe History Service Contention</h2>
