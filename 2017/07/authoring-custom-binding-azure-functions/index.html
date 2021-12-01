@@ -203,50 +203,39 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
+                    <p>In my <a href="https://mikhail.io/2017/07/custom-autoscaling-with-durable-functions/">previous post</a>
 I described how I used Durable Functions extensions
 in Azure Function App. Durable Functions are using several binding types
 that are not part of the standard suite: <code>OrchestrationClient</code>,
 <code>OrchestrationTrigger</code>, <code>ActivityTrigger</code>. These custom bindings
 <a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">are installed</a>
 by copying the corresponding assemblies to a special Extensions folder.</p>
-
 <p>Although Bring-Your-Own-Binding (BYOB) feature hasn&rsquo;t been released yet, I
 decided to follow the path of Durable Functions and create my own
 custom binding.</p>
-
 <h2 id="configuration-binding">Configuration Binding</h2>
-
 <p>I&rsquo;ve picked a really simple use case for my first experiments with custom
 bindings: reading configuration values.</p>
-
 <p>Azure Functions store their configuration values in App Settings (local
 runtime uses <code>local.settings.json</code> file for that).</p>
-
 <p>That means, when you need a configuration value inside your C# code,
 you normally do</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">string</span> setting = ConfigurationManager.AppSettings[&#34;MySetting&#34;];
-</code></pre></div>
-<p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">string</span> setting = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;MySetting&#34;</span>];
+</code></pre></div><p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
 <p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a>
 service bus subscription metrics, I wrote this kind of bulky code:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> resourceToScale = ConfigurationManager.AppSettings[&#34;ResourceToScale&#34;];
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> resourceToScale = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ResourceToScale&#34;</span>];
 
-<span style="color:#2b91af">var</span> connectionString = ConfigurationManager.AppSettings[&#34;ServiceBusConnection&#34;];
-<span style="color:#2b91af">var</span> topic = ConfigurationManager.AppSettings[&#34;Topic&#34;];
-<span style="color:#2b91af">var</span> subscription = ConfigurationManager.AppSettings[&#34;Subscription&#34;];
-</code></pre></div>
-<p>The code is no rocket science, but it&rsquo;s tedious to write, so instead I came
+<span style="color:#2b91af">var</span> connectionString = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ServiceBusConnection&#34;</span>];
+<span style="color:#2b91af">var</span> topic = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Topic&#34;</span>];
+<span style="color:#2b91af">var</span> subscription = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Subscription&#34;</span>];
+</code></pre></div><p>The code is no rocket science, but it&rsquo;s tedious to write, so instead I came
 up with this idea to define Functions:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> MyFunction(
     [TimerTrigger(&#34;0 */1 * * * *&#34;)] TimerInfo timer,
     [Configuration(Key = &#34;ResourceToScale&#34;)] <span style="color:#2b91af">string</span> resource,
     [Configuration] ServiceBusSubscriptionConfig config)
-</code></pre></div>
-<p>Note two usages of <code>Configuration</code> attribute. The first one defines the
+</code></pre></div><p>Note two usages of <code>Configuration</code> attribute. The first one defines the
 specific configuration key, and binds its value to a string parameter. The
 other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
 the config class as</p>
@@ -263,42 +252,30 @@ the config class as</p>
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Topic { <span style="color:#00f">get</span>; }
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Subscription { <span style="color:#00f">get</span>; }
 }
-</code></pre></div>
-<p>The immutable class is a bit verbose, but I still prefer it over get-set
+</code></pre></div><p>The immutable class is a bit verbose, but I still prefer it over get-set
 container in this scenario.</p>
-
 <p>The binding behavior is convention-based in this case: the binding engine
 should load configuration values based on the names of class properties.</p>
-
 <h2 id="motivation">Motivation</h2>
-
 <p>So, why do I need such binding?</p>
-
 <p>As I said, it&rsquo;s a simple use case to play with BYOB feature, and overall,
 <strong>understand</strong> the internals of Function Apps a bit better.</p>
-
 <p>But apart from that, I removed 4 lines of garbage from the function body
 (at the cost of two extra parameters). <strong>Less noise</strong> means more readable code,
 especially when I put this code on a webpage.</p>
-
 <p>As a bonus, the <strong>testability</strong> of the function immediately increased. It&rsquo;s so
 much easier for the test just to accept the configuration as input parameter,
 instead of fine-tuning the configuration files inside test projects, or
 hiding <code>ConfigurationManager</code> usage behind a mockable facade.</p>
-
 <p>Such approach does seem to be the strength of Azure Functions code in
 general. It&rsquo;s often possible to reduce imperative IO-related code to
 attribute-decorated function parameters.</p>
-
 <h2 id="implementing-a-custom-binding">Implementing a Custom Binding</h2>
-
 <p>The actual implementation process of a custom non-trigger binding is quite
 simple:</p>
-
 <p><strong>Create a class library</strong> with the word &ldquo;Extension&rdquo; in its name. Import
 <code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
 packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
-
 <p><strong>Define</strong> a class for binding attribute:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">[AttributeUsage(AttributeTargets.Parameter)]
 [Binding]
@@ -307,13 +284,10 @@ packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
     [AutoResolve]
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Key { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
-</code></pre></div>
-<p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
+</code></pre></div><p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
 resolvable from <code>function.json</code>.</p>
-
 <p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
 how to use your binding correctly.</p>
-
 <p>The interface has just one method to implement:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ConfigurationExtensionConfigProvider</span> : IExtensionConfigProvider
 {
@@ -322,31 +296,26 @@ how to use your binding correctly.</p>
         <span style="color:#008000">// ... see below
 </span><span style="color:#008000"></span>    }
 }
-</code></pre></div>
-<p>The first step of the implementation is to define a rule for our new
+
+</code></pre></div><p>The first step of the implementation is to define a rule for our new
 <code>ConfigurationAttribute</code> and tell this rule how to get a string value out
 of any attribute instance:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
 rule.BindToInput&lt;<span style="color:#2b91af">string</span>&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
-</code></pre></div>
-<p>That&rsquo;s really all that needs to happen to bind <code>string</code> parameters.</p>
-
+</code></pre></div><p>That&rsquo;s really all that needs to happen to bind <code>string</code> parameters.</p>
 <p>To make our binding work with any POCO, we need a more elaborate construct:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">rule.BindToInput&lt;Env&gt;(_ =&gt; <span style="color:#00f">new</span> Env());
 <span style="color:#2b91af">var</span> cm = context.Config.GetService&lt;IConverterManager&gt;();
 cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(<span style="color:#00f">typeof</span>(PocoConverter&lt;&gt;));
-</code></pre></div>
-<p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
+</code></pre></div><p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
 this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
 type argument) with a generic converter called <code>PocoConverter</code>.</p>
-
 <p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Env</span>
 {
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> GetValue(<span style="color:#2b91af">string</span> key) =&gt; ConfigurationManager.AppSettings[key];
 }
-</code></pre></div>
-<p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
+</code></pre></div><p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
 names and reads configuration values out of them. Then it calls a constructor
 which matches the property count:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">PocoConverter</span>&lt;T&gt; : IConverter&lt;Env, T&gt;
@@ -369,51 +338,44 @@ which matches the property count:</p>
         <span style="color:#00f">return</span> (T)constructor.Invoke(values);
     }
 }
-</code></pre></div>
-<p>This piece of code is not particularly robust, but it is good enough to
+</code></pre></div><p>This piece of code is not particularly robust, but it is good enough to
 illustrate the concept.</p>
-
 <p>And that&rsquo;s it, the binding it ready! You can find the complete example in
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/tree/master/custom-binding-azure-functions">my github repo</a>.</p>
-
 <h2 id="deploying-custom-bindings">Deploying Custom Bindings</h2>
-
 <p>Since BYOB feature is in early preview, there is no tooling for automated
 deployment, and we need to do everything manually. But the process is not
 too sophisticated:</p>
-
 <ol>
-<li><p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p></li>
-
-<li><p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
+<li>
+<p>Create a folder for custom bindings, e.g. <code>D:\BindingExtensions</code>.</p>
+</li>
+<li>
+<p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
 to that folder&rsquo;s path. For local development add a line to <code>local.settings.json</code>:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json"><span style="color:#a31515">&#34;AzureWebJobs_ExtensionsPath&#34;</span><span style="">:</span> <span style="color:#a31515">&#34;D:\\BindingExtensions&#34;</span><span style="">,</span></code></pre></div></li>
-
-<li><p>Create a subfolder for your extension, e.g.
-<code>D:\BindingExtensions\ConfigurationExtension</code>.</p></li>
-
-<li><p>Copy the contents of <code>bin\Debug\</code> of your extension&rsquo;s class library
-to that folder.</p></li>
-
-<li><p>Reference your extension library from your Function App.</p></li>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json"><span style="color:#a31515">&#34;AzureWebJobs_ExtensionsPath&#34;</span><span style="">:</span> <span style="color:#a31515">&#34;D:\\BindingExtensions&#34;</span><span style="">,</span>
+</code></pre></div></li>
+<li>
+<p>Create a subfolder for your extension, e.g.
+<code>D:\BindingExtensions\ConfigurationExtension</code>.</p>
+</li>
+<li>
+<p>Copy the contents of <code>bin\Debug\</code> of your extension&rsquo;s class library
+to that folder.</p>
+</li>
+<li>
+<p>Reference your extension library from your Function App.</p>
+</li>
 </ol>
-
 <p>You are good to go! Decorate your function parameters with the new attribute.</p>
-
 <p>Run the function app locally to try it out. In the console output you should
 be able to see something like</p>
-
 <pre><code>Loaded custom extension: ConfigurationExtensionConfigProvider from
 'D:\BindingExtensions\ConfigurationExtension\MyExtensions.dll'
-</code></pre>
-
-<p>You will be able to debug your extension if needed.</p>
-
+</code></pre><p>You will be able to debug your extension if needed.</p>
 <h2 id="useful-links">Useful Links</h2>
-
 <p>Use the following links to find out more about custom bindings, see more
 examples and walkthroughs, and get fresh updates:</p>
-
 <ul>
 <li><a href="https://github.com/Azure/azure-webjobs-sdk/wiki/Extensibility">Extensibility in Azure WebJobs SDK</a></li>
 <li><a href="https://github.com/Azure/WebJobsExtensionSamples/tree/master/SampleExtension">Sample Extension for Azure Functions</a>,
@@ -422,7 +384,6 @@ examples and walkthroughs, and get fresh updates:</p>
 <li><a href="https://github.com/Azure/azure-functions-durable-extension/tree/master/src/WebJobs.Extensions.DurableTask">Custom Bindings of Durable Functions</a></li>
 <li><a href="https://azure.github.io/azure-functions-durable-extension/articles/installation.html">Installation Guide for Durable Functions</a></li>
 </ul>
-
 <p>Have a good binding!</p>
 
                 </div>
@@ -545,6 +506,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

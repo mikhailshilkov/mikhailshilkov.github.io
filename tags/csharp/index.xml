@@ -3,7 +3,7 @@
     <generator>Hugo -- gohugo.io</generator>
     <title>Mikhail Shilkov</title><link href="https://mikhail.io/tags/csharp/feed" rel="self" />
     <link href="https://mikhail.io/tags/csharp/"/>
-    <updated>2021-05-25T17:18:39+02:00</updated>
+    <updated>2021-11-30T17:06:37-08:00</updated>
     <author>
             <name>Mikhail Shilkov</name>
             </author>
@@ -135,8 +135,260 @@
             <link href="https://mikhail.io/2021/"/>
             <id>https://mikhail.io/2021/</id>
             
-            <published>2021-05-25T00:00:00+00:00</published>
-            <updated>2021-05-25T00:00:00+00:00</updated>
+            <published>2021-11-02T00:00:00+00:00</published>
+            <updated>2021-11-02T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Deploying new Azure Container Apps with familiar languages]]></title>
+            <link href="https://mikhail.io/2021/11/azure-container-apps/"/>
+            <id>https://mikhail.io/2021/11/azure-container-apps/</id>
+            
+            <published>2021-11-02T00:00:00+00:00</published>
+            <updated>2021-11-02T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[<blockquote>Use the Pulumi Azure Native Provider to deploy containerized apps to Microsoft&rsquo;s new Azure Container Apps platform for serverless apps.</blockquote><p>Today, Microsoft <a href="https://aka.ms/containerapps/ignite-blog">announced</a> a new general-purpose serverless container platform: <a href="https://aka.ms/containerapps/">Azure Container Apps</a>. Container Apps is a fully managed platform for microservice applications that runs on top of Kubernetes and open-source technologies like KEDA, Envoy, and Dapr.</p>
+<p>Container Apps are designed to abstract infrastructure management with flexible serverless containers. Developers can run containers at scale without the burden of standing up and managing a Kubernetes cluster manually.</p>
+<p>We are happy to announce same-day support for Azure Container Apps in the Pulumi <a href="https://pulumi.com/registry/packages/azure-native">Azure Native Provider</a>, which covers 100% of the Azure Resource Manager APIs and gives you highest fidelity integration with Azure&rsquo;s resources.</p>
+<p>The new service supports a broad range of usage scenarios, including</p>
+<ul>
+<li>Microservices over HTTP or gRPC</li>
+<li>HTTP APIs and websites</li>
+<li>Event processing workers</li>
+<li>Long-running background jobs</li>
+</ul>
+<h2 id="serverless-containers">Serverless containers</h2>
+<p>Container Apps provide serverless containers for microservice developers.</p>
+<ul>
+<li><strong>Managed infrastructure</strong>. Microsoft operates the control plane that takes care of orchestrating containers and their configuration, allowing developers to focus on apps, not cloud infrastructure.</li>
+<li><strong>Fully integrated auto-scaling with scale to zero</strong>. The platform relies on Kubernetes Event-driven Autoscaling (KEDA) to scale apps and microservices dynamically based on HTTP traffic or event workload.</li>
+<li><strong>Consumption pricing</strong>. The billing model is based on the actual resource consumption with per-second granularity. Applications incur charges per request, compute time and memory used with no need to pre-provision a fixed capacity.</li>
+<li><strong>Any language, any base image</strong>. Container Apps put no limitation on the container images. You may use an arbitrary base image and host any web server or a console application, ensuring flexibility and interoperability with other container orchestrators.</li>
+</ul>
+<h2 id="how-it-works">How it works</h2>
+<p>Microsoft has built Container Apps as a managed service on the foundation of open-source technology in the Kubernetes ecosystem. This enables teams to build microservices without having to manage Kubernetes directly while providing application portability by leveraging open standards and APIs. Behind the scenes, every container app runs on the <a href="https://azure.microsoft.com/en-us/overview/kubernetes-on-azure/">Azure Kubernetes Service (AKS)</a>. Enabling open-source integrations include:</p>
+<p><strong>Envoy</strong>, a built-in ingress controller that exposes user containers internally and externally via HTTP endpoints. It supports multiple container versions with dynamic load balancing and several traffic rollout strategies.</p>
+<p><strong>KEDA</strong> enables dynamic auto-scaling for user applications based on the current workload, including scaling down to zero during idle periods.</p>
+<p>Container Apps are also tightly integrated with <strong>Dapr</strong>—an open-source runtime system designed to support cloud-native microservice applications. It provides extra blocks for service discovery, state management, asynchronous message passing.</p>
+<h2 id="how-its-different">How it&rsquo;s different</h2>
+<p>A few other services provided by Microsoft Azure and other cloud providers operate in the space of running container-based workloads:</p>
+<p><strong>Azure Kubernetes Service</strong> delivers the full power of Kubernetes but requires expertise in configuring and operating the cluster. When building on AKS, users handle most infrastructure management aspects themselves. Instead, Container Apps provide a platform built on top of AKS, focusing on developer productivity and switching to consumption-based pricing.</p>
+<p><strong>Azure Container Instances</strong> (ACI) provides atomic infrastructure units with per-usage pricing. However, ACI comes without higher-level functionality like auto-scaling, load balancing, versioning, and managed rollouts.</p>
+<p><strong>Azure App Service</strong> is a Platform-as-a-Service comparable to Container Apps in terms of being simple-to-operate and developer-friendly. App Service can also run arbitrary containers. However, it is best suited to run websites. The billing model is mostly capacity-based with some built-in autoscaling but without scaling to zero.</p>
+<p><strong>Azure Functions</strong> is a developer-oriented truly-serverless offering. However, it comes with an opinionated programming model that is focused on achieving a high developer productivity as long as your application can use the Azure Functions SDK or container base images. Unlike Container APps, it does not support long-running jobs in consumption mode.</p>
+<p>Comparing to other vendors: Azure Container Apps are in the same space as <strong>Google Cloud Run</strong> and <strong>AWS App Runner</strong>. In contrast to the competition, Azure Container Apps is built on Kubernetes and related open-source projects, which should benefit its users in terms of interoperability and transparency. Additionally, Container Apps is the only service that provides features like service discovery for microservices-style communication out of the box.</p>
+<h2 id="example-run-an-http-api-with-azure-container-apps-and-pulumi">Example: Run an HTTP API with Azure Container Apps and Pulumi</h2>
+<p>Let&rsquo;s walk through the steps to build an example application with Azure Container Apps using infrastructure as code in familiar languages. In this scenario, we create an HTTP application that is available via a public domain name. We&rsquo;ll use Pulumi to provision the necessary resources. In this example, we will use TypeScript however you could also use JavaScript, Python, Go, and C#.</p>
+<p>You can check out the complete source code in the Pulumi Examples:</p>
+<ul>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-ts-containerapps">TypeScript Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-cs-containerapps">C# Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-py-containerapps">Python Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-go-containerapps">Go Azure Container Apps Example</a></li>
+</ul>
+<h3 id="define-a-dockerfile-and-app">Define a Dockerfile and app</h3>
+<p>Here are the key features of the container image for our application:</p>
+<ul>
+<li>Based on the <code>node:8.9.3-alpine</code> image</li>
+<li>Installs <code>express</code> with NPM</li>
+<li>Runs a node web app using <code>index.js</code> and <code>index.html</code> user files</li>
+</ul>
+<p><a href="https://github.com/pulumi/examples/tree/master/azure-ts-containerapps/node-app/Dockerfile">Full Dockerfile</a>.</p>
+<h3 id="set-up-the-environment">Set up the environment</h3>
+<p>The resource <code>KubeEnvironment</code> defines a cluster that can host multiple Container Apps. Behind the scenes, it creates an AKS cluster in a subscription managed internally by Microsoft and deploys the Apps control plane.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> web <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/azure-native/web/v20210301&#34;</span>;
+
+<span style="color:#00f">const</span> env = <span style="color:#00f">new</span> web.KubeEnvironment(<span style="color:#a31515">&#34;env&#34;</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;Managed&#34;</span>,
+});
+</code></pre></div><h3 id="build-and-publish-a-container-image">Build and publish a container image</h3>
+<p>We can build the Docker image and publish it to a new Azure Container Registry (ACR) repository. The code below assumes</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> docker <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/docker&#34;</span>;
+<span style="color:#00f">import</span> * <span style="color:#00f">as</span> containerregistry <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/azure-native/containerregistry&#34;</span>;
+
+<span style="color:#00f">const</span> customImage = <span style="color:#a31515">&#34;node-app&#34;</span>;
+<span style="color:#00f">const</span> registry = <span style="color:#00f">new</span> containerregistry.Registry(<span style="color:#a31515">&#34;registry&#34;</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   sku: {
+       name: <span style="color:#a31515">&#34;Basic&#34;</span>,
+   },
+   adminUserEnabled: <span style="color:#2b91af">true</span>,
+});
+
+<span style="color:#00f">const</span> credentials = containerregistry.listRegistryCredentialsOutput({
+    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+    registryName: <span style="color:#2b91af">registry.name</span>,
+});
+<span style="color:#00f">const</span> adminUsername = credentials.apply(c =&gt; c.username!);
+<span style="color:#00f">const</span> adminPassword = credentials.apply(c =&gt; c.passwords![0].value!);
+
+<span style="color:#00f">const</span> myImage = <span style="color:#00f">new</span> docker.Image(customImage, {
+   imageName: <span style="color:#2b91af">pulumi.interpolate</span><span style="color:#a31515">`</span><span style="color:#a31515">${</span>registry.loginServer<span style="color:#a31515">}</span><span style="color:#a31515">/</span><span style="color:#a31515">${</span>customImage<span style="color:#a31515">}</span><span style="color:#a31515">:v1.0.0`</span>,
+   build: { context: <span style="color:#a31515">`./</span><span style="color:#a31515">${</span>customImage<span style="color:#a31515">}</span><span style="color:#a31515">`</span> },
+   registry: {
+       server: <span style="color:#2b91af">registry.loginServer</span>,
+       username: <span style="color:#2b91af">adminUsername</span>,
+       password: <span style="color:#2b91af">adminPassword</span>,
+   },
+});
+</code></pre></div><h2 id="deploy-the-container-app">Deploy the container app</h2>
+<p>Finally, we can define the Container App itself. We point the App to the environment resource and instruct it to run our custom image. Image container credentials are specified in the <code>configuration</code> block, with the password marked as a secret. We&rsquo;ve also enabled external ingress to publish the app on the web.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> containerApp = <span style="color:#00f">new</span> web.ContainerApp(<span style="color:#a31515">&#34;app&#34;</span>, {
+   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+   kubeEnvironmentId: <span style="color:#2b91af">env.id</span>,
+   configuration: {
+       ingress: {
+           external: <span style="color:#2b91af">true</span>,
+           targetPort: <span style="color:#2b91af">80</span>,
+       },
+       registries: [{
+           server: <span style="color:#2b91af">registry.loginServer</span>,
+           username: <span style="color:#2b91af">adminUsername</span>,
+           passwordSecretRef: <span style="color:#a31515">&#34;pwd&#34;</span>,
+       }],
+       secrets: [{
+           name: <span style="color:#a31515">&#34;pwd&#34;</span>,
+           value: <span style="color:#2b91af">adminPassword</span>,
+       }],
+   },
+   template: {
+       containers: [{
+           name: <span style="color:#a31515">&#34;myapp&#34;</span>,
+           image: <span style="color:#2b91af">myImage.imageName</span>,
+       }],
+   }
+});
+
+<span style="color:#00f">export</span> <span style="color:#00f">const</span> url = pulumi.interpolate<span style="color:#a31515">`https://</span><span style="color:#a31515">${</span>containerApp.configuration.ingress.fqdn<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
+</code></pre></div><h3 id="test-the-app">Test the app</h3>
+<p>And that is it! We run <code>pulumi up</code> to get the application up and running. Once the deployment completes, we can send an HTTP request and check the response.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">$ curl <span style="color:#00f">$(</span>pulumi stack output url<span style="color:#00f">)</span>
+&lt;html&gt;
+&lt;body&gt;
+&lt;h1&gt;Your custom docker image is running in Azure Container Apps!&lt;/h1&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></div><h2 id="conclusion">Conclusion</h2>
+<p>Azure Container Apps enable you to build applications in your favorite language with any dependencies and tools, package them as a container image, and deploy them in seconds. Container Apps abstract away infrastructure management by automatically scaling up and down to zero and only charging for the exact resources you use.</p>
+<p>This post shows how to use Pulumi to build a container image and publish it as an Azure Container App. Pulumi makes it easy to create artifacts and provision and manage cloud infrastructure on any cloud using familiar programming languages, including C#, TypeScript, Python, and Go. Docker images, ACR registries, container environments, and Apps can be managed within the same infrastructure definition.</p>
+<h4 id="complete-azure-container-apps-example">Complete Azure Container Apps example</h4>
+<ul>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-ts-containerapps">TypeScript Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-cs-containerapps">C# Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-py-containerapps">Python Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-go-containerapps">Go Azure Container Apps Example</a></li>
+</ul>
+]]></content>
+            
+                 
+                    
+                 
+                    
+                         
+                        
+                            
+                             
+                                <category scheme="https://mikhail.io/tags/temporal" term="temporal" label="Temporal" />
+                             
+                                <category scheme="https://mikhail.io/tags/workflows" term="workflows" label="Workflows" />
+                             
+                                <category scheme="https://mikhail.io/tags/performance" term="performance" label="Performance" />
+                            
+                        
+                    
+                
+            
+        </entry>
+    
+    
+        
+        
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Performance]]></title>
+            <link href="https://mikhail.io/tags/performance/"/>
+            <id>https://mikhail.io/tags/performance/</id>
+            
+            <published>2021-11-02T00:00:00+00:00</published>
+            <updated>2021-11-02T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Tags]]></title>
+            <link href="https://mikhail.io/tags/"/>
+            <id>https://mikhail.io/tags/</id>
+            
+            <published>2021-11-02T00:00:00+00:00</published>
+            <updated>2021-11-02T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Temporal]]></title>
+            <link href="https://mikhail.io/tags/temporal/"/>
+            <id>https://mikhail.io/tags/temporal/</id>
+            
+            <published>2021-11-02T00:00:00+00:00</published>
+            <updated>2021-11-02T00:00:00+00:00</updated>
+            
+            
+            <content type="html"><![CDATA[]]></content>
+            
+                 
+                    
+                 
+                    
+                
+            
+        </entry>
+    
+    
+        
+        <entry>
+            <title type="html"><![CDATA[Workflows]]></title>
+            <link href="https://mikhail.io/tags/workflows/"/>
+            <id>https://mikhail.io/tags/workflows/</id>
+            
+            <published>2021-11-02T00:00:00+00:00</published>
+            <updated>2021-11-02T00:00:00+00:00</updated>
             
             
             <content type="html"><![CDATA[]]></content>
@@ -160,7 +412,7 @@
             <updated>2021-05-25T00:00:00+00:00</updated>
             
             
-            <content type="html"><![CDATA[<blockquote>Tuning the sharding configuration for the optimal cluster performance.</blockquote><p>Today, I&rsquo;m diving into the topic of tuning your Temporal clusters for optimal performance. More specifically, I will be discussing the single configuration option: the number of History service shards. Through a series of experiments, I’ll explain how a low number of shards can lead to contention, while a large number can cause excessive resource consumption.</p>
+            <content type="html"><![CDATA[<blockquote>Tuning the sharding configuration for the optimal cluster performance with the numHistoryShards config.</blockquote><p>Today, I&rsquo;m diving into the topic of tuning your Temporal clusters for optimal performance. More specifically, I will be discussing the single configuration option: the number of History service shards. Through a series of experiments, I’ll explain how a low number of shards can lead to contention, while a large number can cause excessive resource consumption.</p>
 <p>All the experimental data is collected with <a href="https://github.com/temporalio/maru/">Maru</a>—the open-source Temporal load simulator and benchmarking tool.</p>
 <p>Let&rsquo;s start with a hypothetical scenario that illustrates the struggle of a misconfigured Temporal cluster.</p>
 <h2 id="symptom-contention-in-history-service">Symptom: Contention in History Service</h2>
@@ -196,7 +448,7 @@
 <h2 id="theory-history-shards">Theory: History Shards</h2>
 <p>Temporal provides high guarantees around Workflow consistency. To achieve this goal, Temporal allocates a single host of the History service to process all events of a given Workflow execution.</p>
 <p>Each Workflow execution receives a unique identifier. Temporal calculates a hash for each identifier and allocates it to a specific <strong>shard</strong> based on the hash value. A shard is represented as a number from 1 to N. Executions with the same shard value are processed by the same host.</p>
-<p>The History service has a configuration value to define the total number of shards, set once and forever. Each instance of the History service obtains a lock on multiple shards and starts processing Workflow executions that belong to them.</p>
+<p>The History service has a configuration value <code>numHistoryShards</code> to define the total number of shards, set once and forever. Each instance of the History service obtains a lock on multiple shards and starts processing Workflow executions that belong to them.</p>
 <p>Shards are logically independent and isolated from each other. To achieve the consistency requirements with Cassandra, Temporal serializes all updates belonging to the same shard.</p>
 <p>Therefore, a shard is a unit of parallelism. Since each shard executes all updates under a single lock, all updates are sequential. The maximum theoretical throughput of a single shard is limited by the latency of a database operation. For example, if a single database update takes 10 ms, then a single shard can do a maximum of 100 updates per second. If you try to push more updates, you will see the History service latencies go up without database latency going up. Precisely the case illustrated in the chart above!</p>
 <h2 id="experiment-observe-history-service-contention">Experiment: Observe History Service Contention</h2>
@@ -325,93 +577,6 @@
                                 <category scheme="https://mikhail.io/tags/performance" term="performance" label="Performance" />
                             
                         
-                    
-                
-            
-        </entry>
-    
-    
-        
-        
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Performance]]></title>
-            <link href="https://mikhail.io/tags/performance/"/>
-            <id>https://mikhail.io/tags/performance/</id>
-            
-            <published>2021-05-25T00:00:00+00:00</published>
-            <updated>2021-05-25T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Tags]]></title>
-            <link href="https://mikhail.io/tags/"/>
-            <id>https://mikhail.io/tags/</id>
-            
-            <published>2021-05-25T00:00:00+00:00</published>
-            <updated>2021-05-25T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Temporal]]></title>
-            <link href="https://mikhail.io/tags/temporal/"/>
-            <id>https://mikhail.io/tags/temporal/</id>
-            
-            <published>2021-05-25T00:00:00+00:00</published>
-            <updated>2021-05-25T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
-                    
-                
-            
-        </entry>
-    
-    
-        
-        <entry>
-            <title type="html"><![CDATA[Workflows]]></title>
-            <link href="https://mikhail.io/tags/workflows/"/>
-            <id>https://mikhail.io/tags/workflows/</id>
-            
-            <published>2021-05-25T00:00:00+00:00</published>
-            <updated>2021-05-25T00:00:00+00:00</updated>
-            
-            
-            <content type="html"><![CDATA[]]></content>
-            
-                 
-                    
-                 
                     
                 
             
@@ -24411,7 +24576,7 @@ because nulls are not explicit. Never use nulls in your business logic.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Both</span>&lt;TData, TError&gt;
 {
     <span style="color:#00f">public</span> TData Data { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
-    <span style="color:#00f">public</span> TErrro Error { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
+    <span style="color:#00f">public</span> TError Error { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
 ...
 <span style="color:#00f">public</span> Both&lt;Response, ValidationError&gt; Validate(Request r)

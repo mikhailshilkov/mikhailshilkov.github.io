@@ -210,40 +210,22 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>The rise of managed cloud services, cloud-native and serverless applications brings both new possibilities and challenges. More and more practices from software development process like version control, code review, continuous integration, and automated testing are applied to the cloud infrastructure automation.</p>
-
+                    <p>The rise of managed cloud services, cloud-native and serverless applications brings both new possibilities and challenges. More and more practices from software development process like version control, code review, continuous integration, and automated testing are applied to the cloud infrastructure automation.</p>
 <p>Most existing tools suggest defining infrastructure in text-based markup formats, YAML being the favorite. In this article, I&rsquo;m making a case for using real programming languages like TypeScript instead. Such a change makes even more software development practices applicable to the infrastructure realm.</p>
-
 <h2 id="sample-application">Sample Application</h2>
-
 <p>It&rsquo;s easier to make a case given a specific example. For this essay, I define a URL Shortener application, a basic clone of tinyurl.com or bit.ly. There is an administrative page where one can define short aliases for long URLs:</p>
-
-<p><img src="url-shortener.png" alt="URL Shortener sample app" /></p>
-
+<p><img src="url-shortener.png" alt="URL Shortener sample app"></p>
 <figcaption><h4><h4>URL Shortener sample app</h4></figcaption>
-
 <p>Now, whenever a visitor goes to the base URL of the application + an existing alias, they get redirected to the full URL.</p>
-
 <p>This app is simple to describe but involves enough moving parts to be representative of some real-world issues. As a bonus, there are many existing implementations on the web to compare with.</p>
-
 <h2 id="serverless-url-shortener">Serverless URL Shortener</h2>
-
 <p>I&rsquo;m a big proponent of the serverless architecture: the style of cloud applications being a combination of serverless functions and managed cloud services. They are fast to develop, effortless to run and cost pennies unless the application gets lots of users. However, even serverless applications have to deal with infrastructure, like databases, queues, and other sources of events and destinations of data.</p>
-
 <p>My examples are going to use Amazon AWS, but this could be Microsoft Azure or Google Cloud Platform too.</p>
-
 <p>So, the gist is to store URLs with short names as key-value pairs in Amazon DynamoDB and use AWS Lambdas to run the application code. Here is the initial sketch:</p>
-
-<p><img src="lambda-dynamodb.png" alt="URL Shortener with AWS Lambda and DynamoDB" /></p>
-
+<p><img src="lambda-dynamodb.png" alt="URL Shortener with AWS Lambda and DynamoDB"></p>
 <figcaption><h4>URL Shortener with AWS Lambda and DynamoDB</h4></h4></figcaption>
-
 <p>The Lambda at the top receives an event when somebody decides to add a new URL. It extracts the name and the URL from the request and saves them as an item in the DynamoDB table.</p>
-
 <p>The Lambda at the bottom is called whenever a user navigates to a short URL. The code reads the full URL based on the requested path and returns a 301 response with the corresponding location.</p>
-
 <p>Here is the implementation of the <code>Open URL</code> Lambda in JavaScript:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-javascript" data-lang="javascript"><span style="color:#00f">const</span> aws = require(<span style="color:#a31515">&#39;aws-sdk&#39;</span>);
 <span style="color:#00f">const</span> table = <span style="color:#00f">new</span> aws.DynamoDB.DocumentClient();
@@ -259,129 +241,89 @@ exports.handler = <span style="color:#00f">async</span> (event) =&gt; {
     ? { statusCode: 301, body: <span style="color:#a31515">&#34;&#34;</span>, headers: { <span style="color:#a31515">&#34;Location&#34;</span>: url } }
     : { statusCode: 404, body: name + <span style="color:#a31515">&#34; not found&#34;</span> };
 };
-</code></pre></div>
-<p>That&rsquo;s 11 lines of code. I&rsquo;ll skip the implementation of <code>Add URL</code> function because it&rsquo;s very similar. Considering a third function to list the existing URLs for UI, we might end up with 30-40 lines of JavaScript in total.</p>
-
+</code></pre></div><p>That&rsquo;s 11 lines of code. I&rsquo;ll skip the implementation of <code>Add URL</code> function because it&rsquo;s very similar. Considering a third function to list the existing URLs for UI, we might end up with 30-40 lines of JavaScript in total.</p>
 <p>So, how do we deploy the application?</p>
-
 <p>Well, before we do that, we should realize that the above picture was an over-simplification:</p>
-
 <ul>
 <li>AWS Lambda can&rsquo;t handle HTTP requests directly, so we need to add AWS API Gateway in front of it.</li>
 <li>We also need to serve some static files for the UI, which we&rsquo;ll put into AWS S3 and proxy it with the same API Gateway.</li>
 </ul>
-
 <p>Here is the updated diagram:</p>
-
-<p><img src="apigateway-lambda-dynamodb-s3.png" alt="API Gateway, Lambda, DynamoDB, and S3" /></p>
-
+<p><img src="apigateway-lambda-dynamodb-s3.png" alt="API Gateway, Lambda, DynamoDB, and S3"></p>
 <figcaption><h4>API Gateway, Lambda, DynamoDB, and S3</h4></figcaption>
-
 <p>This is a viable design, but the details are even more complicated:</p>
-
 <ul>
 <li>API Gateway is a complex beast which needs Stages, Deployments, and REST Endpoints to be appropriately configured.</li>
 <li>Permissions and Policies need to be defined so that API Gateway could call Lambda and Lambda could access DynamoDB.</li>
 <li>Static Files should go to S3 Bucket Objects.</li>
 </ul>
-
 <p>So, the actual setup involves a couple of dozen objects to be configured in AWS:</p>
-
-<p><img src="apigateway-lambda-dynamodb-s3-details.png" alt="All cloud resources to be provisioned" /></p>
-
+<p><img src="apigateway-lambda-dynamodb-s3-details.png" alt="All cloud resources to be provisioned"></p>
 <figcaption><h4>All cloud resources to be provisioned</h4></figcaption>
-
 <p>How do we approach this task?</p>
-
 <h2 id="options-to-provision-the-infrastructure">Options to Provision the Infrastructure</h2>
-
 <p>There are many options to provision a cloud application, each one has its trade-offs. Let&rsquo;s quickly go through the list of possibilities to understand the landscape.</p>
-
 <h2 id="aws-web-console">AWS Web Console</h2>
-
 <p>AWS, like any other cloud, has a <a href="https://console.aws.amazon.com">web user interface</a> to configure its resources:</p>
-
-<p><img src="aws-web-console.png" alt="AWS Web Console" /></p>
-
+<p><img src="aws-web-console.png" alt="AWS Web Console"></p>
 <figcaption><h4>AWS Web Console</h4></figcaption>
-
-<p>That&rsquo;s a decent place to start&mdash;good for experimenting, figuring out the available options, following the tutorials, i.e., for exploration.</p>
-
+<p>That&rsquo;s a decent place to start—good for experimenting, figuring out the available options, following the tutorials, i.e., for exploration.</p>
 <p>However, it doesn&rsquo;t suit particularly well for long-lived ever-changing applications developed in teams. A manually clicked deployment is pretty hard to reproduce in the exact manner, which becomes a maintainability issue pretty fast.</p>
-
 <h2 id="aws-command-line-interface">AWS Command Line Interface</h2>
-
 <p>The <a href="https://aws.amazon.com/cli/">AWS Command Line Interface</a> (CLI) is a unified tool to manage all AWS services from a command prompt. You write the calls like</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-console" data-lang="console">aws apigateway create-rest-api --name &#39;My First API&#39; --description &#39;This is my first API&#39;
+<pre><code class="language-console" data-lang="console">aws apigateway create-rest-api --name 'My First API' --description 'This is my first API'
 
-aws apigateway create-stage --rest-api-id 1234123412 --stage-name &#39;dev&#39; --description &#39;Development stage&#39; --deployment-id a1b2c3</code></pre></div>
-<p>The initial experience might not be as smooth as clicking buttons in the browser, but the huge benefit is that you can <em>reuse</em> commands that you once wrote. You can build scripts by combining many commands into cohesive scenarios. So, your colleague can benefit from the same script that you created. You can provision multiple environments by parameterizing the scripts.</p>
-
+aws apigateway create-stage --rest-api-id 1234123412 --stage-name 'dev' --description 'Development stage' --deployment-id a1b2c3
+</code></pre><p>The initial experience might not be as smooth as clicking buttons in the browser, but the huge benefit is that you can <em>reuse</em> commands that you once wrote. You can build scripts by combining many commands into cohesive scenarios. So, your colleague can benefit from the same script that you created. You can provision multiple environments by parameterizing the scripts.</p>
 <p>Frankly speaking, I&rsquo;ve never done that for several reasons:</p>
-
 <ul>
 <li>CLI scripts feel too imperative to me. I have to describe &ldquo;how&rdquo; to do things, not &ldquo;what&rdquo; I want to get in the end.</li>
 <li>There seems to be no good story for updating existing resources. Do I write small delta scripts for each change? Do I have to keep them forever and run the full suite every time I need a new environment?</li>
 <li>If a failure occurs mid-way through the script, I need to manually repair everything to a consistent state. This gets messy real quick, and I have no desire to exercise this process, especially in production.</li>
 </ul>
-
 <p>To overcome such limitations, the notion of the <strong>Desired State Configuration</strong> (DSC) was invented. Under this paradigm, one describes the desired layout of the infrastructure, and then the tooling takes care of either provisioning it from scratch or applying the required changes to an existing environment.</p>
-
 <p>Which tool provides DSC model for AWS? There are legions.</p>
-
 <h2 id="aws-cloudformation">AWS CloudFormation</h2>
-
 <p><a href="https://aws.amazon.com/cloudformation/">AWS CloudFormation</a> is the first-party tool for Desired State Configuration management from Amazon. CloudFormation templates use YAML to describe all the infrastructure resources of AWS.</p>
-
 <p>Here is a snippet from <a href="https://aws.amazon.com/blogs/compute/build-a-serverless-private-url-shortener/">a private URL shortener example</a> kindly provided at AWS blog:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml">Resources:
   S3BucketForURLs:
     Type: <span style="color:#a31515">&#34;AWS::S3::Bucket&#34;</span>
     DeletionPolicy: Delete
     Properties:
-      BucketName: !If [ <span style="color:#a31515">&#34;CreateNewBucket&#34;</span>, !Ref <span style="color:#a31515">&#34;AWS::NoValue&#34;</span>, !Ref S3BucketName ]
+      BucketName: !If [ &#34;CreateNewBucket&#34;, !Ref &#34;AWS::NoValue&#34;, !Ref S3BucketName ]
       WebsiteConfiguration:
         IndexDocument: <span style="color:#a31515">&#34;index.html&#34;</span>
       LifecycleConfiguration:
         Rules:
-          <span style="color:#a31515">-
-</span><span style="color:#a31515">            Id: DisposeShortUrls</span>
+          -
+            Id: DisposeShortUrls
             ExpirationInDays: !Ref URLExpiration
             Prefix: <span style="color:#a31515">&#34;u&#34;</span>
-            Status: Enabled</code></pre></div>
-<p>This is just a very short fragment: the complete example consists of 317 lines YAML. That&rsquo;s an order of magnitude more than the actual JavaScript code that we have in the application!</p>
-
+            Status: Enabled
+</code></pre></div><p>This is just a very short fragment: the complete example consists of 317 lines YAML. That&rsquo;s an order of magnitude more than the actual JavaScript code that we have in the application!</p>
 <p>CloudFormation is a powerful tool, but it demands quite some learning to be done to master it. Moreover, it&rsquo;s specific to AWS: you won&rsquo;t be able to transfer the skill to other cloud providers.</p>
-
 <p>Wouldn&rsquo;t it be great if there was a universal DSC format? Meet Terraform.</p>
-
 <h2 id="terraform">Terraform</h2>
-
 <p><a href="https://www.terraform.io/">HashiCorp Terraform</a> is an open source tool to define infrastructure in declarative configuration files. It has a pluggable architecture, so the tool supports all major clouds and even hybrid scenarios.</p>
-
 <p>The custom text-based Terraform <code>.tf</code> format is used to define the configurations. The templating language is quite powerful, and once you learn it, you can use it for different cloud providers.</p>
-
 <p>Here is a snippet from <a href="https://github.com/jamesridgway/aws-lambda-short-url">AWS Lambda Short URL Generator</a> example:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-tf" data-lang="tf"><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_rest_api&#34; &#34;short_urls_api_gateway&#34;</span> {<span style="">
-</span><span style="">  name        =</span> <span style="color:#a31515">&#34;Short URLs API&#34;</span>
-  <span style="">description =</span> <span style="color:#a31515">&#34;API for managing short URLs.&#34;</span>
-}<span style="">
-</span><span style="">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_usage_plan&#34; &#34;short_urls_admin_api_key_usage_plan&#34;</span> {<span style="">
-</span><span style="">  name         =</span> <span style="color:#a31515">&#34;Short URLs admin API key usage plan&#34;</span>
-  <span style="">description  =</span> <span style="color:#a31515">&#34;Usage plan for the admin API key for Short URLS.&#34;</span>
-  <span style="">api_stages </span>{<span style="">
-</span><span style="">    api_id =</span> <span style="color:#a31515">&#34;${aws_api_gateway_rest_api.short_urls_api_gateway.id}&#34;</span>
-    <span style="">stage  =</span> <span style="color:#a31515">&#34;${aws_api_gateway_deployment.short_url_api_deployment.stage_name}&#34;</span>
-  }<span style="">
-</span><span style=""></span>}</code></pre></div>
-<p>This time, the complete example is around 450 lines of textual templates. Are there ways to reduce the size of the infrastructure definition?</p>
-
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-tf" data-lang="tf"><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_rest_api&#34;</span> <span style="color:#a31515">&#34;short_urls_api_gateway&#34;</span> {
+  name        = <span style="color:#a31515">&#34;Short URLs API&#34;</span>
+  description = <span style="color:#a31515">&#34;API for managing short URLs.&#34;</span>
+}
+<span style="color:#00f">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_usage_plan&#34;</span> <span style="color:#a31515">&#34;short_urls_admin_api_key_usage_plan&#34;</span> {
+  name         = <span style="color:#a31515">&#34;Short URLs admin API key usage plan&#34;</span>
+  description  = <span style="color:#a31515">&#34;Usage plan for the admin API key for Short URLS.&#34;</span>
+  api_stages {
+    api_id = <span style="color:#a31515">&#34;</span><span style="color:#a31515">${</span>aws_api_gateway_rest_api.short_urls_api_gateway.id<span style="color:#a31515">}</span><span style="color:#a31515">&#34;</span>
+    stage  = <span style="color:#a31515">&#34;</span><span style="color:#a31515">${</span>aws_api_gateway_deployment.short_url_api_deployment.stage_name<span style="color:#a31515">}</span><span style="color:#a31515">&#34;</span>
+  }
+}
+</code></pre></div><p>This time, the complete example is around 450 lines of textual templates. Are there ways to reduce the size of the infrastructure definition?</p>
 <p>Yes, by raising the level of abstraction. It&rsquo;s possible with Terraform&rsquo;s modules, or by using other, more specialized tools.</p>
-
 <h2 id="serverless-framework-and-sam">Serverless Framework and SAM</h2>
-
 <p><a href="https://serverless.com/">The Serverless Framework</a> is an infrastructure management tool focused on serverless applications. It works across cloud providers (AWS support is the strongest though) and only exposes features related to building applications with cloud functions.</p>
-
 <p>The benefit is that it&rsquo;s much more concise. Once again, the tool is using YAML to define the templates, here is the snippet from <a href="https://github.com/danielireson/serverless-url-shortener">Serverless URL Shortener</a> example:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml">functions:
   store:
@@ -390,19 +332,13 @@ aws apigateway create-stage --rest-api-id 1234123412 --stage-name &#39;dev&#39; 
       - http:
           path: /
           method: post
-          cors: <span style="color:#00f">true</span></code></pre></div>
-<p>The domain-specific language yields a shorter definition: this example has 45 lines of YAML + 123 lines of JavaScript functions.</p>
-
-<p>However, the conciseness has a flip side: as soon as you veer outside of the fairly &ldquo;thin&rdquo; golden path&mdash;the cloud functions and an incomplete list of event sources&mdash;you have to fall back to more generic tools like CloudFormation. As soon as your landscape includes lower-level infrastructure work or some container-based components, you&rsquo;re stuck using multiple config languages and tools again.</p>
-
+          cors: <span style="color:#00f">true</span>
+</code></pre></div><p>The domain-specific language yields a shorter definition: this example has 45 lines of YAML + 123 lines of JavaScript functions.</p>
+<p>However, the conciseness has a flip side: as soon as you veer outside of the fairly &ldquo;thin&rdquo; golden path—the cloud functions and an incomplete list of event sources—you have to fall back to more generic tools like CloudFormation. As soon as your landscape includes lower-level infrastructure work or some container-based components, you&rsquo;re stuck using multiple config languages and tools again.</p>
 <p>Amazon&rsquo;s <a href="https://docs.aws.amazon.com/serverless-application-model/index.html">AWS Serverless Application Model</a> (SAM) looks very similar to the Serverless Framework but tailored to be AWS-specific.</p>
-
 <p>Is that the end game? I don&rsquo;t think so.</p>
-
 <h2 id="desired-properties-of-infrastructure-definition-tool">Desired Properties of Infrastructure Definition Tool</h2>
-
 <p>So what have we learned while going through the existing landscape? The perfect infrastructure tools should:</p>
-
 <ul>
 <li>Provide <strong>reproducible</strong> results of deployments</li>
 <li>Be <strong>scriptable</strong>, i.e., require no human intervention after the definition is complete</li>
@@ -412,46 +348,34 @@ aws apigateway create-stage --rest-api-id 1234123412 --stage-name &#39;dev&#39; 
 <li>Be <strong>succinct</strong> and <strong>concise</strong> to stay readable and manageable</li>
 <li><del>Use YAML-based format</del></li>
 </ul>
-
 <p>Nah, I crossed out the last item. YAML seems to be the most popular language among this class of tools (and I haven&rsquo;t even touched Kubernetes yet!), but I&rsquo;m not convinced it works well for me. <a href="https://noyaml.com/">YAML has many flaws, and I just don&rsquo;t want to use it</a>.</p>
-
 <p>Have you noticed that I haven&rsquo;t mentioned <strong>Infrastructure as code</strong> a single time yet? Well, here we go (from <a href="https://en.wikipedia.org/wiki/Infrastructure_as_code">Wikipedia</a>):</p>
-
 <blockquote>
 <p>Infrastructure as code (IaC) is the process of managing and provisioning computer data centers through machine-readable definition files, rather than physical hardware configuration or interactive configuration tools.</p>
 </blockquote>
-
 <p>Shouldn&rsquo;t it be called &ldquo;Infrastructure as definition files&rdquo;, or &ldquo;Infrastructure as YAML&rdquo;?</p>
-
 <p>As a software developer, what I really want is &ldquo;Infrastructure as actual code, you know, the program thing&rdquo;. I want to use <strong>the same language</strong> that I already know. I want to stay in the same editor. I want to get IntelliSense <strong>auto-completion</strong> when I type. I want to see the <strong>compilation errors</strong> when what I typed is not syntactically correct. I want to reuse the <strong>developer skills</strong> that I already have. I want to come up with <strong>abstractions</strong> to generalize my code and create <strong>reusable components</strong>. I want to <strong>leverage the open-source community</strong> who would create much better components than I ever could. I want to <strong>combine the code and infrastructure</strong> in one code project.</p>
-
 <p>If you are with me on that, keep reading. You get all of that with Pulumi.</p>
-
 <h2 id="pulumi">Pulumi</h2>
-
 <p><a href="https://pulumi.io/">Pulumi</a> is a tool to build cloud-based software using real programming languages. They support all major cloud providers, plus Kubernetes.</p>
-
 <p>Pulumi programming model supports Go and Python too, but I&rsquo;m going to use TypeScript for the rest of the article.</p>
-
 <p>While prototyping a URL shortener, I explain the fundamental way of working and illustrate the benefits and some trade-offs. If you want to follow along, <a href="https://pulumi.io/quickstart/install.html">install Pulumi</a>.</p>
-
 <h2 id="how-pulumi-works">How Pulumi Works</h2>
-
 <p>Let&rsquo;s start defining our URL shortener application in TypeScript. I installed <code>@pulumi/pulumi</code> and <code>@pulumi/aws</code> NPM modules so that I can start the program. The first resource to create is a DynamoDB table:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript">    <span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws from <span style="color:#a31515">&#34;@pulumi/aws&#34;</span>;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript">    <span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/aws&#34;</span>;
 
     <span style="color:#008000">// A DynamoDB table with a single primary key
 </span><span style="color:#008000"></span>    <span style="color:#00f">let</span> counterTable = <span style="color:#00f">new</span> aws.dynamodb.Table(<span style="color:#a31515">&#34;urls&#34;</span>, {
         name: <span style="color:#a31515">&#34;urls&#34;</span>,
         attributes: [
-            { name: <span style="color:#a31515">&#34;name&#34;</span>, type: <span style="color:#a31515">&#34;S&#34;</span> },
+            { name: <span style="color:#a31515">&#34;name&#34;</span>, <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;S&#34;</span> },
         ],
         hashKey: <span style="color:#a31515">&#34;name&#34;</span>,
         readCapacity: <span style="color:#2b91af">1</span>,
         writeCapacity: <span style="color:#2b91af">1</span>
-    });</code></pre></div>
-<p>I use <code>pulumi</code> CLI to run this program to provision the actual resource in AWS:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-console" data-lang="console">&gt; pulumi up
+    });
+</code></pre></div><p>I use <code>pulumi</code> CLI to run this program to provision the actual resource in AWS:</p>
+<pre><code class="language-console" data-lang="console">&gt; pulumi up
 
 Previewing update (urlshortener):
 
@@ -470,11 +394,10 @@ Updating (urlshortener):
  +    aws:dynamodb:Table    urls             created
 
 Resources:
-    + 2 created</code></pre></div>
-<p>The CLI first shows the preview of the changes to be made, and when I confirm, it creates the resource. It also creates a <strong>stack</strong>&mdash;a container for all the resources of the application.</p>
-
+    + 2 created
+</code></pre><p>The CLI first shows the preview of the changes to be made, and when I confirm, it creates the resource. It also creates a <strong>stack</strong>—a container for all the resources of the application.</p>
 <p>This code might look like an imperative command to create a DynamoDB table, but it actually isn&rsquo;t. If I go ahead and change <code>readCapacity</code> to <code>2</code> and then re-run <code>pulumi up</code>, it produces a different outcome:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-console" data-lang="console">&gt; pulumi up
+<pre><code class="language-console" data-lang="console">&gt; pulumi up
 
 Previewing update (urlshortener):
 
@@ -484,19 +407,13 @@ Previewing update (urlshortener):
 
 Resources:
     ~ 1 to update
-    1 unchanged</code></pre></div>
-<p>It detects the exact change that I made and suggests an update. The following picture illustrates how Pulumi works:</p>
-
-<p><img src="how-pulumi-works.png" alt="How Pulumi works" /></p>
-
+    1 unchanged
+</code></pre><p>It detects the exact change that I made and suggests an update. The following picture illustrates how Pulumi works:</p>
+<p><img src="how-pulumi-works.png" alt="How Pulumi works"></p>
 <figcaption><h4>How Pulumi works</h4></figcaption>
-
 <p><code>index.ts</code> in the red square is my program. Pulumi&rsquo;s language host understands TypeScript and translates the code to commands to the internal engine. As a result, the engine builds a tree of resources-to-be-provisioned, the desired state of the infrastructure.</p>
-
 <p>The end state of the last deployment is persisted in the storage (can be in pulumi.com backend or a file on disk). The engine then compares the current state of the system with the desired state of the program and calculates the delta in terms of create-update-delete commands to the cloud provider.</p>
-
 <h2 id="help-of-types">Help Of Types</h2>
-
 <p>Now I can proceed to the code that defines a Lambda function:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#008000">// Create a Role giving our Lambda access.
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> policy: <span style="color:#2b91af">aws.iam.PolicyDocument</span> = { <span style="color:#008000">/* Redacted for brevity */</span> };
@@ -522,9 +439,8 @@ Resources:
             <span style="color:#a31515">&#34;COUNTER_TABLE&#34;</span>: counterTable.name
         }
     },
-}, { dependsOn: [fullAccess] });</code></pre></div>
-<p>You can see that the complexity kicked in and the code size is growing. However, now I start to gain real benefits from using a typed programming language:</p>
-
+}, { dependsOn: [fullAccess] });
+</code></pre></div><p>You can see that the complexity kicked in and the code size is growing. However, now I start to gain real benefits from using a typed programming language:</p>
 <ul>
 <li>I&rsquo;m using objects in the definitions of other object&rsquo;s parameters. If I misspell their name, I don&rsquo;t get a runtime failure but an immediate error message from the editor.</li>
 <li>If I don&rsquo;t know which options I need to provide, I can go to the type definition and look it up (or use IntelliSense).</li>
@@ -532,13 +448,10 @@ Resources:
 <li>If the type of the input parameter doesn&rsquo;t match the type of the object I&rsquo;m passing, I get an error again.</li>
 <li>I can use language features like <code>JSON.stringify</code> right inside my program. In fact, I can reference and use any NPM module.</li>
 </ul>
-
 <p>You can see the code for API Gateway <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/1-raw/index.ts#L60-L118">here</a>. It looks too verbose, doesn&rsquo;t it? Moreover, I&rsquo;m only half-way through with only one Lambda function defined.</p>
-
 <h2 id="reusable-components">Reusable Components</h2>
-
 <p>We can do better than that. Here is the improved definition of the same Lambda function:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">import</span> { Lambda } from <span style="color:#a31515">&#34;./lambda&#34;</span>;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">import</span> { Lambda } <span style="color:#00f">from</span> <span style="color:#a31515">&#34;./lambda&#34;</span>;
 
 <span style="color:#00f">const</span> func = <span style="color:#00f">new</span> Lambda(<span style="color:#a31515">&#34;lambda-get&#34;</span>, {
     path: <span style="color:#a31515">&#34;./app&#34;</span>,
@@ -546,21 +459,20 @@ Resources:
     environment: {
        <span style="color:#a31515">&#34;COUNTER_TABLE&#34;</span>: counterTable.name
     },
-});</code></pre></div>
-<p>Now, isn&rsquo;t that beautiful? Only the essential options remained, while all the machinery is gone. Well, it&rsquo;s not completely gone, it&rsquo;s been hidden behind an <em>abstraction</em>.</p>
-
+});
+</code></pre></div><p>Now, isn&rsquo;t that beautiful? Only the essential options remained, while all the machinery is gone. Well, it&rsquo;s not completely gone, it&rsquo;s been hidden behind an <em>abstraction</em>.</p>
 <p>I defined a <strong>custom component</strong> called <code>Lambda</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">export</span> <span style="color:#00f">interface</span> LambdaOptions {
-    readonly path: <span style="color:#2b91af">string</span>;
-    readonly file: <span style="color:#2b91af">string</span>;
+    <span style="color:#00f">readonly</span> path: <span style="color:#2b91af">string</span>;
+    <span style="color:#00f">readonly</span> file: <span style="color:#2b91af">string</span>;
 
-    readonly environment?:  <span style="color:#2b91af">pulumi.Input</span>&lt;{
-        [key: <span style="color:#2b91af">string</span>]: pulumi.Input&lt;<span style="color:#2b91af">string</span>&gt;;
+    <span style="color:#00f">readonly</span> environment?:  <span style="color:#2b91af">pulumi.Input</span>&lt;{
+        [key: <span style="color:#2b91af">string</span>]: pulumi.Input&lt;string&gt;;
     }&gt;;
 }
 
 <span style="color:#00f">export</span> <span style="color:#00f">class</span> Lambda <span style="color:#00f">extends</span> pulumi.ComponentResource {
-    <span style="color:#00f">public</span> readonly lambda: <span style="color:#2b91af">aws.lambda.Function</span>;
+    <span style="color:#00f">public</span> <span style="color:#00f">readonly</span> lambda: <span style="color:#2b91af">aws.lambda.Function</span>;
 
     <span style="color:#00f">constructor</span>(name: <span style="color:#2b91af">string</span>,
         options: <span style="color:#2b91af">LambdaOptions</span>,
@@ -584,11 +496,10 @@ Resources:
             }
         }, { dependsOn: [fullAccess], parent: <span style="color:#2b91af">this</span> });
     }
-}</code></pre></div>
-<p>The interface <code>LambdaOptions</code> defines options that are important for my abstraction. The class <code>Lambda</code> derives from <code>pulumi.ComponentResource</code> and creates all the child resources in its constructor.</p>
-
+}
+</code></pre></div><p>The interface <code>LambdaOptions</code> defines options that are important for my abstraction. The class <code>Lambda</code> derives from <code>pulumi.ComponentResource</code> and creates all the child resources in its constructor.</p>
 <p>A nice effect is that one can see the structure in <code>pulumi</code> preview:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-console" data-lang="console">Previewing update (urlshortener):
+<pre><code class="language-console" data-lang="console">Previewing update (urlshortener):
 
      Type                                Name                  Plan
  +   pulumi:pulumi:Stack                 urlshortener          create
@@ -596,20 +507,17 @@ Resources:
  +       aws:iam:Role                    lambda-get-role       create
  +       aws:iam:RolePolicyAttachment    lambda-get-access     create
  +       aws:lambda:Function             lambda-get-func       create
- +     aws:dynamodb:Table                urls                  create</code></pre></div>
-<p>The <code>Endpoint</code> component simplifies the definition of API Gateway (see <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/2-components/endpoint.ts">the source</a>):</p>
+ +     aws:dynamodb:Table                urls                  create
+</code></pre><p>The <code>Endpoint</code> component simplifies the definition of API Gateway (see <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/2-components/endpoint.ts">the source</a>):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> api = <span style="color:#00f">new</span> Endpoint(<span style="color:#a31515">&#34;urlapi&#34;</span>, {
     path: <span style="color:#a31515">&#34;/{proxy+}&#34;</span>,
     lambda: <span style="color:#2b91af">func.lambda</span>
-});</code></pre></div>
-<p>The component hides the complexity from the clients&mdash;if the abstraction was selected correctly, that is. The component class can be reused in multiple places, in several projects, across teams, etc.</p>
-
+});
+</code></pre></div><p>The component hides the complexity from the clients—if the abstraction was selected correctly, that is. The component class can be reused in multiple places, in several projects, across teams, etc.</p>
 <h2 id="standard-component-library">Standard Component Library</h2>
-
 <p>In fact, Pulumi team came up with lots of high-level components that build abstractions on top of raw resources. The components from the <code>@pulumi/cloud-aws</code> package are particularly useful for serverless applications.</p>
-
 <p>Here is the full URL shortener application with DynamoDB table, Lambdas, API Gateway, and S3-based static files:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws from <span style="color:#a31515">&#34;@pulumi/cloud-aws&#34;</span>;
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/cloud-aws&#34;</span>;
 
 <span style="color:#008000">// Create a table `urls`, with `name` as primary key.
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> urlTable = <span style="color:#00f">new</span> aws.Table(<span style="color:#a31515">&#34;urls&#34;</span>, <span style="color:#a31515">&#34;name&#34;</span>);
@@ -621,9 +529,9 @@ Resources:
 </span><span style="color:#008000"></span>endpoint.<span style="color:#00f">static</span>(<span style="color:#a31515">&#34;/&#34;</span>, <span style="color:#a31515">&#34;www&#34;</span>);
 
 <span style="color:#008000">// GET /url/{name} redirects to the target URL based on a short-name.
-</span><span style="color:#008000"></span>endpoint.get(<span style="color:#a31515">&#34;/url/{name}&#34;</span>, async (req, res) =&gt; {
+</span><span style="color:#008000"></span>endpoint.<span style="color:#00f">get</span>(<span style="color:#a31515">&#34;/url/{name}&#34;</span>, <span style="color:#00f">async</span> (req, res) =&gt; {
     <span style="color:#00f">let</span> name = req.params[<span style="color:#a31515">&#34;name&#34;</span>];
-    <span style="color:#00f">let</span> value = await urlTable.get({name});
+    <span style="color:#00f">let</span> value = <span style="color:#00f">await</span> urlTable.<span style="color:#00f">get</span>({name});
     <span style="color:#00f">let</span> url = value &amp;&amp; value.url;
 
     <span style="color:#008000">// If we found an entry, 301 redirect to it; else, 404.
@@ -639,43 +547,30 @@ Resources:
 });
 
 <span style="color:#008000">// POST /url registers a new URL with a given short-name.
-</span><span style="color:#008000"></span>endpoint.post(<span style="color:#a31515">&#34;/url&#34;</span>, async (req, res) =&gt; {
+</span><span style="color:#008000"></span>endpoint.post(<span style="color:#a31515">&#34;/url&#34;</span>, <span style="color:#00f">async</span> (req, res) =&gt; {
     <span style="color:#00f">let</span> url = req.query[<span style="color:#a31515">&#34;url&#34;</span>];
     <span style="color:#00f">let</span> name = req.query[<span style="color:#a31515">&#34;name&#34;</span>];
-    await urlTable.insert({ name, url });
+    <span style="color:#00f">await</span> urlTable.insert({ name, url });
     res.json({ shortenedURLName: <span style="color:#2b91af">name</span> });
 });
 
-<span style="color:#00f">export</span> <span style="color:#00f">let</span> endpointUrl = endpoint.publish().url;</code></pre></div>
-<p>The coolest thing here is that the actual <em>implementation code</em> of AWS Lambdas is <a href="https://blog.pulumi.com/lambdas-as-lambdas-the-magic-of-simple-serverless-functions">intertwined</a> with the <em>definition of resources</em>. The code looks very similar to an Express application. AWS Lambdas are defined as TypeScript lambdas. All strongly typed and compile-time checked.</p>
-
+<span style="color:#00f">export</span> <span style="color:#00f">let</span> endpointUrl = endpoint.publish().url;
+</code></pre></div><p>The coolest thing here is that the actual <em>implementation code</em> of AWS Lambdas is <a href="https://blog.pulumi.com/lambdas-as-lambdas-the-magic-of-simple-serverless-functions">intertwined</a> with the <em>definition of resources</em>. The code looks very similar to an Express application. AWS Lambdas are defined as TypeScript lambdas. All strongly typed and compile-time checked.</p>
 <p>It&rsquo;s worth noting that at the moment such high-level components only exist in TypeScript. One could create their custom components in Python or Go, but there is no standard library available. Pulumi folks <a href="https://github.com/pulumi/pulumi/issues/2430">are actively trying to figure out a way to bridge this gap</a>.</p>
-
 <h2 id="avoiding-vendor-lock-in">Avoiding Vendor Lock-in?</h2>
-
 <p>If you look closely at the previous code block, you notice that only one line is AWS-specific: the <code>import</code> statement. The rest is just naming.</p>
-
 <p>We can get rid of that one too: just change the import to <code>import * as cloud from &quot;@pulumi/cloud&quot;;</code> and replace <code>aws.</code> with <code>cloud.</code> everywhere. Now, we&rsquo;d have to go to the stack configuration file and specify the cloud provider there:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml">config:
-  cloud:provider: aws</code></pre></div>
-<p>Which is enough to make the application work again!</p>
-
+  cloud:provider: aws
+</code></pre></div><p>Which is enough to make the application work again!</p>
 <p>Vendor lock-in seems to be a big concern among many people when it comes to cloud architectures heavily relying on managed cloud services, including serverless applications. While I don&rsquo;t necessarily share those concerns and am not sure if generic abstractions are the right way to go, Pulumi Cloud library can be one direction for the exploration.</p>
-
 <p>The following picture illustrates the choice of the level of abstraction that Pulumi provides:</p>
-
-<p><img src="pulumi-layers.png" alt="Pulumi abstraction layers" /></p>
-
+<p><img src="pulumi-layers.png" alt="Pulumi abstraction layers"></p>
 <figcaption><h4>Pulumi abstraction layers</h4></figcaption>
-
 <p>Working on top of the cloud provider&rsquo;s API and internal resource provider, you can choose to work with raw components with maximum flexibility, or opt-in for higher-level abstractions. Mix-and-match in the same program is possible too.</p>
-
 <h2 id="infrastructure-as-real-code">Infrastructure as Real Code</h2>
-
 <p>Designing applications for the modern cloud means utilizing multiple cloud services which have to be configured to play nicely together. The Infrastructure as Code approach is almost a requirement to keep the management of such applications reliable in a team setting and over the extended period.</p>
-
 <p>Application code and supporting infrastructure become more and more blended, so it&rsquo;s natural that software developers take the responsibility to define both. The next logical step is to use the same set of languages, tooling, and practices for both software and infrastructure.</p>
-
 <p>Pulumi exposes cloud resources as APIs in several popular general-purpose programming languages. Developers can directly transfer their skills and experience to define, build, compose, and deploy modern cloud-native and serverless applications more efficiently than ever.</p>
 
                 </div>
@@ -784,6 +679,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

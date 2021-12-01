@@ -203,44 +203,37 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>Azure Service Bus client supports sending messages in batches (<code>SendBatch</code>
+                    <p>Azure Service Bus client supports sending messages in batches (<code>SendBatch</code>
 and <code>SendBatchAsync</code> methods of <code>QueueClient</code> and <code>TopicClient</code>). However,
 the size of a single batch must stay below 256k bytes, otherwise the whole
 batch will get rejected.</p>
-
 <p>How do we make sure that the batch-to-be-sent is going to fit? The rest
 of this article will try to answer this seemingly simple question.</p>
-
 <h2 id="problem-statement">Problem Statement</h2>
-
 <p>Given a list of messages of arbitrary type <code>T</code>, we want to send them to Service
 Bus in batches. The amount of batches should be close to minimal, but
 obviously each one of them must satisfy the restriction of 256k max size.</p>
-
 <p>So, we want to implement a method with the following signature:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages);
-</code></pre></div>
-<p>which would work for collections of any size.</p>
-
+</code></pre></div><p>which would work for collections of any size.</p>
 <p>To limit the scope, I will restrict the article to the following assumptions:</p>
-
 <ul>
-<li><p>Each individual message is less than 256k serialized. If that wasn&rsquo;t true,
+<li>
+<p>Each individual message is less than 256k serialized. If that wasn&rsquo;t true,
 we&rsquo;d have to put the body into external blob storage first, and then send
-the reference. It&rsquo;s not directly related to the topic of discussion.</p></li>
-
-<li><p>I&rsquo;ll use <code>public BrokeredMessage(object serializableObject)</code> constructor.
+the reference. It&rsquo;s not directly related to the topic of discussion.</p>
+</li>
+<li>
+<p>I&rsquo;ll use <code>public BrokeredMessage(object serializableObject)</code> constructor.
 Custom serialization could be used, but again, it&rsquo;s not related to batching,
-so I&rsquo;ll ignore it.</p></li>
-
-<li><p>We won&rsquo;t care about transactions, i.e. if connectivity dies in the middle
-of sending the big batch, we might end up with partially sent batch.</p></li>
+so I&rsquo;ll ignore it.</p>
+</li>
+<li>
+<p>We won&rsquo;t care about transactions, i.e. if connectivity dies in the middle
+of sending the big batch, we might end up with partially sent batch.</p>
+</li>
 </ul>
-
 <h2 id="messages-of-known-size">Messages of Known Size</h2>
-
 <p>Let&rsquo;s start with a simple use case: the size of each message is known to us.
 It&rsquo;s defined by hypothetical <code>Func&lt;T, long&gt; getSize</code> function. Here is a
 helpful extension method that will split an arbitrary collection based on
@@ -270,8 +263,7 @@ a metric function and maximum chunk size:</p>
             })
         .Result;
 }
-</code></pre></div>
-<p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
+</code></pre></div><p>Now, the implementation of <code>SendBigBatchAsync</code> is simple:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">async</span> Task SendBigBatchAsync(IEnumerable&lt;T&gt; messages, Func&lt;T, <span style="color:#2b91af">long</span>&gt; getSize)
 {
     <span style="color:#2b91af">var</span> chunks = messages.ChunkBy(getSize, MaxServiceBusMessage);
@@ -284,17 +276,13 @@ a metric function and maximum chunk size:</p>
 
 <span style="color:#00f">private</span> <span style="color:#00f">const</span> <span style="color:#2b91af">long</span> MaxServiceBusMessage = 256000;
 <span style="color:#00f">private</span> <span style="color:#00f">readonly</span> QueueClient client;
-</code></pre></div>
-<p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
+</code></pre></div><p>Note that I do <code>await</code> for each chunk sequentially to preserve message ordering.
 Another thing to notice is that we lost all-or-nothing guarantee: we might
 be able to send the first chunk, and then get an exception from subsequent
 parts. Some sort of retry mechanism is probably needed.</p>
-
-<h2 id="brokeredmessage-size">BrokeredMessage.Size</h2>
-
+<h2 id="brokeredmessagesize">BrokeredMessage.Size</h2>
 <p>OK, how do we determine the size of each message? How do we implement
 <code>getSize</code> function?</p>
-
 <p><code>BrokeredMessage</code> class exposes <code>Size</code> property, so it might be tempting to
 rewrite our method the following way:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">async</span> Task SendBigBatchAsync&lt;T&gt;(IEnumerable&lt;T&gt; messages)
@@ -306,68 +294,50 @@ rewrite our method the following way:</p>
         <span style="color:#00f">await</span> client.SendBatchAsync(chunk);
     }
 }
-</code></pre></div>
-<p>Unfortunately, this won&rsquo;t work properly. A quote from documentation:</p>
-
+</code></pre></div><p>Unfortunately, this won&rsquo;t work properly. A quote from documentation:</p>
 <blockquote>
 <p>The value of Size is only accurate after the BrokeredMessage
 instance is sent or received.</p>
 </blockquote>
-
 <p>My experiments show that <code>Size</code> of a draft message returns the size of
 the message body, ignoring headers. If the message bodies are large, and
 each chunk has just a handful of them, the code might work ok-ish.</p>
-
 <p>But it will significantly underestimate the size of large batches of messages
 with small payload.</p>
-
 <p>So, for the rest of this article I&rsquo;ll try to adjust the calculation for headers.</p>
-
 <h2 id="fixed-header-size">Fixed Header Size</h2>
-
 <p>It could be that the header size of each message is always the same.
 Quite often people will set the same headers for all their messages,
 or set no custom headers at all.</p>
-
 <p>In this case, you might just measure this size once, and then put this
 fixed value inside a configuration file.</p>
-
 <p>Here is how you measure the headers of a <code>BrokeredMessage</code> message:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> sizeBefore = message.Size;
 client.Send(message);
 <span style="color:#2b91af">var</span> sizeAfter = message.Size;
 <span style="color:#2b91af">var</span> headerSize = sizeAfter - sizeBefore;
-</code></pre></div>
-<p>Now you just need to adjust one line from the previous version of
+</code></pre></div><p>Now you just need to adjust one line from the previous version of
 <code>SendBigBatchAsync</code> method</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> chunks = brokeredMessages.ChunkBy(bm =&gt; FixedHeaderSize + bm.Size, MaxServiceBusMessage);
-</code></pre></div>
-<p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
+</code></pre></div><p><code>FixedHeaderSize</code> might be simply hard-coded, or taken from configuration
 per application.</p>
-
 <h2 id="measuring-of-header-size-per-message">Measuring of Header Size per Message</h2>
-
 <p>If the size of headers varies per message, you need a way to adjust batching
 algorithm accordingly.</p>
-
 <p>Unfortunately, I haven&rsquo;t found a straightforward way to accomplish that. It looks like
 you&rsquo;d have to serialize the headers yourself, and then measure the size of
 resulting binary. This is not a trivial operation to do correctly,
 and also implies some performance penalty.</p>
-
 <p>Sean Feldman <a href="https://weblogs.asp.net/sfeldman/asb-batching-brokered-messages">came up</a>
 with a way to <em>estimate</em> the size of headers. That might be a good way to go,
 though the estimation tends to err on the safe side for messages with small
 payload.</p>
-
-<h2 id="heuristics-retry">Heuristics &amp; Retry</h2>
-
+<h2 id="heuristics--retry">Heuristics &amp; Retry</h2>
 <p>The last possibility that I want to consider is actually allow yourself
 violating the max size of the batch, but then handle the exception, retry
 the send operation and adjust future calculations based on actual measured size
 of the failed messages. The size is known after trying to <code>SendBatch</code>, even if
 operation failed, so we can use this information.</p>
-
 <p>Here is a sketch of how to do that in code:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#008000">// Sender is reused across requests
 </span><span style="color:#008000"></span><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">BatchSender</span>
@@ -415,51 +385,52 @@ operation failed, so we can use this information.</p>
         }
     }
 }
-</code></pre></div>
-<p>The code example is quite involved, here is what actually happens:</p>
-
+</code></pre></div><p>The code example is quite involved, here is what actually happens:</p>
 <ol>
-<li><p>Create a brokered message for each message object, but also save the
+<li>
+<p>Create a brokered message for each message object, but also save the
 corresponding source message. This is critical to be able to re-send items:
-there&rsquo;s no way to send the same <code>BrokeredMessage</code> instance twice.</p></li>
-
-<li><p>Also save the body size of the brokered message. We&rsquo;ll use it for retry
-calculation.</p></li>
-
-<li><p>Start with some guess of header size estimate. I start with 54 bytes,
-which seems to be the minimal header size possible.</p></li>
-
-<li><p>Split the batch into chunks the same way we did before.</p></li>
-
-<li><p>Try sending chunks one by one.</p></li>
-
-<li><p>If send operation fails with <code>MessageSizeExceededException</code>, iterate
-through failed items and find out the actual header size of the message.</p></li>
-
-<li><p>If that actual size is bigger than our known estimate, increase the estimate
+there&rsquo;s no way to send the same <code>BrokeredMessage</code> instance twice.</p>
+</li>
+<li>
+<p>Also save the body size of the brokered message. We&rsquo;ll use it for retry
+calculation.</p>
+</li>
+<li>
+<p>Start with some guess of header size estimate. I start with 54 bytes,
+which seems to be the minimal header size possible.</p>
+</li>
+<li>
+<p>Split the batch into chunks the same way we did before.</p>
+</li>
+<li>
+<p>Try sending chunks one by one.</p>
+</li>
+<li>
+<p>If send operation fails with <code>MessageSizeExceededException</code>, iterate
+through failed items and find out the actual header size of the message.</p>
+</li>
+<li>
+<p>If that actual size is bigger than our known estimate, increase the estimate
 to the newly observed value. Retry sending the chunk (not the whole batch) with
-this new setting.</p></li>
-
-<li><p>If the header is small, but message size is still too big - reduce the
-allowed total size of the chunk. Retry again.</p></li>
+this new setting.</p>
+</li>
+<li>
+<p>If the header is small, but message size is still too big - reduce the
+allowed total size of the chunk. Retry again.</p>
+</li>
 </ol>
-
 <p>The combination of checks of steps 7 and 8 should make the mechanism reliable
 and self-adopting to message header payloads.</p>
-
 <p>Since we reuse the sender between send operations, the size parameters will
 also converge quite quickly and no more retries will be needed. Thus the
 performance overhead should be minimal.</p>
-
 <h2 id="conclusion">Conclusion</h2>
-
 <p>It seems like there is no &ldquo;one size fits all&rdquo; solution for this problem at
 the moment. The best implementation might depend on your messaging
 requirements.</p>
-
 <p>But if you have the silver bullet solution, please leave a comment under
 this post and answer <a href="https://stackoverflow.com/questions/44779707/split-batch-of-messages-to-be-sent-to-azure-service-bus">my StackOverflow question</a>!</p>
-
 <p>Otherwise, let&rsquo;s hope that the new
 <a href="https://github.com/azure/azure-service-bus-dotnet">.NET Standard-compatible Service Bus client</a>
 will solve this issue for us. Track <a href="https://github.com/Azure/azure-service-bus-dotnet/issues/109">this github issue</a>
@@ -585,6 +556,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

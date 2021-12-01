@@ -207,41 +207,28 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>Azure Synapse is an integrated analytics service that combines enterprise data warehousing of Azure SQL Data Warehouse and Big Data analytics of Apache Spark. Azure Synapse is a managed service well integrated with other Azure services for data ingestion and business analytics.</p>
-
+                    <p>Azure Synapse is an integrated analytics service that combines enterprise data warehousing of Azure SQL Data Warehouse and Big Data analytics of Apache Spark. Azure Synapse is a managed service well integrated with other Azure services for data ingestion and business analytics.</p>
 <p>You could use the Azure portal to get started with Azure Synapse, but it can be hard to define sophisticated infrastructure for your analytics pipeline using the portal alone, and many users need to apply version control to their cloud configurations.</p>
-
 <p>The alternative is to use an infrastructure as code tool to automate building and deploying cloud resources. This article demonstrates how to provision an Azure Synapse workspace using Pulumi and general-purpose programming languages like Python and C#.</p>
-
 <h2 id="azure-synapse-components">Azure Synapse Components</h2>
-
 <p>Let&rsquo;s start by introducing the components required to provision a basic Azure Synapse workspace. To follow along with the <a href="https://docs.microsoft.com/en-us/azure/synapse-analytics/get-started">Synapse Getting Started Guide</a>, you need the following key Azure infrastructure components:</p>
-
 <ul>
 <li><strong>Resource Group</strong> to contain all other resources.</li>
 <li><strong>Storage Account</strong> to store input data and analytics artifacts.</li>
-<li><strong>Azure Synapse Workspace</strong>&mdash;a collaboration boundary for cloud-based analytics in Azure.</li>
-<li><strong>SQL Pool</strong>&mdash;a dedicated Synapse SQL pool to run T-SQL based analytics.</li>
+<li><strong>Azure Synapse Workspace</strong>—a collaboration boundary for cloud-based analytics in Azure.</li>
+<li><strong>SQL Pool</strong>—a dedicated Synapse SQL pool to run T-SQL based analytics.</li>
 <li><strong>Spark Pool</strong> to use Apache Spark analytics.</li>
 <li><strong>IP Filters</strong> and <strong>Role Assignments</strong> for secure access control.</li>
 </ul>
-
 <h2 id="infrastructure-as-code">Infrastructure as Code</h2>
-
 <p>Let&rsquo;s walk through the steps to build a workspace with all the components mentioned above. We&rsquo;ll use Pulumi to provision the necessary resources. Feel free to pick the language of your choice that will apply to all code snippets.</p>
-
 <p>You can check out the <a href="https://github.com/pulumi/examples/tree/master/aws-ts-lambda-thumbnailer">full source code</a> in the Pulumi Examples.</p>
-
 <h3 id="resource-group">Resource Group</h3>
-
 <p>Let&rsquo;s start by defining a resource group to contain all other resources. Be sure to adjust its name and region to your preferred values.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">resource_group = resources.ResourceGroup(<span style="color:#a31515">&#34;resourceGroup&#34;</span>,
     resource_group_name=<span style="color:#a31515">&#34;synapse-rg&#34;</span>,
-    location=<span style="color:#a31515">&#34;westus2&#34;</span>)</code></pre></div>
-<h3 id="data-lake-storage-account">Data Lake Storage Account</h3>
-
+    location=<span style="color:#a31515">&#34;westus2&#34;</span>)
+</code></pre></div><h3 id="data-lake-storage-account">Data Lake Storage Account</h3>
 <p>Synapse workspace will store data in a data lake storage account. We use a Standard Read-Access Geo-Redundant Storage account (SKU <code>Standard_RAGRS</code>) for this purpose. Make sure to change the <code>accountName</code> to your own globally unique name.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">storage_account = storage.StorageAccount(<span style="color:#a31515">&#34;storageAccount&#34;</span>,
     resource_group_name=resource_group.name,
@@ -253,15 +240,14 @@
     kind=<span style="color:#a31515">&#34;StorageV2&#34;</span>,
     sku=storage.SkuArgs(
         name=<span style="color:#a31515">&#34;Standard_RAGRS&#34;</span>,
-    ))</code></pre></div>
-<p>We&rsquo;ll use the <code>users</code> blob container as the analytics file system.</p>
+    ))
+</code></pre></div><p>We&rsquo;ll use the <code>users</code> blob container as the analytics file system.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">users = storage.BlobContainer(<span style="color:#a31515">&#34;users&#34;</span>,
     resource_group_name=resource_group.name,
     account_name=storage_account.name,
     container_name=<span style="color:#a31515">&#34;users&#34;</span>,
-    public_access=<span style="color:#a31515">&#34;None&#34;</span>)</code></pre></div>
-<h3 id="synapse-workspace">Synapse Workspace</h3>
-
+    public_access=<span style="color:#a31515">&#34;None&#34;</span>)
+</code></pre></div><h3 id="synapse-workspace">Synapse Workspace</h3>
 <p>It&rsquo;s time to use all of the above to provision an Azure Synapse workspace! Adjust the name and the SQL credentials in the definition below.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">workspace = synapse.Workspace(<span style="color:#a31515">&#34;workspace&#34;</span>,
     resource_group_name=resource_group.name,
@@ -275,21 +261,19 @@
         type=<span style="color:#a31515">&#34;SystemAssigned&#34;</span>,
     ),
     sql_administrator_login=<span style="color:#a31515">&#34;sqladminuser&#34;</span>,
-    sql_administrator_login_password=random.RandomPassword(<span style="color:#a31515">&#34;workspacePwd&#34;</span>, length=12).result)</code></pre></div>
-<blockquote>
+    sql_administrator_login_password=random.RandomPassword(<span style="color:#a31515">&#34;workspacePwd&#34;</span>, length=12).result)
+</code></pre></div><blockquote>
 <p>Note that we also defined a system-assigned managed identity for the workspace.</p>
 </blockquote>
-
 <h3 id="security-setup">Security Setup</h3>
-
 <p>You need to allow access to the workspace with a firewall rule. The following is a blank access rule but feel free to restrict it to your target IP range.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">allow_all = synapse.IpFirewallRule(<span style="color:#a31515">&#34;allowAll&#34;</span>,
     resource_group_name=resource_group.name,
     workspace_name=workspace.name,
     rule_name=<span style="color:#a31515">&#34;allowAll&#34;</span>,
     end_ip_address=<span style="color:#a31515">&#34;255.255.255.255&#34;</span>,
-    start_ip_address=<span style="color:#a31515">&#34;0.0.0.0&#34;</span>)</code></pre></div>
-<p>The following snippet assigns the <strong>Storage Blob Data Contributor</strong> role to the workspace managed identity and your target user. If you use the Azure CLI, run <code>az ad signed-in-user show --query=objectId</code> to look up your user ID.</p>
+    start_ip_address=<span style="color:#a31515">&#34;0.0.0.0&#34;</span>)
+</code></pre></div><p>The following snippet assigns the <strong>Storage Blob Data Contributor</strong> role to the workspace managed identity and your target user. If you use the Azure CLI, run <code>az ad signed-in-user show --query=objectId</code> to look up your user ID.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">subscription_id = resource_group.id.apply(<span style="color:#00f">lambda</span> id: id.split(<span style="color:#a31515">&#39;/&#39;</span>)[2])
 role_definition_id = subscription_id.apply(<span style="color:#00f">lambda</span> id: f<span style="color:#a31515">&#34;/subscriptions/{id}/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe&#34;</span>)
 
@@ -305,9 +289,8 @@ authorization.RoleAssignment(<span style="color:#a31515">&#34;userAccess&#34;</s
     scope=storage_account.id,
     principal_id=config.get(<span style="color:#a31515">&#34;userObjectId&#34;</span>),
     principal_type=<span style="color:#a31515">&#34;User&#34;</span>,
-    role_definition_id=role_definition_id)</code></pre></div>
-<h3 id="sql-and-spark-pools">SQL and Spark Pools</h3>
-
+    role_definition_id=role_definition_id)
+</code></pre></div><h3 id="sql-and-spark-pools">SQL and Spark Pools</h3>
 <p>Finally, let&rsquo;s add two worker pools to the Synapse workspace. A SQL pool for T-SQL analytic queries&hellip;</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">sql_pool = synapse.SqlPool(<span style="color:#a31515">&#34;sqlPool&#34;</span>,
     resource_group_name=resource_group.name,
@@ -318,8 +301,8 @@ authorization.RoleAssignment(<span style="color:#a31515">&#34;userAccess&#34;</s
     create_mode=<span style="color:#a31515">&#34;Default&#34;</span>,
     sku=synapse.SkuArgs(
         name=<span style="color:#a31515">&#34;DW100c&#34;</span>,
-    ))</code></pre></div>
-<p>&hellip; and a Spark pool for Big Data analytics.</p>
+    ))
+</code></pre></div><p>&hellip; and a Spark pool for Big Data analytics.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">spark_pool = synapse.BigDataPool(<span style="color:#a31515">&#34;sparkPool&#34;</span>,
     resource_group_name=resource_group.name,
     location=resource_group.location,
@@ -337,9 +320,8 @@ authorization.RoleAssignment(<span style="color:#a31515">&#34;userAccess&#34;</s
     node_count=3,
     node_size=<span style="color:#a31515">&#34;Small&#34;</span>,
     node_size_family=<span style="color:#a31515">&#34;MemoryOptimized&#34;</span>,
-    spark_version=<span style="color:#a31515">&#34;2.4&#34;</span>)</code></pre></div>
-<h2 id="ready-to-dive-into-analytics">Ready to Dive into Analytics</h2>
-
+    spark_version=<span style="color:#a31515">&#34;2.4&#34;</span>)
+</code></pre></div><h2 id="ready-to-dive-into-analytics">Ready to Dive into Analytics</h2>
 <p>Our resource definitions are ready. Run <code>pulumi up</code> to provision your Azure Synapse infrastructure.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">$ pulumi up
 ...
@@ -363,13 +345,10 @@ Updating (dev)
  Resources:
     + 12 created
 
-Duration: 10m51s</code></pre></div>
-<p>You can now navigate to the <a href="https://docs.microsoft.com/en-us/azure/synapse-analytics/get-started-analyze-sql-pool">Azure Synapse Quickstart, Step 2</a>, and follow along with the data analysis tutorial.</p>
-
+Duration: 10m51s
+</code></pre></div><p>You can now navigate to the <a href="https://docs.microsoft.com/en-us/azure/synapse-analytics/get-started-analyze-sql-pool">Azure Synapse Quickstart, Step 2</a>, and follow along with the data analysis tutorial.</p>
 <h2 id="conclusion">Conclusion</h2>
-
 <p>Azure Synapse is a managed analytics service that accelerates time to insight across data warehouses and big data workloads. A Synapse workspace is a critical component of your cloud infrastructure that you should provision with infrastructure as code and other management best practices.</p>
-
 <p>Pulumi and Azure NextGen provider open up full access to all types of Azure resources using your favorite programming languages, including Python, C#, and TypeScript. Navigate to the complete Azure Synapse example in <a href="https://github.com/pulumi/examples/tree/master/azure-nextgen-py-synapse">Python</a>, <a href="https://github.com/pulumi/examples/tree/master/azure-nextgen-cs-synapse">C#</a>, or <a href="https://github.com/pulumi/examples/tree/master/azure-nextgen-ts-synapse">TypeScript</a> and get started today.</p>
 
                 </div>
@@ -482,6 +461,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

@@ -198,13 +198,9 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
+                    <p>In this article we will employ a functional monadic concept <strong>Either</strong> to make validation
 code more expressive and easier to maintain.</p>
-
 <h2 id="problem">Problem</h2>
-
 <p>Let&rsquo;s say we get a request from some client code and we need to check if this
 request is actually valid. If it&rsquo;s not valid, we want to make a detailed description
 of the problems that we identified. If it is valid, we want to produce a response
@@ -212,12 +208,9 @@ about the successful acceptance of the request. Let&rsquo;s define the classes:<
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Request</span> { ... }
 <span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Response</span> { ... }
 <span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ValidationError</span> { ... }
-</code></pre></div>
-<p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
+</code></pre></div><p>Now, we need a function which would accept a <code>Request</code> and would return <code>Response</code>
 or <code>ValidationError</code>. Let&rsquo;s look at some possible solutions.</p>
-
 <h2 id="throw-an-exception">Throw an exception</h2>
-
 <p>Validation <em>error</em> sounds like it could be an exception:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> Response Validate(Request r)
 {
@@ -226,15 +219,12 @@ or <code>ValidationError</code>. Let&rsquo;s look at some possible solutions.</p
 
    <span style="color:#00f">return</span> <span style="color:#00f">new</span> Response(r);
 }
-</code></pre></div>
-<p>This approach is really bad though. You have to declare a special exception
+</code></pre></div><p>This approach is really bad though. You have to declare a special exception
 class to hold the validation error. But even worse, exception handling is not
 explicit - you don&rsquo;t see the exception type when you look at method signature.
 Client processing code is going to be messed up because of exception handling.
 Never use exceptions for your business logic flow.</p>
-
 <h2 id="output-parameter">Output parameter</h2>
-
 <p>We could make an output parameter of <code>ValidationError</code> type:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> Response Validate(Request r, <span style="color:#00f">out</span> ValidationError error)
 {
@@ -247,15 +237,12 @@ Never use exceptions for your business logic flow.</p>
     error = <span style="color:#00f">null</span>;
     <span style="color:#00f">return</span> <span style="color:#00f">new</span> Response(r);
 }
-</code></pre></div>
-<p>Now the interface is more explicit: client won&rsquo;t be able to completely ignore
+</code></pre></div><p>Now the interface is more explicit: client won&rsquo;t be able to completely ignore
 the fact that an error is possible. But output parameters are not really
 easy to use in C#, especially in fluent-style client code. Moreover, we are
 using nulls as a way to represent missing object, which is a smell by itself,
 because nulls are not explicit. Never use nulls in your business logic.</p>
-
 <h2 id="return-the-combined-result">Return the combined result</h2>
-
 <p>We could declare a container class which would keep both <code>Response</code> and
 <code>ValidationError</code>, and then return it from the method.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Both</span>&lt;TData, TError&gt;
@@ -270,13 +257,10 @@ because nulls are not explicit. Never use nulls in your business logic.</p>
         ? <span style="color:#00f">new</span> Both&lt;Response, ValidationError&gt; { Data = <span style="color:#00f">new</span> Response(r) }
         : <span style="color:#00f">new</span> Both&lt;Response, ValidationError&gt; { Error = <span style="color:#00f">new</span> ValidationError(...) };
 }
-</code></pre></div>
-<p>Looks much nicer, we are getting there. Now it&rsquo;s a pure function with input
+</code></pre></div><p>Looks much nicer, we are getting there. Now it&rsquo;s a pure function with input
 and output parameters, but we still use null for result state representation.
 Let&rsquo;s see how we can solve it with <strong>Either</strong> data structure.</p>
-
 <h2 id="introducing-either">Introducing Either</h2>
-
 <p>Instead of returning <code>Both</code> with nullable properties, let&rsquo;s return <code>Either</code>
 with just one of them. When constructing an object, you can specify either
 a &lsquo;left&rsquo; or a &lsquo;right&rsquo; argument, but not both.</p>
@@ -298,26 +282,20 @@ a &lsquo;left&rsquo; or a &lsquo;right&rsquo; argument, but not both.</p>
         <span style="color:#00f">this</span>.isLeft = <span style="color:#00f">false</span>;
     }
 }
-</code></pre></div>
-<p>Now, the main difference is in how the client uses it. There are no properties
+</code></pre></div><p>Now, the main difference is in how the client uses it. There are no properties
 to accept <code>Left</code> and <code>Right</code> parts. Instead we define the following method:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> T Match&lt;T&gt;(Func&lt;TL, T&gt; leftFunc, Func&lt;TR, T&gt; rightFunc)
     =&gt; <span style="color:#00f">this</span>.isLeft ? leftFunc(<span style="color:#00f">this</span>.left) : rightFunc(<span style="color:#00f">this</span>.right);
-</code></pre></div>
-<p>That&rsquo;s the concept of pattern matching implemented in C# world. If a left value
+</code></pre></div><p>That&rsquo;s the concept of pattern matching implemented in C# world. If a left value
 is specified, <code>Match</code> will return the result of the left function, otherwise the result
 of the right function.</p>
-
 <p>Another improvement would be to create explicit operators for easy conversions
 from left and right types:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">implicit</span> <span style="color:#00f">operator</span> Either&lt;TL, TR&gt;(TL left) =&gt; <span style="color:#00f">new</span> Either&lt;TL, TR&gt;(left);
 
 <span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">implicit</span> <span style="color:#00f">operator</span> Either&lt;TL, TR&gt;(TR right) =&gt; <span style="color:#00f">new</span> Either&lt;TL, TR&gt;(right);
-</code></pre></div>
-<p>Let&rsquo;s have a look at a complete example.</p>
-
-<h2 id="why-it-s-great">Why it&rsquo;s great</h2>
-
+</code></pre></div><p>Let&rsquo;s have a look at a complete example.</p>
+<h2 id="why-its-great">Why it&rsquo;s great</h2>
 <p>Here is the service code written with <code>Either</code>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> Either&lt;Response, ValidationError&gt; Validate(Request r)
 {
@@ -325,22 +303,17 @@ from left and right types:</p>
         ? Data = <span style="color:#00f">new</span> Response(r)
         : <span style="color:#00f">new</span> ValidationError(...);
 }
-</code></pre></div>
-<p>Clean and nice! Now a simplistic client:</p>
+</code></pre></div><p>Clean and nice! Now a simplistic client:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> validated = service.Validate(request);
 Console.WriteLine(
     validated.Match(
         result =&gt; <span style="color:#a31515">$&#34;Success: {result}&#34;</span>,
         error =&gt; <span style="color:#a31515">$&#34;Error: {error}&#34;</span>)
     );
-</code></pre></div>
-<p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
+</code></pre></div><p>Simple, readable , no conditionals, no null checks, no way to silently ignore the fact that
 validation may fail.</p>
-
 <h2 id="show-me-the-code">Show me the code</h2>
-
 <p>You can find the definition of <code>Either</code> class in my <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/Either%7BTL%2CTR%7D.cs">github repo</a>.</p>
-
 <p><strong>Update.</strong> Here is a link to an awesome talk on this topic:
 <a href="https://vimeo.com/113707214">Railway oriented programming: Error handling in functional languages by Scott Wlaschin</a></p>
 
@@ -464,6 +437,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

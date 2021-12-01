@@ -207,93 +207,77 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>This post describes a toy application that I&rsquo;ve built with F# and Azure Functions
+                    <p>This post describes a toy application that I&rsquo;ve built with F# and Azure Functions
 in about 1 day of work. It shows a simple end-to-end implementation with some
 useful techniques applied, and can be used as a reference point for anyone interested in
 one of the topics mentioned in the title.</p>
-
-<p>The requirements for my application are quite simple:
-- Implement the game of Tic-Tac-Toe for a human player to play against the computer
-- The field is 3x3, the player to have three-in-a-row wins
-- After the game, the score is calculated based on the number of moves combined
-with the duration of the game
-- The history of players&rsquo; scores is persisted and presented as the leaderboard</p>
-
+<p>The requirements for my application are quite simple:</p>
+<ul>
+<li>Implement the game of Tic-Tac-Toe for a human player to play against the computer</li>
+<li>The field is 3x3, the player to have three-in-a-row wins</li>
+<li>After the game, the score is calculated based on the number of moves combined
+with the duration of the game</li>
+<li>The history of players' scores is persisted and presented as the leaderboard</li>
+</ul>
 <p>Below I go through the code step by step. Feel free to jump to the part which interests
 you the most:
 <a href="#DomainModelling">Domain Modelling</a>,
 <a href="#AzureFunctions">Azure Functions</a>,
 <a href="#HATEOAS">HATEOAS</a>,
 <a href="#PropertyBasedTesting">Property-Based Testing</a>.</p>
-
 <p>The game is online, so you can play it <a href="https://tictactoefs.azurewebsites.net/home">here</a>.</p>
-
 <p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
-
-<p><a name="DomainModelling"></a></p>
-
-<h2 id="modeling-the-game-with-types">Modeling the Game with Types</h2>
-
+<h2 id="modeling-the-game-with-types"><a name="DomainModelling"></a>
+Modeling the Game with Types</h2>
 <p>I start with a domain model. The model is composed of immutable F# types (records and discriminated
 unions) and pure functions.</p>
-
 <p>We have two players, so we need a type for them:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Player</span> = X | O</code></pre></div>
-<p>In addition, there is a useful function to return the other player based on the given one.
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Player</span> = X | O
+</code></pre></div><p>In addition, there is a useful function to return the other player based on the given one.
 Simple pattern-matching will do:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">module</span> Player =
-  <span style="color:#00f">let</span> other = <span style="color:#00f">function</span> | X -&gt; O | O -&gt; X</code></pre></div>
-<p>The domain code is the most important part of the application, so I want it to be covered
+  <span style="color:#00f">let</span> other = <span style="color:#00f">function</span> | X -&gt; O | O -&gt; X
+</code></pre></div><p>The domain code is the most important part of the application, so I want it to be covered
 by unit tests. Of course, the above function doesn&rsquo;t really warrant testing, but it&rsquo;s a nice
 and simple way to try out <a href="https://fsharpforfunandprofit.com/posts/property-based-testing/">Property-Based Testing</a>.
 That is, instead of defining specific tests, we define properties which hold for any valid input.</p>
-
 <p>For <code>other</code> function, I came up with two properties:</p>
-
 <ul>
 <li>Other player is not equal to original player</li>
 <li>Other player of other player is the player itself</li>
 </ul>
-
 <p>Here is the code with <a href="https://github.com/haf/expecto">Expecto</a> and <a href="https://github.com/fscheck/FsCheck">FsCheck</a>:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">testProperty <span style="color:#a31515">&#34;Other player is not equal to player&#34;</span> &lt;| <span style="color:#00f">fun</span> x -&gt;
   Expect.notEqual x (Player.other x) <span style="color:#a31515">&#34;Other should be different from original&#34;</span>
 
 testProperty <span style="color:#a31515">&#34;Other player of other player is the player itself&#34;</span> &lt;| <span style="color:#00f">fun</span> x -&gt;
-  Expect.equal x (Player.other (Player.other x)) <span style="color:#a31515">&#34;Other other should be equal to original&#34;</span></code></pre></div>
-<p>Let&rsquo;s move on to modelling the game. I decided to define a union type to be used for
+  Expect.equal x (Player.other (Player.other x)) <span style="color:#a31515">&#34;Other other should be equal to original&#34;</span>
+</code></pre></div><p>Let&rsquo;s move on to modelling the game. I decided to define a union type to be used for
 horizontal and vertical positions of the cells:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Position</span> = One | Two | Three</code></pre></div>
-<p>I could use the normal integers instead, but I don&rsquo;t want to be worried about validating
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Position</span> = One | Two | Three
+</code></pre></div><p>I could use the normal integers instead, but I don&rsquo;t want to be worried about validating
 the ranges all the time.</p>
-
 <p>My first record type models the move, or action done by a player: it has <code>X</code> and <code>Y</code>
 positions of the chosen cell, plus the player information:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Move</span> = {
   X: Position
   Y: Position
   By: Player
-}</code></pre></div>
-<p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
+}
+</code></pre></div><p>The following type <code>RunningGame</code> has just two properties, but its shape defines the
 design of the whole application:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">RunningGame</span> = {
   MovesDone: Move <span style="color:#2b91af">list</span>
   PossibleMoves: Move <span style="color:#2b91af">list</span>
-}</code></pre></div>
-<p>This type models any state of the game which is not finished yet.</p>
-
+}
+</code></pre></div><p>This type models any state of the game which is not finished yet.</p>
 <p><code>MovesDone</code> represents the ordered log of all moves, so we have the complete history
 of actions at any time. Event Sourcing in small.</p>
-
 <p>Equally importantly, there is a list of all possible moves at this point of the game.
 I could get away without this property: in the end, it can always be derived from
 the history of done moves and 3x3 size of the field.</p>
-
 <p>However, having the list of possible moves simplifies the design of all the decision
 maker (client) code:</p>
-
 <ul>
 <li>Clients don&rsquo;t have to search for remaining cells based on move log</li>
 <li>Validation of a move received from clients gets trivial: just check that it&rsquo;s in
@@ -304,26 +288,22 @@ most trivial bot is a one-liner: it picks a random move from the collection</li>
 <li>We build a nice bridge into HATEOAS-style API, where links provided in the response
 correspond to possible moves, see <a href="#HATEOAS">REST API</a> below</li>
 </ul>
-
 <p>Now, we can model a game which is already finished:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">GameOutcome</span> = Won <span style="color:#00f">of</span> Player | Tie
 
 <span style="color:#00f">type</span> <span style="color:#2b91af">FinishedGame</span> = {
   MovesDone: Move <span style="color:#2b91af">list</span>
   Outcome: GameOutcome
-}</code></pre></div>
-<p>Each finished game has a list of moves and the outcome: either one player won, or there
+}
+</code></pre></div><p>Each finished game has a list of moves and the outcome: either one player won, or there
 was a tie.</p>
-
 <p>Each state of a game can be described by the union of the previous two states:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">GameState</span> =
   | Finished <span style="color:#00f">of</span> FinishedGame
-  | InProgress <span style="color:#00f">of</span> RunningGame</code></pre></div>
-<h2 id="modeling-game-flow">Modeling Game Flow</h2>
-
+  | InProgress <span style="color:#00f">of</span> RunningGame
+</code></pre></div><h2 id="modeling-game-flow">Modeling Game Flow</h2>
 <p>Now, when all the types are in place, we can model the game flow. The flow is a sequence
 of transitions between game states, implemented with pure functions.</p>
-
 <p>First, each game starts at the same state, which is an empty field, and X turn. Here
 is the value which represents this initial state:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">module</span> Game =
@@ -334,25 +314,22 @@ is the value which represents this initial state:</p>
          <span style="color:#00f">for</span> y <span style="color:#00f">in</span> positions <span style="color:#00f">do</span>
             <span style="color:#00f">yield</span> { X = x; Y = y; By = X }
       }
-    { MovesDone = []; PossibleMoves = List.ofSeq cells }</code></pre></div>
-<p>After each move is made, we need a function to evaluate move outcome: whether current
+    { MovesDone = []; PossibleMoves = List.ofSeq cells }
+</code></pre></div><p>After each move is made, we need a function to evaluate move outcome: whether current
 game is finished or is still in progress. I defined a function <code>evaluate</code> for that:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> private evaluate (history: Move <span style="color:#2b91af">list</span>): GameOutcome option = ...</code></pre></div>
-<p>I don&rsquo;t show the full body here, since it&rsquo;s quite boring in evaluating rows, columns
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> private evaluate (history: Move <span style="color:#2b91af">list</span>): GameOutcome option = ...
+</code></pre></div><p>I don&rsquo;t show the full body here, since it&rsquo;s quite boring in evaluating rows, columns
 and diagonals for three-in-a-row. See the <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe/Game.fs#L42-L56">full code</a>
 if you want to.</p>
-
 <p>The following function is even more important: that&rsquo;s the main domain function called
 <code>makeMove</code>. Its type is <code>RunningGame -&gt; Move -&gt; GameState</code> which perfectly communicates
 its intent: given a running game and a move, it returns the game state after the move.
 Note that</p>
-
 <ul>
 <li>You can&rsquo;t pass a finished game as an argument, because making a move on finished game
 doesn&rsquo;t make sense</li>
 <li>The result <em>can</em> be a finished game</li>
 </ul>
-
 <p>Here is the function implementation:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> makeMove (game: RunningGame) (move: Move): GameState =
   <span style="color:#00f">let</span> movesDone = move :: game.MovesDone
@@ -362,9 +339,8 @@ doesn&rsquo;t make sense</li>
     <span style="color:#00f">let</span> possibleMoves =
       List.except [move] game.PossibleMoves
       |&gt; List.map (<span style="color:#00f">fun</span> m -&gt; { m <span style="color:#00f">with</span> By = Player.other m.By })
-    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }</code></pre></div>
-<p>It works like this:</p>
-
+    InProgress { MovesDone = movesDone; PossibleMoves = possibleMoves }
+</code></pre></div><p>It works like this:</p>
 <ul>
 <li>Prepend the new move to moves done</li>
 <li>Evaluate the game result of these combined moves</li>
@@ -372,7 +348,6 @@ doesn&rsquo;t make sense</li>
 <li>If the result is not clear yet, return <code>InProgress</code> game with possible
 moves same as before, but excluding the move and assigned to the other player</li>
 </ul>
-
 <p>Tic-Tic-Toe is two-player game, so I defined another function which runs
 a turn of 2 moves by 2 players, given the decision making functions of both
 players (so it&rsquo;s a higher-order function):</p>
@@ -380,19 +355,14 @@ players (so it&rsquo;s a higher-order function):</p>
   <span style="color:#00f">let</span> newGameState = player1 gameState |&gt; makeMove gameState
   <span style="color:#00f">match</span> newGameState <span style="color:#00f">with</span>
   | Finished _ -&gt; newGameState
-  | InProgress p -&gt; player2 p |&gt; makeMove p</code></pre></div>
-<p>Looks almost like monadic <code>bind</code> operation&hellip;</p>
-
-<p><a name="PropertyBasedTesting"></a></p>
-
-<h2 id="property-based-testing">Property-Based Testing</h2>
-
+  | InProgress p -&gt; player2 p |&gt; makeMove p
+</code></pre></div><p>Looks almost like monadic <code>bind</code> operation&hellip;</p>
+<h2 id="property-based-testing"><a name="PropertyBasedTesting"></a>
+Property-Based Testing</h2>
 <p>I&rsquo;ve already shown two simplistic properties for <code>other</code> function.</p>
-
 <p>It&rsquo;s a bit more challenging to come up with invariant properties when it
 comes to testing the game itself. After some brainstorming, I&rsquo;ve made the
 following list:</p>
-
 <ul>
 <li>The game is never finished after 4 moves</li>
 <li>The game is always finished after 9 moves</li>
@@ -402,13 +372,10 @@ following list:</p>
 <li>Player wins by filling diagonal</li>
 <li>Evaluate a known tie</li>
 </ul>
-
 <p>Each property-based test should accept some input from the testing framework.
 It should then evaluate the test against this input and assert the invariants.
 If the property holds for any possible valid input, the test is green.</p>
-
 <p>I decided to structure my property tests in the following way:</p>
-
 <ul>
 <li>Each test accepts a list of non-negative integers</li>
 <li>Each integer is interpreted as an index of a possible move to select at turn <code>i</code>.
@@ -420,48 +387,37 @@ possible moves</li>
 <li>We apply the moves to calculate the end result</li>
 <li>We assert that the result confirms the property under test</li>
 </ul>
-
 <p>Now, it&rsquo;s the responsibility of property based testing framework to generate
 all kinds of input lists to try to break our property. If it succeeds, it will
 print the exact input which causes the test to fail.</p>
-
 <p>Here is how one such test is implemented.</p>
-
 <p>A helper function plays a sequence of indexes as moves:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> playSequence moves =
   <span style="color:#00f">let</span> playOne s i =
     <span style="color:#00f">match</span> s <span style="color:#00f">with</span>
     | InProgress p -&gt; Game.makeMove p (p.PossibleMoves.[i % p.PossibleMoves.Length])
     | _ -&gt; s
-  List.fold playOne (InProgress Game.initialState) moves</code></pre></div>
-<p>Then the property &ldquo;The game is always finished after 9 moves&rdquo; is simply:</p>
+  List.fold playOne (InProgress Game.initialState) moves
+</code></pre></div><p>Then the property &ldquo;The game is always finished after 9 moves&rdquo; is simply:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">testProp <span style="color:#a31515">&#34;The game is always finished after 9 moves&#34;</span> &lt;| <span style="color:#00f">fun</span> (Gen.ListOf9 xs) -&gt;
   <span style="color:#00f">let</span> result = playSequence xs
-  Expect.isTrue (Game.isFinished result) <span style="color:#a31515">&#34;Game should be finished&#34;</span></code></pre></div>
-<p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&rsquo;s a
+  Expect.isTrue (Game.isFinished result) <span style="color:#a31515">&#34;Game should be finished&#34;</span>
+</code></pre></div><p>Note the restriction <code>Gen.ListOf9 xs</code> that we put on the input sequence. It&rsquo;s a
 generator that I <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/Gen.fs#L31-L32">defined</a>,
 so that the list always contains exactly 9 elements.</p>
-
 <p>Other property tests follow a similar pattern, you can see them
 <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Tests/GameTests.fs">here</a>.</p>
-
-<p><a name="HATEOAS"></a></p>
-
-<h2 id="rest-api">REST API</h2>
-
+<h2 id="rest-api"><a name="HATEOAS"></a>
+REST API</h2>
 <p>Now, when I&rsquo;m done with Game domain model, I want to define API that our HTTP
 service will expose to the clients. I define my API in REST model.</p>
-
 <p>The main resource is <code>/game</code> resource. To start a new game, a client has to send
 <code>POST</code> command:</p>
-
 <pre><code>POST /game
 Content-Type: application/json
 
 { &quot;name&quot;: &quot;Mikhail&quot; }
-</code></pre>
-
-<p>And the response body is JSON which denotes a new game created:</p>
+</code></pre><p>And the response body is JSON which denotes a new game created:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
     &#34;id&#34;: <span style="color:#a31515">&#34;5d7b2261&#34;</span>,
     &#34;busyCells&#34;: [],
@@ -476,18 +432,14 @@ Content-Type: application/json
         },
         <span style="">//</span> <span style="">...</span> 7 <span style="">more</span> <span style="">links</span> <span style="">follow</span>
     ]
-}</code></pre></div>
-<p>The response contains a game ID and the list of occupied cells, empty for now,
+}
+</code></pre></div><p>The response contains a game ID and the list of occupied cells, empty for now,
 because no moves have been made.</p>
-
 <p>More importantly, it contains a list of links, each one of which has a <code>rel</code>
 field representing a cell, and a link. The client should <code>POST</code> to this link
 if it wants to make a move on the corresponding cell:</p>
-
 <pre><code>POST /game/5d7b2261/move/1
-</code></pre>
-
-<p>And the response is:</p>
+</code></pre><p>And the response is:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
     &#34;id&#34;: <span style="color:#a31515">&#34;5d7b2261&#34;</span>,
     &#34;result&#34;: <span style="color:#00f">null</span>,
@@ -512,10 +464,9 @@ if it wants to make a move on the corresponding cell:</p>
         },
         <span style="">//</span> <span style="">...</span> 5 <span style="">more</span> <span style="">links</span> <span style="">follow</span>
     ]
-}</code></pre></div>
-<p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
+}
+</code></pre></div><p>It has the same structure as before, but now two cells are occupied: one <code>X</code> and one <code>O</code>. The
 list of links now has only 7 links, based on the count of free cells.</p>
-
 <p>The client keeps navigating the links until it gets non-empty <code>result</code> field:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
     &#34;id&#34;: <span style="color:#a31515">&#34;5d7b2261&#34;</span>,
@@ -533,21 +484,16 @@ list of links now has only 7 links, based on the count of free cells.</p>
     ],
     &#34;links&#34;: [],
     &#34;score&#34;: 401
-}</code></pre></div>
-<p>This denotes the end of the game. There&rsquo;s no more links to navigate, so the client knows it
+}
+</code></pre></div><p>This denotes the end of the game. There&rsquo;s no more links to navigate, so the client knows it
 has to stop playing.</p>
-
 <p>This API is designed in HATEOAS-style (Hypermedia as the Engine of Application State). The
 clients only need to know the initial URL, while all the other URLs are received from the
 previous responses. It resembles the way a human navigates websites.</p>
-
-<p><a name="AzureFunctions"></a></p>
-
-<h2 id="azure-functions">Azure Functions</h2>
-
+<h2 id="azure-functions"><a name="AzureFunctions"></a>
+Azure Functions</h2>
 <p>I implemented the above API with Azure Functions. I used .NET Standard based v2 runtime
 with precompiled F# functions.</p>
-
 <p>The initial <code>POST /game</code> request is handled by <code>Start</code> function:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">GameRequest</span> = { Name: <span style="color:#2b91af">string</span> }
 
@@ -569,9 +515,8 @@ with precompiled F# functions.</p>
   <span style="color:#00f">let</span> state = InProgress Game.initialState
   <span style="color:#00f">let</span> serializedState = JsonConvert.SerializeObject state
   store.Add(GameEntity(PartitionKey = <span style="color:#a31515">&#34;default&#34;</span>, RowKey = gameid, Name = req.Name, State = serializedState))
-  ObjectResult(Api.serialize gameid state 0)</code></pre></div>
-<p>The outline of this function:</p>
-
+  ObjectResult(Api.serialize gameid state 0)
+</code></pre></div><p>The outline of this function:</p>
 <ul>
 <li>It&rsquo;s triggered by HTTP POST request, as configured for <code>req</code> parameter</li>
 <li>The request body is parsed to <code>GameRequest</code> type containing player name</li>
@@ -581,7 +526,6 @@ with precompiled F# functions.</p>
 <li>It returns HTTP body with
 <a href="https://github.com/mikhailshilkov/tictactoe/blob/master/TicTacToe.Functions/Api.fs#L30-L51">serialized</a> game response of type <code>GameDTO</code></li>
 </ul>
-
 <p>The second Function <code>Play</code> handles the moves:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">[&lt;FunctionName(<span style="color:#a31515">&#34;Play&#34;</span>)&gt;]
 <span style="color:#00f">let</span> play([&lt;HttpTrigger(AuthorizationLevel.Anonymous, <span style="color:#a31515">&#34;POST&#34;</span>, Route = <span style="color:#a31515">&#34;game/{gameid}/move/{index}&#34;</span>)&gt;]
@@ -595,9 +539,8 @@ with precompiled F# functions.</p>
     <span style="color:#00f">let</span> result = Game.makeRound (<span style="color:#00f">fun</span> _ -&gt; p.PossibleMoves.[index]) Bot.pickMove p
     entity.State &lt;- JsonConvert.SerializeObject result
     entity.Score &lt;- Scoring.calculateScore (DateTime.UtcNow - entity.StartedAt).TotalMilliseconds result
-    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult</code></pre></div>
-<p>The outline is very similar:</p>
-
+    ObjectResult(Api.serialize gameid result entity.Score) :&gt; IActionResult
+</code></pre></div><p>The outline is very similar:</p>
 <ul>
 <li>It&rsquo;s triggered by a <code>POST</code> request with a URL template containing game ID and move index</li>
 <li>It has an in/out Table Storage binding which reads the serialized state saved after previous
@@ -609,17 +552,12 @@ game and move requests</li>
 <li>The game state and the score are saved to Table Storage entity (that&rsquo;s the only mutation in the whole
 application)</li>
 </ul>
-
 <h2 id="bot">Bot</h2>
-
 <p>Azure Function above used a <code>Bot.pickMove</code> function which I haven&rsquo;t described yet.</p>
-
 <p>This function has the type <code>RunningGame -&gt; Move</code>, exactly what is expected by <code>makeRound</code> game
 function. Its goal is to pick the <code>O</code> move for any given game-in-progress.</p>
-
 <p>Obviously, 3x3 Tic-Tac-Toe is a very simple game and it&rsquo;s quite easy to make a perfectly
 playing bot. This wasn&rsquo;t the goal though: it&rsquo;s more fun for a human to win.</p>
-
 <p>So, actually, the only property test that I ended up implementing is the following:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">testProp <span style="color:#a31515">&#34;Bot is able to play O at any possible position&#34;</span> &lt;| <span style="color:#00f">fun</span> (Gen.ListOfNonNegative xs) -&gt;
   <span style="color:#00f">let</span> human i p _ = p.PossibleMoves.[i % p.PossibleMoves.Length]
@@ -627,21 +565,17 @@ playing bot. This wasn&rsquo;t the goal though: it&rsquo;s more fun for a human 
     <span style="color:#00f">match</span> s <span style="color:#00f">with</span>
     | InProgress p -&gt; Game.makeRound (human i p) Bot.pickMove p
     | _ -&gt; s
-  List.fold round (InProgress Game.initialState) xs |&gt; ignore</code></pre></div>
-<p>It makes sure that for any possible sequence of human moves, bot is actually able to make
+  List.fold round (InProgress Game.initialState) xs |&gt; ignore
+</code></pre></div><p>It makes sure that for any possible sequence of human moves, bot is actually able to make
 <em>any</em> move of its own. Bot just shouldn&rsquo;t crash :)</p>
-
 <p>My very first implementation of the bot was just picking a random move. Such bot is fine,
 but it&rsquo;s too boring to play against.</p>
-
 <p>So, my current bot implementation has 3 rules:</p>
-
 <ul>
 <li>If there is a move that immediately wins the game, do that move</li>
 <li>If possible, don&rsquo;t pick a move which leads to immediate loss after the next human move</li>
 <li>Otherwise, pick a random move</li>
 </ul>
-
 <p>I implemented the bot using the approach described in my
 <a href="https://mikhail.io/2016/07/building-a-poker-bot-functional-fold-as-decision-tree-pattern/">Functional Fold as Decision Tree Pattern</a>
 post:</p>
@@ -649,10 +583,9 @@ post:</p>
   [winNow O; notLoseNow; pickRandom]
   |&gt; Seq.ofList
   |&gt; Seq.choose (<span style="color:#00f">fun</span> x -&gt; x game)
-  |&gt; Seq.head</code></pre></div>
-<p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
+  |&gt; Seq.head
+</code></pre></div><p>So, there is a prioritized list of decision functions. The first one returning <code>Some</code>
 decision will be promoted to final decision.</p>
-
 <p>And here are those functions:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> winNow player (game: RunningGame) =
   <span style="color:#00f">let</span> isWin = <span style="color:#00f">function</span> | Finished { Outcome = Won x } <span style="color:#00f">when</span> x = player -&gt; <span style="color:#00f">true</span> | _ -&gt; <span style="color:#00f">false</span>
@@ -670,18 +603,14 @@ decision will be promoted to final decision.</p>
   <span style="color:#00f">else</span> Some (notLosingMoves.[random.Next notLosingMoves.Length])
 
 <span style="color:#00f">let</span> pickRandom (game: RunningGame) =
-  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])</code></pre></div>
-<p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
-
+  Some (game.PossibleMoves.[random.Next game.PossibleMoves.Length])
+</code></pre></div><p>Such rule-based setup is easy to extend, and also to test when it becomes needed.</p>
 <h2 id="score-calculation">Score Calculation</h2>
-
 <p>Last twist to the application is the scoring system. If a human player wins or gets a tie,
 they are assigned a numeric score, which can be then compared to the historic leaderboard
 of all players.</p>
-
 <p>The score is calculated based on two principles: the less moves you make, and the faster
 you play, the higher the score is. Move count is more important than timing.</p>
-
 <p>These principles are nicely expressed as property tests:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">testProp <span style="color:#a31515">&#34;The score of faster game is not lower than slower game&#34;</span>
   &lt;| <span style="color:#00f">fun</span> (Gen.Positive duration1) (Gen.Positive duration2) game -&gt;
@@ -699,20 +628,18 @@ testProp <span style="color:#a31515">&#34;The score of won game in less moves is
   <span style="color:#00f">if</span> moreMoves.Length = lessMoves.Length <span style="color:#00f">then</span>
     Expect.isGreaterThanOrEqual score1 score2 <span style="color:#a31515">&#34;Bigger duration has lower score (or same)&#34;</span>
   <span style="color:#00f">else</span>
-    Expect.isGreaterThan score1 score2 <span style="color:#a31515">&#34;More moves have lower score&#34;</span></code></pre></div>
-<p>Note that tests are parameterized for durations and game states. We don&rsquo;t have to come up with specific
+    Expect.isGreaterThan score1 score2 <span style="color:#a31515">&#34;More moves have lower score&#34;</span>
+</code></pre></div><p>Note that tests are parameterized for durations and game states. We don&rsquo;t have to come up with specific
 scenarios: the framework should take care of those.</p>
-
 <p>One of the possible implementations for scoring is:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> calculateScore duration (state: GameState) =
   <span style="color:#00f">let</span> durationScore = (100.0 * (1.0 - duration / (duration + 10000.0))) |&gt; int
   <span style="color:#00f">match</span> state <span style="color:#00f">with</span>
   | Finished { Outcome = Won X; MovesDone = ms } -&gt; (11 - ms.Length) * 100 + durationScore
   | Finished { Outcome = Tie } -&gt; durationScore
-  | _ -&gt; 0</code></pre></div>
-<p>Now, the leaderboard piece. You&rsquo;ve already seen the bits of this functionality in Azure Functions:
+  | _ -&gt; 0
+</code></pre></div><p>Now, the leaderboard piece. You&rsquo;ve already seen the bits of this functionality in Azure Functions:
 they store the game state into Azure Table Storage.</p>
-
 <p>There is another Azure Function which handles <code>GET</code> requests to <code>/leaderboard</code> resource. It
 loads all the past games from Table Storage, and then passes them to leaderboard calculation
 function below:</p>
@@ -721,20 +648,15 @@ function below:</p>
   |&gt; Seq.filter (<span style="color:#00f">fun</span> entity -&gt; snd entity &gt; 0 &amp;&amp; <span style="color:#00f">not</span> (String.IsNullOrEmpty (fst entity)))
   |&gt; Seq.sortByDescending snd
   |&gt; Seq.truncate top
-  |&gt; Seq.mapi (<span style="color:#00f">fun</span> index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })</code></pre></div>
-<h2 id="wrapping-up">Wrapping Up</h2>
-
+  |&gt; Seq.mapi (<span style="color:#00f">fun</span> index entity -&gt; { Index = index + 1; Name = fst entity; Score = snd entity })
+</code></pre></div><h2 id="wrapping-up">Wrapping Up</h2>
 <p>Ok, the application is simple, but the blog post ended up being quite long. Thank you if you
 made it so far.</p>
-
 <p>I touched base on several important concepts and tools, which can be useful apart or in
 combination.</p>
-
 <p>Please leave a comment if such kind of articles is useful, and which part you found most
 inspirational or boring.</p>
-
 <p>The full source code can be found in <a href="https://github.com/mikhailshilkov/tictactoe">my github</a>.</p>
-
 <p>Happy coding!</p>
 
                 </div>
@@ -871,6 +793,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

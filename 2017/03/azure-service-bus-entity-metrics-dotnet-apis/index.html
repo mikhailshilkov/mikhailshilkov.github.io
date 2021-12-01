@@ -207,54 +207,43 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>Azure Service Bus is a key component of many background processing applications hosted in Azure, so it definitely requires monitoring and alerting. My goal for our monitoring solution was to provide an API to retrieve the following parameters for each Service Bus queue/topic in our application:</p>
-
+                    <p>Azure Service Bus is a key component of many background processing applications hosted in Azure, so it definitely requires monitoring and alerting. My goal for our monitoring solution was to provide an API to retrieve the following parameters for each Service Bus queue/topic in our application:</p>
 <ul>
 <li>Message count (backlog)</li>
 <li>Dead letter queue count</li>
 <li>Amount of Incoming messages per time period</li>
 <li>Amount of Processed messages per time period</li>
 </ul>
-
 <p>The first two are easily retrieved from <code>QueueDescription</code> object (see
 <a href="https://msdn.microsoft.com/library/azure/hh780773.aspx">MSDN</a>):</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> nsmgr = NamespaceManager.CreateFromConnectionString(connectionString);
 <span style="color:#2b91af">var</span> queue = nsmgr.GetQueue(name);
 <span style="color:#2b91af">var</span> backlog = queue.MessageCountDetails.ActiveMessageCount;
 <span style="color:#2b91af">var</span> dlq = q.MessageCountDetails.DeadLetterMessageCount;
-</code></pre></div>
-<p>The other two metrics are not readily available from the .NET SDK though.
+</code></pre></div><p>The other two metrics are not readily available from the .NET SDK though.
 There are some extra metrics described in
 <a href="https://docs.microsoft.com/en-us/rest/api/servicebus/service-bus-entity-metrics-rest-apis">Service Bus Entity Metrics REST APIs</a>
 but the docs are really brief, wague and lack any examples.</p>
-
 <p>So the rest of this post will be a walkthrough of how to consume those
 REST API from your .NET code.</p>
-
 <h2 id="management-certificate">Management Certificate</h2>
-
 <p>The API authenticates the caller by its client certificate. This authentication
 approach seems to be deprecated for Azure services, but for this particular
 API it&rsquo;s still the way to go.</p>
-
-<p>First, you need to obtain a certificate itself, which means:
-- It&rsquo;s installed in certificate store on the machine where API call is made
-- You have a <code>.cer</code> file for it</p>
-
+<p>First, you need to obtain a certificate itself, which means:</p>
+<ul>
+<li>It&rsquo;s installed in certificate store on the machine where API call is made</li>
+<li>You have a <code>.cer</code> file for it</li>
+</ul>
 <p>If you are calling API from your workstation, you may just
 <a href="https://docs.microsoft.com/en-us/azure/cloud-services/cloud-services-certs-create">Create a new self-signed certificate</a>.</p>
-
 <p>I am calling API from Azure Function App, so I reused the certificate that we already
 uploaded to Azure for SSL support.</p>
-
 <p>Once you have the certificate, you have to
 <a href="https://docs.microsoft.com/en-us/azure/azure-api-management-certs">Upload it as a management certificate</a>
 to <a href="https://manage.windowsazure.com">&ldquo;Classic&rdquo; Azure portal</a>. Yes,
 management certificates are not supported by the the new portal. If you don&rsquo;t
 have access to the old portal, ask your system administrator to grant it.</p>
-
 <p>Finally, here is a code sample to load the certificate in C# code:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp">X509Store store = <span style="color:#00f">new</span> X509Store(<span style="color:#a31515">&#34;My&#34;</span>, StoreLocation.CurrentUser);
 store.Open(OpenFlags.ReadOnly);
@@ -262,9 +251,7 @@ store.Open(OpenFlags.ReadOnly);
     X509FindType.FindBySubjectName,
     <span style="color:#a31515">&#34;&lt;certificate name of yours&gt;&#34;</span>,
     <span style="color:#00f">false</span>)[0];
-</code></pre></div>
-<h2 id="request-headers">Request Headers</h2>
-
+</code></pre></div><h2 id="request-headers">Request Headers</h2>
 <p>Here is a helper class which adds the specified certificate to each request
 and sets the appropriate headers too:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">internal</span> <span style="color:#00f">class</span> <span style="color:#2b91af">AzureManagementClient</span> : WebClient
@@ -287,32 +274,26 @@ and sets the appropriate headers too:</p>
         <span style="color:#00f">return</span> request;
     }
 }
-</code></pre></div>
-<p>This code is mostly copied from the very useful
+</code></pre></div><p>This code is mostly copied from the very useful
 <a href="https://cincycoder.wordpress.com/2015/11/18/azure-service-bus-entity-metrics-api/">post of Brian Starr</a>,
 so thank you Brian.</p>
-
 <h2 id="getting-the-list-of-metrics">Getting the List of Metrics</h2>
-
-<p>To get the list of available metrics you will need 3 string parameters:
-- Azure subscription ID
-- Service Bus namespace
-- Queue name</p>
-
+<p>To get the list of available metrics you will need 3 string parameters:</p>
+<ul>
+<li>Azure subscription ID</li>
+<li>Service Bus namespace</li>
+<li>Queue name</li>
+</ul>
 <p>The following picture shows all of them on Azure Portal screen:</p>
-
-<p><img src="servicebusparameters.png" alt="Service Bus Parameters" /></p>
-
+<p><img src="servicebusparameters.png" alt="Service Bus Parameters"></p>
 <p>Now, format the following request URL and query it using our azure client:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> client = <span style="color:#00f">new</span> AzureManagementClient(cert);
 <span style="color:#2b91af">var</span> url = <span style="color:#a31515">$&#34;https://management.core.windows.net/{subscriptionId}&#34;</span> +
           <span style="color:#a31515">$&#34;/services/servicebus/namespaces/{serviceBusNamespace}&#34;</span> +
           <span style="color:#a31515">$&#34;/queues/{queueName}/Metrics&#34;</span>;
 <span style="color:#2b91af">var</span> result = client.DownloadString(url);
-</code></pre></div>
-<p>If you did everything correctly, you will get the list of supported metrics
+</code></pre></div><p>If you did everything correctly, you will get the list of supported metrics
 in JSON. Congratulations, that&rsquo;s a major accomplishment :)</p>
-
 <p>And here is a quick way to convert JSON to C# array:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Metric</span>
 {
@@ -322,19 +303,15 @@ in JSON. Congratulations, that&rsquo;s a major accomplishment :)</p>
     <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> DisplayName { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
 </code></pre></div><div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> metrics = JsonConvert.DeserializeObject&lt;Metric[]&gt;(result);
-</code></pre></div>
-<h2 id="getting-the-metric-values">Getting the Metric Values</h2>
-
+</code></pre></div><h2 id="getting-the-metric-values">Getting the Metric Values</h2>
 <p>Now, to get the metric values themselves, you will need some extra
 parameters:</p>
-
 <ul>
 <li>Metric name (take a value of <code>Name</code> properties from <code>Metric</code> class above)</li>
 <li>Rollup period, or aggregation period: 5 minute, 1 hour, 1 day, or 1 week,
 take the <code>Pxxx</code> code from <a href="https://docs.microsoft.com/en-us/rest/api/servicebus/supported-rollups">here</a></li>
 <li>Start date/time (UTC) of the data period to query</li>
 </ul>
-
 <p>Here is the sample code:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> time = DateTime.UtcNow.AddHours(-1).ToString(<span style="color:#a31515">&#34;s&#34;</span>);
 
@@ -345,10 +322,8 @@ take the <code>Pxxx</code> code from <a href="https://docs.microsoft.com/en-us/r
           <span style="color:#a31515">$&#34;/Rollups/PT5M/Values?$filter=Timestamp%20ge%20datetime&#39;{time}Z&#39;&#34;</span>;
 
 <span style="color:#2b91af">var</span> result = client.DownloadString(url);
-</code></pre></div>
-<p>I am using <code>incoming</code> metric to get the amount of enqueued messages per period
+</code></pre></div><p>I am using <code>incoming</code> metric to get the amount of enqueued messages per period
 and <code>outgoing</code> metric to get the amount of dequeued messages.</p>
-
 <p>The strongly typed version is simple:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">DataPoint</span>
 {
@@ -356,9 +331,7 @@ and <code>outgoing</code> metric to get the amount of dequeued messages.</p>
     <span style="color:#00f">public</span> <span style="color:#2b91af">long</span> Total { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
 }
 </code></pre></div><div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> data = JsonConvert.DeserializeObject&lt;DataPoint[]&gt;(result);
-</code></pre></div>
-<h2 id="working-example">Working Example</h2>
-
+</code></pre></div><h2 id="working-example">Working Example</h2>
 <p>I&rsquo;ve authored a small library which wraps the HTTP request into strongly
 typed .NET classes. You can see it in
 <a href="https://github.com/mikhailshilkov/ServiceBusEntityMetrics">my github repository</a>
@@ -498,6 +471,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

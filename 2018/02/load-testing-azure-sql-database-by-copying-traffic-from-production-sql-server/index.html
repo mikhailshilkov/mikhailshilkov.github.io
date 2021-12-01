@@ -211,197 +211,147 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>Azure SQL Database is a managed service that provides low-maintenance SQL Server instances in the cloud.
+                    <p>Azure SQL Database is a managed service that provides low-maintenance SQL Server instances in the cloud.
 You don&rsquo;t have to run and update VMs, or even take backups and setup failover clusters.
 Microsoft will do administration for you, you just pay an hourly fee.</p>
-
 <p>So, let&rsquo;s say you decide this value proposition is a good reason to migrate
 away from your existing self-hosted SQL Server database running in production and replace
 it with Azure SQL Database.</p>
-
 <p>You do the functional testing and eventually everything works like charm. The next set of questions
 is going to be related to Database performance level:</p>
-
 <ul>
 <li>Which tier / how many DTU&rsquo;s should I provision?</li>
 <li>How much will it cost?</li>
 <li>Will it be able to handle my current production load?</li>
 </ul>
-
 <h2 id="dtus">DTUs</h2>
-
 <p>Even if you collect all the specs of the hardware behind your existing SQL Server, you can&rsquo;t
 directly use that knowledge to choose the right Azure SQL Database size.</p>
-
 <p>The sizes are measured in Database Transaction Units (DTUs). These are abstract units
 of measure which don&rsquo;t necessarily mean much on their own. Within a given tier
 (Standard / Premium), doubling the DTU amount will double the max throughput.</p>
-
 <p>That doesn&rsquo;t really help to plan for workload migrations.</p>
-
 <p>There are some ways to estimate the DTU requirements by measuring metrics like CPU
 and IOPS on your existing server. Have a look at <a href="http://dtucalculator.azurewebsites.net/">DTU Calculator</a>:
 it consists of a data collector and an online converter from metric values to DTUs.</p>
-
 <p>While useful as a first approximation, I&rsquo;m reluctant to provision Azure SQL Database
 size solely based on such estimates.</p>
-
 <p>My answer to the problem is: Measure It!</p>
-
 <h2 id="synthetic-tests">Synthetic Tests</h2>
-
 <p>Go get a backup of your existing production database and Export / Import it into
 Azure SQL Database. Pick the size based on your gut feel, run a load test, evaluate
 the results, adjust the size, repeat.</p>
-
 <p>If you know your workload really well, you can create a synthetic test:</p>
-
 <ul>
 <li>Create a script or scenario which resembles the real production load</li>
 <li>Run it for a given period of time</li>
 <li>Measure the DTU&rsquo;s consumed</li>
 </ul>
-
 <p>Unfortunately, I&rsquo;m yet to see a non-trivial database where I could manually create
 such script and be reasonably sure that it reflects the reality. Most of the time
 the load is consumer-driven, changes over time and heavily depends on exact query
 parameter values.</p>
-
 <p>Which brings me to the need of replaying <em>the actual production workload</em> on Azure
 SQL Database.</p>
-
 <h2 id="trace-and-replay">Trace and Replay</h2>
-
 <p>SQL Server comes with a marvelous suite of tools refined over years of its existence.
 It includes the tools to capture and replay the queries, so I started with those.</p>
-
 <p>SQL Server Profiler has a trace template called <code>TSQL_Replay</code>:</p>
-
 <blockquote>
 <p>This template records information required to replay the trace. Use this template
 to perform iterative turning, such as benchmark testing.</p>
 </blockquote>
-
 <p>This sounded like what I needed, so I ran the profiler with this template to save
 a short trace.</p>
-
 <p>Afterwards, it is possible to use the same SQL Server Profiler to replay the trace against
 another target database. So the process looks like this:</p>
-
-<p><img src="sql-trace-replay.png" alt="Replaying Traffic with SQL Server Profiler" /></p>
-
+<p><img src="sql-trace-replay.png" alt="Replaying Traffic with SQL Server Profiler"></p>
 <p>Unfortunately, this didn&rsquo;t go very well:</p>
-
 <ul>
-<li><p>Azure SQL Database is not supported by the tooling. The replay kind of runs, but
+<li>
+<p>Azure SQL Database is not supported by the tooling. The replay kind of runs, but
 it throws lots of errors like reading from non-existent system tables, trying to
-switch between databases and so on</p></li>
-
-<li><p>Related or not to the previous item, but replay went terribly slow. It
-seemed to slow down exponentially over time</p></li>
-
-<li><p>The trace file itself was of huge size. Because the template tries to record pretty
-much everything, tracing 5 minutes on production produced 10 GB of XML</p></li>
-
-<li><p>Replay was not real-time: you first record, then you replay. This might not be a big
+switch between databases and so on</p>
+</li>
+<li>
+<p>Related or not to the previous item, but replay went terribly slow. It
+seemed to slow down exponentially over time</p>
+</li>
+<li>
+<p>The trace file itself was of huge size. Because the template tries to record pretty
+much everything, tracing 5 minutes on production produced 10 GB of XML</p>
+</li>
+<li>
+<p>Replay was not real-time: you first record, then you replay. This might not be a big
 issue for many databases, but some of our queries have time parameter, and results would
-change if I replay the trace 1 hour later</p></li>
+change if I replay the trace 1 hour later</p>
+</li>
 </ul>
-
 <p>Just to give you a rough idea, our production database-under-study is handling about
 1000 RPC calls per second (mostly stored procedures).</p>
-
-<h2 id="custom-trace-replay">Custom Trace &amp; Replay</h2>
-
+<h2 id="custom-trace--replay">Custom Trace &amp; Replay</h2>
 <p>Since off-the-shelf solution didn&rsquo;t work for me, I decided to come up with my own
 custom tool chain. Here is the idea:</p>
-
-<p><img src="sql-trace-replay-event-hubs-functions.png" alt="Replaying Traffic with SQL Server Profiler" /></p>
-
+<p><img src="sql-trace-replay-event-hubs-functions.png" alt="Replaying Traffic with SQL Server Profiler"></p>
 <p>There are two custom steps that I implemented:</p>
-
 <ol>
-<li><p>Run a console app which would host a custom trace server. The trace server
-receives SQL commands and sends them to Azure Event Hubs in batches</p></li>
-
-<li><p>Create an Azure Function application triggered by the Event Hub. Each function
+<li>
+<p>Run a console app which would host a custom trace server. The trace server
+receives SQL commands and sends them to Azure Event Hubs in batches</p>
+</li>
+<li>
+<p>Create an Azure Function application triggered by the Event Hub. Each function
 call gets one SQL command to execute and runs it against Azure SQL database that
-we are trying to load-test</p></li>
+we are trying to load-test</p>
+</li>
 </ol>
-
 <p>This setup worked remarkably well for me: I got the real-time replay of SQL commands
 from production SQL Server to Azure SQL Database.</p>
-
 <p>The rest of the article describes my setup so that you could reproduce it for your
 workload.</p>
-
 <h2 id="azure-sql-database">Azure SQL Database</h2>
-
 <p>Ideally, you want your copy of the database to be as fresh as possible, so that the
 query plans and results match.</p>
-
 <p>Some ideas to accomplish this are given in
 <a href="https://docs.microsoft.com/en-us/azure/sql-database/sql-database-cloud-migrate">SQL Server database migration to SQL Database in the cloud</a>.</p>
-
 <p>Premium RS tier is great for testing, because it is much cheaper than Premium
 tier, while it provides the same level of performance.</p>
-
 <h2 id="event-hubs">Event Hubs</h2>
-
 <p>I used Azure Event Hubs as messaging middleware between Trace Server and Replay
 Function App.</p>
-
 <p>I started with Azure Storage Queues, but the server wasn&rsquo;t able to send messages
 fast enough, mostly due to lack of batching.</p>
-
 <p>Event Hubs match naturally my choice of Azure Functions: Functions have a built-in
 trigger with dynamic scaling out of the box.</p>
-
 <p>So, I just created a new Event Hub via the portal, with 32 partitions allocated.</p>
-
 <h2 id="trace-definition-file">Trace Definition File</h2>
-
 <p>In order to run a custom Trace Server, you still need a trace definition file.
 The built-in template <code>TSQL_Replay</code> mentioned above could work, but
 it&rsquo;s subscribed to way too many events and columns.</p>
-
 <p>Instead, I produced my own trace template with minimal selection.
 To do that, open SQL Server Profiler, then navigate to <code>File -&gt; Templates -&gt; New Template</code>,
 give it a name and then on <code>Events Selection</code> tab exclude everything except
 exactly the commands that you want to replay.</p>
-
 <p>We use stored procedures for pretty much everything, so my selection looked
 just like this:</p>
-
-<p><img src="sql-profiler-template.png" alt="SQL Profiler Template" /></p>
-
+<p><img src="sql-profiler-template.png" alt="SQL Profiler Template"></p>
 <p>For the first few runs, I advise you to restrict the trace even further. Click
 <code>Column Filters</code> button, select <code>TextData</code> there and set <strong>Like</strong> filter
 to a single stored procedure, e.g. matching the pattern <code>%spProductList%</code>.</p>
-
 <p>This way you can debug your whole replay chain without immediately overloading
 any part of it with huge stream of commands.</p>
-
 <p>Once done, save the <code>tdf</code> file to disk. An example of such trace definition file
 can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
-
 <h2 id="trace-server">Trace Server</h2>
-
 <p>My trace server is a simple C# console application.</p>
-
 <p>Create a new console app and reference a NuGet package <code>Microsoft.SqlServer.SqlManagementObjects</code>.
 Mine is of version <code>140.17218.0</code> (latest as of today).</p>
-
 <p>Unfortunately, this NuGet package is not fully self-contained. In order to run
 a profiling session, you have to install SQL Server Profiler tool on the machine
 where you want to run the trace server.</p>
-
 <p>Chances are that you already have it there, but be sure to update to the matching
 version: mine works with <code>17.4 / 14.0.17213.0</code> but refused to work with older
 versions.</p>
-
 <p>Now we can implement our trace server as a console application. The main
 method looks like this:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">static</span> <span style="color:#00f">void</span> Main(<span style="color:#2b91af">string</span>[] args) <span style="color:#008000">// args: &lt;db server name&gt; &lt;db name&gt; &lt;trace file&gt;
@@ -426,27 +376,23 @@ method looks like this:</p>
     tokenSource.Cancel();
     Task.WaitAll(readerTask, senderTask);
 }
-</code></pre></div>
-<p>The first block initializes SQL connection using command line arguments and integrated
+</code></pre></div><p>The first block initializes SQL connection using command line arguments and integrated
 security, and then starts the Trace Server.</p>
-
 <p>Because of the large volume, I made trace reader and event sender to work on separate
 threads. They talk to each other via a concurrent queue:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">readonly</span> ConcurrentQueue&lt;<span style="color:#2b91af">string</span>&gt; eventQueue = <span style="color:#00f">new</span> ConcurrentQueue&lt;<span style="color:#2b91af">string</span>&gt;();
-</code></pre></div>
-<p>Finally, when operator presses any key, the cancellation is requested and the reader and
+</code></pre></div><p>Finally, when operator presses any key, the cancellation is requested and the reader and
 sender get shut down.</p>
-
 <p>Trace Reader task is a loop crunching though trace data and sending the SQL statements
 (with some exclusions) to the concurrent in-memory queue:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> ReadTrace(TraceServer trace, CancellationToken token)
 { 
     <span style="color:#00f">while</span> (trace.Read() &amp;&amp; !token.IsCancellationRequested)
     {
-        <span style="color:#2b91af">var</span> eventClass = trace[&#34;EventClass&#34;].ToString();
+        <span style="color:#2b91af">var</span> eventClass = trace[<span style="color:#a31515">&#34;EventClass&#34;</span>].ToString();
         <span style="color:#00f">if</span> (<span style="color:#2b91af">string</span>.Compare(eventClass, <span style="color:#a31515">&#34;RPC:Completed&#34;</span>) == 0)
         {
-            <span style="color:#2b91af">var</span> textData = trace[&#34;TextData&#34;].ToString();
+            <span style="color:#2b91af">var</span> textData = trace[<span style="color:#a31515">&#34;TextData&#34;</span>].ToString();
             <span style="color:#00f">if</span> (!textData.Contains(<span style="color:#a31515">&#34;sp_reset_connection&#34;</span>)
                 &amp;&amp; !textData.Contains(<span style="color:#a31515">&#34;sp_trace&#34;</span>)
                 &amp;&amp; !textData.Contains(<span style="color:#a31515">&#34;sqlagent&#34;</span>))
@@ -459,8 +405,7 @@ sender get shut down.</p>
     trace.Stop();
     trace.Close();
 }
-</code></pre></div>
-<p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
+</code></pre></div><p>Event Sender is dequeueing SQL commands from in-memory queue to collect batches of
 events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> SendToEventHubs(CancellationToken token)
 {
@@ -484,41 +429,30 @@ events. As soon as a batch fills up, it gets dispatched to Event Hub:</p>
         }
     }
 }
-</code></pre></div>
-<p>If your trace doesn&rsquo;t produce so many messages, you will probably want to periodically send out the batches
+</code></pre></div><p>If your trace doesn&rsquo;t produce so many messages, you will probably want to periodically send out the batches
 even before they get full, just to keep that process closer to real time.</p>
-
 <p>Note that sender does not await <code>SendAsync</code> call. Instead, we only subscribe to failures via <code>OnAsyncMethodFailed</code>
 callback to print it to console:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> OnMyAsyncMethodFailed(Task task)
 {
     Console.WriteLine(task.Exception?.ToString() ?? <span style="color:#a31515">&#34;null error&#34;</span>);
 }
-</code></pre></div>
-<p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
+</code></pre></div><p>And that concludes the implementation of the Trace Server. SQL commands now go to Event Hub, to be picked
 up by Trace Replay.</p>
-
 <h2 id="trace-replay-function-app">Trace Replay Function App</h2>
-
 <p>To replay those traces against the target Azure SQL Database, I could make another console
 application which would contain <code>EventProcessorHost</code> to receive and process SQL commands.</p>
-
 <p>However, under high load a single machine might not be able to keep up with executing all
 those commands in real time.</p>
-
 <p>Instead, I decided to distribute such Replay App over multiple machines. To deploy a
 DDoS network, if you will :)</p>
-
 <p>And I don&rsquo;t have to build, find, configure and synchronize all those servers myself, since we
 are living in the world of serverless.</p>
-
 <p><a href="https://azure.microsoft.com/en-us/services/functions/">Azure Functions</a> are the perfect tool for this job. Once you start the trace server,
 Function App will start scaling up based on the amount of events in Event Hub, and will
 expand until it catches up with the workload.</p>
-
 <p>But as long as you don&rsquo;t run the trace server, it won&rsquo;t consume any servers and won&rsquo;t cost you
 a dime.</p>
-
 <p>Here is the implementation of Trace Replay Azure Function:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Replay</span>
 {
@@ -566,31 +500,22 @@ a dime.</p>
         }
     }
 }
-</code></pre></div>
-<p>It&rsquo;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
+</code></pre></div><p>It&rsquo;s super simple: the function gets a SQL statement, executes it with <code>SqlCommand</code> class and
 logs the result with timing and returned row count. And that&rsquo;s everything required to start
 bombarding my Azure SQL Database.</p>
-
 <h2 id="evaluating-results">Evaluating Results</h2>
-
 <p>The purpose of this whole exercise was to evaluate whether a provisioned DTU level
 is enough to stand the load comparable to existing production.</p>
-
 <p>So, after I ran the test, I could browse through the DTU usage chart in Azure portal to
 get overall usage statistics.</p>
-
 <p>I&rsquo;ve also spent quite some time analyzing the usage breakdown as reported by <code>sp_BlitzCache</code>
 from <a href="https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit">Responder Kit</a>.
 Please note that it&rsquo;s not officially supported for Azure SQL Database, but it seems to work
 reasonably well.</p>
-
 <p>Be sure to re-run your experiments multiple times, at different days and time intervals.</p>
-
 <p>The full code sample can be found in <a href="https://github.com/mikhailshilkov/sql-trace-replay/tree/master/TDF">my github</a>.</p>
-
 <p>I hope Azure SQL Database will perform to your expectations and within your budget. But
 hope is not a good strategy, so go ahead and try it out!</p>
-
 <p>Happy DDoS-ing!</p>
 
                 </div>
@@ -741,6 +666,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

@@ -209,30 +209,21 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>In my <a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">previous article</a>
+                    <p>In my <a href="https://mikhail.io/2018/04/azure-functions-cold-starts-in-numbers/">previous article</a>
 I&rsquo;ve explored the topic of Cold Starts in Azure Functions. Particularly, I&rsquo;ve measured the
 cold start delays per language and runtime version.</p>
-
 <p>I received some follow-up questions that I&rsquo;d like to explore in today&rsquo;s post:</p>
-
 <ul>
 <li>Can we avoid cold starts except the very first one by keeping the instance warm?</li>
 <li>Given one warm instance, if two requests come at the same time, will one request hit
 a cold start because existing instance is busy with the other?</li>
 <li>In general, does a cold start happen at scale-out when a new extra instance is provisioned?</li>
 </ul>
-
 <p>Again, we are only talking Consumption Plan here.</p>
-
 <h2 id="theory">Theory</h2>
-
 <p>Azure Functions are running on instances provided by Azure App Service. Each instance is
 able to process several requests concurrently, which is different comparing to AWS Lambda.</p>
-
 <p>Thus, the following <em>could</em> be true:</p>
-
 <ul>
 <li>If we issue at least 1 request every 20 minutes, the first instance should stay warm for
 long time</li>
@@ -242,106 +233,88 @@ still forwarding incoming requests to the existing warm instance(s). Once the ne
 is ready, it could be added to the pool without causing cold starts</li>
 <li>If so, cold starts are mitigated beyond the very first execution</li>
 </ul>
-
 <p>Let&rsquo;s put this theory under test!</p>
-
 <h2 id="keeping-always-warm">Keeping Always Warm</h2>
-
 <p>I&rsquo;ve tested a Function App which consists of two Functions:</p>
-
 <ul>
 <li>HTTP Function under test</li>
 <li>Timer Function which runs every 10 minutes and does nothing but logging 1 line of text</li>
 </ul>
-
 <p>I then measured the cold start statistics similar to all the tests from my previous article.</p>
-
 <p>During 2 days I was issuing infrequent requests to the same app, most of them would normally
 lead to a cold start. Interestingly, even though I was regularly firing the timer, Azure
 switched instances to serve my application 2 times during the test period:</p>
-
-<p><img src="cold-starts-keep-warm.png" alt="Infrequent Requests to Azure Functions with &quot;Keep It Warm&quot; Timer" /></p>
-
+<p><img src="cold-starts-keep-warm.png" alt="Infrequent Requests to Azure Functions with &ldquo;Keep It Warm&rdquo; Timer"></p>
 <p>I can see that most responses are fast, so timer &ldquo;warmer&rdquo; definitely helps.</p>
-
 <p>The first request(s) to a new instance are slower than subsequent ones. Still, they are faster
 than normal full cold start time, so it could be related to HTTP stack loading.</p>
-
 <p>Anyway, keeping Functions warm seems a viable strategy.</p>
-
 <h2 id="parallel-requests">Parallel Requests</h2>
-
 <p>What happens when there is a warm instance, but it&rsquo;s already busy with processing another
 request? Will the parallel request be delayed, or will it be processed by the same
 warm instance?</p>
-
 <p>I tested with a very lightweight function, which nevertheless takes some time to complete:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task&lt;HttpResponseMessage&gt; Delay500([HttpTrigger] HttpRequestMessage req)
 {
     <span style="color:#00f">await</span> Task.Delay(500);
     <span style="color:#00f">return</span> req.CreateResponse(HttpStatusCode.OK, <span style="color:#a31515">&#34;Done&#34;</span>);
 }
-</code></pre></div>
-<p>I believe it&rsquo;s an OK approximation for an IO-bound function.</p>
-
+</code></pre></div><p>I believe it&rsquo;s an OK approximation for an IO-bound function.</p>
 <p>The test client then issued 2 to 10 parallel requests to this function and measured the
 response time for all requests.</p>
-
 <p>It&rsquo;s not the easiest chart to understand in full, but note the following:</p>
-
 <ul>
-<li><p>Each group of bars are for requests sent at the same time. Then there goes a pause about
-20 seconds before the next group of requests gets sent</p></li>
-
-<li><p>The bars are colored by the instance which processed that request: same instance - same
-color</p></li>
+<li>
+<p>Each group of bars are for requests sent at the same time. Then there goes a pause about
+20 seconds before the next group of requests gets sent</p>
+</li>
+<li>
+<p>The bars are colored by the instance which processed that request: same instance - same
+color</p>
+</li>
 </ul>
-
-<p><img src="cold-starts-during-simultaneous-requests.png" alt="Azure Functions Response Time to Batches of Simultaneous Requests" /></p>
-
+<p><img src="cold-starts-during-simultaneous-requests.png" alt="Azure Functions Response Time to Batches of Simultaneous Requests"></p>
 <p>Here are some observations from this experiment:</p>
-
 <ul>
-<li><p>Out of 64 requests, there were 11 cold starts</p></li>
-
-<li><p>Same instance <em>can</em> process multiple simultaneous requests, e.g. one instance processed
-7 out of 10 requests in the last batch</p></li>
-
-<li><p>Nonetheless, Azure is eager to spin up new instances for multiple requests. In total
+<li>
+<p>Out of 64 requests, there were 11 cold starts</p>
+</li>
+<li>
+<p>Same instance <em>can</em> process multiple simultaneous requests, e.g. one instance processed
+7 out of 10 requests in the last batch</p>
+</li>
+<li>
+<p>Nonetheless, Azure is eager to spin up new instances for multiple requests. In total
 12 instances were created, which is even more than max amount of requests in any single
-batch</p></li>
-
-<li><p>Some of those instances were actually never reused (gray-ish bars in batched x2 and x3,
-brown bar in x10)</p></li>
-
-<li><p>The first request to each new instance pays the full cold start price. Runtime doesn&rsquo;t
-provision them in background while reusing existing instances for received requests</p></li>
-
-<li><p>If an instance handled more than one request at a time, response time invariably suffers,
-even though the function is super lightweight (<code>Task.Delay</code>)</p></li>
+batch</p>
+</li>
+<li>
+<p>Some of those instances were actually never reused (gray-ish bars in batched x2 and x3,
+brown bar in x10)</p>
+</li>
+<li>
+<p>The first request to each new instance pays the full cold start price. Runtime doesn&rsquo;t
+provision them in background while reusing existing instances for received requests</p>
+</li>
+<li>
+<p>If an instance handled more than one request at a time, response time invariably suffers,
+even though the function is super lightweight (<code>Task.Delay</code>)</p>
+</li>
 </ul>
-
 <h2 id="conclusion">Conclusion</h2>
-
 <p>Getting back to the experiment goals, there are several things that we learned.</p>
-
 <p>For low-traffic apps with sporadic requests it makes sense to setup a &ldquo;warmer&rdquo; timer
 function firing every 10 minutes or so to prevent the only instance from being recycled.</p>
-
 <p>However, scale-out cold starts are real and I don&rsquo;t see any way to prevent them from
 happening.</p>
-
 <p>When multiple requests come in at the same time, we might expect some of them to hit
 a new instance and get slowed down. The exact algorithm of instance reuse is not
 entirely clear.</p>
-
 <p>Same instance is capable of processing multiple requests in parallel, so there are
 possibilities for optimization in terms of routing to warm instances during the
 provisioning of cold ones.</p>
-
 <p>If such optimizations happen, I&rsquo;ll be glad to re-run my tests and report any noticeable
 improvements.</p>
-
 <p>Stay tuned for more serverless perf goodness!</p>
 
                 </div>
@@ -484,6 +457,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

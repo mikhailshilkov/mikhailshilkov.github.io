@@ -199,55 +199,36 @@
                 
                 <div class="article-post">
                     <p>Are you getting enormous amount of</p>
-
 <pre><code>The activated proc '...' running on queue '...' output the following:
 'The service queue &quot;...&quot; is currently disabled.
-</code></pre>
-
-<p>errors from SQL Server? Keep on reading!</p>
-
+</code></pre><p>errors from SQL Server? Keep on reading!</p>
 <p>Yesterday, when I came back from my lunch, I got a heads-up from Windows:</p>
-
-<p><img src="low-disk-space.gif" alt="Low disk space" /></p>
-
+<p><img src="low-disk-space.gif" alt="Low disk space"></p>
 <p>And it was literally out of space: 0 (zero) bytes available on C: drive. Wow&hellip;</p>
-
 <p>I cleaned up the binary files from my developments, which gave me 3 GB of free space and some time to do the investigation. A short time, because disk space was counting down at about 300 MB per minute.</p>
-
 <p>It appeared that the SQL Server error log files grew up to 53 GB and were still growing. Here is the default folder where you can find them:</p>
-
-<p><img src="errorlog.png" alt="SQL Server error log" /></p>
-
+<p><img src="errorlog.png" alt="SQL Server error log"></p>
 <p>To gain more time, I executed the command</p>
-
 <pre><code>exec sp_cycle_error
 </code></pre>
-
 <p>is Management Studio. It renames current ERRORLOG file to ERRORLOG.1 and starts the new current. So now it was safe to delete all .1/.2/etc files and get those 53 GB back. Huh&hellip;</p>
-
 <p>Now it&rsquo;s time to figure out the actual issue. Go to Management Studio -&gt; your server -&gt; Management -&gt; SQL Server Logs -&gt; Current -&gt; (right click) -&gt; View SQL Server Log</p>
-
 <p>I saw millions of the following messages there (let&rsquo;s say my queue is named XQueue for simplicity):</p>
-
 <pre><code>The activated proc '[dbo].[XQueueProcessor]' running
 on queue 'dbo.XQueue' output the following:
 'The service queue &quot;XQueue&quot; is currently disabled.
 </code></pre>
-
 <p>So, it looks like there is a problem with SQL Server Service Broker, which is constantly trying to read something from disabled queue. Isn&rsquo;t it supposed to stop after 5 attempts (a.k.a. poison messages)? Ok, keep on troubleshooting.</p>
-
 <p>First, let check if the queue is actually disabled</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> Name, is_receive_enabled, is_enqueue_enabled
   <span style="color:#00f">FROM</span> sys.service_queues
- <span style="color:#00f">WHERE</span> Name = <span style="color:#a31515">&#39;XQueue&#39;</span></code></pre></div>
-<p>Yep, it&rsquo;s disabled:
-<img src="qdisabled.png" alt="XQueue disabled" /></p>
-
+ <span style="color:#00f">WHERE</span> Name = <span style="color:#a31515">&#39;XQueue&#39;</span>
+</code></pre></div><p>Yep, it&rsquo;s disabled:
+<img src="qdisabled.png" alt="XQueue disabled"></p>
 <p>Do we have anything queued?</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">SELECT</span> TOP 1000 *
-  <span style="color:#00f">FROM</span> [XQueue] <span style="color:#00f">WITH</span>(NOLOCK)</code></pre></div>
-<p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
-
+  <span style="color:#00f">FROM</span> [XQueue] <span style="color:#00f">WITH</span>(NOLOCK)
+</code></pre></div><p>I got 9 rows back. This means we got some messages en-queued, and one of them failed to process, the message was considered as poison and the queue was disabled (which is good), but the processor still seems to be running in eternal loop.</p>
 <p>So, let&rsquo;s have a look at the processor. We had something like that:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">CREATE</span> <span style="color:#00f">PROCEDURE</span> [dbo].[XQueueProcessor]
 <span style="color:#00f">AS</span>
@@ -261,7 +242,7 @@ on queue 'dbo.XQueue' output the following:
 
     WHILE(1=1) <span style="color:#008000">-- MAIN WHILE LOOP RECEIVING THE MESSAGE BATCHES
 </span><span style="color:#008000"></span>    <span style="color:#00f">BEGIN</span>
-        <span style="color:#00f">BEGIN</span> TRANSACTION
+        <span style="color:#00f">BEGIN</span> <span style="color:#00f">TRANSACTION</span>
         <span style="color:#00f">BEGIN</span> TRY
             WAITFOR(RECEIVE TOP(1)
                         @queuing_order = [queuing_order],
@@ -273,31 +254,30 @@ on queue 'dbo.XQueue' output the following:
 
             <span style="color:#00f">IF</span> (@@ROWCOUNT = 0)
             <span style="color:#00f">BEGIN</span>
-                <span style="color:#00f">ROLLBACK</span> TRANSACTION
+                <span style="color:#00f">ROLLBACK</span> <span style="color:#00f">TRANSACTION</span>
                 BREAK
             <span style="color:#00f">END</span>
 
             <span style="color:#008000">-- SOME CRUD OPERATIONS HAPPEN HERE
 </span><span style="color:#008000"></span>
-            <span style="color:#00f">COMMIT</span> TRANSACTION
+            <span style="color:#00f">COMMIT</span> <span style="color:#00f">TRANSACTION</span>
         <span style="color:#00f">END</span> TRY
         <span style="color:#00f">BEGIN</span> CATCH
             <span style="color:#00f">DECLARE</span> @Error varchar(4000) = ERROR_MESSAGE()
             PRINT @Error
-            <span style="color:#00f">ROLLBACK</span> TRANSACTION
+            <span style="color:#00f">ROLLBACK</span> <span style="color:#00f">TRANSACTION</span>
         <span style="color:#00f">END</span> CATCH
     <span style="color:#00f">END</span>
-<span style="color:#00f">END</span></code></pre></div>
-<p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back&hellip; But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &ldquo;The service queue is currently disabled&rdquo; and voila, CPU is busy and error logs are floating the disk.</p>
-
+<span style="color:#00f">END</span>
+</code></pre></div><p>A-ha! So, what happens when an error occurs during the message processing? Control goes to CATCH block, error message is printed out (when we are in Service Broker, print goes directly to ERRORLOG file which we saw already), the transaction is rolled back&hellip; But we still are inside eternal loop, no BREAK or RETURN statement there, so the processor will try again to get the same message from the queue. After 5th attempt, the message will be marked as poison, the queue will get disabled, but the loop will keep running! The exception will change to &ldquo;The service queue is currently disabled&rdquo; and voila, CPU is busy and error logs are floating the disk.</p>
 <p>The fix is pretty trivial, just change the CATCH block to</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sql" data-lang="sql"><span style="color:#00f">BEGIN</span> CATCH
     <span style="color:#00f">DECLARE</span> @Error varchar(4000) = ERROR_MESSAGE()
     PRINT @Error
-    <span style="color:#00f">ROLLBACK</span> TRANSACTION
+    <span style="color:#00f">ROLLBACK</span> <span style="color:#00f">TRANSACTION</span>
     <span style="color:#00f">RETURN</span>
-<span style="color:#00f">END</span> CATCH</code></pre></div>
-<p>Be careful!</p>
+<span style="color:#00f">END</span> CATCH
+</code></pre></div><p>Be careful!</p>
 
                 </div>
 
@@ -419,6 +399,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

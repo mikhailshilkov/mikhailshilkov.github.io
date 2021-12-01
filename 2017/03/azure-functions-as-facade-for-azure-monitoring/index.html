@@ -209,104 +209,85 @@
 
                 
                 <div class="article-post">
-                    
-
-<p>Azure Functions are the Function-as-a-Service offering from Microsoft Azure cloud.
+                    <p>Azure Functions are the Function-as-a-Service offering from Microsoft Azure cloud.
 Basically, an Azure Function is a piece of code which gets executed by Azure
 every time an event of some kind happens. The environment manages deployment,
 event triggers and scaling for you. This approach is often reffered as
 Serverless.</p>
-
 <p>In this post I will describe one use case for Azure Functions: we implemented
 a number of functions as a proxy layer between our operations/monitoring
 tool and Azure metric APIs.</p>
-
 <h2 id="problem">Problem</h2>
-
 <p>Automated monitoring and alerting are crucial in order to ensure 24x7 smooth
 operations of our business-critical applications. We host applications both
 on-premise and in Azure cloud, and we use a single set of tools for monitoring
 across this hybrid environment.</p>
-
 <p>Particularly, we use <a href="https://www.paessler.com/prtg">PRTG Network Monitor</a>
 to collect all kinds of metrics about the health of our systems and produce
 both real-time alerts and historic trends.</p>
-
 <p>A unit of monitoring in PRTG is called &ldquo;sensor&rdquo;. Each sensor polls a specific
 data source to retrieve the current value of a metric. The data source can
 be a performance counter, a JSON value in HTTP response, a SQL query result
 and so on.</p>
-
 <p>The problem is that there is no PRTG sensor for Azure metrics out of the box.
 It might be possible to implement a sensor with custom code, e.g. in PowerShell,
 but it would be problematic in two ways (at least):</p>
-
 <ol>
 <li>The custom code sensors are cumbersome to develop and maintain.</li>
 <li>We would have to put sensitive information like Azure API keys and
 connection strings to PRTG.</li>
 </ol>
-
 <h2 id="solution-overview">Solution Overview</h2>
-
 <p>To overcome these problems we introduced an intermediate layer, as shown
 on the following picture:</p>
-
-<p><img src="prtg-http-azure.png" alt="PRTG to HTTP to Azure" /></p>
-
+<p><img src="prtg-http-azure.png" alt="PRTG to HTTP to Azure"></p>
 <p>We use PRTG <code>HTTP XML/REST</code> sensor type. This sensor polls a given HTTP endpoint,
 parses the response as JSON and finds a predefined field. This field is then
 used as the sensor value. It takes 30 seconds to setup such sensor in PRTG.</p>
-
 <p>The HTTP endpoint is hosted inside Azure. It provides a facade for metric
 data access. All the sensitive information needed to access Azure metrics
 API is stored inside Azure configuration itself. The implementation knows
 which Azure API to use to get a specific metric, and it hides those
 complications from the client code.</p>
-
 <h2 id="azure-functions">Azure Functions</h2>
-
 <p>We chose Azure Functions as the technology to implement and host such HTTP
 facade.</p>
-
 <p>The functions are very easy to create or modify. They are deployed independently
 from any other code, so we can update them at any cadence. And no need to
 provision any kind of servers anywhere - Azure will run the code for us.</p>
-
 <p>Here is how the whole setup works:</p>
-
-<p><img src="prtg-azure-flow.png" alt="Retrieval of data from Azure to PRTG" /></p>
-
+<p><img src="prtg-azure-flow.png" alt="Retrieval of data from Azure to PRTG"></p>
 <ol>
-<li><p>Every X minutes (configured per sensor), PRTG makes an HTTP request
+<li>
+<p>Every X minutes (configured per sensor), PRTG makes an HTTP request
 to a predefined URL. The request includes an Access Key as a query parameter
 (the key is stored in sensor URL configuration). Each access key enables
-access to just one endpoint and is easily revokable.</p></li>
-
-<li><p>For each Metric type there is an Azure Function listening for
+access to just one endpoint and is easily revokable.</p>
+</li>
+<li>
+<p>For each Metric type there is an Azure Function listening for
 HTTP requests from PRTG. Azure authorizes requests that contain valid
-access keys.</p></li>
-
-<li><p>Based on query parameters of the request, Azure Function retrieves a proper
+access keys.</p>
+</li>
+<li>
+<p>Based on query parameters of the request, Azure Function retrieves a proper
 metric value from Azure management API. Depending on the metric type, this
 is accomplished with Azure .NET SDK or by sending a raw HTTP request to
-Azure REST API.</p></li>
-
-<li><p>Azure Function parses the response from Azure API and converts it to
-just the value which is requested by PRTG.</p></li>
-
-<li><p>The function returns a simple JSON object as HTTP response body. PRTG
-parses JSON, extracts the numeric value, and saves it into the sensor history.</p></li>
+Azure REST API.</p>
+</li>
+<li>
+<p>Azure Function parses the response from Azure API and converts it to
+just the value which is requested by PRTG.</p>
+</li>
+<li>
+<p>The function returns a simple JSON object as HTTP response body. PRTG
+parses JSON, extracts the numeric value, and saves it into the sensor history.</p>
+</li>
 </ol>
-
 <p>At the time of writing, we have 13 sensors served by 5 Azure Functions:</p>
-
-<p><img src="prtg-azure-services.png" alt="Map of PRTG sensors to Functions to Azure services" /></p>
-
+<p><img src="prtg-azure-services.png" alt="Map of PRTG sensors to Functions to Azure services"></p>
 <p>I describe several functions below.</p>
-
 <h2 id="service-bus-queue-size">Service Bus Queue Size</h2>
-
 <p>The easiest function to implement is the one which gets the amount of
 messages in the backlog of a given Azure Service Bus queue. The
 <code>function.json</code> file configures input and output HTTP bindings, including
@@ -327,8 +308,8 @@ two parameters to derive from the URL: <code>account</code> (namespace) and queu
     }
   ],
   &#34;disabled&#34;: <span style="color:#00f">false</span>
-}</code></pre></div>
-<p>The C# implementation uses standard Service Bus API and a connection string
+}
+</code></pre></div><p>The C# implementation uses standard Service Bus API and a connection string
 from App Service configuration to retrieve the required data. And then returns
 a dynamic object, which will be converted to JSON by Function App runtime.</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="">#</span>r <span style="color:#a31515">&#34;Microsoft.ServiceBus&#34;</span>
@@ -347,17 +328,13 @@ a dynamic object, which will be converted to JSON by Function App runtime.</p>
         dlq = queue.MessageCountDetails.DeadLetterMessageCount
     };
 }
-</code></pre></div>
-<p>And that is all the code required to start monitoring the queues!</p>
-
+</code></pre></div><p>And that is all the code required to start monitoring the queues!</p>
 <h2 id="service-bus-queue-statistics">Service Bus Queue Statistics</h2>
-
 <p>In addition to queue backlog and dead letter queue size, we wanted to see
 some queue statistics like amount of incoming and outgoing messages per
 period of time. The corresponding API exists, but it&rsquo;s not that straightforward,
 so I described the whole approach in a separate post:
 <a href="https://mikhail.io/2017/03/azure-service-bus-entity-metrics-dotnet-apis/">Azure Service Bus Entity Metrics .NET APIs</a>.</p>
-
 <p>In my Azure Function I&rsquo;m using the NuGet package that I mentioned in the post.
 This is accomplished by adding a <code>project.json</code> file:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
@@ -368,10 +345,9 @@ This is accomplished by adding a <code>project.json</code> file:</p>
       }
     }
    }
-}</code></pre></div>
-<p>The <code>function.json</code> file is similar to the previous one, but with one added
+}
+</code></pre></div><p>The <code>function.json</code> file is similar to the previous one, but with one added
 parameter called <code>metric</code>. I won&rsquo;t repeat the whole file here.</p>
-
 <p>The Function implementation loads a certificate from the store, calls
 metric API and returns the last metric value available:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">using</span> System.Linq;
@@ -395,19 +371,14 @@ metric API and returns the last metric value available:</p>
     <span style="color:#2b91af">var</span> metrics = client.GetMetricSince(metric, DateTime.UtcNow.AddMinutes(-30));
     <span style="color:#00f">return</span> metrics.LastOrDefault();
 }
-</code></pre></div>
-<p>Don&rsquo;t forget to set <code>WEBSITE_LOAD_CERTIFICATES</code> setting to your certificate
+</code></pre></div><p>Don&rsquo;t forget to set <code>WEBSITE_LOAD_CERTIFICATES</code> setting to your certificate
 thumbprint, otherwise Function App won&rsquo;t load it.</p>
-
 <h2 id="web-app-instance-count">Web App Instance Count</h2>
-
 <p>We are using Azure Web Jobs to run background data processing, e.g. for all
 queue message handlers. The jobs are hosted in Web Apps, and have auto-scaling
 enabled. When the load on the system grows, Azure spins up additional
 instances to increase the overall throughput.</p>
-
 <p>So, the next metric to be monitored is the amount of Web App instances running.</p>
-
 <p>There is a REST endpoint to retrieve this information, but this time
 authentication and authorization are implemented with Active Directory. I
 created a helper class to wrap the authentication logic:</p>
@@ -437,8 +408,7 @@ created a helper class to wrap the authentication logic:</p>
         <span style="color:#00f">return</span> result.AccessToken;
     }
 }
-</code></pre></div>
-<p>The function then uses this REST client to query Web App management API,
+</code></pre></div><p>The function then uses this REST client to query Web App management API,
 converts JSON to strongly typed C# objects and extracts the amount of
 instances into HTTP response:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Instance</span>
@@ -467,19 +437,14 @@ instances into HTTP response:</p>
         instanceCount = response.<span style="color:#00f">value</span>.Length
     });
 }
-</code></pre></div>
-<p>Please follow <a href="https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-active-directory-application">this walkthrough</a>
+</code></pre></div><p>Please follow <a href="https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-active-directory-application">this walkthrough</a>
 to setup your application in Active Directory, assign required permissions and
 get the proper keys.</p>
-
 <h2 id="azure-health">Azure Health</h2>
-
 <p>Azure has a service which reports the health of different services at any
 given moment, as acknowledged by Microsoft.</p>
-
 <p>The handy part is that you can provide your subscription ID and then only
 services used by that subscription will be reported.</p>
-
 <p>The exact usage of health service may depend on your use case, but the
 following example shows how to retrieve the basic counts of services per
 reported status.</p>
@@ -528,20 +493,16 @@ reported status.</p>
         details = r.<span style="color:#00f">value</span>
     });
 }
-</code></pre></div>
-<h2 id="users-online">Users Online</h2>
-
+</code></pre></div><h2 id="users-online">Users Online</h2>
 <p>The last example I want to share is related to Application Insights data.
 For instance, we inject a small tracking snippet on our front-end page
 and then Application Insights track all the page views and other user
 activity.</p>
-
 <p>We use the amount of users currently online as another metric for the
 monitoring solution. The Application Insights API is currently in
 preview, but at least it is nicely described at
 <a href="https://dev.applicationinsights.io/">dev.applicationinsights.io</a>. Be sure
 to check out <a href="https://dev.applicationinsights.io/apiexplorer/metrics">API Explorer</a> too.</p>
-
 <p>The following sample function returns the amount of users online:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">UsersCount</span>
 {
@@ -577,17 +538,13 @@ to check out <a href="https://dev.applicationinsights.io/apiexplorer/metrics">AP
         usersCount = r.<span style="color:#00f">value</span>.UsersCount.unique
     });
 }
-</code></pre></div>
-<h2 id="combine-several-metrics-in-one-sensor">Combine Several Metrics in One Sensor</h2>
-
+</code></pre></div><h2 id="combine-several-metrics-in-one-sensor">Combine Several Metrics in One Sensor</h2>
 <p>Thanks to suggestion from Luciano Lingnau, we have migrated our PRTG
 sensors to <code>HTTP Data Advanced</code>. This sensor type allows bundling several
 related metrics into one sensor with multiple channels. PRTG is then
 able to display all those channels on the single chart.</p>
-
 <p>For instance, we use the following channels for Service Bus related
 sensors:</p>
-
 <ul>
 <li>Active message count</li>
 <li>Age of the oldest message sitting inside the queue</li>
@@ -596,9 +553,7 @@ sensors:</p>
 <li>Outgoing messages per 5 minutes</li>
 <li>Scheduled message count</li>
 </ul>
-
 <p>For each channel, we define units of measure, warning and error thresholds.</p>
-
 <p><code>HTTP Data Advanced</code> expects a URL which returns JSON of the predefined format.
 Here is a sample C# code to create a <code>dynamic</code> object which is then converted
 to the proper JSON:</p>
@@ -665,14 +620,12 @@ to the proper JSON:</p>
         }
     }
 };
-</code></pre></div>
-<h2 id="conclusion">Conclusion</h2>
 
+</code></pre></div><h2 id="conclusion">Conclusion</h2>
 <p>It seems that monitoring metrics retrieval is an ideal scenario to start
 using Azure Functions. The Functions are very easy to create and modify,
 they abstract away the details of hosting Web API endpoints, and at the same
 time give you the full power of C# (or F#) and Azure.</p>
-
 <p>And because we only call those functions about 1 time per minute,
 they are free to run!</p>
 
@@ -817,6 +770,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>

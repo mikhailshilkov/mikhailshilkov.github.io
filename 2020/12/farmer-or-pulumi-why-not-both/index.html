@@ -205,59 +205,32 @@
 
                 
                 <div class="article-post">
-                    
-
-<p><em>The post is a part of
+                    <p><em>The post is a part of
 <a href="https://sergeytihon.com/2020/10/22/f-advent-calendar-in-english-2020/">F# Advent Calendar 2020</a>.</em></p>
-
 <p>You are a proud F# developer. You deploy your applications to Microsoft Azure. You know that you should never right-click-deploy to production. You don&rsquo;t create important Azure resources via the Azure portal. You are awesome.</p>
-
 <p>You want to define your cloud resources with infrastructure as code tools. However, you do NOT enjoy writing large JSON files to deploy with the Azure Resource Manager (ARM) templates.</p>
-
 <p>It turns out there are at least two tools that enable you to use F# to define Azure resources: <a href="https://compositionalit.github.io/farmer/">Farmer</a> and <a href="https://pulumi.com">Pulumi</a>.</p>
-
 <p>In this article, I&rsquo;ll give a quick comparison of these two options. More excitingly, I&rsquo;ll show you how you could use both tools together in the same F# program!</p>
-
 <h2 id="what-is-farmer">What is Farmer?</h2>
-
 <p>Farmer is an F# library for rapidly authoring and deploying Azure architectures. It&rsquo;s a hand-crafted library that provides simple but powerful primitives to produce ARM Templates from F# code. Essentially, the result of a Farmer execution is a JSON ARM template that you can feed into Azure deployment tools.</p>
-
 <p>Farmer relies heavily on F# computation expressions and feels like a DSL but with strong type safety and excellent IDE support. It&rsquo;s open-source, free to use, and it&rsquo;s just a NuGet library to install.</p>
-
 <h2 id="what-is-pulumi">What is Pulumi?</h2>
-
 <p>Pulumi is a more ambitious tool for all aspects of modern infrastructure as code. It&rsquo;s designed to create, deploy, and manage infrastructure on any cloud using several programming languages.</p>
-
 <p>Pulumi comes with its own command-line interface (CLI) tool to orchestrate deployments, so it doesn&rsquo;t rely on ARM templates in any way. Pulumi supports Azure among other cloud providers, and the Azure SDK is automatically generated from formal specifications.</p>
-
 <h2 id="how-are-they-different">How are they different?</h2>
-
 <p>Farmer and Pulumi are different in many ways, but I want to focus on two aspects.</p>
-
 <h3 id="azure-vs-any-cloud">Azure vs. Any Cloud</h3>
-
 <p>Farmer is focused entirely on Azure, while Pulumi supports Azure, Azure Active Directory, AWS, Google Cloud, Kubernetes, Cloudflare, Digital Ocean, and several dozens of other deployment targets. A single Pulumi program can deploy resources to multiple environments, for instance, Azure, Azure AD, Kubernetes, and Cloudflare.</p>
-
 <p>Farmer relies on Azure deployment tools, while Pulumi comes with its own. There are pros and cons to both approaches.</p>
-
 <h3 id="hand-crafted-vs-auto-generated">Hand-crafted vs. Auto-Generated</h3>
-
 <p>Farmer&rsquo;s F# code is designed to be concise and look great. It&rsquo;s opinionated and makes the most common scenarios short and straightforward. More obscure deployments may not be expressible directly with Farmer, but the library provides escape hatches to fall back to JSON.</p>
-
 <p>Pulumi relies heavily on code generation. A resource definition is always a constructor call that accepts a bag of input properties and returns output properties. This means that you have access to the full API surface area, but you work on a low abstraction level.</p>
-
 <h2 id="can-i-use-both">Can I use both?</h2>
-
 <p>Essentially, Farmer is a DSL to build ARM Templates, while Pulumi is a deployment orchestration tool. They operate on a different level and aren&rsquo;t directly interchangeable.</p>
-
 <p>This also means that you may want to use both to combine their strengths and powers. Below, I show exactly this: I deploy a simple Farmer template from a Pulumi program.</p>
-
 <p><strong>Disclaimer</strong>: This is a proof-of-concept and can&rsquo;t be used for production deployments yet. See the &ldquo;How It Works&rdquo; section for details.</p>
-
 <p>Let&rsquo;s write a sample Pulumi-Farmer program to deploy a Web App!</p>
-
 <h3 id="resource-definitions">Resource Definitions</h3>
-
 <p>I created a .NET Core console application and referenced NuGet packages <code>Pulumi.AzureNextGen</code>, <code>Pulumi.FSharp</code>, and <code>Farmer</code>. Now, I can define resources with Farmer builders:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Create a storage account
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> myStorageAccount = storageAccount {
@@ -268,11 +241,9 @@
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> myWebApp = webApp {
     name <span style="color:#a31515">&#34;farmerpulumiweb&#34;</span>
     setting <span style="color:#a31515">&#34;storageKey&#34;</span> myStorageAccount.Key
-}</code></pre></div>
-<p>These definitions will result in four Azure resources: a Storage Account, an App Service Plan, an Application Insights component, and a Web App (App Service).</p>
-
+}
+</code></pre></div><p>These definitions will result in four Azure resources: a Storage Account, an App Service Plan, an Application Insights component, and a Web App (App Service).</p>
 <h3 id="deployment">Deployment</h3>
-
 <p>The next step is to define a deployment with a target location and a list of resources to deploy:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Create an ARM template
 </span><span style="color:#008000"></span><span style="color:#00f">let</span> deployment = arm {
@@ -281,15 +252,13 @@
         myStorageAccount
         myWebApp
     ]
-}</code></pre></div>
-<h3 id="run-pulumi-deployment">Run Pulumi Deployment</h3>
-
+}
+</code></pre></div><h3 id="run-pulumi-deployment">Run Pulumi Deployment</h3>
 <p>The last step is to declare the application entry point. The application calls a helper function of mine called <code>FarmerDeploy.run</code>, which accepts a resource group name and the deployment object:</p>
 <div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#008000">// Deploy with Pulumi
 </span><span style="color:#008000"></span>[&lt;EntryPoint&gt;]
-<span style="color:#00f">let</span> main _ = FarmerDeploy.run <span style="color:#a31515">&#34;my-resource-group&#34;</span> deployment</code></pre></div>
-<p>Now, I navigate to the application folder in a command line and run <code>pulumi up</code> to deploy the program:</p>
-
+<span style="color:#00f">let</span> main _ = FarmerDeploy.run <span style="color:#a31515">&#34;my-resource-group&#34;</span> deployment
+</code></pre></div><p>Now, I navigate to the application folder in a command line and run <code>pulumi up</code> to deploy the program:</p>
 <pre><code>$ pulumi up
 
 Updating (dev)
@@ -305,14 +274,9 @@ Resources:
     + 5 created
 
 Duration: 53s
-</code></pre>
-
-<p>Tada! The Farmer-Pulumi application is deployed to Azure!</p>
-
+</code></pre><p>Tada! The Farmer-Pulumi application is deployed to Azure!</p>
 <h2 id="how-it-works">How It Works</h2>
-
 <p>Here is how this deployment worked:</p>
-
 <ol>
 <li>Pulumi orchestrates the deployment, so the project is a Pulumi F# project.</li>
 <li><code>FarmerDeploy.run</code> accepts a Farmer deployment and converts it to a raw JSON string.</li>
@@ -322,15 +286,10 @@ Duration: 53s
 <li>The resources are registered with the Pulumi engine.</li>
 <li>The engine orchestrates the deployment and invokes Azure API to create the resources.</li>
 </ol>
-
 <p><strong>Note</strong>: The Pulumi Azure NextGen provider is currently in preview. In particular, steps 4 and 5 above and not production-ready yet. This means that the prototype may fall short for more sophisticated Farmer deployments (and, therefore, more sophisticated JSON templates).</p>
-
 <p>You can find the full example <a href="https://github.com/mikhailshilkov/fsharp-advent-pulumi/tree/master/2020">here</a>.</p>
-
 <h2 id="conclusion">Conclusion</h2>
-
 <p>More than anything, this article is a manifestation of the power of applying general-purpose programming languages to engineering cloud applications. Different tools and approaches may be combined in ways they were not initially designed for.</p>
-
 <p>If you are interested in a production-grade Farmer-in-Pulumi integration, consider leaving a comment below with a scenario you have in mind, or just hit the Heart button on the top-left. Thank you!</p>
 
                 </div>
@@ -450,6 +409,5 @@ if (!doNotTrack) {
 	ga('send', 'pageview');
 }
 </script>
-
     </body>
 </html>
