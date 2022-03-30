@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Serverless in the Wild: Azure Functions Production Usage Statistics | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Serverless in the Wild: Azure Functions Production Usage Statistics" />
+	<meta property="og:description" content="Insightful statistics about the actual production usage of Azure Functions, based on the data from Microsoft&#39;s paper" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2021/05/serverless-in-the-wild-azure-functions-usage-stats/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2021/05/serverless-in-the-wild-azure-functions-usage-stats/teaser.jpg" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Serverless" />
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Azure Functions" />
+	
+	<meta property="article:tag" content="Paper review" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2021/05/serverless-in-the-wild-azure-functions-usage-stats/teaser.jpg" />
+	
+	
+
+	<meta name="twitter:title" content="Serverless in the Wild: Azure Functions Production Usage Statistics"/>
+	<meta name="twitter:description" content="Insightful statistics about the actual production usage of Azure Functions, based on the data from Microsoft&#39;s paper"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Serverless%20in%20the%20Wild%3a%20Azure%20Functions%20Production%20Usage%20Statistics%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2021%2f05%2fserverless-in-the-wild-azure-functions-usage-stats%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Serverless in the Wild: Azure Functions Production Usage Statistics</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Published on May 5, 2021
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 5 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Microsoft Azure and Microsoft Research <a href="https://arxiv.org/pdf/2003.03423.pdf">released</a> a paper called &quot;Serverless in the Wild: Characterizing and Optimizing the Serverless Workload at a Large Cloud Provider&quot;. In part 1 of the paper, they revealed some insightful statistics about the actual production usage of Azure Functions for two weeks in summer 2019.</p>
+
+<p>This blog post is my summary and highlights of the most intriguing data points. I'll cover part 2 of the paper, focusing on cold starts, in a separate installment.</p>
+
+<h2 id="trigger-types-and-invocations">Trigger Types and Invocations</h2>
+
+<p>Every Azure Function has a trigger: it's linked to a specific event source, and every event in that source causes the Function to execute. Event sources include HTTP endpoints, timers, message queues, topics, event logs, and others. Which triggers are used more often?</p>
+
+<p>The paper doesn't have a precise breakdown by specific sources like Service Bus or Event Grid, but it gives relative numbers per event category. It also shows the percentage of Function invocations that each type is responsible for.</p>
+
+<p>Here is the comparison table:</p>
+
+<table class="pure-table table table-striped">
+<thead>
+<tr>
+<th>Trigger type</th>
+<th>% of Functions</th>
+<th>% of Invocations</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>HTTP</td>
+<td>55%</td>
+<td>36%</td>
+</tr>
+
+<tr>
+<td>Queue</td>
+<td>15%</td>
+<td>34%</td>
+</tr>
+
+<tr>
+<td>Event</td>
+<td>2%</td>
+<td>25%</td>
+</tr>
+
+<tr>
+<td>Timer</td>
+<td>16%</td>
+<td>2%</td>
+</tr>
+
+<tr>
+<td>Orchestration</td>
+<td>7%</td>
+<td>2%</td>
+</tr>
+
+<tr>
+<td>Others</td>
+<td>5%</td>
+<td>1%</td>
+</tr>
+</tbody>
+</table>
+
+<p>Notable facts:</p>
+
+<ul>
+<li>More than half of Functions are triggered by HTTP.</li>
+<li>Asynchronous queue and, especially, event functions have much more invocations on average than any other Function type.</li>
+<li>The opposite is accurate for timer Functions: a relatively high number of Functions translates to a fraction of invocations.</li>
+<li>Durable functions are quite popular if that's what the authors mean by &quot;orchestration&quot; triggers.</li>
+</ul>
+
+<h2 id="functions-and-applications">Functions and Applications</h2>
+
+<p>Function App is the deployment unit of Azure Functions. Each Function App may contain one or more Functions packaged together. How often do people use multiple Functions, and what for?</p>
+
+<table class="pure-table table table-striped">
+<thead>
+<tr>
+<th># of Functions</th>
+<th>Percentage</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>54%</td>
+</tr>
+
+<tr>
+<td>2</td>
+<td>16%</td>
+</tr>
+
+<tr>
+<td>3</td>
+<td>10%</td>
+</tr>
+
+<tr>
+<td>4 to 5</td>
+<td>8%</td>
+</tr>
+
+<tr>
+<td>6 to 10</td>
+<td>7%</td>
+</tr>
+
+<tr>
+<td>11+</td>
+<td>5%</td>
+</tr>
+
+<tr>
+<td>(100+)</td>
+<td>0.04%</td>
+</tr>
+
+<tr>
+<td>(2000+)</td>
+<td>(a couple)</td>
+</tr>
+</tbody>
+</table>
+
+<p>Apparently, multi-function applications are widespread! The number of functions-per-app is all over the spectrum, with some wild usage scenarios of hundreds or even thousands of Functions in the same Function App.</p>
+
+<p>Combining this with trigger types, it seems hard to derive any common patterns of trigger combinations in the same app. The paper lists several common ones, but none of them has more than 5% of usage. For instance, only 4.5% of applications are exactly one HTTP trigger and one timer trigger&mdash;which I could potentially attribute to the pattern of warming HTTP Functions against <a href="/serverless/coldstarts">cold starts</a>.</p>
+
+<h2 id="invocation-patterns">Invocation Patterns</h2>
+
+<p>How often are functions invoked? What are typical numbers for executions per day, minute, or second?</p>
+
+<p>The variation in invocation frequency is tremendous. While many Functions may stay idle for days, others run many times per second. There's nothing unexpected here: it's free to create a Function App, so many apps exist for test purposes, one-off experiments, or to handle infrequent timers or automation tasks. At the same time, some production Functions would serve intensive workloads via HTTP, queues, or event buses.</p>
+
+<p>The paper shows actual numbers for frequency distribution:</p>
+
+<ul>
+<li><strong>45%</strong> of Function Apps are invoked at most <strong>once per hour</strong>.</li>
+<li>Another <strong>36%</strong> are invoked at most <strong>once per minute</strong>.</li>
+<li>The remaining <strong>19%</strong> of more frequently invoked Functions represent more than 99.5% of all invocations.</li>
+<li>Only about <strong>3%</strong> of applications are invoked more often than <strong>once a second</strong>.</li>
+</ul>
+
+<p>I'm surprised that the vast majority of Functions run, on average, very infrequently. It looks like more than 97% of Function Apps don't require any scalability beyond scaling from zero to a single instance and back.</p>
+
+<p>The following chart shows the cumulative number of invocations that Azure Functions handle across all applications. Unfortunately, there are no absolute numbers&mdash;the chart is normalized to the peak.</p>
+
+<figure >
+    
+        <img src="invocations.png"
+            alt="Total invocations per hour for all Azure Functions, relative to the peak"
+             />
+        
+    
+    <figcaption>
+        <h4>Total invocations per hour for all Azure Functions, relative to the peak</h4>
+    </figcaption>
+    
+</figure>
+
+<p>There are apparent repeatable patterns and a constant baseline of roughly 50% of the invocations. The platform needs to handle about 2x scalability through a given day.</p>
+
+<p>Overall, the macro-scalability of the platform seems to be less of a challenge compared to optimizing the lifecycle of each individual Function App. Across applications, the number of invocations per day varies by 8 orders of magnitude, making the resources the provider has to dedicate to each application also highly variable.</p>
+
+<p>Since the majority of applications are mostly idle, any inefficiency in handling them, being significant relative to their total execution (billable) time, can be prohibitively expensive. And that's a hard problem to solve!</p>
+
+<h2 id="function-execution-times">Function Execution Times</h2>
+
+<p>Once a Function is triggered, for how long will it typically run until completed?</p>
+
+<p>Predictably, executions in Function-as-a-Service are very short compared to other cloud workloads. However, again, there are several orders of magnitude difference across different Functions:</p>
+
+<ul>
+<li>About <strong>20%</strong> of Functions would complete, on average, in less than <strong>100 ms</strong>.</li>
+<li>Approximately <strong>50%</strong> of the Functions execute for less than <strong>1 second</strong> on average.</li>
+<li>Also, <strong>50%</strong> of the Functions have <strong>maximum</strong> execution time shorter than <strong>3 seconds</strong>.</li>
+<li>Yet, the slowest <strong>10%</strong> of the Functions have maximum execution time more than <strong>1 minute</strong>, and <strong>4% take more than a minute on average</strong>.</li>
+</ul>
+
+<p>The most common durations seem to be between 100 ms and several seconds, which is not surprising.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>It's incredible how much of a variation exists in real-world workloads running in Azure Functions. Across all the metrics above, there never seem to be one or two dominating scenarios. It's impressive that a single service can decently handle all the variability.</p>
+
+<p>Kudos to folks at Microsoft Azure for releasing the data and analysis for their actual production workloads, albeit just for two weeks and without absolute numbers.</p>
+
+<p>The second part of the paper uses this data to analyze potential improvements in cold starts of Azure Functions. And that's an excellent topic for a follow-up blog post, so stay tuned!</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/serverless">Serverless</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-functions">Azure Functions</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/paper-review">Paper review</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/37'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">37</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/37'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+    </body>
+</html>

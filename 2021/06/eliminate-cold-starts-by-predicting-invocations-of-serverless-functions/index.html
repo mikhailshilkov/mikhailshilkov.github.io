@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Eliminate Cold Starts by Predicting Invocations of Serverless Functions | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Eliminate Cold Starts by Predicting Invocations of Serverless Functions" />
+	<meta property="og:description" content="Azure Functions introduce a data-driven strategy to pre-warm serverless applications right before the next request comes in" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2021/06/eliminate-cold-starts-by-predicting-invocations-of-serverless-functions/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2021/06/eliminate-cold-starts-by-predicting-invocations-of-serverless-functions/teaser.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Serverless" />
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Azure Functions" />
+	
+	<meta property="article:tag" content="Paper review" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2021/06/eliminate-cold-starts-by-predicting-invocations-of-serverless-functions/teaser.png" />
+	
+	
+
+	<meta name="twitter:title" content="Eliminate Cold Starts by Predicting Invocations of Serverless Functions"/>
+	<meta name="twitter:description" content="Azure Functions introduce a data-driven strategy to pre-warm serverless applications right before the next request comes in"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                 
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Eliminate%20Cold%20Starts%20by%20Predicting%20Invocations%20of%20Serverless%20Functions%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2021%2f06%2feliminate-cold-starts-by-predicting-invocations-of-serverless-functions%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Eliminate Cold Starts by Predicting Invocations of Serverless Functions</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Published on Jun 18, 2021
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 13 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Developers and decision-makers often mention <a href="/serverless/coldstarts/">cold starts</a> as a significant drawback of serverless functions. Cloud providers continually invest in reducing the latency of a cold start, but they haven&rsquo;t done much to prevent them altogether. The most common technique is to keep a worker alive for 10-20 minutes after each request, hoping that another request comes in and benefits from the warm instance.</p>
+<p>This simple strategy works to some extent, but it&rsquo;s both wasteful in terms of resource utilization and not particularly helpful for low-usage applications. Is there an alternative strategy that could adapt to the workload, reduce the frequency of cold starts, <em>and</em> be more efficient?</p>
+<p>In <a href="/2020/05/serverless-in-the-wild-azure-functions-usage-stats">Azure Functions Production Usage Statistics</a>, I reviewed the first part of the <a href="https://arxiv.org/pdf/2003.03423.pdf">Serverless in the Wild</a> paper, which outlines statistics of Azure Functions running in production. Actually, the ultimate goal of that paper is to suggest an improvement to the cold start mitigation policy and validate the proposed strategy based on the data.</p>
+<p>This article is my second installment of the paper review. I focus on the idea of predicting future invocations and pre-warming of serverless workers. I describe the current state of cold starts, then explain the suggested improvements from the paper. Finally, I present my own take on those ideas.</p>
+<p>The new policy is definitely worth studying because it will be applied to your Azure Functions soon!</p>
+<h2 id="challenges">Challenges</h2>
+<p>As the statistics show, many Azure Function Apps are called very infrequently. Let&rsquo;s consider a concrete example: an HTTP-triggered function that runs approximately once per hour and returns current data for a report.</p>
+<p>Currently, every invocation of such a function would hit a cold start. Specifically, Azure uses a fixed “keep-alive” policy that retains the resources in memory for 20 minutes after execution. This isn&rsquo;t helpful in our scenario since requests come every 60 minutes.</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="scenario.png"
+            alt="Warm instances are recycled after 20 minutes, so an hourly request hits a cold start"
+             />
+        
+    
+    <figcaption>
+        <h4>Warm instances are recycled after 20 minutes, so an hourly request hits a cold start</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>In this specific case, the fixed policy is problematic for everyone:</p>
+<ul>
+<li>Users hit a cold start every time, which significantly increases the response time.</li>
+<li>Azure wastes resources on keeping a warm instance in memory for 20 minutes every hour without any benefits.</li>
+</ul>
+<p>Indeed, cloud providers seek to achieve high function performance at the lowest possible resource cost. They can&rsquo;t keep all functions in memory all the time: as the stats show, most functions run very seldom, so keeping all of them warm would be a massive waste of resources.</p>
+<p>What if the cloud provider could observe each application and adapt the policy for each application workload according to its actual invocation frequency and pattern?</p>
+<h2 id="optimal-strategy-predicts-the-future">Optimal Strategy Predicts The Future</h2>
+<p>Let&rsquo;s start with a hypothetical ideal solution for our specific one-call-per-hour example. Instead of keeping a warm instance for a fixed period after each invocation, an efficient policy would shut down the instance immediately after each execution. Then, it would boot a new instance right before the next invocation is about to come in.</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="prewarming.png"
+            alt="A new instance is pre-warmed right before the request comes in and recycled immediately after the execution is complete"
+             />
+        
+    
+    <figcaption>
+        <h4>A new instance is pre-warmed right before the request comes in and recycled immediately after the execution is complete</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>This solves both problems above. Now, all requests are served quickly because Azure creates a fresh instance <em>before</em> a request comes in. Also, Azure saves resources because it can pre-warm the instance shortly before each request and shut it down immediately after the invocation is completed.</p>
+<p>This ideal case only works in the world of perfect information. Of course, Azure can&rsquo;t perfectly predict the future and spin up a new instance right before the next HTTP request. Instead, it would need to learn the workload and try to predict the next invocation probabilistically. That&rsquo;s the essence of the policy that the authors of &ldquo;Serverless in the Wild&rdquo; suggest.</p>
+<p>Predicting arbitrary workloads can be pretty hard. Every application is unique, and invocations are caused by external events like human behavior or actions in business processes.</p>
+<p>Also, there are limits to resources that a prediction policy may consume. The policy calculation should be efficient and not have a significant impact on the system&rsquo;s overall performance. A practical policy would have low overhead both in terms of the size of data structures and the CPU usage overhead.</p>
+<h2 id="proposed-policy">Proposed Policy</h2>
+<p>The paper suggests a practical policy that tries to predict future invocations without being too expensive.</p>
+<p>Let&rsquo;s start at the point when a new application has just been deployed. Azure knows nothing about its invocation patterns yet. The new policy would default to the traditional fixed &ldquo;keep-alive&rdquo; interval but would keep an instance running for a generous 4 hours. Simultaneously, it starts learning the workload.</p>
+<p>Every time a new request comes in, the policy calculates how many minutes passed since the end of the previous invocation and records this value in a histogram. The histogram&rsquo;s bins have one-minute granularity. So, in my example, if an invocation came 60 minutes after the previous one, the value for the bin <code>60</code> will increase by one.</p>
+<p>At some point, the policy would decide that it knows enough to start predicting future invocations. The histogram for my application may look like this:</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="histogram.png"
+            alt="Every column shows how many requests landed on minute X after a previous execution"
+             />
+        
+    
+    <figcaption>
+        <h4>Every column shows how many requests landed on minute X after a previous execution</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>The new adaptive policy kicks in. Now, it shuts down the active instance after each request, because it knows that the next invocation is unlikely to come any time soon. Then, it uses two cut-off points to plan the warming strategy:</p>
+<ul>
+<li>The <strong>head cut-off</strong> point is when a new warm instance should be ready. Calculated as 5th percentile minus 10% margin. Approximately 53 minutes in my example.</li>
+<li>The <strong>tail cut-off</strong> point is when to kill the warm instance if no request comes in. Calculated as 95th percentile plus 10% margin. Approximately 67 minutes in my example.</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="cutoff.png"
+            alt="An adaptive policy pre-warms an instance at the head cut-off and keeps it until a request comes or until the tail cut-off"
+             />
+        
+    
+    <figcaption>
+        <h4>An adaptive policy pre-warms an instance at the head cut-off and keeps it until a request comes or until the tail cut-off</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>Because my specific workload is highly predictable, it would enjoy the absence of cold starts. Would the policy work for other scenarios?</p>
+<h2 id="scenarios">Scenarios</h2>
+<p>The suggested policy makes sense for the example we considered so far. However, real-life workloads are very diverse. Let&rsquo;s try to generalize and consider several possible scenarios and how the policy handles them.</p>
+<h4 id="regular-cadence">Regular cadence</h4>
+<p>Consistent intervals between invocations are the ideal match for the suggested policy. If a histogram is well-shaped and relatively narrow, both head and tail cut-offs are easy to identify. These distributions produce the ideal situation: long shutdown periods and short keep-alive windows.</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="regular.png"
+            alt="Well-shaped narrow distribution produces clear cut-off points"
+             />
+        
+    
+    <figcaption>
+        <h4>Well-shaped narrow distribution produces clear cut-off points</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>My example above falls into this category.</p>
+<h4 id="frequent-invocations">Frequent invocations</h4>
+<p>Many applications would invoke functions frequently, so, many measured intervals would be close to zero.</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="frequent.png"
+            alt="In this case, instances are not unloaded after a request is executed and wait for another one, or the tail cut-off moment"
+             />
+        
+    
+    <figcaption>
+        <h4>In this case, instances are not unloaded after a request is executed and wait for another one, or the tail cut-off moment</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>In these cases, the head cut-off is rounded down to zero. The policy does not shut down the application after a function execution but keeps it alive until the next execution, or until the tail cut-off.</p>
+<h4 id="inconsistent-invocations-or-not-enough-data">Inconsistent invocations or not enough data</h4>
+<p>The policy needs a certain amount of quality data to start being useful in predicting the next invocation.
+The application may be recently deployed and may not have enough points yet:</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="sparse.png"
+            alt="Too few data to make reliable predictions: wait and learn while using the default policy"
+             />
+        
+    
+    <figcaption>
+        <h4>Too few data to make reliable predictions: wait and learn while using the default policy</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>Alternatively, data points might not come in a well-shaped cluster:</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="random.png"
+            alt="No definite shape of the histogram: fall back to the default policy"
+             />
+        
+    
+    <figcaption>
+        <h4>No definite shape of the histogram: fall back to the default policy</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>In both of these cases, the policy reverts to a default approach: no shutdown and a long keep-alive window. This puts an extra burden on the cloud provider, but the idea is that these scenarios would be rare enough to allow the policy to stay practical.</p>
+<h4 id="invocations-beyond-4-hours">Invocations beyond 4 hours</h4>
+<p>The policy defines a maximum value for histogram data to limit the storage capacity for the histogram. The paper suggests a maximum of 4 hours. All intervals beyond that threshold are recorded in a special overflow bin.</p>
+</div>
+</div>
+</div>
+<div class="row no-gutter">
+    <div class="col-lg-1 pl-0"></div>
+    <div class="col-sm-11">
+        
+<figure >
+    
+        <img src="outofbounds.png"
+            alt="Values beyond the 4-hour limit end up in a special &#34;everything else&#34; overflow bin"
+             />
+        
+    
+    <figcaption>
+        <h4>Values beyond the 4-hour limit end up in a special &#34;everything else&#34; overflow bin</h4>
+    </figcaption>
+    
+</figure>
+
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2 pl-0"></div>
+    <div class="col-lg-9 flex-first flex-lg-unordered">
+        <div class="article-post">
+<p>If a lot of values start to fall into that range, the bin-based policy can&rsquo;t perform well anymore. For this category of applications, the paper suggests switching to time-series analysis to predict the next interval duration. They mention the <a href="https://en.wikipedia.org/wiki/Autoregressive_integrated_moving_average">autoregressive integrated moving average</a> model without providing many details.</p>
+<p>As invocations of this type are infrequent, the overall overhead of such a model would stay relatively low.</p>
+<h2 id="evaluation">Evaluation</h2>
+<p>The authors evaluated the policy based on recorded <a href="/2020/05/serverless-in-the-wild-azure-functions-usage-stats">production usage statistics</a>. The evaluation consists of two parts:</p>
+<ul>
+<li>A simulation that iterates through the data, calculates the policy models, and evaluates whether each invocation would yield a cold starts with the new policy.</li>
+<li>A replay of the recorded invocation trace on a modified version of Apache OpenWhisk, an open-source FaaS platform. The controller was modified to use the new policy while managing workers. The trace was scaled down by randomly selecting applications with mid-range popularity.</li>
+</ul>
+<p>Both parts showed similarly promising results of reducing the cold start frequency and resource waste. The new policy reduced the average and 99-percentile function execution time 33% and 82%, respectively, while also reducing the average memory consumption of workers by 16%.</p>
+<p>The overhead of the policy looks manageable too. The controller&rsquo;s policy implementation adds less than 1 ms to the end-to-end latency and only a 5% increase in controller&rsquo;s CPU utilization.</p>
+<p>By tuning the parameters of the policy (default window, cut-off points, granularity), its implementation can achieve the same number of cold starts at much lower resource cost, or keep the same resource cost but reduce the frequency of cold starts significantly.</p>
+<h2 id="production-implementation">Production Implementation</h2>
+<p>Encouraged by the position evaluation, the team implemented the policy in Azure Functions for HTTP-triggered applications, it will be rolling out to production in stages starting this month (June 2020).</p>
+<p>Here are some implementation details:</p>
+<ul>
+<li>Each histogram contains data for 4 hours, filling up 960 bytes per application.</li>
+<li>The histogram is stored in memory and backed up to a database once per hour.</li>
+<li>A new histogram is started every day with a history of previous values stored for two weeks.</li>
+<li>Worker warming is scheduled for the calculated head cut-off point minus 90 seconds.</li>
+<li>Pre-warming loads function dependencies and performs JIT where possible.</li>
+<li>All policy decisions are asynchronous, off the critical path to minimize the latency impact on the invocation.</li>
+</ul>
+<p>I look forward to testing this new policy once it&rsquo;s rolled out. Expect a follow-up blog post!</p>
+<h2 id="open-questions">Open Questions</h2>
+<p>Everything above is my summary of the &ldquo;Serverless in the Wild&rdquo; paper&rsquo;s ideas and findings. I want to close the blog post with some questions that I still have, personally.</p>
+<p>Whether true in practice or not, the public opinion strongly perceives cold starts as a notable obstacle to serverless adoption. It&rsquo;s great to see some concrete suggestions driven by data that may improve cold starts in serverless functions.</p>
+<p>The sweet spot of the suggested policy is applications with relatively regular intervals between invocations below several hours. I think the practical effect of the strategy might still be limited. Here are some concerns that I see.</p>
+<p><em>The authors reviewed my questions and provided their answers, which I&rsquo;m including in the text below.</em></p>
+<h4 id="who-benefits">Who benefits?</h4>
+<p>Not every serverless function is sensitive to cold starts.</p>
+<p>The policy favors functions with predictable intervals. Timer-based schedules (whether functions with timer trigger or external timers sending requests to the app or IoT devices communicating periodically) may produce perfect histograms. And yet, those functions are not damaged by a cold start and may entirely live with it.</p>
+<p>On the other side, human-initiated requests that care about cold starts are likely to be less predictable. Does it mean they don&rsquo;t enjoy much improvement with the new policy?</p>
+<p>The Azure Functions team is rolling the policy out for HTTP functions, so they do expect it to be useful. We will know soon!</p>
+<h5 id="response-from-the-authors">Response from the authors:</h5>
+<blockquote>
+<p>There is a large fraction of the applications that will likely benefit. Because for many applications the keep-alive interval can drastically reduce, the provider can afford to increase the keep-alive for other applications. About 50% of the applications have average inter-invocation times of 30 minutes of more. These incur many cold starts in the fixed policy, and will likely see a reduction in cold starts because their keep-alive intervals will be able to grow. Applications with idle times longer than 4 hours can also benefit because of the ARIMA time-series prediction.</p>
+</blockquote>
+<h4 id="is-it-flexible-enough">Is it flexible enough?</h4>
+<p>The policy assumes that the interval distribution is stable over time. How will this hold in practice over more extended periods?</p>
+<p>Imagine an application that is only used during business hours. Or, an application that is mostly idle but is sporadically applied for a specific business process. Or, a demo app that you want to show to your colleagues during a planning meeting. Likely, all of them would still hit cold starts at the beginning of a session.</p>
+<p>Maybe that&rsquo;s why the production implementation begins with a clean histogram every day. They will watch and learn, and may use data for the last two weeks to improve later on.</p>
+<h5 id="response-from-the-authors-1">Response from the authors:</h5>
+<blockquote>
+<p>The policy does not have to assume a stationary distribution of arrival patterns. In the traces analyzed in the paper there was not a significant enough variation in the distributions to enable a deep investigation. With the production deployment, we will investigate different policies to decay information from previous histograms.</p>
+</blockquote>
+<h4 id="what-about-function-warming">What about function warming?</h4>
+<p>There&rsquo;s the elephant in the room of cold starts: function &ldquo;warming&rdquo;. Warming is a trick when a developer adds an extra timer-based function to their Function App so that the timer triggers every few minutes. This way, the runtime would never unload it, and an instance would always be ready.</p>
+<p>I suspect that this simple trick still outperforms the suggested histogram-based policy in terms of cold-start prevention. Obviously, it doesn&rsquo;t help the cloud provider to save costs.</p>
+<p>Is there a way to combine two approaches and get the benefits of both?</p>
+<h5 id="response-from-the-authors-2">Response from the authors:</h5>
+<blockquote>
+<p>The results in the paper take into account user-generated warm-up functions that are present in the data. If the hybrid policy is successful in preventing cold starts, there will be no need for users to create periodic warm-up functions, which represent extra effort and higher costs.</p>
+</blockquote>
+<h4 id="what-about-the-scale-out-cold-start">What about the scale-out cold start?</h4>
+<p>The paper focuses on applications that are invoked rarely. However, even applications with higher utilization may still hit cold starts when scaled out on multiple instances. Every new instance would need to boot, and the requests would still be waiting.</p>
+<p>The suggested policy does not address cold starts beyond the first instance, even though they do occur and potentially have a more significant impact on latency percentiles of real-world human-facing applications.</p>
+<h5 id="response-from-the-authors-3">Response from the authors:</h5>
+<blockquote>
+<p>We didn’t address scale-out cold starts in the paper. We can pre-warm the scale-out instances by forcing the scale out to happen slightly before it normally would. For example, when the scale out is triggered by a threshold number of concurrent invocations, we can lower the threshold slightly. We will be experimenting with such techniques in our implementation in Azure Functions.</p>
+</blockquote>
+<h2 id="conclusion">Conclusion</h2>
+<p>Despite several open questions above, I&rsquo;m delighted that the paper was published. I welcome any structured effort that focuses on cold start optimization. The paper highlights usage statistics, the challenges of the cold start problem, and suggests several improvements.</p>
+<p>It&rsquo;s even more exciting to see the finding being applied in Azure in production!</p>
+<p>If you want to learn more, you can read the full paper here: <a href="https://arxiv.org/pdf/2003.03423.pdf">Serverless in the Wild: Characterizing and Optimizing the Serverless Workload at a Large Cloud Provider</a>.</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/serverless">Serverless</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure-functions">Azure Functions</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/paper-review">Paper review</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/40'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">40</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/40'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'UA-59218480-1', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+    </body>
+</html>
