@@ -100,19 +100,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -243,19 +243,19 @@
 <h2 id="provisioned-concurrency">Provisioned Concurrency</h2>
 <p>At re:Invent 2019, AWS introduced Lambda <strong>Provisioned Concurrency</strong>&mdash;a feature to work around cold starts. The base concurrency model doesn&rsquo;t change. However, you can request a given number of workers to be always-warm and dedicated to a specific Lambda.</p>
 <p>Here is an example of configuring the provisioned concurrency with Pulumi in TypeScript:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> lambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;mylambda&#34;</span>, {
-    code: <span style="color:#2b91af">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./app&#34;</span>),
-    handler: <span style="color:#a31515">&#34;handler&#34;</span>,
-    role: <span style="color:#2b91af">role.arn</span>,
-    publish: <span style="color:#2b91af">true</span>,
-});
-
-<span style="color:#00f">const</span> fixed = <span style="color:#00f">new</span> aws.lambda.ProvisionedConcurrencyConfig(<span style="color:#a31515">&#34;fixed-concurrency&#34;</span>, {
-  functionName: <span style="color:#2b91af">lambda.name</span>,
-  qualifier: <span style="color:#2b91af">lambda.version</span>,
-  provisionedConcurrentExecutions: <span style="color:#2b91af">2</span>,
-});
-</code></pre></div><p>The snippet sets the provisioned concurrency for <code>mylambda</code> to a fixed value of <code>2</code>. Note that concurrency is provisioned per Lambda version, and it can&rsquo;t be set for the <code>$LATEST</code> version alias. Therefore, I set the <code>publish</code> attribute of my Lambda to <code>true</code> and reference a specific version of the Lambda in provisioning.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> lambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;mylambda&#34;</span>, {
+</span></span><span style="display:flex;"><span>    code: <span style="color:#2b91af">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./app&#34;</span>),
+</span></span><span style="display:flex;"><span>    handler: <span style="color:#a31515">&#34;handler&#34;</span>,
+</span></span><span style="display:flex;"><span>    role: <span style="color:#2b91af">role.arn</span>,
+</span></span><span style="display:flex;"><span>    publish: <span style="color:#2b91af">true</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> fixed = <span style="color:#00f">new</span> aws.lambda.ProvisionedConcurrencyConfig(<span style="color:#a31515">&#34;fixed-concurrency&#34;</span>, {
+</span></span><span style="display:flex;"><span>  functionName: <span style="color:#2b91af">lambda.name</span>,
+</span></span><span style="display:flex;"><span>  qualifier: <span style="color:#2b91af">lambda.version</span>,
+</span></span><span style="display:flex;"><span>  provisionedConcurrentExecutions: <span style="color:#2b91af">2</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>The snippet sets the provisioned concurrency for <code>mylambda</code> to a fixed value of <code>2</code>. Note that concurrency is provisioned per Lambda version, and it can&rsquo;t be set for the <code>$LATEST</code> version alias. Therefore, I set the <code>publish</code> attribute of my Lambda to <code>true</code> and reference a specific version of the Lambda in provisioning.</p>
 <h2 id="dynamic-provisioned-concurrency">Dynamic Provisioned Concurrency</h2>
 <p>A fixed level of provisioned concurrency works well for stable workloads.</p>
 <figure >
@@ -272,15 +272,15 @@
 </figure>
 <p>However, many workloads fluctuate a lot. Extreme elasticity and lack of configuration parameters have always been the essential benefits of AWS Lambda. It works great if you can tolerate the cold starts that come during scale-out. If not, you can explore more advanced scenarios for provisioning concurrency dynamically.</p>
 <p>Instead of choosing a permanently fixed value, you can configure provisioned concurrency to autoscale. The first required component is the autoscaling target:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> resourceId = pulumi.interpolate<span style="color:#a31515">`function:</span><span style="color:#a31515">${</span>lambda.name<span style="color:#a31515">}</span><span style="color:#a31515">:</span><span style="color:#a31515">${</span>lambda.version<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
-<span style="color:#00f">const</span> target = <span style="color:#00f">new</span> aws.appautoscaling.Target(<span style="color:#a31515">&#34;target&#34;</span>, {
-    resourceId,
-    serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
-    scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
-    minCapacity: <span style="color:#2b91af">1</span>,
-    maxCapacity: <span style="color:#2b91af">10</span>,
-});
-</code></pre></div><p>The second component is the autoscaling policy, which defines the conditions when scaling starts. There are two important ways to adapt your concurrency provisioning to traffic patterns.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> resourceId = pulumi.interpolate<span style="color:#a31515">`function:</span><span style="color:#a31515">${</span>lambda.name<span style="color:#a31515">}</span><span style="color:#a31515">:</span><span style="color:#a31515">${</span>lambda.version<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> target = <span style="color:#00f">new</span> aws.appautoscaling.Target(<span style="color:#a31515">&#34;target&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceId,
+</span></span><span style="display:flex;"><span>    serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
+</span></span><span style="display:flex;"><span>    scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
+</span></span><span style="display:flex;"><span>    minCapacity: <span style="color:#2b91af">1</span>,
+</span></span><span style="display:flex;"><span>    maxCapacity: <span style="color:#2b91af">10</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>The second component is the autoscaling policy, which defines the conditions when scaling starts. There are two important ways to adapt your concurrency provisioning to traffic patterns.</p>
 <h3 id="scheduled-profile">Scheduled profile</h3>
 <p>Quite often, increases in request rates are partially predictable. For example, usage increases during business hours and decreases at night.</p>
 <figure >
@@ -296,22 +296,22 @@
     
 </figure>
 <p>The following snippet sets two scheduled rules that switch between two levels of provisioned concurrency every day.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">function</span> scheduledConcurrency(name: <span style="color:#2b91af">string</span>, cron: <span style="color:#2b91af">string</span>, capacity: <span style="color:#2b91af">number</span>) {
-    <span style="color:#00f">return</span> <span style="color:#00f">new</span> aws.appautoscaling.ScheduledAction(<span style="color:#a31515">`schedule-</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
-        resourceId,
-        serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
-        scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
-        scalableTargetAction: {
-            minCapacity: <span style="color:#2b91af">capacity</span>,
-            maxCapacity: <span style="color:#2b91af">capacity</span>,
-        },
-        schedule: <span style="color:#a31515">`cron(</span><span style="color:#a31515">${</span>cron<span style="color:#a31515">}</span><span style="color:#a31515">)`</span>,
-    }, { dependsOn: [target]});
-}
-
-scheduledConcurrency(<span style="color:#a31515">&#34;day&#34;</span>, <span style="color:#a31515">&#34;0 8 * * ? *&#34;</span>, 10);
-scheduledConcurrency(<span style="color:#a31515">&#34;night&#34;</span>, <span style="color:#a31515">&#34;0 18 * * ? *&#34;</span>, 2);
-</code></pre></div><p>The example defines a helper function and calls it twice to set two schedules with different parameters.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">function</span> scheduledConcurrency(name: <span style="color:#2b91af">string</span>, cron: <span style="color:#2b91af">string</span>, capacity: <span style="color:#2b91af">number</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> <span style="color:#00f">new</span> aws.appautoscaling.ScheduledAction(<span style="color:#a31515">`schedule-</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">`</span>, {
+</span></span><span style="display:flex;"><span>        resourceId,
+</span></span><span style="display:flex;"><span>        serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
+</span></span><span style="display:flex;"><span>        scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
+</span></span><span style="display:flex;"><span>        scalableTargetAction: {
+</span></span><span style="display:flex;"><span>            minCapacity: <span style="color:#2b91af">capacity</span>,
+</span></span><span style="display:flex;"><span>            maxCapacity: <span style="color:#2b91af">capacity</span>,
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        schedule: <span style="color:#a31515">`cron(</span><span style="color:#a31515">${</span>cron<span style="color:#a31515">}</span><span style="color:#a31515">)`</span>,
+</span></span><span style="display:flex;"><span>    }, { dependsOn: [target]});
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>scheduledConcurrency(<span style="color:#a31515">&#34;day&#34;</span>, <span style="color:#a31515">&#34;0 8 * * ? *&#34;</span>, 10);
+</span></span><span style="display:flex;"><span>scheduledConcurrency(<span style="color:#a31515">&#34;night&#34;</span>, <span style="color:#a31515">&#34;0 18 * * ? *&#34;</span>, 2);
+</span></span></code></pre></div><p>The example defines a helper function and calls it twice to set two schedules with different parameters.</p>
 <h3 id="autoscaling-based-on-utilization">Autoscaling based on utilization</h3>
 <p>If your workload pattern is less predictable, you can configure autoscaling for provisioned concurrency based on the measured utilization.</p>
 <figure >
@@ -327,19 +327,19 @@ scheduledConcurrency(<span style="color:#a31515">&#34;night&#34;</span>, <span s
     
 </figure>
 <p>Here is a basic example of a dynamic scaling policy.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> scaledConcurrency = <span style="color:#00f">new</span> aws.appautoscaling.Policy(<span style="color:#a31515">&#34;autoscaling&#34;</span>, {
-    resourceId,
-    serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
-    scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
-    policyType: <span style="color:#a31515">&#34;TargetTrackingScaling&#34;</span>,
-    targetTrackingScalingPolicyConfiguration: {
-        targetValue: <span style="color:#2b91af">0.8</span>,
-        predefinedMetricSpecification: {
-            predefinedMetricType: <span style="color:#a31515">&#34;LambdaProvisionedConcurrencyUtilization&#34;</span>,
-        },
-    },
-}, { dependsOn: [target]});
-</code></pre></div><p>Currently, there are issues with autoscaling based on the metrics, which makes provisioned concurrency scale less effectively than what the chart above shows. Hopefully, Amazon will fix these issues soon.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> scaledConcurrency = <span style="color:#00f">new</span> aws.appautoscaling.Policy(<span style="color:#a31515">&#34;autoscaling&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceId,
+</span></span><span style="display:flex;"><span>    serviceNamespace: <span style="color:#a31515">&#34;lambda&#34;</span>,
+</span></span><span style="display:flex;"><span>    scalableDimension: <span style="color:#a31515">&#34;lambda:function:ProvisionedConcurrency&#34;</span>,
+</span></span><span style="display:flex;"><span>    policyType: <span style="color:#a31515">&#34;TargetTrackingScaling&#34;</span>,
+</span></span><span style="display:flex;"><span>    targetTrackingScalingPolicyConfiguration: {
+</span></span><span style="display:flex;"><span>        targetValue: <span style="color:#2b91af">0.8</span>,
+</span></span><span style="display:flex;"><span>        predefinedMetricSpecification: {
+</span></span><span style="display:flex;"><span>            predefinedMetricType: <span style="color:#a31515">&#34;LambdaProvisionedConcurrencyUtilization&#34;</span>,
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>}, { dependsOn: [target]});
+</span></span></code></pre></div><p>Currently, there are issues with autoscaling based on the metrics, which makes provisioned concurrency scale less effectively than what the chart above shows. Hopefully, Amazon will fix these issues soon.</p>
 <h2 id="pricing">Pricing</h2>
 <p>While hand-crafted Lambda warmers are virtually free, provisioned concurrency can be costly. The new pricing is an integral part of the change: Instead of purely per-call model, AWS charges per hour for provisioned capacity.</p>
 <p>You would pay $0.015 per hour per GB of provisioned worker memory, even if a worker handled zero requests.</p>
@@ -469,17 +469,5 @@ scheduledConcurrency(<span style="color:#a31515">&#34;night&#34;</span>, <span s
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
     </body>
 </html>

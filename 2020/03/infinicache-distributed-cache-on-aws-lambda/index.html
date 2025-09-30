@@ -100,19 +100,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -295,8 +295,7 @@
 <h2 id="ii-infinicache">II. InfiniCache</h2>
 <p>The paper <a href="https://arxiv.org/pdf/2001.10483.pdf">InfiniCache: Exploiting Ephemeral Serverless Functions to Build a Cost-Effective Memory Cache</a> presents a prototype of a distributed cache service running on top of AWS Lambda. The service is aimed specifically at large object caching. It deploys a large fleet of Lambda functions, where each Lambda stores a slice of the total data pool.</p>
 <blockquote>
-<p>InfiniCache offers a virtually infinite (yet cheap) short-term capacity, which is advantageous for large object caching, since the tenants can invoke many cloud functions but have the provider pay the cost of function caching.</p>
-</blockquote>
+<p>InfiniCache offers a virtually infinite (yet cheap) short-term capacity, which is advantageous for large object caching, since the tenants can invoke many cloud functions but have the provider pay the cost of function caching.</p></blockquote>
 <p>The authors employ several smart techniques to work around the limitations that I described above and make the system performant and cost-efficient.</p>
 <h3 id="multiple-lambda-functions">Multiple Lambda functions</h3>
 <p>InfiniCache creates multiple AWS Lambdas, as opposed to multiple instances of the same Lambda. Each Lambda effectively runs on a single instance (container) that holds a slice of data. A second instance may be used for backups as explained below.</p>
@@ -358,19 +357,16 @@
 <li>Every billing cycle, the Lambda instance decides whether to keep the invocation alive and keep serving requests over TCP, or to terminate the invocation to stop the billing.</li>
 </ol>
 <blockquote>
-<p>To maximize the use of each billing cycle and to avoid the overhead of restarting Lambdas, InfiniCache&rsquo;s Lambda runtime uses a timeout scheme to control how long a Lambda function runs. When a Lambda node is invoked by a chunk request, a timer is triggered to limit the function’s execution time. The timeout is initially set to expire within the first billing cycle.</p>
-</blockquote>
+<p>To maximize the use of each billing cycle and to avoid the overhead of restarting Lambdas, InfiniCache&rsquo;s Lambda runtime uses a timeout scheme to control how long a Lambda function runs. When a Lambda node is invoked by a chunk request, a timer is triggered to limit the function’s execution time. The timeout is initially set to expire within the first billing cycle.</p></blockquote>
 <blockquote>
 <p>If no further chunk request arrives within the first billing cycle, the timer expires and returns 2–10 ms (a short time buffer) before the 100 ms window ends.
-If more than one request can be served within the current billing cycle, the heuristic extends the timeout by one more billing cycle, anticipating more incoming requests.</p>
-</blockquote>
+If more than one request can be served within the current billing cycle, the heuristic extends the timeout by one more billing cycle, anticipating more incoming requests.</p></blockquote>
 <p>This clever workaround overcomes two limitations simultaneously: adjusting to the round-up pricing model, and ensuring that parallel requests can be served by the single Lambda instance, both reusing the same memory cache.</p>
 <h3 id="instance-sizes">Instance sizes</h3>
 <p>AWS Lambda functions can be provisioned at a memory limit between 128 MB and 3 GB. The allocated CPU cycles are proportional to the provisioned RAM size.</p>
 <p>InfiniCache authors find larger instances beneficial. Even though they end up paying more for each invocation, they greatly benefit from improved performance, reduced latency variation, and lack of network contention.</p>
 <blockquote>
-<p>We find that using relatively bigger Lambda functions largely eliminates Lambda co-location. Lambda’s VM hosts have approximately 3 GB memory.  As such, if we use Lambda functions with ≥ 1.5GB memory, every VM host is occupied exclusively by a single Lambda function.</p>
-</blockquote>
+<p>We find that using relatively bigger Lambda functions largely eliminates Lambda co-location. Lambda’s VM hosts have approximately 3 GB memory.  As such, if we use Lambda functions with ≥ 1.5GB memory, every VM host is occupied exclusively by a single Lambda function.</p></blockquote>
 <h3 id="chunking-and-erasure-coding">Chunking and erasure coding</h3>
 <p>To serve large files with minimal latency, InfiniCache breaks each file down into several chunks. The proxy stores each chunk on a separate AWS Lambda and requests them in parallel on retrieval. This protocol improves performance by utilizing the aggregated network bandwidth of multiple cloud functions in parallel.</p>
 <p>On top of that, InfiniCache uses an approach called <strong>erasure coding</strong>. Redundant information is introduced into each chunk so that the full file could be recovered from a smaller subset of the pieces. For example, &ldquo;10+2&rdquo; encoding breaks each file into 12 chunks, but any 10 chunks are enough to restore the complete file. This redundancy helps fight long-tail latencies: the slowest responses can be ignored, so the stragglers have less effect on the overall latency of the system.</p>
@@ -423,12 +419,10 @@ If more than one request can be served within the current billing cycle, the heu
 <h3 id="cost">Cost</h3>
 <p>InfiniCache is one to two orders of magnitude cheaper than ElastiCache (managed Redis cluster) on some workloads:</p>
 <blockquote>
-<p>By the end of hour 50, ElastiCache costs $518.4, while InfiniCache with all objects costs $20.52. Caching only large objects bigger than 10 MB leads to a cost of $16.51 for InfiniCache. InfiniCache pay-per-use serverless substrate effectively brings down the total cost by 96.8% with a cost effectiveness improvement of 31x. By disabling the backup option, InfiniCache further lowers down the cost to $5.41, which is 96x cheaper than ElastiCache.</p>
-</blockquote>
+<p>By the end of hour 50, ElastiCache costs $518.4, while InfiniCache with all objects costs $20.52. Caching only large objects bigger than 10 MB leads to a cost of $16.51 for InfiniCache. InfiniCache pay-per-use serverless substrate effectively brings down the total cost by 96.8% with a cost effectiveness improvement of 31x. By disabling the backup option, InfiniCache further lowers down the cost to $5.41, which is 96x cheaper than ElastiCache.</p></blockquote>
 <p>However, they find that serverless computing platforms are not cost-effective for small-object caching with frequent access.</p>
 <blockquote>
-<p>The hourly cost increases monotonically with the access rate, and eventually overshoots ElastiCache when the access rate exceeds 312 K requests per hour (86 requests per second).</p>
-</blockquote>
+<p>The hourly cost increases monotonically with the access rate, and eventually overshoots ElastiCache when the access rate exceeds 312 K requests per hour (86 requests per second).</p></blockquote>
 <p>Another gotcha is that the cost above does not include the price of a proxy: the proxy was co-located with the single client VM. A dedicated proxy running on an EC2 instance would increase the total price considerably.</p>
 <h3 id="performance">Performance</h3>
 <p>Here are the key conclusions based on a production-like test of InfiniCache:</p>
@@ -453,7 +447,7 @@ If more than one request can be served within the current billing cycle, the heu
 <p>Even worse, service  providers may change their internal implementations and policies <em>in response</em> to systems like InfiniCache. Ideally, any production system would rely on explicit product features of serverless functions rather than implicitly observed characteristics.</p>
 <h3 id="explicit-provisioning">Explicit provisioning</h3>
 <p>AWS Lambda has recently launched a new feature called <a href="https://mikhail.io/2019/12/aws-lambda-provisioned-concurrency-no-cold-starts/">provisioned concurrency</a>, that allows pinning warm Lambda functions in memory for a fixed hourly fee. Provisioned Lambdas may still get reclaimed and re-initialized periodically, but the reclamation frequency is low compared to non-provisioned Lambdas.</p>
-<p>The pay-per-hour pricing component is quite significant, which brings the cost closer to EC2 VMs' pricing model. Nonetheless, it opens up research opportunities for hybrid serverless-oriented cloud economics with higher predictability.</p>
+<p>The pay-per-hour pricing component is quite significant, which brings the cost closer to EC2 VMs&rsquo; pricing model. Nonetheless, it opens up research opportunities for hybrid serverless-oriented cloud economics with higher predictability.</p>
 <h3 id="internal-implementation-by-a-cloud-provider">Internal implementation by a cloud provider</h3>
 <p>Finally, instead of fighting with third-party implementations of stateful systems on top of dynamic function pools, cloud providers could potentially leverage such techniques themselves. A new cloud service could provide short-term caching for data-intensive applications such as big data analytics.</p>
 <p>Having the complete picture, datacenter operators would operate a white-box solution and could use the knowledge to optimize data availability and locality. I look forward to new storage products that can more efficiently utilize ephemeral datacenter resources.</p>
@@ -570,17 +564,5 @@ If more than one request can be served within the current billing cycle, the heu
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
     </body>
 </html>

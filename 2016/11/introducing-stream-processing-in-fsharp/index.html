@@ -18,7 +18,9 @@
 	
 	
 	<meta property="og:title" content="Introducing Stream Processing in F#" />
-	<meta property="og:description" content="The post was published for F# Advent Calendar 2016, thus the examples are themed around the Christmas gifts.
+	<meta property="og:description" content="The post was published for
+F# Advent Calendar 2016,
+thus the examples are themed around the Christmas gifts.
 This article is my naive introduction to the data processing discipline called Stream Processing." />
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content="https://mikhail.io/2016/11/introducing-stream-processing-in-fsharp/" />
@@ -52,7 +54,9 @@ This article is my naive introduction to the data processing discipline called S
 	
 
 	<meta name="twitter:title" content="Introducing Stream Processing in F#"/>
-	<meta name="twitter:description" content="The post was published for F# Advent Calendar 2016, thus the examples are themed around the Christmas gifts.
+	<meta name="twitter:description" content="The post was published for
+F# Advent Calendar 2016,
+thus the examples are themed around the Christmas gifts.
 This article is my naive introduction to the data processing discipline called Stream Processing."/>
 	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
 </head>
@@ -102,19 +106,19 @@ This article is my naive introduction to the data processing discipline called S
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -325,17 +329,17 @@ and pipelines in code?</p>
 <p>Here&rsquo;s how a transformation is typically represented in <em>Apache Storm</em>, the grand
 daddy of Big Data Stream Processing systems (transformations are called
 <em>Bolts</em> in Storm, and code is Java):</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">TokenizerBolt</span> <span style="color:#00f">implements</span> IRichBolt {
-    <span style="color:#00f">public</span> <span style="color:#2b91af">void</span> execute(Tuple input) {
-        String wishlist = input.getString(0);
-        <span style="color:#00f">for</span>(String gift: wishlist.split(<span style="color:#a31515">&#34;, &#34;</span>)) {
-            collector.emit(<span style="color:#00f">new</span> Values(gift));
-        }
-        collector.ack(input);
-    }
-    <span style="color:#008000">// Other code is omitted
-</span><span style="color:#008000"></span>}
-</code></pre></div><p>Tokenizer is a class which implements a predefined interface with <code>execute</code>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-java" data-lang="java"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">TokenizerBolt</span> <span style="color:#00f">implements</span> IRichBolt {
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">void</span> execute(Tuple input) {
+</span></span><span style="display:flex;"><span>        String wishlist = input.getString(0);
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">for</span>(String gift: wishlist.split(<span style="color:#a31515">&#34;, &#34;</span>)) {
+</span></span><span style="display:flex;"><span>            collector.emit(<span style="color:#00f">new</span> Values(gift));
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        collector.ack(input);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#008000">// Other code is omitted</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Tokenizer is a class which implements a predefined interface with <code>execute</code>
 method in it. The method accepts a container class <code>Tuple</code> from where
 we can extract real data using position-based indexing. Something like a
 <code>DataRow</code> from ADO.NET. The method does not return anything, but instead
@@ -352,63 +356,63 @@ is what we can do:</p>
 <p>Our domain is very simple in Gift Count example. Still, we could describe <code>Gift</code>
 type to restrict it to be lowercase, not empty etc. But for the sake of simplisity
 I&rsquo;ll limit it to one liner:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Gift</span> = <span style="color:#2b91af">string</span>
-</code></pre></div><p>Now, the type of the first transformation should be <code>string -&gt; Gift list</code>. So,
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Gift</span> = <span style="color:#2b91af">string</span>
+</span></span></code></pre></div><p>Now, the type of the first transformation should be <code>string -&gt; Gift list</code>. So,
 our transformation is based on a function</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> tokenize (wishlist: <span style="color:#2b91af">string</span>) =
-  wishlist.ToLowerInvariant().Split(<span style="color:#a31515">&#34;, &#34;</span>)
-  |&gt; List.ofArray
-  |&gt; List.map (<span style="color:#00f">fun</span> x -&gt; x.Trim())
-  |&gt; List.filter (<span style="color:#00f">fun</span> x -&gt; x.Length &gt; 0)
-</code></pre></div><p>The counting transformation is modeled in a similar way. The base function
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> tokenize (wishlist: <span style="color:#2b91af">string</span>) =
+</span></span><span style="display:flex;"><span>  wishlist.ToLowerInvariant().Split(<span style="color:#a31515">&#34;, &#34;</span>)
+</span></span><span style="display:flex;"><span>  |&gt; List.ofArray
+</span></span><span style="display:flex;"><span>  |&gt; List.map (<span style="color:#00f">fun</span> x -&gt; x.Trim())
+</span></span><span style="display:flex;"><span>  |&gt; List.filter (<span style="color:#00f">fun</span> x -&gt; x.Length &gt; 0)
+</span></span></code></pre></div><p>The counting transformation is modeled in a similar way. The base function
 is of type <code>Gift list -&gt; (Gift * int) list</code> and is actually implemented as</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> count xs = List.countBy id xs
-</code></pre></div><p>Instead of using a real database, we will just print the counts to console.
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> count xs = List.countBy id xs
+</span></span></code></pre></div><p>Instead of using a real database, we will just print the counts to console.
 So the last optional step for our examples will be to print out the counts
 one by one. Here is a helper function:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> print (gift, count) = sprintf <span style="color:#a31515">&#34;%i %s&#34;</span> count gift
-</code></pre></div><p>Now, we can tokenize and count the gifts in a single list. But how do we
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> print (gift, count) = sprintf <span style="color:#a31515">&#34;%i %s&#34;</span> count gift
+</span></span></code></pre></div><p>Now, we can tokenize and count the gifts in a single list. But how do we
 aggregate data over time? Let&rsquo;s leave this to the pipelines.</p>
 <h2 id="pipelines">Pipelines</h2>
 <p>Let&rsquo;s have a look at a definition of a Storm pipeline (in Java):</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">TopologyBuilder builder = <span style="color:#00f">new</span> TopologyBuilder();
-builder.setSpout(<span style="color:#a31515">&#34;line-reader&#34;</span>, <span style="color:#00f">new</span> LineReaderSpout());
-builder.setBolt(<span style="color:#a31515">&#34;gifts-spitter&#34;</span>, <span style="color:#00f">new</span> GiftSpitterBolt()).shuffleGrouping(<span style="color:#a31515">&#34;line-reader&#34;</span>);
-builder.setBolt(<span style="color:#a31515">&#34;gift-counter&#34;</span>, <span style="color:#00f">new</span> GiftCounterBolt()).shuffleGrouping(<span style="color:#a31515">&#34;gifts-spitter&#34;</span>);
-</code></pre></div><p>There is a <code>Builder</code> class, which is capable to add Sources (<code>Spouts</code>) and Transformations
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-java" data-lang="java"><span style="display:flex;"><span>TopologyBuilder builder = <span style="color:#00f">new</span> TopologyBuilder();
+</span></span><span style="display:flex;"><span>builder.setSpout(<span style="color:#a31515">&#34;line-reader&#34;</span>, <span style="color:#00f">new</span> LineReaderSpout());
+</span></span><span style="display:flex;"><span>builder.setBolt(<span style="color:#a31515">&#34;gifts-spitter&#34;</span>, <span style="color:#00f">new</span> GiftSpitterBolt()).shuffleGrouping(<span style="color:#a31515">&#34;line-reader&#34;</span>);
+</span></span><span style="display:flex;"><span>builder.setBolt(<span style="color:#a31515">&#34;gift-counter&#34;</span>, <span style="color:#00f">new</span> GiftCounterBolt()).shuffleGrouping(<span style="color:#a31515">&#34;gifts-spitter&#34;</span>);
+</span></span></code></pre></div><p>There is a <code>Builder</code> class, which is capable to add Sources (<code>Spouts</code>) and Transformations
 (<code>Bolts</code>) to the pipeline. But again, there&rsquo;s no type story here: the stages are linked
 by name, and the types are just implementations of predefined interfaces.</p>
 <p>Here is another example of the pipeline, now from <em>Google Dataflow SDK</em> (still Java):</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Pipeline
-    .create(options)
-    .apply(TextIO.Read.from(<span style="color:#a31515">&#34;...&#34;</span>))
-    .apply(ParDo.named(<span style="color:#a31515">&#34;ExtractGifts&#34;</span>).of(<span style="color:#00f">new</span> DoFn&lt;String, String&gt;() {
-         <span style="color:#00f">public</span> <span style="color:#2b91af">void</span> processElement(ProcessContext c) { <span style="color:#008000">/* Implements tokenizer */</span> }
-    }))
-    .apply(Count.&lt;String&gt;perElement())
-    .apply(MapElements.via(<span style="color:#00f">new</span> SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
-         <span style="color:#00f">public</span> String apply(KV&lt;String, Long&gt; element) { <span style="color:#008000">/* Formats results */</span> }
-    }))
-    .apply(TextIO.Write.to(<span style="color:#a31515">&#34;...&#34;</span>));
-</code></pre></div><p>I consider this to be more descriptive. There is a clear flow of operations chained
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-java" data-lang="java"><span style="display:flex;"><span>Pipeline
+</span></span><span style="display:flex;"><span>    .create(options)
+</span></span><span style="display:flex;"><span>    .apply(TextIO.Read.from(<span style="color:#a31515">&#34;...&#34;</span>))
+</span></span><span style="display:flex;"><span>    .apply(ParDo.named(<span style="color:#a31515">&#34;ExtractGifts&#34;</span>).of(<span style="color:#00f">new</span> DoFn&lt;String, String&gt;() {
+</span></span><span style="display:flex;"><span>         <span style="color:#00f">public</span> <span style="color:#2b91af">void</span> processElement(ProcessContext c) { <span style="color:#008000">/* Implements tokenizer */</span> }
+</span></span><span style="display:flex;"><span>    }))
+</span></span><span style="display:flex;"><span>    .apply(Count.&lt;String&gt;perElement())
+</span></span><span style="display:flex;"><span>    .apply(MapElements.via(<span style="color:#00f">new</span> SimpleFunction&lt;KV&lt;String, Long&gt;, String&gt;() {
+</span></span><span style="display:flex;"><span>         <span style="color:#00f">public</span> String apply(KV&lt;String, Long&gt; element) { <span style="color:#008000">/* Formats results */</span> }
+</span></span><span style="display:flex;"><span>    }))
+</span></span><span style="display:flex;"><span>    .apply(TextIO.Write.to(<span style="color:#a31515">&#34;...&#34;</span>));
+</span></span></code></pre></div><p>I consider this to be more descriptive. There is a clear flow of operations chained
 together. The types are visible and checked at compile time.</p>
 <p>How would we like to see this pipeline in F#? Our motivation example is going to
 be the same processing applied to a normal F# list of wishlists (strings). The following
 code snippet counts the gifts in wishlists and prints the result:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">wishlists
-|&gt; List.collect tokenize
-|&gt; List.countBy id
-|&gt; List.map print
-|&gt; List.iter (Console.WriteLine)
-</code></pre></div><p>My goal for the rest of the article will be to define a <code>Flow</code> module which would
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span>wishlists
+</span></span><span style="display:flex;"><span>|&gt; List.collect tokenize
+</span></span><span style="display:flex;"><span>|&gt; List.countBy id
+</span></span><span style="display:flex;"><span>|&gt; List.map print
+</span></span><span style="display:flex;"><span>|&gt; List.iter (Console.WriteLine)
+</span></span></code></pre></div><p>My goal for the rest of the article will be to define a <code>Flow</code> module which would
 enable me to write a Stream Processing pipeline in the same fashion. Here is the
 target code:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">sourceOfWishlists
-|&gt; Flow.collect tokenize
-|&gt; Flow.countBy id
-|&gt; Flow.map print
-|&gt; Flow.connectTo sinkForCounts
-</code></pre></div><p>So, how do we implement something like this? Let&rsquo;s start with clarifying how
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span>sourceOfWishlists
+</span></span><span style="display:flex;"><span>|&gt; Flow.collect tokenize
+</span></span><span style="display:flex;"><span>|&gt; Flow.countBy id
+</span></span><span style="display:flex;"><span>|&gt; Flow.map print
+</span></span><span style="display:flex;"><span>|&gt; Flow.connectTo sinkForCounts
+</span></span></code></pre></div><p>So, how do we implement something like this? Let&rsquo;s start with clarifying how
 Source and Sink can be defined.</p>
 <h2 id="source-and-sink">Source and Sink</h2>
 <p>We declared the source of a stream to be unbounded, not limited in time
@@ -423,13 +427,13 @@ stream processing are done in parallel, with separate tools and separate code ba
 The approach is called <em>Lambda Architecture</em>. Beam is declaring this approach outdated,
 offering a way to reuse streaming code and capacity also for bounded data workloads.</p>
 <p>To follow this modern path, we will declare our <code>Source</code> as following:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">BoundedSource</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = <span style="color:#2b91af">unit</span> -&gt; <span style="color:#00f">&#39;</span>T seq
-<span style="color:#00f">type</span> <span style="color:#2b91af">UnboundedSource</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = (<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>) -&gt; <span style="color:#2b91af">unit</span>
-
-<span style="color:#00f">type</span> <span style="color:#2b91af">Source</span>&lt;<span style="color:#00f">&#39;</span>T&gt; =
-  | Bounded <span style="color:#00f">of</span> BoundedSource&lt;<span style="color:#00f">&#39;</span>T&gt;
-  | Unbounded <span style="color:#00f">of</span> UnboundedSource&lt;<span style="color:#00f">&#39;</span>T&gt;
-</code></pre></div><p><code>Source</code> is a generic discriminated union with two cases. <code>Bounded</code> case represents
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">BoundedSource</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = <span style="color:#2b91af">unit</span> -&gt; <span style="color:#00f">&#39;</span>T seq
+</span></span><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">UnboundedSource</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = (<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>) -&gt; <span style="color:#2b91af">unit</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Source</span>&lt;<span style="color:#00f">&#39;</span>T&gt; =
+</span></span><span style="display:flex;"><span>  | Bounded <span style="color:#00f">of</span> BoundedSource&lt;<span style="color:#00f">&#39;</span>T&gt;
+</span></span><span style="display:flex;"><span>  | Unbounded <span style="color:#00f">of</span> UnboundedSource&lt;<span style="color:#00f">&#39;</span>T&gt;
+</span></span></code></pre></div><p><code>Source</code> is a generic discriminated union with two cases. <code>Bounded</code> case represents
 a side effect-ful function, which returns a sequence of elements when called.
 The argument of <code>unit</code> is there to delay the processing: we need to declare
 sources long before they start to emit values.</p>
@@ -438,44 +442,44 @@ executed as the argument and returns nothing meaningful (<code>unit</code> again
 see a usage example later.</p>
 <p>The <code>Sink</code> represents an action to happen at the end of pipeline. I&rsquo;ve made it
 a discriminated union too, but with just one case:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Sink</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = | Action <span style="color:#00f">of</span> (<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>)
-</code></pre></div><p>Now, we should be able to simulate an empty processing pipeline: directly connect
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Sink</span>&lt;<span style="color:#00f">&#39;</span>T&gt; = | Action <span style="color:#00f">of</span> (<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>)
+</span></span></code></pre></div><p>Now, we should be able to simulate an empty processing pipeline: directly connect
 a source to a sink. Let&rsquo;s start with bounded data:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> copyPipeline source sink =
-  <span style="color:#00f">match</span> source, sink <span style="color:#00f">with</span>
-  | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
-  | _ -&gt; failwith <span style="color:#a31515">&#34;Not supported yet&#34;</span>
-
-<span style="color:#00f">let</span> gifts = seq [<span style="color:#a31515">&#34;Ball&#34;</span>; <span style="color:#a31515">&#34;Train&#34;</span>; <span style="color:#a31515">&#34;Doll&#34;</span>]
-<span style="color:#00f">let</span> giftBoundedSource = (<span style="color:#00f">fun</span>() -&gt; gifts) |&gt; Bounded
-
-<span style="color:#00f">let</span> consoleSink = (<span style="color:#00f">fun</span> (s: <span style="color:#2b91af">string</span>) -&gt; Console.WriteLine s) |&gt; Action
-
-copyPipeline giftBoundedSource consoleSink
-</code></pre></div><p>This code will print out all the gift names from the sequence. Now, let&rsquo;s extend it to
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> copyPipeline source sink =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">match</span> source, sink <span style="color:#00f">with</span>
+</span></span><span style="display:flex;"><span>  | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
+</span></span><span style="display:flex;"><span>  | _ -&gt; failwith <span style="color:#a31515">&#34;Not supported yet&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> gifts = seq [<span style="color:#a31515">&#34;Ball&#34;</span>; <span style="color:#a31515">&#34;Train&#34;</span>; <span style="color:#a31515">&#34;Doll&#34;</span>]
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> giftBoundedSource = (<span style="color:#00f">fun</span>() -&gt; gifts) |&gt; Bounded
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> consoleSink = (<span style="color:#00f">fun</span> (s: <span style="color:#2b91af">string</span>) -&gt; Console.WriteLine s) |&gt; Action
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>copyPipeline giftBoundedSource consoleSink
+</span></span></code></pre></div><p>This code will print out all the gift names from the sequence. Now, let&rsquo;s extend it to
 stream unbounded data. Before we can do that, let&rsquo;s introduce a helper class:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Triggered</span>&lt;<span style="color:#00f">&#39;</span>T&gt;() =
-  <span style="color:#00f">let</span> subscribers = <span style="color:#00f">new</span> List&lt;<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>&gt;()
-  <span style="color:#00f">member</span> this.DoNext x =
-    subscribers.ForEach(<span style="color:#00f">fun</span> s -&gt; s x)
-  <span style="color:#00f">member</span> this.Subscribe = subscribers.Add
-</code></pre></div><p>An instance of such class keeps a mutable list of subscribers. Subscribers are
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Triggered</span>&lt;<span style="color:#00f">&#39;</span>T&gt;() =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> subscribers = <span style="color:#00f">new</span> List&lt;<span style="color:#00f">&#39;</span>T -&gt; <span style="color:#2b91af">unit</span>&gt;()
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">member</span> this.DoNext x =
+</span></span><span style="display:flex;"><span>    subscribers.ForEach(<span style="color:#00f">fun</span> s -&gt; s x)
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">member</span> this.Subscribe = subscribers.Add
+</span></span></code></pre></div><p>An instance of such class keeps a mutable list of subscribers. Subscribers are
 added by calling <code>Subscribe</code> method. Someone else can then call <code>DoNext</code> method,
 and each subscriber will get an item every time.</p>
 <p>Here&rsquo;s how we can use it for unbounded data processing:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> copyPipeline source sink =
-  <span style="color:#00f">match</span> source, sink <span style="color:#00f">with</span>
-  | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
-  | Unbounded ub, Action a -&gt; ub a
-
-<span style="color:#00f">let</span> consoleSource = <span style="color:#00f">new</span> Triggered&lt;<span style="color:#2b91af">string</span>&gt;()
-<span style="color:#00f">let</span> unboundedSource = consoleSource.Subscribe |&gt; Unbounded
-copyPipeline unboundedSource consoleSink
-
-Seq.initInfinite (<span style="color:#00f">fun</span> _ -&gt; Console.ReadLine())
-|&gt; Seq.takeWhile ((&lt;&gt;) <span style="color:#a31515">&#34;q&#34;</span>)
-|&gt; Seq.iter consoleSource.DoNext
-</code></pre></div><p>This little program will echo whatever you enter into the console until you type
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> copyPipeline source sink =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">match</span> source, sink <span style="color:#00f">with</span>
+</span></span><span style="display:flex;"><span>  | Bounded b, Action a -&gt; b() |&gt; Seq.iter a
+</span></span><span style="display:flex;"><span>  | Unbounded ub, Action a -&gt; ub a
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> consoleSource = <span style="color:#00f">new</span> Triggered&lt;<span style="color:#2b91af">string</span>&gt;()
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> unboundedSource = consoleSource.Subscribe |&gt; Unbounded
+</span></span><span style="display:flex;"><span>copyPipeline unboundedSource consoleSink
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Seq.initInfinite (<span style="color:#00f">fun</span> _ -&gt; Console.ReadLine())
+</span></span><span style="display:flex;"><span>|&gt; Seq.takeWhile ((&lt;&gt;) <span style="color:#a31515">&#34;q&#34;</span>)
+</span></span><span style="display:flex;"><span>|&gt; Seq.iter consoleSource.DoNext
+</span></span></code></pre></div><p>This little program will echo whatever you enter into the console until you type
 <code>q</code> to quit. That is an example of unbounded data: you can type as long as
 you want, there is no hard limit.</p>
 <p>Here&rsquo;s how it works:</p>
@@ -491,22 +495,22 @@ and the data flows to the sink.</li>
 <p>Now it&rsquo;s time to implement the contracts for the flow that we defined
 in Gift Count example. The contract consists of two parts. The first part
 is a generic interface which defines all the operations that we need:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">type</span> <span style="color:#2b91af">Runnable</span> = <span style="color:#2b91af">unit</span> -&gt; <span style="color:#2b91af">unit</span>
-
-<span style="color:#00f">type</span> <span style="color:#2b91af">IFlow</span>&lt;<span style="color:#00f">&#39;</span>a&gt; =
-  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> Map&lt;<span style="color:#00f">&#39;</span>b&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
-  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> Collect&lt;<span style="color:#00f">&#39;</span>b&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b <span style="color:#2b91af">list</span>) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
-  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> CountBy&lt;<span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b * int&gt;
-  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> To: Sink&lt;<span style="color:#00f">&#39;</span>a&gt; -&gt; Runnable
-</code></pre></div><p>Then we define a module which is just a wrapper around the interface to
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Runnable</span> = <span style="color:#2b91af">unit</span> -&gt; <span style="color:#2b91af">unit</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">IFlow</span>&lt;<span style="color:#00f">&#39;</span>a&gt; =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> Map&lt;<span style="color:#00f">&#39;</span>b&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> Collect&lt;<span style="color:#00f">&#39;</span>b&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b <span style="color:#2b91af">list</span>) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> CountBy&lt;<span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt; : (<span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) -&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b * int&gt;
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">abstract</span> <span style="color:#00f">member</span> To: Sink&lt;<span style="color:#00f">&#39;</span>a&gt; -&gt; Runnable
+</span></span></code></pre></div><p>Then we define a module which is just a wrapper around the interface to
 enable F#-style API:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">module</span> Flow =
-  <span style="color:#00f">let</span> map&lt;<span style="color:#00f">&#39;</span>TI, <span style="color:#00f">&#39;</span>TO&gt; (f: <span style="color:#00f">&#39;</span>TI -&gt; <span style="color:#00f">&#39;</span>TO) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>TI&gt;) = flow.Map f
-  <span style="color:#00f">let</span> collect&lt;<span style="color:#00f">&#39;</span>TI, <span style="color:#00f">&#39;</span>TO&gt; (f: <span style="color:#00f">&#39;</span>TI -&gt; <span style="color:#00f">&#39;</span>TO <span style="color:#2b91af">list</span>) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>TI&gt;) = flow.Collect f
-  <span style="color:#00f">let</span> countBy&lt;<span style="color:#00f">&#39;</span>T, <span style="color:#00f">&#39;</span>TK <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>TK: equality&gt; (f: <span style="color:#00f">&#39;</span>T -&gt; <span style="color:#00f">&#39;</span>TK) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>T&gt;) = flow.CountBy f
-  <span style="color:#00f">let</span> connectTo&lt;<span style="color:#00f">&#39;</span>T&gt; sink (flow: IFlow&lt;<span style="color:#00f">&#39;</span>T&gt;) = flow.To sink
-  <span style="color:#00f">let</span> run (r: Runnable) = r()
-</code></pre></div><p>Then, we just need an implementation of <code>IFlow</code> and a factory method to create
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">module</span> Flow =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> map&lt;<span style="color:#00f">&#39;</span>TI, <span style="color:#00f">&#39;</span>TO&gt; (f: <span style="color:#00f">&#39;</span>TI -&gt; <span style="color:#00f">&#39;</span>TO) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>TI&gt;) = flow.Map f
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> collect&lt;<span style="color:#00f">&#39;</span>TI, <span style="color:#00f">&#39;</span>TO&gt; (f: <span style="color:#00f">&#39;</span>TI -&gt; <span style="color:#00f">&#39;</span>TO <span style="color:#2b91af">list</span>) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>TI&gt;) = flow.Collect f
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> countBy&lt;<span style="color:#00f">&#39;</span>T, <span style="color:#00f">&#39;</span>TK <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>TK: equality&gt; (f: <span style="color:#00f">&#39;</span>T -&gt; <span style="color:#00f">&#39;</span>TK) (flow: IFlow&lt;<span style="color:#00f">&#39;</span>T&gt;) = flow.CountBy f
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> connectTo&lt;<span style="color:#00f">&#39;</span>T&gt; sink (flow: IFlow&lt;<span style="color:#00f">&#39;</span>T&gt;) = flow.To sink
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> run (r: Runnable) = r()
+</span></span></code></pre></div><p>Then, we just need an implementation of <code>IFlow</code> and a factory method to create
 an initial instance of flow given a data source.</p>
 <p>Now I&rsquo;d like to emphasize that there are multiple possible implementations
 of <code>IFlow</code> depending on the required properties for the pipeline. They might make
@@ -517,62 +521,62 @@ to build a visual graph of processing stages, to be used for documentation and d
 purposes.</p>
 <p>We will have a look at more advanced implementations in the further articles, but
 for now here is a naive version:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">module</span> Runner =
-  <span style="color:#00f">let</span> private mapTransform map = <span style="color:#00f">function</span>
-    | Bounded bs -&gt; bs &gt;&gt; Seq.map map |&gt; Bounded
-    | Unbounded us -&gt;
-      <span style="color:#00f">fun</span> subscriber -&gt; map &gt;&gt; subscriber |&gt; us
-      |&gt; Unbounded
-
-  <span style="color:#00f">let</span> private collectTransform mapToMany = <span style="color:#00f">function</span>
-    | Bounded bs -&gt; bs &gt;&gt; Seq.map mapToMany &gt;&gt; Seq.concat |&gt; Bounded
-    | Unbounded us -&gt;
-      <span style="color:#00f">fun</span> subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
-      |&gt; Unbounded
-
-  <span style="color:#00f">let</span> private countByTransform&lt;<span style="color:#00f">&#39;</span>a, <span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt; (getKey: <span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) source =
-    <span style="color:#00f">let</span> state = <span style="color:#00f">new</span> Dictionary&lt;<span style="color:#00f">&#39;</span>b, int&gt;()
-    <span style="color:#00f">let</span> addItem i =
-      <span style="color:#00f">let</span> key = getKey i
-      <span style="color:#00f">let</span> value = <span style="color:#00f">if</span> state.ContainsKey key <span style="color:#00f">then</span> state.[key] <span style="color:#00f">else</span> 0
-      <span style="color:#00f">let</span> newValue = value + 1
-      state.[key] &lt;- newValue
-      (key, newValue)
-
-    <span style="color:#00f">match</span> source <span style="color:#00f">with</span>
-    | Bounded bs -&gt; bs &gt;&gt; Seq.countBy getKey |&gt; Bounded
-    | Unbounded us -&gt; (<span style="color:#00f">fun</span> s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
-
-  <span style="color:#00f">let</span> private stage source transform sink () =
-    <span style="color:#00f">match</span> transform source, sink <span style="color:#00f">with</span>
-    | Bounded bs, Action a -&gt; bs() |&gt; Seq.iter a
-    | Unbounded us, Action a -&gt; us a
-
-  <span style="color:#00f">type</span> <span style="color:#2b91af">private</span> Flow&lt;<span style="color:#00f">&#39;</span>a&gt;(source: Source&lt;<span style="color:#00f">&#39;</span>a&gt;, connect: Sink&lt;<span style="color:#00f">&#39;</span>a&gt; -&gt; Runnable) =
-    <span style="color:#00f">member</span> this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; t = <span style="color:#00f">new</span> Flow&lt;<span style="color:#00f">&#39;</span>b&gt;(t source, stage source t) :&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
-
-    <span style="color:#00f">interface</span> IFlow&lt;<span style="color:#00f">&#39;</span>a&gt; <span style="color:#00f">with</span>
-      <span style="color:#00f">member</span> this.Map&lt;<span style="color:#00f">&#39;</span>b&gt; map = this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; (mapTransform map)
-
-      <span style="color:#00f">member</span> this.Collect&lt;<span style="color:#00f">&#39;</span>b&gt; map = this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; (collectTransform map)
-
-      <span style="color:#00f">member</span> this.CountBy&lt;<span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt;(getKey) =
-        this.Apply&lt;<span style="color:#00f">&#39;</span>b * int&gt; (countByTransform&lt;<span style="color:#00f">&#39;</span>a, <span style="color:#00f">&#39;</span>b&gt; getKey)
-
-      <span style="color:#00f">member</span> this.To(sink) = connect(sink)
-
-  <span style="color:#00f">let</span> from&lt;<span style="color:#00f">&#39;</span>a&gt; source =
-    <span style="color:#00f">new</span> Flow&lt;<span style="color:#00f">&#39;</span>a&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;<span style="color:#00f">&#39;</span>a&gt;
-</code></pre></div><p>The implementation details are not that important at the moment (even though it&rsquo;s
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">module</span> Runner =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> private mapTransform map = <span style="color:#00f">function</span>
+</span></span><span style="display:flex;"><span>    | Bounded bs -&gt; bs &gt;&gt; Seq.map map |&gt; Bounded
+</span></span><span style="display:flex;"><span>    | Unbounded us -&gt;
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">fun</span> subscriber -&gt; map &gt;&gt; subscriber |&gt; us
+</span></span><span style="display:flex;"><span>      |&gt; Unbounded
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> private collectTransform mapToMany = <span style="color:#00f">function</span>
+</span></span><span style="display:flex;"><span>    | Bounded bs -&gt; bs &gt;&gt; Seq.map mapToMany &gt;&gt; Seq.concat |&gt; Bounded
+</span></span><span style="display:flex;"><span>    | Unbounded us -&gt;
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">fun</span> subscriber -&gt; mapToMany &gt;&gt; Seq.iter subscriber |&gt; us
+</span></span><span style="display:flex;"><span>      |&gt; Unbounded
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> private countByTransform&lt;<span style="color:#00f">&#39;</span>a, <span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt; (getKey: <span style="color:#00f">&#39;</span>a -&gt; <span style="color:#00f">&#39;</span>b) source =
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> state = <span style="color:#00f">new</span> Dictionary&lt;<span style="color:#00f">&#39;</span>b, int&gt;()
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> addItem i =
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">let</span> key = getKey i
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">let</span> value = <span style="color:#00f">if</span> state.ContainsKey key <span style="color:#00f">then</span> state.[key] <span style="color:#00f">else</span> 0
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">let</span> newValue = value + 1
+</span></span><span style="display:flex;"><span>      state.[key] &lt;- newValue
+</span></span><span style="display:flex;"><span>      (key, newValue)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">match</span> source <span style="color:#00f">with</span>
+</span></span><span style="display:flex;"><span>    | Bounded bs -&gt; bs &gt;&gt; Seq.countBy getKey |&gt; Bounded
+</span></span><span style="display:flex;"><span>    | Unbounded us -&gt; (<span style="color:#00f">fun</span> s -&gt; addItem &gt;&gt; s) &gt;&gt; us |&gt; Unbounded
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> private stage source transform sink () =
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">match</span> transform source, sink <span style="color:#00f">with</span>
+</span></span><span style="display:flex;"><span>    | Bounded bs, Action a -&gt; bs() |&gt; Seq.iter a
+</span></span><span style="display:flex;"><span>    | Unbounded us, Action a -&gt; us a
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">type</span> <span style="color:#2b91af">private</span> Flow&lt;<span style="color:#00f">&#39;</span>a&gt;(source: Source&lt;<span style="color:#00f">&#39;</span>a&gt;, connect: Sink&lt;<span style="color:#00f">&#39;</span>a&gt; -&gt; Runnable) =
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">member</span> this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; t = <span style="color:#00f">new</span> Flow&lt;<span style="color:#00f">&#39;</span>b&gt;(t source, stage source t) :&gt; IFlow&lt;<span style="color:#00f">&#39;</span>b&gt;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">interface</span> IFlow&lt;<span style="color:#00f">&#39;</span>a&gt; <span style="color:#00f">with</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">member</span> this.Map&lt;<span style="color:#00f">&#39;</span>b&gt; map = this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; (mapTransform map)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">member</span> this.Collect&lt;<span style="color:#00f">&#39;</span>b&gt; map = this.Apply&lt;<span style="color:#00f">&#39;</span>b&gt; (collectTransform map)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">member</span> this.CountBy&lt;<span style="color:#00f">&#39;</span>b <span style="color:#00f">when</span> <span style="color:#00f">&#39;</span>b: equality&gt;(getKey) =
+</span></span><span style="display:flex;"><span>        this.Apply&lt;<span style="color:#00f">&#39;</span>b * int&gt; (countByTransform&lt;<span style="color:#00f">&#39;</span>a, <span style="color:#00f">&#39;</span>b&gt; getKey)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#00f">member</span> this.To(sink) = connect(sink)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> from&lt;<span style="color:#00f">&#39;</span>a&gt; source =
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">new</span> Flow&lt;<span style="color:#00f">&#39;</span>a&gt;(source, stage source (mapTransform id)) :&gt; IFlow&lt;<span style="color:#00f">&#39;</span>a&gt;
+</span></span></code></pre></div><p>The implementation details are not that important at the moment (even though it&rsquo;s
 just 37 lines of code), so I&rsquo;ll just proceed to the pipeline definition:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp">unboundedSource                <span style="color:#008000">// e.g. same console source as before
-</span><span style="color:#008000"></span>|&gt; Runner.from                 <span style="color:#008000">// create Runner implementation of IFlow
-</span><span style="color:#008000"></span>|&gt; Flow.collect tokenize
-|&gt; Flow.countBy id
-|&gt; Flow.map print
-|&gt; Flow.connectTo consoleSink  <span style="color:#008000">// connect to the Sink
-</span><span style="color:#008000"></span>|&gt; Flow.run                    <span style="color:#008000">// start listening for events
-</span></code></pre></div><p>Here you can find
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span>unboundedSource                <span style="color:#008000">// e.g. same console source as before
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>|&gt; Runner.from                 <span style="color:#008000">// create Runner implementation of IFlow
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>|&gt; Flow.collect tokenize
+</span></span><span style="display:flex;"><span>|&gt; Flow.countBy id
+</span></span><span style="display:flex;"><span>|&gt; Flow.map print
+</span></span><span style="display:flex;"><span>|&gt; Flow.connectTo consoleSink  <span style="color:#008000">// connect to the Sink
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>|&gt; Flow.run                    <span style="color:#008000">// start listening for events
+</span></span></span></code></pre></div><p>Here you can find
 <a href="https://github.com/mikhailshilkov/mikhailio-samples/blob/master/streamprocessing/GiftCount.fs">the full code of the Gift Count example</a>.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>In this article, we started reasoning about low-latency processing
@@ -665,8 +669,8 @@ follow-ups:</p>
         <div class="col-md-8">
             
             <div id="disqus_thread"></div>
-<script type="application/javascript">
-    var disqus_config = function () {
+<script>
+    window.disqus_config = function () {
     
     
     
@@ -715,17 +719,5 @@ follow-ups:</p>
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
     </body>
 </html>

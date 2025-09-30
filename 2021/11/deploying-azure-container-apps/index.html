@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Deploying new Azure Container Apps with familiar languages | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	<link rel="canonical" href="https://www.pulumi.com/blog/azure-container-apps/">
+	
+	
+	<meta property="og:title" content="Deploying new Azure Container Apps with familiar languages" />
+	<meta property="og:description" content="Learn how to deploy Docker containers to Azure Container Apps using Pulumi. A step-by-step guide for building scalable serverless apps in any language." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2021/11/deploying-azure-container-apps/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2021/11/deploying-azure-container-apps/container-apps.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Containers" />
+	
+	<meta property="article:tag" content="Docker" />
+	
+	<meta property="article:tag" content="Serverless" />
+	
+	<meta property="article:tag" content="Pulumi" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2021/11/deploying-azure-container-apps/container-apps.png" />
+	
+	
+
+	<meta name="twitter:title" content="Deploying new Azure Container Apps with familiar languages"/>
+	<meta name="twitter:description" content="Learn how to deploy Docker containers to Azure Container Apps using Pulumi. A step-by-step guide for building scalable serverless apps in any language."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Deploying%20new%20Azure%20Container%20Apps%20with%20familiar%20languages%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2021%2f11%2fdeploying-azure-container-apps%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Deploying new Azure Container Apps with familiar languages</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Originally published on the <a
+                                        href='https://www.pulumi.com/blog/azure-container-apps/'>Pulumi Blog</a> on
+                                    Nov 2, 2021
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 6 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Today, <a href="https://aka.ms/containerapps/ignite-blog">Microsoft announced</a> a new general-purpose serverless container platform: <a href="https://aka.ms/containerapps/">Azure Container Apps</a>. Container Apps is a fully managed platform for microservice applications that runs on top of Kubernetes and open-source technologies like KEDA, Envoy, and Dapr.</p>
+<p>Container Apps are designed to abstract infrastructure management with flexible serverless containers. Developers can run containers at scale without the burden of standing up and managing a Kubernetes cluster manually.</p>
+<p>We are happy to announce same-day support for Azure Container Apps in the Pulumi Azure Native Provider, which covers 100% of the Azure Resource Manager APIs and gives you highest fidelity integration with Azure&rsquo;s resources.</p>
+<p>The new service supports a broad range of usage scenarios, including</p>
+<ul>
+<li>Microservices over HTTP or gRPC</li>
+<li>HTTP APIs and websites</li>
+<li>Event processing workers</li>
+<li>Long-running background jobs</li>
+</ul>
+<h2 id="serverless-containers">Serverless containers</h2>
+<p>Container Apps provide serverless containers for microservice developers.</p>
+<ul>
+<li><strong>Managed infrastructure</strong>. Microsoft operates the control plane that takes care of orchestrating containers and their configuration, allowing developers to focus on apps, not cloud infrastructure.</li>
+<li><strong>Fully integrated auto-scaling with scale to zero</strong>. The platform relies on Kubernetes Event-driven Autoscaling (KEDA) to scale apps and microservices dynamically based on HTTP traffic or event workload.</li>
+<li><strong>Consumption pricing</strong>. The billing model is based on the actual resource consumption with per-second granularity. Applications incur charges per request, compute time and memory used with no need to pre-provision a fixed capacity.</li>
+<li><strong>Any language, any base image</strong>. Container Apps put no limitation on the container images. You may use an arbitrary base image and host any web server or a console application, ensuring flexibility and interoperability with other container orchestrators.</li>
+</ul>
+<h2 id="how-it-works">How it works</h2>
+<p>Microsoft has built Container Apps as a managed service on the foundation of open-source technology in the Kubernetes ecosystem. This enables teams to build microservices without having to manage Kubernetes directly while providing application portability by leveraging open standards and APIs. Behind the scenes, every container app runs on the Azure Kubernetes Service (AKS). Enabling open-source integrations include:</p>
+<p><strong>Envoy</strong>, a built-in ingress controller that exposes user containers internally and externally via HTTP endpoints. It supports multiple container versions with dynamic load balancing and several traffic rollout strategies.</p>
+<p><strong>KEDA</strong> enables dynamic auto-scaling for user applications based on the current workload, including scaling down to zero during idle periods.</p>
+<p>Container Apps are also tightly integrated with <strong>Dapr</strong>—an open-source runtime system designed to support cloud-native microservice applications. It provides extra blocks for service discovery, state management, asynchronous message passing.</p>
+<h2 id="how-its-different">How it&rsquo;s different</h2>
+<p>A few other services provided by Microsoft Azure and other cloud providers operate in the space of running container-based workloads:</p>
+<p><strong>Azure Kubernetes Service</strong> delivers the full power of Kubernetes but requires expertise in configuring and operating the cluster. When building on AKS, users handle most infrastructure management aspects themselves. Instead, Container Apps provide a platform built on top of AKS, focusing on developer productivity and switching to consumption-based pricing.</p>
+<p><strong>Azure Container Instances</strong> (ACI) provides atomic infrastructure units with per-usage pricing. However, ACI comes without higher-level functionality like auto-scaling, load balancing, versioning, and managed rollouts.</p>
+<p><strong>Azure App Service</strong> is a Platform-as-a-Service comparable to Container Apps in terms of being simple-to-operate and developer-friendly. App Service can also run arbitrary containers. However, it is best suited to run websites. The billing model is mostly capacity-based with some built-in autoscaling but without scaling to zero.</p>
+<p><strong>Azure Functions</strong> is a developer-oriented truly-serverless offering. However, it comes with an opinionated programming model that is focused on achieving a high developer productivity as long as your application can use the Azure Functions SDK or container base images. Unlike Container APps, it does not support long-running jobs in consumption mode.</p>
+<p>Comparing to other vendors: Azure Container Apps are in the same space as <strong>Google Cloud Run</strong> and <strong>AWS App Runner</strong>. In contrast to the competition, Azure Container Apps is built on Kubernetes and related open-source projects, which should benefit its users in terms of interoperability and transparency. Additionally, Container Apps is the only service that provides features like service discovery for microservices-style communication out of the box.</p>
+<h2 id="example-run-an-http-api-with-azure-container-apps-and-pulumi">Example: Run an HTTP API with Azure Container Apps and Pulumi</h2>
+<p>Let&rsquo;s walk through the steps to build an example application with Azure Container Apps using infrastructure as code in familiar languages. In this scenario, we create an HTTP application that is available via a public domain name. We&rsquo;ll use Pulumi to provision the necessary resources. In this example, we will use TypeScript however you could also use JavaScript, Python, Go, and C#.</p>
+<p>You can check out the complete source code in the Pulumi Examples:</p>
+<ul>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-ts-containerapps">TypeScript Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-cs-containerapps">C# Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-py-containerapps">Python Azure Container Apps Example</a></li>
+<li><a href="https://github.com/pulumi/examples/tree/master/azure-go-containerapps">Go Azure Container Apps Example</a></li>
+</ul>
+<h3 id="define-a-dockerfile-and-app">Define a Dockerfile and app</h3>
+<p>Here are the key features of the container image for our application:</p>
+<ul>
+<li>Based on the <code>node:8.9.3-alpine</code> image</li>
+<li>Installs <code>express</code> with NPM</li>
+<li>Runs a node web app using <code>index.js</code> and <code>index.html</code> user files</li>
+</ul>
+<p><a href="https://github.com/pulumi/examples/tree/master/azure-ts-containerapps/node-app/Dockerfile">Full Dockerfile</a>.</p>
+<h3 id="set-up-the-environment">Set up the environment</h3>
+<p>The resource <code>KubeEnvironment</code> defines a cluster that can host multiple Container Apps. Behind the scenes, it creates an AKS cluster in a subscription managed internally by Microsoft and deploys the Apps control plane.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">import</span> * <span style="color:#00f">as</span> web <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/azure-native/web/v20210301&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> env = <span style="color:#00f">new</span> web.KubeEnvironment(<span style="color:#a31515">&#34;env&#34;</span>, {
+</span></span><span style="display:flex;"><span>   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>   <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;Managed&#34;</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><h3 id="build-and-publish-a-container-image">Build and publish a container image</h3>
+<p>We can build the Docker image and publish it to a new Azure Container Registry (ACR) repository:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">import</span> * <span style="color:#00f">as</span> docker <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/docker&#34;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#00f">import</span> * <span style="color:#00f">as</span> containerregistry <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/azure-native/containerregistry&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> customImage = <span style="color:#a31515">&#34;node-app&#34;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> registry = <span style="color:#00f">new</span> containerregistry.Registry(<span style="color:#a31515">&#34;registry&#34;</span>, {
+</span></span><span style="display:flex;"><span>   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>   sku: {
+</span></span><span style="display:flex;"><span>       name: <span style="color:#a31515">&#34;Basic&#34;</span>,
+</span></span><span style="display:flex;"><span>   },
+</span></span><span style="display:flex;"><span>   adminUserEnabled: <span style="color:#2b91af">true</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> credentials = containerregistry.listRegistryCredentialsOutput({
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    registryName: <span style="color:#2b91af">registry.name</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> adminUsername = credentials.apply(c =&gt; c.username!);
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> adminPassword = credentials.apply(c =&gt; c.passwords![0].value!);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> myImage = <span style="color:#00f">new</span> docker.Image(customImage, {
+</span></span><span style="display:flex;"><span>   imageName: <span style="color:#2b91af">pulumi.interpolate</span><span style="color:#a31515">`</span><span style="color:#a31515">${</span>registry.loginServer<span style="color:#a31515">}</span><span style="color:#a31515">/</span><span style="color:#a31515">${</span>customImage<span style="color:#a31515">}</span><span style="color:#a31515">:v1.0.0`</span>,
+</span></span><span style="display:flex;"><span>   build: { context: <span style="color:#a31515">`./</span><span style="color:#a31515">${</span>customImage<span style="color:#a31515">}</span><span style="color:#a31515">`</span> },
+</span></span><span style="display:flex;"><span>   registry: {
+</span></span><span style="display:flex;"><span>       server: <span style="color:#2b91af">registry.loginServer</span>,
+</span></span><span style="display:flex;"><span>       username: <span style="color:#2b91af">adminUsername</span>,
+</span></span><span style="display:flex;"><span>       password: <span style="color:#2b91af">adminPassword</span>,
+</span></span><span style="display:flex;"><span>   },
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><h2 id="deploy-the-container-app">Deploy the container app</h2>
+<p>Finally, we can define the Container App itself. We point the App to the environment resource and instruct it to run our custom image. Image container credentials are specified in the <code>configuration</code> block, with the password marked as a secret. We&rsquo;ve also enabled external ingress to publish the app on the web.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> containerApp = <span style="color:#00f">new</span> web.ContainerApp(<span style="color:#a31515">&#34;app&#34;</span>, {
+</span></span><span style="display:flex;"><span>   resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>   kubeEnvironmentId: <span style="color:#2b91af">env.id</span>,
+</span></span><span style="display:flex;"><span>   configuration: {
+</span></span><span style="display:flex;"><span>       ingress: {
+</span></span><span style="display:flex;"><span>           external: <span style="color:#2b91af">true</span>,
+</span></span><span style="display:flex;"><span>           targetPort: <span style="color:#2b91af">80</span>,
+</span></span><span style="display:flex;"><span>       },
+</span></span><span style="display:flex;"><span>       registries: [{
+</span></span><span style="display:flex;"><span>           server: <span style="color:#2b91af">registry.loginServer</span>,
+</span></span><span style="display:flex;"><span>           username: <span style="color:#2b91af">adminUsername</span>,
+</span></span><span style="display:flex;"><span>           passwordSecretRef: <span style="color:#a31515">&#34;pwd&#34;</span>,
+</span></span><span style="display:flex;"><span>       }],
+</span></span><span style="display:flex;"><span>       secrets: [{
+</span></span><span style="display:flex;"><span>           name: <span style="color:#a31515">&#34;pwd&#34;</span>,
+</span></span><span style="display:flex;"><span>           value: <span style="color:#2b91af">adminPassword</span>,
+</span></span><span style="display:flex;"><span>       }],
+</span></span><span style="display:flex;"><span>   },
+</span></span><span style="display:flex;"><span>   template: {
+</span></span><span style="display:flex;"><span>       containers: [{
+</span></span><span style="display:flex;"><span>           name: <span style="color:#a31515">&#34;myapp&#34;</span>,
+</span></span><span style="display:flex;"><span>           image: <span style="color:#2b91af">myImage.imageName</span>,
+</span></span><span style="display:flex;"><span>       }],
+</span></span><span style="display:flex;"><span>   }
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">export</span> <span style="color:#00f">const</span> url = pulumi.interpolate<span style="color:#a31515">`https://</span><span style="color:#a31515">${</span>containerApp.configuration.ingress.fqdn<span style="color:#a31515">}</span><span style="color:#a31515">`</span>;
+</span></span></code></pre></div><h3 id="test-the-app">Test the app</h3>
+<p>And that is it! We run <code>pulumi up</code> to get the application up and running. Once the deployment completes, we can send an HTTP request and check the response.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ curl <span style="color:#00f">$(</span>pulumi stack output url<span style="color:#00f">)</span>
+</span></span><span style="display:flex;"><span>&lt;html&gt;
+</span></span><span style="display:flex;"><span>&lt;body&gt;
+</span></span><span style="display:flex;"><span>&lt;h1&gt;Your custom docker image is running in Azure Container Apps!&lt;/h1&gt;
+</span></span><span style="display:flex;"><span>&lt;/body&gt;
+</span></span><span style="display:flex;"><span>&lt;/html&gt;
+</span></span></code></pre></div><h2 id="conclusion">Conclusion</h2>
+<p>Azure Container Apps enable you to build applications in your favorite language with any dependencies and tools, package them as a container image, and deploy them in seconds. Container Apps abstract away infrastructure management by automatically scaling up and down to zero and only charging for the exact resources you use.</p>
+<p>This post shows how to use Pulumi to build a container image and publish it as an Azure Container App. Pulumi makes it easy to create artifacts and provision and manage cloud infrastructure on any cloud using familiar programming languages, including C#, TypeScript, Python, and Go. Docker images, ACR registries, container environments, and Apps can be managed within the same infrastructure definition.</p>
+<h3 id="further-steps">Further steps</h3>
+<ul>
+<li><a href="https://www.pulumi.com/docs/iac/get-started/azure/">Get Started with Pulumi for Azure today.</a></li>
+<li><a href="https://aka.ms/containerapps/ignite-blog">Read about Azure Container Apps announcement.</a></li>
+</ul>
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/containers">Containers</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/docker">Docker</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/serverless">Serverless</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/pulumi">Pulumi</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/54'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">54</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/54'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+    </body>
+</html>

@@ -104,19 +104,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -250,10 +250,10 @@
 </figure>
 <p>The deployment artifact is just the code packaged as a zip archive and uploaded to Blob Storage. <strong>Scale Controller</strong> is an internal Azure component that observes the target queue and allocates Function App instances based on the queue length fluctuations. Each instance bootstraps itself with a zip file, connects to the queue, and pulls messages to process.</p>
 <p>The cloud provider manages all the components of the system, so developers can focus on writing business logic code. It can be <a href="/2019/08/ten-pearls-with-azure-functions-in-pulumi/">as simple as a JavaScript callback</a>:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts">queue.onEvent(<span style="color:#a31515">&#34;MyHandler&#34;</span>, <span style="color:#00f">async</span> (context, msg) =&gt; {
-   console.log(<span style="color:#a31515">&#34;New message: &#34;</span> + JSON.stringify(msg));
-});
-</code></pre></div><h2 id="keda">KEDA</h2>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span>queue.onEvent(<span style="color:#a31515">&#34;MyHandler&#34;</span>, <span style="color:#00f">async</span> (context, msg) =&gt; {
+</span></span><span style="display:flex;"><span>   console.log(<span style="color:#a31515">&#34;New message: &#34;</span> + JSON.stringify(msg));
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><h2 id="keda">KEDA</h2>
 <p>Over the last few years, Kubernetes has gained traction across many industries. KEDA is provides a way to design and run event-driven applications inside a Kubernetes cluster. KEDA implements the autoscaling components in terms of Kubernetes tools.</p>
 <p>The target Function App is packaged together with the Azure Functions runtime into a custom <strong>Docker image</strong> and published to a <strong>registry</strong>. A Kubernetes <strong>deployment</strong> utilizes that image and configures the parameters to connect it to the target event source (for instance, a queue):</p>
 <p><img src="k8s-deployment.png" alt="Kubernetes Deployment"></p>
@@ -286,138 +286,138 @@
 <p>All these components can be defined and deployed within a single Pulumi program. Below I highlight the main blocks of the program. Navigate to the <a href="#reusable-components">following section</a> to look at a short and reusable component.</p>
 <h3 id="aks-cluster">AKS Cluster</h3>
 <p>KEDA can run on any Kubernetes cluster, but I choose to do so on managed AKS. My custom <code>AksCluster</code> component defines a cluster, including the required Active Directory and networking configuration. It makes multiple assumptions, so I only need to specify the main properties:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;keda-sample&#34;</span>);
-
-<span style="color:#00f">const</span> aks = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;keda-cluster&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-    kubernetesVersion: <span style="color:#a31515">&#34;1.13.5&#34;</span>,
-    vmSize: <span style="color:#a31515">&#34;Standard_B2s&#34;</span>,
-    vmCount: <span style="color:#2b91af">3</span>,
-});
-</code></pre></div><p><code>aks.cluster</code> now has all the required output values, for instance, <code>aks.cluster.kubeConfigRaw</code> configuration.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;keda-sample&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> aks = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;keda-cluster&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    kubernetesVersion: <span style="color:#a31515">&#34;1.13.5&#34;</span>,
+</span></span><span style="display:flex;"><span>    vmSize: <span style="color:#a31515">&#34;Standard_B2s&#34;</span>,
+</span></span><span style="display:flex;"><span>    vmCount: <span style="color:#2b91af">3</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p><code>aks.cluster</code> now has all the required output values, for instance, <code>aks.cluster.kubeConfigRaw</code> configuration.</p>
 <h3 id="shared-cluster-components">Shared Cluster Components</h3>
 <p>The next group of components needs to be deployed just once.</p>
 <p>Azure Container Registry is not part of the AKS cluster. Its purpose is to host Docker images of applications.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> registry = <span style="color:#00f">new</span> azure.containerservice.Registry(<span style="color:#a31515">&#34;registry&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">args.resourceGroup.name</span>,
-    adminEnabled: <span style="color:#2b91af">true</span>,
-    sku: <span style="color:#a31515">&#34;Premium&#34;</span>,
-});
-</code></pre></div><p>A Helm chart <code>kedacore/keda-edge</code> deploys the KEDA service and the <code>ScaledObject</code> custom resource definition.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> keda = <span style="color:#00f">new</span> k8s.helm.v2.Chart(<span style="color:#a31515">&#34;keda-edge&#34;</span>, {
-    repo: <span style="color:#a31515">&#34;kedacore&#34;</span>,
-    chart: <span style="color:#a31515">&#34;keda-edge&#34;</span>,
-    version: <span style="color:#a31515">&#34;0.0.1-2019.07.24.21.37.42-8ffd9a3&#34;</span>,
-    values: {
-        logLevel: <span style="color:#a31515">&#34;debug&#34;</span>,
-    },
-}, { providers: { kubernetes: <span style="color:#2b91af">aks.provider</span> } });
-</code></pre></div><h3 id="event-source">Event Source</h3>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> registry = <span style="color:#00f">new</span> azure.containerservice.Registry(<span style="color:#a31515">&#34;registry&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">args.resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    adminEnabled: <span style="color:#2b91af">true</span>,
+</span></span><span style="display:flex;"><span>    sku: <span style="color:#a31515">&#34;Premium&#34;</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>A Helm chart <code>kedacore/keda-edge</code> deploys the KEDA service and the <code>ScaledObject</code> custom resource definition.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> keda = <span style="color:#00f">new</span> k8s.helm.v2.Chart(<span style="color:#a31515">&#34;keda-edge&#34;</span>, {
+</span></span><span style="display:flex;"><span>    repo: <span style="color:#a31515">&#34;kedacore&#34;</span>,
+</span></span><span style="display:flex;"><span>    chart: <span style="color:#a31515">&#34;keda-edge&#34;</span>,
+</span></span><span style="display:flex;"><span>    version: <span style="color:#a31515">&#34;0.0.1-2019.07.24.21.37.42-8ffd9a3&#34;</span>,
+</span></span><span style="display:flex;"><span>    values: {
+</span></span><span style="display:flex;"><span>        logLevel: <span style="color:#a31515">&#34;debug&#34;</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>}, { providers: { kubernetes: <span style="color:#2b91af">aks.provider</span> } });
+</span></span></code></pre></div><h3 id="event-source">Event Source</h3>
 <p>KEDA supports multiple types of event sources, and the current list is available <a href="https://github.com/kedacore/keda#event-sources-and-scalers">here</a>. An event source is supported if there is a scaler which knows how to pull metrics out of it and turn them into a custom metric for HPA.</p>
 <p>My example uses an Azure Storage Queue as the event source:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> storageAccount = <span style="color:#00f">new</span> azure.storage.Account(<span style="color:#a31515">&#34;kedasa&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-    accountTier: <span style="color:#a31515">&#34;Standard&#34;</span>,
-    accountReplicationType: <span style="color:#a31515">&#34;LRS&#34;</span>,
-});
-
-<span style="color:#00f">const</span> queue = <span style="color:#00f">new</span> azure.storage.Queue(<span style="color:#a31515">&#34;kedaqueue&#34;</span>, {
-    storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
-});
-</code></pre></div><h3 id="docker-image">Docker Image</h3>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> storageAccount = <span style="color:#00f">new</span> azure.storage.Account(<span style="color:#a31515">&#34;kedasa&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    accountTier: <span style="color:#a31515">&#34;Standard&#34;</span>,
+</span></span><span style="display:flex;"><span>    accountReplicationType: <span style="color:#a31515">&#34;LRS&#34;</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> queue = <span style="color:#00f">new</span> azure.storage.Queue(<span style="color:#a31515">&#34;kedaqueue&#34;</span>, {
+</span></span><span style="display:flex;"><span>    storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><h3 id="docker-image">Docker Image</h3>
 <p>The same Pulumi program is capable of building a Docker image and uploading it to the Container Registry.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> dockerImage = <span style="color:#00f">new</span> docker.Image(<span style="color:#a31515">&#34;image&#34;</span>, {
-    imageName: <span style="color:#2b91af">pulumi.interpolate</span><span style="color:#a31515">`</span><span style="color:#a31515">${</span>registry.loginServer<span style="color:#a31515">}</span><span style="color:#a31515">/</span><span style="color:#a31515">${</span>args.queue.name<span style="color:#a31515">}</span><span style="color:#a31515">:v1.0.0`</span>,
-    build: {
-        context: <span style="color:#a31515">&#34;./functionapp&#34;</span>,
-    },
-    registry: {
-        server: <span style="color:#2b91af">registry.loginServer</span>,
-        username: <span style="color:#2b91af">registry.adminUsername</span>,
-        password: <span style="color:#2b91af">registry.adminPassword</span>,
-    },
-});
-</code></pre></div><p>The image refers to the folder with a <code>Dockerfile</code> in it and uses the <code>registry</code> variables to fill the credentials.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> dockerImage = <span style="color:#00f">new</span> docker.Image(<span style="color:#a31515">&#34;image&#34;</span>, {
+</span></span><span style="display:flex;"><span>    imageName: <span style="color:#2b91af">pulumi.interpolate</span><span style="color:#a31515">`</span><span style="color:#a31515">${</span>registry.loginServer<span style="color:#a31515">}</span><span style="color:#a31515">/</span><span style="color:#a31515">${</span>args.queue.name<span style="color:#a31515">}</span><span style="color:#a31515">:v1.0.0`</span>,
+</span></span><span style="display:flex;"><span>    build: {
+</span></span><span style="display:flex;"><span>        context: <span style="color:#a31515">&#34;./functionapp&#34;</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    registry: {
+</span></span><span style="display:flex;"><span>        server: <span style="color:#2b91af">registry.loginServer</span>,
+</span></span><span style="display:flex;"><span>        username: <span style="color:#2b91af">registry.adminUsername</span>,
+</span></span><span style="display:flex;"><span>        password: <span style="color:#2b91af">registry.adminPassword</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>The image refers to the folder with a <code>Dockerfile</code> in it and uses the <code>registry</code> variables to fill the credentials.</p>
 <h3 id="deployment">Deployment</h3>
 <p>Now, we can define a Deployment which uses the Docker image to run our Function App on Kubernetes pods.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> appLabels = { app: <span style="color:#2b91af">name</span> };
-<span style="color:#00f">const</span> deployment = <span style="color:#00f">new</span> k8s.apps.v1.Deployment(name, {
-    apiVersion: <span style="color:#a31515">&#34;apps/v1&#34;</span>,
-    kind: <span style="color:#a31515">&#34;Deployment&#34;</span>,
-    metadata: {
-        labels: <span style="color:#2b91af">appLabels</span>,
-    },
-    spec: {
-        selector: { matchLabels: <span style="color:#2b91af">appLabels</span> },
-        template: {
-            metadata: {
-                labels: <span style="color:#2b91af">appLabels</span>,
-            },
-            spec: {
-                containers: [{
-                    name,
-                    image: <span style="color:#2b91af">dockerImage.imageName</span>,
-                    env: [{ name: <span style="color:#a31515">&#34;queuename&#34;</span>, value: <span style="color:#2b91af">args.queue.name</span> }],
-                    envFrom: [{ secretRef: {name: <span style="color:#2b91af">secretQueue.metadata.name</span> } }],
-                }],
-                imagePullSecrets: [{ name: <span style="color:#2b91af">args.service.registrySecretName</span> }],
-            },
-        },
-    },
-}, { provider: <span style="color:#2b91af">aks.provider</span> });
-</code></pre></div><p>The deployment refers to the secret value which stores the connection string to our target Storage Queue:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> secretQueue = <span style="color:#00f">new</span> k8s.core.v1.Secret(<span style="color:#a31515">&#34;queue-secret&#34;</span>, {
-    data: {
-        queueConnectionString:
-            <span style="color:#2b91af">args.storageAccount.primaryConnectionString.apply</span>(c =&gt; Buffer.<span style="color:#00f">from</span>(c).toString(<span style="color:#a31515">&#34;base64&#34;</span>)),
-    },
-}, { provider: <span style="color:#2b91af">aks.provider</span> });
-</code></pre></div><h3 id="scaled-object">Scaled Object</h3>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> appLabels = { app: <span style="color:#2b91af">name</span> };
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> deployment = <span style="color:#00f">new</span> k8s.apps.v1.Deployment(name, {
+</span></span><span style="display:flex;"><span>    apiVersion: <span style="color:#a31515">&#34;apps/v1&#34;</span>,
+</span></span><span style="display:flex;"><span>    kind: <span style="color:#a31515">&#34;Deployment&#34;</span>,
+</span></span><span style="display:flex;"><span>    metadata: {
+</span></span><span style="display:flex;"><span>        labels: <span style="color:#2b91af">appLabels</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    spec: {
+</span></span><span style="display:flex;"><span>        selector: { matchLabels: <span style="color:#2b91af">appLabels</span> },
+</span></span><span style="display:flex;"><span>        template: {
+</span></span><span style="display:flex;"><span>            metadata: {
+</span></span><span style="display:flex;"><span>                labels: <span style="color:#2b91af">appLabels</span>,
+</span></span><span style="display:flex;"><span>            },
+</span></span><span style="display:flex;"><span>            spec: {
+</span></span><span style="display:flex;"><span>                containers: [{
+</span></span><span style="display:flex;"><span>                    name,
+</span></span><span style="display:flex;"><span>                    image: <span style="color:#2b91af">dockerImage.imageName</span>,
+</span></span><span style="display:flex;"><span>                    env: [{ name: <span style="color:#a31515">&#34;queuename&#34;</span>, value: <span style="color:#2b91af">args.queue.name</span> }],
+</span></span><span style="display:flex;"><span>                    envFrom: [{ secretRef: {name: <span style="color:#2b91af">secretQueue.metadata.name</span> } }],
+</span></span><span style="display:flex;"><span>                }],
+</span></span><span style="display:flex;"><span>                imagePullSecrets: [{ name: <span style="color:#2b91af">args.service.registrySecretName</span> }],
+</span></span><span style="display:flex;"><span>            },
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>}, { provider: <span style="color:#2b91af">aks.provider</span> });
+</span></span></code></pre></div><p>The deployment refers to the secret value which stores the connection string to our target Storage Queue:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> secretQueue = <span style="color:#00f">new</span> k8s.core.v1.Secret(<span style="color:#a31515">&#34;queue-secret&#34;</span>, {
+</span></span><span style="display:flex;"><span>    data: {
+</span></span><span style="display:flex;"><span>        queueConnectionString:
+</span></span><span style="display:flex;"><span>            <span style="color:#2b91af">args.storageAccount.primaryConnectionString.apply</span>(c =&gt; Buffer.<span style="color:#00f">from</span>(c).toString(<span style="color:#a31515">&#34;base64&#34;</span>)),
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>}, { provider: <span style="color:#2b91af">aks.provider</span> });
+</span></span></code></pre></div><h3 id="scaled-object">Scaled Object</h3>
 <p>Finally, we need to deploy an instance of the <code>ScaledObject</code> custom resource, which takes care of feeding the metrics from the queue to the Horizontal Pod Autoscaler.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> scaledObject = <span style="color:#00f">new</span> k8s.apiextensions.CustomResource(<span style="color:#a31515">&#34;scaledobject&#34;</span>, {
-    apiVersion: <span style="color:#a31515">&#34;keda.k8s.io/v1alpha1&#34;</span>,
-    kind: <span style="color:#a31515">&#34;ScaledObject&#34;</span>,
-    metadata: {
-        labels: { deploymentName: <span style="color:#2b91af">name</span> },
-    },
-    spec: {
-        scaleTargetRef: { deploymentName: <span style="color:#2b91af">name</span> },
-        triggers: [{
-            <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;azure-queue&#34;</span>,
-            metadata: {
-                <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;queueTrigger&#34;</span>,
-                connection: <span style="color:#a31515">&#34;queueConnectionString&#34;</span>,
-                queueName: <span style="color:#2b91af">args.queue.name</span>,
-                name: <span style="color:#a31515">&#34;myQueueItem&#34;</span>,
-            },
-        }],
-    },
-}, { provider: <span style="color:#2b91af">aks.provider</span> });
-</code></pre></div><h2 id="reusable-components">Reusable Components</h2>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> scaledObject = <span style="color:#00f">new</span> k8s.apiextensions.CustomResource(<span style="color:#a31515">&#34;scaledobject&#34;</span>, {
+</span></span><span style="display:flex;"><span>    apiVersion: <span style="color:#a31515">&#34;keda.k8s.io/v1alpha1&#34;</span>,
+</span></span><span style="display:flex;"><span>    kind: <span style="color:#a31515">&#34;ScaledObject&#34;</span>,
+</span></span><span style="display:flex;"><span>    metadata: {
+</span></span><span style="display:flex;"><span>        labels: { deploymentName: <span style="color:#2b91af">name</span> },
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    spec: {
+</span></span><span style="display:flex;"><span>        scaleTargetRef: { deploymentName: <span style="color:#2b91af">name</span> },
+</span></span><span style="display:flex;"><span>        triggers: [{
+</span></span><span style="display:flex;"><span>            <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;azure-queue&#34;</span>,
+</span></span><span style="display:flex;"><span>            metadata: {
+</span></span><span style="display:flex;"><span>                <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;queueTrigger&#34;</span>,
+</span></span><span style="display:flex;"><span>                connection: <span style="color:#a31515">&#34;queueConnectionString&#34;</span>,
+</span></span><span style="display:flex;"><span>                queueName: <span style="color:#2b91af">args.queue.name</span>,
+</span></span><span style="display:flex;"><span>                name: <span style="color:#a31515">&#34;myQueueItem&#34;</span>,
+</span></span><span style="display:flex;"><span>            },
+</span></span><span style="display:flex;"><span>        }],
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>}, { provider: <span style="color:#2b91af">aks.provider</span> });
+</span></span></code></pre></div><h2 id="reusable-components">Reusable Components</h2>
 <p>We can simplify the program further by creating reusable Pulumi components for a Cluster, a Service, and a Function app. After those are done, here is all the code required to deploy a Kubernetes cluster with a Function App and KEDA.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#008000">// Create an AKS K8s cluster
-</span><span style="color:#008000"></span><span style="color:#00f">const</span> aks = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;keda-cluster&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-    kubernetesVersion: <span style="color:#a31515">&#34;1.13.5&#34;</span>,
-    vmSize: <span style="color:#a31515">&#34;Standard_B2s&#34;</span>,
-    vmCount: <span style="color:#2b91af">3</span>,
-});
-
-<span style="color:#008000">// Deploy shared components of KEDA (container registry, kedacore/keda-edge Helm chart)
-</span><span style="color:#008000"></span><span style="color:#00f">const</span> service = <span style="color:#00f">new</span> KedaService(<span style="color:#a31515">&#34;keda-edge&#34;</span>, {
-    resourceGroup,
-    k8sProvider: <span style="color:#2b91af">aks.provider</span>,
-});
-
-<span style="color:#008000">// Deploy a Function App which subscribes to the Storage Queue
-</span><span style="color:#008000"></span><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> KedaStorageQueueHandler(<span style="color:#a31515">&#34;queue-handler&#34;</span>, {
-    resourceGroup,
-    storageAccount,
-    queue,
-    service,
-    path: <span style="color:#a31515">&#34;./functionapp&#34;</span>,
-});
-</code></pre></div><p>You can find the full code of the components, the sample program, and steps to run it in <a href="https://github.com/pulumi/examples/tree/master/azure-ts-aks-keda">this example</a>.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#008000">// Create an AKS K8s cluster
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> aks = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;keda-cluster&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    kubernetesVersion: <span style="color:#a31515">&#34;1.13.5&#34;</span>,
+</span></span><span style="display:flex;"><span>    vmSize: <span style="color:#a31515">&#34;Standard_B2s&#34;</span>,
+</span></span><span style="display:flex;"><span>    vmCount: <span style="color:#2b91af">3</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Deploy shared components of KEDA (container registry, kedacore/keda-edge Helm chart)
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> service = <span style="color:#00f">new</span> KedaService(<span style="color:#a31515">&#34;keda-edge&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroup,
+</span></span><span style="display:flex;"><span>    k8sProvider: <span style="color:#2b91af">aks.provider</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Deploy a Function App which subscribes to the Storage Queue
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> KedaStorageQueueHandler(<span style="color:#a31515">&#34;queue-handler&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroup,
+</span></span><span style="display:flex;"><span>    storageAccount,
+</span></span><span style="display:flex;"><span>    queue,
+</span></span><span style="display:flex;"><span>    service,
+</span></span><span style="display:flex;"><span>    path: <span style="color:#a31515">&#34;./functionapp&#34;</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>You can find the full code of the components, the sample program, and steps to run it in <a href="https://github.com/pulumi/examples/tree/master/azure-ts-aks-keda">this example</a>.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>As of October 2019, the KEDA project is still in the experimental phase and should not be used for any production applications. Also, if the managed version of Azure Functions suits your needs, you should probably stick to that service. It requires less effort, provides high-level primitives, and enables unlimited elastic scaling.</p>
 <p>However, if your company is betting on Kubernetes as the standard application platform, but you still see high value in event-driven fine-grained applications, KEDA might be an exciting option for the future.</p>
@@ -543,17 +543,5 @@
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
     </body>
 </html>

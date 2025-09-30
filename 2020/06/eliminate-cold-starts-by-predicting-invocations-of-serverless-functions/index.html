@@ -100,19 +100,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -523,31 +523,27 @@ The application may be recently deployed and may not have enough points yet:</p>
 <p>The Azure Functions team is rolling the policy out for HTTP functions, so they do expect it to be useful. We will know soon!</p>
 <h5 id="response-from-the-authors">Response from the authors:</h5>
 <blockquote>
-<p>There is a large fraction of the applications that will likely benefit. Because for many applications the keep-alive interval can drastically reduce, the provider can afford to increase the keep-alive for other applications. About 50% of the applications have average inter-invocation times of 30 minutes of more. These incur many cold starts in the fixed policy, and will likely see a reduction in cold starts because their keep-alive intervals will be able to grow. Applications with idle times longer than 4 hours can also benefit because of the ARIMA time-series prediction.</p>
-</blockquote>
+<p>There is a large fraction of the applications that will likely benefit. Because for many applications the keep-alive interval can drastically reduce, the provider can afford to increase the keep-alive for other applications. About 50% of the applications have average inter-invocation times of 30 minutes of more. These incur many cold starts in the fixed policy, and will likely see a reduction in cold starts because their keep-alive intervals will be able to grow. Applications with idle times longer than 4 hours can also benefit because of the ARIMA time-series prediction.</p></blockquote>
 <h4 id="is-it-flexible-enough">Is it flexible enough?</h4>
 <p>The policy assumes that the interval distribution is stable over time. How will this hold in practice over more extended periods?</p>
 <p>Imagine an application that is only used during business hours. Or, an application that is mostly idle but is sporadically applied for a specific business process. Or, a demo app that you want to show to your colleagues during a planning meeting. Likely, all of them would still hit cold starts at the beginning of a session.</p>
 <p>Maybe that&rsquo;s why the production implementation begins with a clean histogram every day. They will watch and learn, and may use data for the last two weeks to improve later on.</p>
 <h5 id="response-from-the-authors-1">Response from the authors:</h5>
 <blockquote>
-<p>The policy does not have to assume a stationary distribution of arrival patterns. In the traces analyzed in the paper there was not a significant enough variation in the distributions to enable a deep investigation. With the production deployment, we will investigate different policies to decay information from previous histograms.</p>
-</blockquote>
+<p>The policy does not have to assume a stationary distribution of arrival patterns. In the traces analyzed in the paper there was not a significant enough variation in the distributions to enable a deep investigation. With the production deployment, we will investigate different policies to decay information from previous histograms.</p></blockquote>
 <h4 id="what-about-function-warming">What about function warming?</h4>
 <p>There&rsquo;s the elephant in the room of cold starts: function &ldquo;warming&rdquo;. Warming is a trick when a developer adds an extra timer-based function to their Function App so that the timer triggers every few minutes. This way, the runtime would never unload it, and an instance would always be ready.</p>
 <p>I suspect that this simple trick still outperforms the suggested histogram-based policy in terms of cold-start prevention. Obviously, it doesn&rsquo;t help the cloud provider to save costs.</p>
 <p>Is there a way to combine two approaches and get the benefits of both?</p>
 <h5 id="response-from-the-authors-2">Response from the authors:</h5>
 <blockquote>
-<p>The results in the paper take into account user-generated warm-up functions that are present in the data. If the hybrid policy is successful in preventing cold starts, there will be no need for users to create periodic warm-up functions, which represent extra effort and higher costs.</p>
-</blockquote>
+<p>The results in the paper take into account user-generated warm-up functions that are present in the data. If the hybrid policy is successful in preventing cold starts, there will be no need for users to create periodic warm-up functions, which represent extra effort and higher costs.</p></blockquote>
 <h4 id="what-about-the-scale-out-cold-start">What about the scale-out cold start?</h4>
 <p>The paper focuses on applications that are invoked rarely. However, even applications with higher utilization may still hit cold starts when scaled out on multiple instances. Every new instance would need to boot, and the requests would still be waiting.</p>
 <p>The suggested policy does not address cold starts beyond the first instance, even though they do occur and potentially have a more significant impact on latency percentiles of real-world human-facing applications.</p>
 <h5 id="response-from-the-authors-3">Response from the authors:</h5>
 <blockquote>
-<p>We didn’t address scale-out cold starts in the paper. We can pre-warm the scale-out instances by forcing the scale out to happen slightly before it normally would. For example, when the scale out is triggered by a threshold number of concurrent invocations, we can lower the threshold slightly. We will be experimenting with such techniques in our implementation in Azure Functions.</p>
-</blockquote>
+<p>We didn’t address scale-out cold starts in the paper. We can pre-warm the scale-out instances by forcing the scale out to happen slightly before it normally would. For example, when the scale out is triggered by a threshold number of concurrent invocations, we can lower the threshold slightly. We will be experimenting with such techniques in our implementation in Azure Functions.</p></blockquote>
 <h2 id="conclusion">Conclusion</h2>
 <p>Despite several open questions above, I&rsquo;m delighted that the paper was published. I welcome any structured effort that focuses on cold start optimization. The paper highlights usage statistics, the challenges of the cold start problem, and suggests several improvements.</p>
 <p>It&rsquo;s even more exciting to see the finding being applied in Azure in production!</p>
@@ -665,17 +661,5 @@ The application may be recently deployed and may not have enough points yet:</p>
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
     </body>
 </html>

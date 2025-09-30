@@ -95,19 +95,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -207,22 +207,22 @@ When working with 3rd party code, you can always find an answer on stack overflo
 <p>Today I want to discuss one aspect of writing clean domain code: units of measurement. It is important for any domain (or sub-domain) where you operate some physical measurements.</p>
 <h2 id="problem-statement">Problem statement</h2>
 <p>Our toy example will be about cars and fuel consumption. You receive some data about the trip of your car, e.g. an instance of</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> ITrip
-{
-    <span style="color:#2b91af">double</span> FuelUsed { <span style="color:#00f">get</span>; }
-    <span style="color:#2b91af">double</span> Distance { <span style="color:#00f">get</span>; }
-}
-</code></pre></div><p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#2b91af">var</span> fuelRate = trip.FuelUsed / trip.Distance;
-</code></pre></div><p>You get the value, but what is it? Let&rsquo;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> ITrip
-{
-    <span style="color:#2b91af">double</span> FuelUsedInLiters { <span style="color:#00f">get</span>; }
-    <span style="color:#2b91af">double</span> DistanceInKilometers { <span style="color:#00f">get</span>; }
-}
-
-<span style="color:#2b91af">var</span> fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * 100.0 / trip.DistanceInKilometers;
-</code></pre></div><p>Now it&rsquo;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">interface</span> <span style="color:#2b91af">ITrip</span>
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#2b91af">double</span> FuelUsed { <span style="color:#00f">get</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#2b91af">double</span> Distance { <span style="color:#00f">get</span>; }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Now you want to calculate the fuel consumption rate of your trip. You write</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#2b91af">var</span> fuelRate = trip.FuelUsed / trip.Distance;
+</span></span></code></pre></div><p>You get the value, but what is it? Let&rsquo;s say you want a value of liters per 100 kilometers. You can assume that <code>FuelUsed</code> is in liters, and <code>Distance</code> is in kilometers. To be more explicit you refactor your code</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">interface</span> <span style="color:#2b91af">ITrip</span>
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#2b91af">double</span> FuelUsedInLiters { <span style="color:#00f">get</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#2b91af">double</span> DistanceInKilometers { <span style="color:#00f">get</span>; }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#2b91af">var</span> fuelRateLitersPer100Kilometers = trip.FuelUsedInLiters * 100.0 / trip.DistanceInKilometers;
+</span></span></code></pre></div><p>Now it&rsquo;s much more explicit, and probably good enough for such a small code example. For larger code bases, you will inevitably get into more problems:</p>
 <ol>
 <li>
 <p>You will start measuring same things in different units. E.g. you will store the distance in meters in the database, so you&rsquo;ll have to multiply by 1000 somewhere in persistence layer.</p>
@@ -238,28 +238,28 @@ When working with 3rd party code, you can always find an answer on stack overflo
 <h2 id="defining-the-units">Defining the units</h2>
 <p>I tried several options like generic classes for units, but I ended up having a struct per measurement. The code is very boring and repetitive, but it provides me with the strongest compile-time checks and nice readability. If you are too bored with typing, you can do some code generation or just use 3rd party that suits you.
 So, my end result looks like</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">interface</span> ITrip
-{
-    Volume FuelUsed { <span style="color:#00f">get</span>; }
-    Distance Distance { <span style="color:#00f">get</span>; }
-}
-</code></pre></div><p>Let&rsquo;s see how Distance is defined (Volume will be almost exactly same):</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-csharp" data-lang="csharp"><span style="color:#00f">public</span> <span style="color:#00f">struct</span> <span style="color:#2b91af">Distance</span>
-{
-    <span style="color:#00f">private</span> Distance(<span style="color:#2b91af">double</span> kilometers)
-    {
-        <span style="color:#00f">this</span>.Kilometers = kilometers;
-    }
-
-    <span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Kilometers { <span style="color:#00f">get</span>; }
-
-    <span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Meters =&gt; <span style="color:#00f">this</span>.Kilometers / 1000.0;
-
-    <span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">readonly</span> Distance Zero = <span style="color:#00f">new</span> Distance(0.0);
-
-    ...
-}
-</code></pre></div><p>Several important things to notice here:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">interface</span> <span style="color:#2b91af">ITrip</span>
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    Volume FuelUsed { <span style="color:#00f">get</span>; }
+</span></span><span style="display:flex;"><span>    Distance Distance { <span style="color:#00f">get</span>; }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Let&rsquo;s see how Distance is defined (Volume will be almost exactly same):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">struct</span> <span style="color:#2b91af">Distance</span>
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">private</span> Distance(<span style="color:#2b91af">double</span> kilometers)
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">this</span>.Kilometers = kilometers;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Kilometers { <span style="color:#00f">get</span>; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Meters =&gt; <span style="color:#00f">this</span>.Kilometers / 1000.0;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">readonly</span> Distance Zero = <span style="color:#00f">new</span> Distance(0.0);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Several important things to notice here:</p>
 <ol>
 <li>
 <p>It&rsquo;s a struct.</p>
@@ -279,65 +279,65 @@ Of course, default constructor is still public, but you can only create a zero v
 <p>So, how do we create measurement objects?</p>
 <h3 id="factory-method">Factory method</h3>
 <p>The classic way is a set of static factory methods:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance FromKilometers(<span style="color:#2b91af">double</span> kilometers)
-{
-    <span style="color:#00f">return</span> <span style="color:#00f">new</span> Distance(kilometers);
-}
-
-<span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance FromMeters(<span style="color:#2b91af">double</span> meters)
-{
-    <span style="color:#00f">return</span> <span style="color:#00f">new</span> Distance(meters / 1000.0);
-}
-</code></pre></div><p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance FromKilometers(<span style="color:#2b91af">double</span> kilometers)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> <span style="color:#00f">new</span> Distance(kilometers);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance FromMeters(<span style="color:#2b91af">double</span> meters)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> <span style="color:#00f">new</span> Distance(meters / 1000.0);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Usage is as simple as <code>var distance = Distance.FromMeters(234);</code></p>
 <h3 id="extension-method">Extension method</h3>
 <p>Imagine you have the following code which converts an integer value of a database result into our units</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs">trip.Distance = Distance.FromMeters(database.ReadInt32(<span style="color:#a31515">&#34;TotalDistance&#34;</span>)
-                        .GetDefaultOrEmpty());
-</code></pre></div><p>Such a long expression reads better with a fluent interface like</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs">trip.Distance = database.ReadInt32(<span style="color:#a31515">&#34;TotalDistance&#34;</span>)
-                        .GetDefaultOrEmpty()
-                        .MetersToDistance();
-</code></pre></div><p><code>MetersToDistance</code> in this case is an extension method:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">DistanceExtensions</span>
-{
-    <span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance MetersToDistance(<span style="color:#00f">this</span> <span style="color:#2b91af">double</span> meters)
-    {
-        <span style="color:#00f">return</span> Distance.FromMeters(meters);
-    }
-}
-</code></pre></div><h3 id="operator-with-static-class-using">Operator with static class using</h3>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span>trip.Distance = Distance.FromMeters(database.ReadInt32(<span style="color:#a31515">&#34;TotalDistance&#34;</span>)
+</span></span><span style="display:flex;"><span>                        .GetDefaultOrEmpty());
+</span></span></code></pre></div><p>Such a long expression reads better with a fluent interface like</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span>trip.Distance = database.ReadInt32(<span style="color:#a31515">&#34;TotalDistance&#34;</span>)
+</span></span><span style="display:flex;"><span>                        .GetDefaultOrEmpty()
+</span></span><span style="display:flex;"><span>                        .MetersToDistance();
+</span></span></code></pre></div><p><code>MetersToDistance</code> in this case is an extension method:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">DistanceExtensions</span>
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance MetersToDistance(<span style="color:#00f">this</span> <span style="color:#2b91af">double</span> meters)
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">return</span> Distance.FromMeters(meters);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="operator-with-static-class-using">Operator with static class using</h3>
 <p>C# 6 brings us a new language construct. Now we can import a static helper class</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">using</span> static Units.Constants;
-</code></pre></div><p>And then we can write something like</p>
-<pre><code>var distance = 10.0 * km;
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">using</span> static Units.Constants;
+</span></span></code></pre></div><p>And then we can write something like</p>
+<pre tabindex="0"><code>var distance = 10.0 * km;
 </code></pre><p>where <code>km</code> is defined in that static class:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Constants</span>
-{
-    <span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">readonly</span> Distance km = Distance.FromKilometers(1.0);
-}
-</code></pre></div><p>This may not look like idiomatic C#, but I think it&rsquo;s very good at least for writing unit tests:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> target = <span style="color:#00f">new</span> Trip
-{
-    DistanceOnFoot = 5 * km,
-    DistanceOnBicycle = 10 * km,
-    DistanceOnCar = 30 * km
-};
-target.TotalDistance.Should().Be((30 + 10 + 5) * km);
-</code></pre></div><p>For this to compile you just need to define the operator overload:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance <span style="color:#00f">operator</span>*(<span style="color:#2b91af">int</span> <span style="color:#00f">value</span>, Distance distance)
-{
-    <span style="color:#00f">return</span> Distance.FromKilometers(<span style="color:#00f">value</span> * distance.Kilometers);
-}
-</code></pre></div><h2 id="conversion-and-printing">Conversion and printing</h2>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Constants</span>
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">readonly</span> Distance km = Distance.FromKilometers(1.0);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>This may not look like idiomatic C#, but I think it&rsquo;s very good at least for writing unit tests:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#2b91af">var</span> target = <span style="color:#00f">new</span> Trip
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    DistanceOnFoot = 5 * km,
+</span></span><span style="display:flex;"><span>    DistanceOnBicycle = 10 * km,
+</span></span><span style="display:flex;"><span>    DistanceOnCar = 30 * km
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>target.TotalDistance.Should().Be((30 + 10 + 5) * km);
+</span></span></code></pre></div><p>For this to compile you just need to define the operator overload:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> Distance <span style="color:#00f">operator</span>*(<span style="color:#2b91af">int</span> <span style="color:#00f">value</span>, Distance distance)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> Distance.FromKilometers(<span style="color:#00f">value</span> * distance.Kilometers);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="conversion-and-printing">Conversion and printing</h2>
 <p>More advanced unit conversions are easy with unit classes. A common use case would be to convert metric units to imperial system. All you need to do is to add another calculated property</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#008000">// Distance class
-</span><span style="color:#008000"></span><span style="color:#00f">private</span> <span style="color:#00f">const</span> <span style="color:#2b91af">double</span> MilesInKilometer = 0.621371192;
-<span style="color:#00f">private</span> <span style="color:#00f">const</span> <span style="color:#2b91af">double</span> FeetInMeter = = 3.2808399;
-
-<span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Miles =&gt; <span style="color:#00f">this</span>.Kilometers * MilesInKilometer;
-
-<span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Feet =&gt; <span style="color:#00f">this</span>.Meters * FeetInMeter;
-</code></pre></div><p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#008000">// Distance class</span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">private</span> <span style="color:#00f">const</span> <span style="color:#2b91af">double</span> MilesInKilometer = 0.621371192;
+</span></span><span style="display:flex;"><span><span style="color:#00f">private</span> <span style="color:#00f">const</span> <span style="color:#2b91af">double</span> FeetInMeter = = 3.2808399;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Miles =&gt; <span style="color:#00f">this</span>.Kilometers * MilesInKilometer;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#2b91af">double</span> Feet =&gt; <span style="color:#00f">this</span>.Meters * FeetInMeter;
+</span></span></code></pre></div><p>Another common task is printing (formatting) unit values into string. While you can (and should) implement some basic version of it in <code>ToString()</code> method, I advise against doing all the formatting inside the unit class. The formatting scenarios can be quite complex:</p>
 <ul>
 <li>Format based on user preferences (metric/imperial)</li>
 <li>Pick units based on the value (e.g. 30 m but 1.2 km, not 1200 m)</li>
@@ -348,15 +348,15 @@ target.TotalDistance.Should().Be((30 + 10 + 5) * km);
 <h2 id="unit-derivation">Unit derivation</h2>
 <p>Once you write more unit classes, you will definitely want to derive the calculation result of two units into the third one. In our example, we want to divide <code>Volume</code> of fuel used by <code>Distance</code> to get fuel <code>ConsumptionRate</code>.</p>
 <p>There&rsquo;s no magic that you could do here. You will have to define <code>ConsumptionRate</code> class the same way you defined the other two, and then just overload the operation</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#00f">public</span> <span style="color:#00f">static</span> ConsumptionRate <span style="color:#00f">operator</span>/(Volume volume, Distance distance)
-{
-    <span style="color:#00f">return</span> ConsumptionRate
-        .FromLitersPer100Kilometers(volume.Liters * 100.0 / distance.Kilometers);
-}
-</code></pre></div><p>Of course, you&rsquo;ll have to define all the required combinations explicitly.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> ConsumptionRate <span style="color:#00f">operator</span>/(Volume volume, Distance distance)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> ConsumptionRate
+</span></span><span style="display:flex;"><span>        .FromLitersPer100Kilometers(volume.Liters * 100.0 / distance.Kilometers);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Of course, you&rsquo;ll have to define all the required combinations explicitly.</p>
 <p>If you defined Constants as described above, you&rsquo;ll be able to instantiate values in your tests in the following way:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cs" data-lang="cs"><span style="color:#2b91af">var</span> fuelRate = 7.5 * lit / (100 * km);
-</code></pre></div><h2 id="should-i-use-3rd-party-libraries-for-that">Should I use 3rd party libraries for that?</h2>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#2b91af">var</span> fuelRate = 7.5 * lit / (100 * km);
+</span></span></code></pre></div><h2 id="should-i-use-3rd-party-libraries-for-that">Should I use 3rd party libraries for that?</h2>
 <p>It depends. Of course, people implemented all this functionality about 1 million times before you, so there are numerous libraries on GitHub.</p>
 <p>I would say, if you start a new project and you don&rsquo;t have a strong opinion about the unit code, just go grab the library and try to use it.</p>
 <p>At the same time, for existing code base, it might be easier to introduce your own implementation which would resemble something that you already use.</p>
@@ -434,8 +434,8 @@ target.TotalDistance.Should().Be((30 + 10 + 5) * km);
         <div class="col-md-8">
             
             <div id="disqus_thread"></div>
-<script type="application/javascript">
-    var disqus_config = function () {
+<script>
+    window.disqus_config = function () {
     
     
     
@@ -484,17 +484,5 @@ target.TotalDistance.Should().Be((30 + 10 + 5) * km);
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
     </body>
 </html>
