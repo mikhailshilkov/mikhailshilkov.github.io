@@ -98,19 +98,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -205,34 +205,9 @@
 
                 
                 <div class="article-post">
-                    <p>In my article <a href="https://mikhail.io/2020/10/practical-approach-to-temporal-architecture/">A Practical Approach to Temporal Architecture</a>, I outlined the various <a href="https://temporal.io/">Temporal</a> components and how they interact. Today’s blog builds on this knowledge and demonstrates an example of deploying Temporal to Kubernetes and, more specifically, to Azure Kubernetes Service (AKS).</p>
+                    <p>In my article <a href="https://mikhail.io/2020/10/practical-approach-to-temporal-architecture/">A Practical Approach to Temporal Architecture</a>, I outlined the various <a href="https://temporal.io/">Temporal</a> components and how they interact. Today&rsquo;s blog builds on this knowledge and demonstrates an example of deploying Temporal to Kubernetes and, more specifically, to Azure Kubernetes Service (AKS).</p>
 <p>My example is self-contained: it provisions a full environment with all the required Azure resources, Temporal service, and application deployment artifacts. Here is a diagram of the cloud infrastructure:</p>
-</div>
-</div>
-</div>
-<div class="row no-gutter">
-    <div class="col-lg-1 pl-0"></div>
-    <div class="col-sm-11">
-        
-<figure >
-    
-        <img src="temporal-aks.png"
-            alt="Deployment architecture"
-             />
-        
-    
-    <figcaption>
-        <h4>Deployment architecture</h4>
-    </figcaption>
-    
-</figure>
-
-    </div>
-</div>
-<div class="row">
-    <div class="col-lg-2 pl-0"></div>
-    <div class="col-lg-9 flex-first flex-lg-unordered">
-        <div class="article-post">
+<p><img src="temporal-aks.png" alt="Deployment architecture"></p>
 <p>This sample deployment is implemented as a <a href="https://pulumi.com/">Pulumi</a> program in TypeScript. You can find the full code in <a href="https://github.com/mikhailshilkov/temporal-samples/tree/main/azure-aks">my GitHub</a>.</p>
 <h2 id="application-code">Application Code</h2>
 <p>The <code>workflow</code> folder contains all of the application code. The application is written with Go and consists of two source files:</p>
@@ -240,75 +215,75 @@
 <li><code>helloworld.go</code> - defines a workflow &amp; activity</li>
 <li><code>main.go</code> - application entry point.</li>
 </ol>
-<p>The example deploys a “Hello World” Temporal application copied from <a href="https://github.com/temporalio/samples-go/blob/master/helloworld/helloworld.go">this Go sample</a>. Once you get it up and running, you can certainly customize the code with your own workflow and activities.</p>
+<p>The example deploys a &ldquo;Hello World&rdquo; Temporal application copied from <a href="https://github.com/temporalio/samples-go/blob/master/helloworld/helloworld.go">this Go sample</a>. Once you get it up and running, you can certainly customize the code with your own workflow and activities.</p>
 <p>The <code>main.go</code> file does two things.</p>
 <p><strong>First</strong>, it spins up a worker:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go">w := worker.New(c, <span style="color:#a31515">&#34;hello-world&#34;</span>, worker.Options{})
-w.RegisterWorkflow(helloworld.Workflow)
-w.RegisterActivity(helloworld.Activity)
-</code></pre></div><p><strong>Second</strong>, it launches an HTTP server in the same process. The server exposes endpoints to start workflows. The <code>/async?name=&lt;yourname&gt;</code> endpoint starts a new workflow and immediately returns, while the <code>/sync?name=&lt;yourname&gt;</code> blocks and waits for the result of the execution and returns the response.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span>w := worker.New(c, <span style="color:#a31515">&#34;hello-world&#34;</span>, worker.Options{})
+</span></span><span style="display:flex;"><span>w.RegisterWorkflow(helloworld.Workflow)
+</span></span><span style="display:flex;"><span>w.RegisterActivity(helloworld.Activity)
+</span></span></code></pre></div><p><strong>Second</strong>, it launches an HTTP server in the same process. The server exposes endpoints to start workflows. The <code>/async?name=&lt;yourname&gt;</code> endpoint starts a new workflow and immediately returns, while the <code>/sync?name=&lt;yourname&gt;</code> blocks and waits for the result of the execution and returns the response.</p>
 <p>You can find the implementation in the <a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/workflow/main.go#L22"><code>start</code></a> function. Note that this simplistic starter is specifc to the &ldquo;Hello World&rdquo; workflow as it expects one argument and one result, both strings.</p>
 <h2 id="deployment-structure">Deployment Structure</h2>
 <p>My program combines three component resources: a MySQL Database, an AKS cluster, and a Temporal deployment. As a result, the main file deploy all of these resources to a single Azure Resource Group:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ts" data-lang="ts"><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> resources.ResourceGroup(<span style="color:#a31515">&#34;resourceGroup&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">resourceGroupName</span>,
-    location: <span style="color:#a31515">&#34;WestEurope&#34;</span>,
-});
-
-<span style="color:#00f">const</span> database = <span style="color:#00f">new</span> MySql(<span style="color:#a31515">&#34;mysql&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-    location: <span style="color:#2b91af">resourceGroup.location</span>,
-    administratorLogin: <span style="color:#a31515">&#34;mikhail&#34;</span>,
-    administratorPassword: <span style="color:#2b91af">mysqlPassword</span>,
-});
-
-<span style="color:#00f">const</span> cluster = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;aks&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-    location: <span style="color:#2b91af">resourceGroup.location</span>,
-    kubernetesVersion: <span style="color:#a31515">&#34;1.16.13&#34;</span>,
-    vmSize: <span style="color:#a31515">&#34;Standard_DS2_v2&#34;</span>,
-    vmCount: <span style="color:#2b91af">3</span>,
-});
-
-<span style="color:#00f">const</span> temporal = <span style="color:#00f">new</span> Temporal(<span style="color:#a31515">&#34;temporal&#34;</span>, {
-    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-    location: <span style="color:#2b91af">resourceGroup.location</span>,
-    version: <span style="color:#a31515">&#34;1.1.1&#34;</span>,
-    storage: {
-        <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;mysql&#34;</span>,
-        hostName: <span style="color:#2b91af">database.hostName</span>,
-        login: <span style="color:#2b91af">database.administratorLogin</span>,
-        password: <span style="color:#2b91af">database.administratorPassword</span>,
-    },
-    cluster: <span style="color:#2b91af">cluster</span>,
-    app: {
-        <span style="color:#00f">namespace</span>: <span style="color:#a31515">&#34;temporal&#34;</span>,
-        folder: <span style="color:#a31515">&#34;./workflow&#34;</span>,
-        port: <span style="color:#2b91af">8080</span>,
-    },
-});
-
-<span style="color:#00f">export</span> <span style="color:#00f">const</span> webEndpoint = temporal.webEndpoint;
-<span style="color:#00f">export</span> <span style="color:#00f">const</span> starterEndpoint = temporal.starterEndpoint;
-</code></pre></div><p>The rest of the article gives an overview of the building blocks of these three components.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> resources.ResourceGroup(<span style="color:#a31515">&#34;resourceGroup&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroupName</span>,
+</span></span><span style="display:flex;"><span>    location: <span style="color:#a31515">&#34;WestEurope&#34;</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> database = <span style="color:#00f">new</span> MySql(<span style="color:#a31515">&#34;mysql&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    location: <span style="color:#2b91af">resourceGroup.location</span>,
+</span></span><span style="display:flex;"><span>    administratorLogin: <span style="color:#a31515">&#34;mikhail&#34;</span>,
+</span></span><span style="display:flex;"><span>    administratorPassword: <span style="color:#2b91af">mysqlPassword</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> cluster = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;aks&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    location: <span style="color:#2b91af">resourceGroup.location</span>,
+</span></span><span style="display:flex;"><span>    kubernetesVersion: <span style="color:#a31515">&#34;1.16.13&#34;</span>,
+</span></span><span style="display:flex;"><span>    vmSize: <span style="color:#a31515">&#34;Standard_DS2_v2&#34;</span>,
+</span></span><span style="display:flex;"><span>    vmCount: <span style="color:#2b91af">3</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> temporal = <span style="color:#00f">new</span> Temporal(<span style="color:#a31515">&#34;temporal&#34;</span>, {
+</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
+</span></span><span style="display:flex;"><span>    location: <span style="color:#2b91af">resourceGroup.location</span>,
+</span></span><span style="display:flex;"><span>    version: <span style="color:#a31515">&#34;1.1.1&#34;</span>,
+</span></span><span style="display:flex;"><span>    storage: {
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;mysql&#34;</span>,
+</span></span><span style="display:flex;"><span>        hostName: <span style="color:#2b91af">database.hostName</span>,
+</span></span><span style="display:flex;"><span>        login: <span style="color:#2b91af">database.administratorLogin</span>,
+</span></span><span style="display:flex;"><span>        password: <span style="color:#2b91af">database.administratorPassword</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    cluster: <span style="color:#2b91af">cluster</span>,
+</span></span><span style="display:flex;"><span>    app: {
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">namespace</span>: <span style="color:#a31515">&#34;temporal&#34;</span>,
+</span></span><span style="display:flex;"><span>        folder: <span style="color:#a31515">&#34;./workflow&#34;</span>,
+</span></span><span style="display:flex;"><span>        port: <span style="color:#2b91af">8080</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">export</span> <span style="color:#00f">const</span> webEndpoint = temporal.webEndpoint;
+</span></span><span style="display:flex;"><span><span style="color:#00f">export</span> <span style="color:#00f">const</span> starterEndpoint = temporal.starterEndpoint;
+</span></span></code></pre></div><p>The rest of the article gives an overview of the building blocks of these three components.</p>
 <h2 id="docker-image">Docker Image</h2>
 <p>Since the application is deployed to Kubernetes, we need to produce a custom Docker image. The <a href="https://github.com/mikhailshilkov/temporal-samples/blob/main/azure-aks/workflow/Dockerfile"><code>Dockerfile</code></a> builds the Go application and exposes port <code>8080</code> to the outside world so we can access the starter HTTP endpoints.</p>
 <p>Pulumi deploys this <code>Dockerfile</code> to Azure in three steps:</p>
 <ul>
 <li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L42-L50">Deploy</a> an Azure Container Registry.</li>
-<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L52-L58">Retrieve</a> the registry’s admin credentials generated by Azure.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L52-L58">Retrieve</a> the registry&rsquo;s admin credentials generated by Azure.</li>
 <li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L61-L69">Publish</a> the application image to the registry.</li>
 </ul>
 <h2 id="mysql-database">MySQL Database</h2>
-<p>There are several persistence options supported by Temporal. A straightforward option for Azure users is to deploy an instance of Azure Database for MySQL. It’s a fully managed database service where Azure is responsible for uptime and maintenance, and users pay a flat fee per hour.</p>
+<p>There are several persistence options supported by Temporal. A straightforward option for Azure users is to deploy an instance of Azure Database for MySQL. It&rsquo;s a fully managed database service where Azure is responsible for uptime and maintenance, and users pay a flat fee per hour.</p>
 <p>My example <a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/mysql.ts#L24-L50">provisions</a> an instance of MySQL 5.7 at the Basic tier. The database size is limited to 5 GB.</p>
-<p>A final tweak is to <a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/mysql.ts#L52-L58">add</a> a firewall rule for the IP address <code>0.0.0.0</code>, which enables network access to MySQL from any Azure service. Note that this option isn’t secure for production workloads: read more in <a href="https://docs.microsoft.com/en-us/azure/mysql/concepts-firewall-rules#connecting-from-azure">Connecting from Azure</a>.</p>
+<p>A final tweak is to <a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/mysql.ts#L52-L58">add</a> a firewall rule for the IP address <code>0.0.0.0</code>, which enables network access to MySQL from any Azure service. Note that this option isn&rsquo;t secure for production workloads: read more in <a href="https://docs.microsoft.com/en-us/azure/mysql/concepts-firewall-rules#connecting-from-azure">Connecting from Azure</a>.</p>
 <h2 id="azure-kubernetes-cluster">Azure Kubernetes Cluster</h2>
 <p>The example creates a new AKS cluster and deploys the Temporal service and applications components to that cluster.</p>
 <p>The <code>AksCluster</code> component:</p>
 <ul>
 <li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L23-L39">Sets up</a> an Azure Active Directory Application and a Service Principal.</li>
-<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L42-L45">Creates</a> an SSH key for the cluster’s admin user profile.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L42-L45">Creates</a> an SSH key for the cluster&rsquo;s admin user profile.</li>
 <li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L48-L86">Provisions</a> a managed Kubernetes cluster base on VM Scale Sets node pool. Feel free to adjust the VM size, count, and the Kubernetes version.</li>
 <li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/cluster.ts#L88-L96">Builds</a> the Kubeconfig YAML to connect to the cluster and deploy application components.</li>
 </ul>
@@ -317,7 +292,7 @@ w.RegisterActivity(helloworld.Activity)
 <p>We start with sound groundwork:</p>
 <ul>
 <li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L71-L78">Declare</a> a custom Pulumi Kubernetes provider and point it to the Kubeconfig string that we retrieved from the managed cluster.</li>
-<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L71-L78">Grant</a> permission for the managed cluster’s service principal to access images from the Azure Container Registry.</li>
+<li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L71-L78">Grant</a> permission for the managed cluster&rsquo;s service principal to access images from the Azure Container Registry.</li>
 <li><a href="https://github.com/mikhailshilkov/temporal-samples/blob/7ce8c36eb64628d899ce618339f3691486f37e81/azure-aks/temporal.ts#L85-L89">Define</a> a new Kubernetes namespace that contains all Temporal deployments and services.</li>
 </ul>
 <p>Then, we can deploy the Temporal Service:</p>
@@ -346,34 +321,34 @@ w.RegisterActivity(helloworld.Activity)
 <ol>
 <li>Create a new stack (a Pulumi deployment environment):</li>
 </ol>
-<pre><code>pulumi stack init dev
-</code></pre><ol>
+<pre tabindex="0"><code>pulumi stack init dev
+</code></pre><ol start="2">
 <li>Login to <a href="https://docs.microsoft.com/en-us/cli/azure/install-azure-cli">Azure CLI</a>:</li>
 </ol>
-<pre><code>az login
-</code></pre><ol>
+<pre tabindex="0"><code>az login
+</code></pre><ol start="3">
 <li>Install NPM dependencies:</li>
 </ol>
-<pre><code>npm install
-</code></pre><ol>
+<pre tabindex="0"><code>npm install
+</code></pre><ol start="4">
 <li>Run <code>pulumi up</code> and confirm when asked if you want to deploy. Azure resources are provisioned:</li>
 </ol>
-<pre><code>$ pulumi up...
+<pre tabindex="0"><code>$ pulumi up...
 Performing changes:...
 
 Outputs:
-    starterEndpoint: &quot;http://21.55.177.186:8080/async?name=&quot;
-    webEndpoint : &quot;http://52.136.6.198:8088&quot;
+    starterEndpoint: &#34;http://21.55.177.186:8080/async?name=&#34;
+    webEndpoint : &#34;http://52.136.6.198:8088&#34;
 
 Resources:+ 27 created
 Duration: 6m46s
-</code></pre><ol>
-<li>The output above prints the endpoints to interact with the application. Run the following command to start a “Hello World” workflow:</li>
+</code></pre><ol start="5">
+<li>The output above prints the endpoints to interact with the application. Run the following command to start a &ldquo;Hello World&rdquo; workflow:</li>
 </ol>
-<pre><code>curl $(pulumi stack output starterEndpoint)WorldStarted workflow ID=World, RunID=b4f6db00-bb2f-498b-b620-caad81c91a81%
-</code></pre><p>Now, open the <code>webEndpoint</code> URL in your browser and find the workflow (it’s probably already in the Completed state).</p>
+<pre tabindex="0"><code>curl $(pulumi stack output starterEndpoint)WorldStarted workflow ID=World, RunID=b4f6db00-bb2f-498b-b620-caad81c91a81%
+</code></pre><p>Now, open the <code>webEndpoint</code> URL in your browser and find the workflow (it&rsquo;s probably already in the Completed state).</p>
 <h2 id="cost-security-and-further-steps">Cost, Security, and Further Steps</h2>
-<p>The deployment above provisions real Azure resources, so be mindful of the related costs. Here is an estimated calculation for the “West US 2” region:</p>
+<p>The deployment above provisions real Azure resources, so be mindful of the related costs. Here is an estimated calculation for the &ldquo;West US 2&rdquo; region:</p>
 <ul>
 <li>Azure Database for MySQL Gen5 Basic with 1 vCore and 5 GB of storage = $25.32/month</li>
 <li>Azure Kubernetes Cluster of 3 VMs type Standard_DS2_v2: 3 x $83.22/month = $249.66/month (but feel free to adjust to your needs)</li>
@@ -488,17 +463,19 @@ Duration: 6m46s
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJW7RC6EV4"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJW7RC6EV4');
+        }
+      </script>
     </body>
 </html>
