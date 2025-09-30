@@ -96,19 +96,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -226,52 +226,52 @@ by a human being. For this post, I will simplify the task to the following steps
 <h2 id="cursor-position">Cursor Position</h2>
 <p>It&rsquo;s really easy to understand where the mouse cursor currently is: just
 use <code>Control.MousePosition</code> property from the standard library:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> currentPosition () =
-  <span style="color:#00f">let</span> mp = System.Windows.Forms.Control.MousePosition
-  (mp.X, mp.Y)
-</code></pre></div><p>Note that your application doesn&rsquo;t have to be based on WinForms, just reference
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> currentPosition () =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> mp = System.Windows.Forms.Control.MousePosition
+</span></span><span style="display:flex;"><span>  (mp.X, mp.Y)
+</span></span></code></pre></div><p>Note that your application doesn&rsquo;t have to be based on WinForms, just reference
 the required assembly.</p>
 <h2 id="move-the-cursor">Move the Cursor</h2>
 <p>I use the third party <a href="https://inputsimulator.codeplex.com/">WindowsInput</a>
 library to control the mouse and the keyboard programmatically. It uses some
 weird coordinate system, so the function to move the mouse cursor looks like this:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> simulator = <span style="color:#00f">new</span> InputSimulator()
-
-<span style="color:#00f">let</span> moveTo x y =
-  <span style="color:#00f">let</span> toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; <span style="color:#2b91af">float</span>)
-  <span style="color:#00f">let</span> toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; <span style="color:#2b91af">float</span>)
-  simulator.Mouse.MoveMouseTo(toX, toY)
-</code></pre></div><p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> simulator = <span style="color:#00f">new</span> InputSimulator()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> moveTo x y =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> toX = 65535. * x / (Screen.PrimaryScreen.Bounds.Width |&gt; <span style="color:#2b91af">float</span>)
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> toY = 65535. * y / (Screen.PrimaryScreen.Bounds.Height |&gt; <span style="color:#2b91af">float</span>)
+</span></span><span style="display:flex;"><span>  simulator.Mouse.MoveMouseTo(toX, toY)
+</span></span></code></pre></div><p>The input parameters <code>x</code> and <code>y</code> are the pixel location starting at
 the top-left corner of the screen.</p>
 <h2 id="move-it-smoothly">Move It Smoothly</h2>
 <p>Now we want to simulate the human-like movements. It won&rsquo;t be perfect, but
 at least it should look decent. For this gradual movement function I used
 a nice F# feature called asynchronous workflows. Effectively, it looks like
 a loop with async sleep statements inside.</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> moveToWorkflow step (toX, toY) = async {
-  <span style="color:#00f">let</span> (fromX, fromY) = currentPosition()
-  <span style="color:#00f">let</span> count = Math.Max(10, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / 20)
-  <span style="color:#00f">for</span> i = 0 <span style="color:#00f">to</span> count <span style="color:#00f">do</span>
-    <span style="color:#00f">let</span> x = step fromX toX count i |&gt; <span style="color:#2b91af">float</span>
-    <span style="color:#00f">let</span> y = step fromY toY count i |&gt; <span style="color:#2b91af">float</span>
-    moveTo x y
-    <span style="color:#00f">do</span>! Async.Sleep 3
-  }
-</code></pre></div><p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> moveToWorkflow step (toX, toY) = async {
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> (fromX, fromY) = currentPosition()
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> count = Math.Max(10, (Math.Abs (toX - fromX) + Math.Abs (toY - fromY)) / 20)
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">for</span> i = 0 <span style="color:#00f">to</span> count <span style="color:#00f">do</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> x = step fromX toX count i |&gt; <span style="color:#2b91af">float</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> y = step fromY toY count i |&gt; <span style="color:#2b91af">float</span>
+</span></span><span style="display:flex;"><span>    moveTo x y
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">do</span>! Async.Sleep 3
+</span></span><span style="display:flex;"><span>  }
+</span></span></code></pre></div><p>The key parameter here is the <code>step</code> function of obscure type <code>int -&gt; int -&gt; int -&gt; int -&gt; int</code>.
 Basically, it calculates a coordinate for n-th step of the movement. We can
 plug different implementations of this function to find the right balance of
 the movement style. Here is the simplest linear implementation:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> linearStep from until max i =
-  from + (until - from) * i / max
-</code></pre></div><p>The sinus-based implementation is a bit more verbose because of float-int
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> linearStep from until max i =
+</span></span><span style="display:flex;"><span>  from + (until - from) * i / max
+</span></span></code></pre></div><p>The sinus-based implementation is a bit more verbose because of float-int
 conversions:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> sinStep (from:int) (until:int) (max:int) (index:int) =
-  <span style="color:#00f">let</span> fromf = from |&gt; <span style="color:#2b91af">float</span>
-  <span style="color:#00f">let</span> untilf = until |&gt; <span style="color:#2b91af">float</span>
-  <span style="color:#00f">let</span> maxf = max |&gt; <span style="color:#2b91af">float</span>
-  <span style="color:#00f">let</span> indexf = index |&gt; <span style="color:#2b91af">float</span>
-  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int
-</code></pre></div><p>The following animation illustrates the concept:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> sinStep (from:int) (until:int) (max:int) (index:int) =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> fromf = from |&gt; <span style="color:#2b91af">float</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> untilf = until |&gt; <span style="color:#2b91af">float</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> maxf = max |&gt; <span style="color:#2b91af">float</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> indexf = index |&gt; <span style="color:#2b91af">float</span>
+</span></span><span style="display:flex;"><span>  fromf + (untilf - fromf) * Math.Sin(Math.PI / 2. * indexf / maxf) |&gt; int
+</span></span></code></pre></div><p>The following animation illustrates the concept:</p>
 <svg width="778" height="190" viewBox="0 0 500 190">
   <image id="mouse1" x="0" y="20" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png" />
   <image id="mouse2" x="0" y="90" width="16" height="16" xlink:href="/2016/03/building-a-poker-bot-mouse-movements/mouse_cursor-16.png" />
@@ -288,12 +288,12 @@ the <code>sinStep</code> function derived from sinus of time.</p>
 <p>A button is a rectangle and we want to click a random point inside it. So, all
 we need is to pick random coordinates, move the mouse there and send a
 click event via the simulator:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-fsharp" data-lang="fsharp"><span style="color:#00f">let</span> clickButton (minX, minY, maxX, maxY) =
-  <span style="color:#00f">let</span> r = <span style="color:#00f">new</span> Random()
-  <span style="color:#00f">let</span> p = (r.Next(minX, maxX), r.Next(minY, maxY))
-  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
-  simulator.Mouse.LeftButtonClick()
-</code></pre></div><h2 id="demo-time">Demo Time</h2>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> clickButton (minX, minY, maxX, maxY) =
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> r = <span style="color:#00f">new</span> Random()
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> p = (r.Next(minX, maxX), r.Next(minY, maxY))
+</span></span><span style="display:flex;"><span>  moveToWorkflow sinStep p |&gt; Async.RunSynchronously
+</span></span><span style="display:flex;"><span>  simulator.Mouse.LeftButtonClick()
+</span></span></code></pre></div><h2 id="demo-time">Demo Time</h2>
 <p>Here is the demo of the mouse movements:</p>
 <p><img src="mouseclicking.gif" alt="Mouse clicking the button"></p>
 <p>It looks fun, doesn&rsquo;t it? The full code for the mouse movements can be found in
@@ -358,8 +358,8 @@ click event via the simulator:</p>
         <div class="col-md-8">
             
             <div id="disqus_thread"></div>
-<script type="application/javascript">
-    var disqus_config = function () {
+<script>
+    window.disqus_config = function () {
     
     
     
@@ -408,17 +408,19 @@ click event via the simulator:</p>
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJW7RC6EV4"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJW7RC6EV4');
+        }
+      </script>
     </body>
 </html>

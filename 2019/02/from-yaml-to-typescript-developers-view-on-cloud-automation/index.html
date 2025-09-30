@@ -89,19 +89,19 @@
         <div class="collapse navbar-collapse" id="navbarMediumish">
             
             <ul class="navbar-nav ml-auto">
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/tags/">TOPICS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/archives/">ARCHIVES</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/talks/">TALKS</a>
                 </li>
-                 
+                
                 <li class="nav-item ">
                     <a class="nav-link" href="/about/">ABOUT</a>
                 </li>
@@ -227,21 +227,21 @@
 <p>The Lambda at the top receives an event when somebody decides to add a new URL. It extracts the name and the URL from the request and saves them as an item in the DynamoDB table.</p>
 <p>The Lambda at the bottom is called whenever a user navigates to a short URL. The code reads the full URL based on the requested path and returns a 301 response with the corresponding location.</p>
 <p>Here is the implementation of the <code>Open URL</code> Lambda in JavaScript:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-javascript" data-lang="javascript"><span style="color:#00f">const</span> aws = require(<span style="color:#a31515">&#39;aws-sdk&#39;</span>);
-<span style="color:#00f">const</span> table = <span style="color:#00f">new</span> aws.DynamoDB.DocumentClient();
-
-exports.handler = <span style="color:#00f">async</span> (event) =&gt; {
-  <span style="color:#00f">const</span> name = event.path.substring(1);
-
-  <span style="color:#00f">const</span> params = { TableName: <span style="color:#a31515">&#34;urls&#34;</span>, Key: { <span style="color:#a31515">&#34;name&#34;</span>: name } };
-  <span style="color:#00f">const</span> value = <span style="color:#00f">await</span> table.get(params).promise();
-
-  <span style="color:#00f">const</span> url = value &amp;&amp; value.Item &amp;&amp; value.Item.url;
-  <span style="color:#00f">return</span> url
-    ? { statusCode: 301, body: <span style="color:#a31515">&#34;&#34;</span>, headers: { <span style="color:#a31515">&#34;Location&#34;</span>: url } }
-    : { statusCode: 404, body: name + <span style="color:#a31515">&#34; not found&#34;</span> };
-};
-</code></pre></div><p>That&rsquo;s 11 lines of code. I&rsquo;ll skip the implementation of <code>Add URL</code> function because it&rsquo;s very similar. Considering a third function to list the existing URLs for UI, we might end up with 30-40 lines of JavaScript in total.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-javascript" data-lang="javascript"><span style="display:flex;"><span><span style="color:#00f">const</span> aws = require(<span style="color:#a31515">&#39;aws-sdk&#39;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> table = <span style="color:#00f">new</span> aws.DynamoDB.DocumentClient();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>exports.handler = <span style="color:#00f">async</span> (event) =&gt; {
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">const</span> name = event.path.substring(1);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">const</span> params = { TableName: <span style="color:#a31515">&#34;urls&#34;</span>, Key: { <span style="color:#a31515">&#34;name&#34;</span>: name } };
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">const</span> value = <span style="color:#00f">await</span> table.get(params).promise();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">const</span> url = value &amp;&amp; value.Item &amp;&amp; value.Item.url;
+</span></span><span style="display:flex;"><span>  <span style="color:#00f">return</span> url
+</span></span><span style="display:flex;"><span>    ? { statusCode: 301, body: <span style="color:#a31515">&#34;&#34;</span>, headers: { <span style="color:#a31515">&#34;Location&#34;</span>: url } }
+</span></span><span style="display:flex;"><span>    : { statusCode: 404, body: name + <span style="color:#a31515">&#34; not found&#34;</span> };
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>That&rsquo;s 11 lines of code. I&rsquo;ll skip the implementation of <code>Add URL</code> function because it&rsquo;s very similar. Considering a third function to list the existing URLs for UI, we might end up with 30-40 lines of JavaScript in total.</p>
 <p>So, how do we deploy the application?</p>
 <p>Well, before we do that, we should realize that the above picture was an over-simplification:</p>
 <ul>
@@ -271,10 +271,10 @@ exports.handler = <span style="color:#00f">async</span> (event) =&gt; {
 <p>However, it doesn&rsquo;t suit particularly well for long-lived ever-changing applications developed in teams. A manually clicked deployment is pretty hard to reproduce in the exact manner, which becomes a maintainability issue pretty fast.</p>
 <h2 id="aws-command-line-interface">AWS Command Line Interface</h2>
 <p>The <a href="https://aws.amazon.com/cli/">AWS Command Line Interface</a> (CLI) is a unified tool to manage all AWS services from a command prompt. You write the calls like</p>
-<pre><code class="language-console" data-lang="console">aws apigateway create-rest-api --name 'My First API' --description 'This is my first API'
-
-aws apigateway create-stage --rest-api-id 1234123412 --stage-name 'dev' --description 'Development stage' --deployment-id a1b2c3
-</code></pre><p>The initial experience might not be as smooth as clicking buttons in the browser, but the huge benefit is that you can <em>reuse</em> commands that you once wrote. You can build scripts by combining many commands into cohesive scenarios. So, your colleague can benefit from the same script that you created. You can provision multiple environments by parameterizing the scripts.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-console" data-lang="console"><span style="display:flex;"><span>aws apigateway create-rest-api --name &#39;My First API&#39; --description &#39;This is my first API&#39;
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>aws apigateway create-stage --rest-api-id 1234123412 --stage-name &#39;dev&#39; --description &#39;Development stage&#39; --deployment-id a1b2c3
+</span></span></code></pre></div><p>The initial experience might not be as smooth as clicking buttons in the browser, but the huge benefit is that you can <em>reuse</em> commands that you once wrote. You can build scripts by combining many commands into cohesive scenarios. So, your colleague can benefit from the same script that you created. You can provision multiple environments by parameterizing the scripts.</p>
 <p>Frankly speaking, I&rsquo;ve never done that for several reasons:</p>
 <ul>
 <li>CLI scripts feel too imperative to me. I have to describe &ldquo;how&rdquo; to do things, not &ldquo;what&rdquo; I want to get in the end.</li>
@@ -286,54 +286,54 @@ aws apigateway create-stage --rest-api-id 1234123412 --stage-name 'dev' --descri
 <h2 id="aws-cloudformation">AWS CloudFormation</h2>
 <p><a href="https://aws.amazon.com/cloudformation/">AWS CloudFormation</a> is the first-party tool for Desired State Configuration management from Amazon. CloudFormation templates use YAML to describe all the infrastructure resources of AWS.</p>
 <p>Here is a snippet from <a href="https://aws.amazon.com/blogs/compute/build-a-serverless-private-url-shortener/">a private URL shortener example</a> kindly provided at AWS blog:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml">Resources:
-  S3BucketForURLs:
-    Type: <span style="color:#a31515">&#34;AWS::S3::Bucket&#34;</span>
-    DeletionPolicy: Delete
-    Properties:
-      BucketName: !If [ &#34;CreateNewBucket&#34;, !Ref &#34;AWS::NoValue&#34;, !Ref S3BucketName ]
-      WebsiteConfiguration:
-        IndexDocument: <span style="color:#a31515">&#34;index.html&#34;</span>
-      LifecycleConfiguration:
-        Rules:
-          -
-            Id: DisposeShortUrls
-            ExpirationInDays: !Ref URLExpiration
-            Prefix: <span style="color:#a31515">&#34;u&#34;</span>
-            Status: Enabled
-</code></pre></div><p>This is just a very short fragment: the complete example consists of 317 lines YAML. That&rsquo;s an order of magnitude more than the actual JavaScript code that we have in the application!</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>Resources:
+</span></span><span style="display:flex;"><span>  S3BucketForURLs:
+</span></span><span style="display:flex;"><span>    Type: <span style="color:#a31515">&#34;AWS::S3::Bucket&#34;</span>
+</span></span><span style="display:flex;"><span>    DeletionPolicy: Delete
+</span></span><span style="display:flex;"><span>    Properties:
+</span></span><span style="display:flex;"><span>      BucketName: !If [ &#34;CreateNewBucket&#34;, !Ref &#34;AWS::NoValue&#34;, !Ref S3BucketName ]
+</span></span><span style="display:flex;"><span>      WebsiteConfiguration:
+</span></span><span style="display:flex;"><span>        IndexDocument: <span style="color:#a31515">&#34;index.html&#34;</span>
+</span></span><span style="display:flex;"><span>      LifecycleConfiguration:
+</span></span><span style="display:flex;"><span>        Rules:
+</span></span><span style="display:flex;"><span>          -
+</span></span><span style="display:flex;"><span>            Id: DisposeShortUrls
+</span></span><span style="display:flex;"><span>            ExpirationInDays: !Ref URLExpiration
+</span></span><span style="display:flex;"><span>            Prefix: <span style="color:#a31515">&#34;u&#34;</span>
+</span></span><span style="display:flex;"><span>            Status: Enabled
+</span></span></code></pre></div><p>This is just a very short fragment: the complete example consists of 317 lines YAML. That&rsquo;s an order of magnitude more than the actual JavaScript code that we have in the application!</p>
 <p>CloudFormation is a powerful tool, but it demands quite some learning to be done to master it. Moreover, it&rsquo;s specific to AWS: you won&rsquo;t be able to transfer the skill to other cloud providers.</p>
 <p>Wouldn&rsquo;t it be great if there was a universal DSC format? Meet Terraform.</p>
 <h2 id="terraform">Terraform</h2>
 <p><a href="https://www.terraform.io/">HashiCorp Terraform</a> is an open source tool to define infrastructure in declarative configuration files. It has a pluggable architecture, so the tool supports all major clouds and even hybrid scenarios.</p>
 <p>The custom text-based Terraform <code>.tf</code> format is used to define the configurations. The templating language is quite powerful, and once you learn it, you can use it for different cloud providers.</p>
 <p>Here is a snippet from <a href="https://github.com/jamesridgway/aws-lambda-short-url">AWS Lambda Short URL Generator</a> example:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-tf" data-lang="tf"><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_rest_api&#34;</span> <span style="color:#a31515">&#34;short_urls_api_gateway&#34;</span> {
-  name        = <span style="color:#a31515">&#34;Short URLs API&#34;</span>
-  description = <span style="color:#a31515">&#34;API for managing short URLs.&#34;</span>
-}
-<span style="color:#00f">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_usage_plan&#34;</span> <span style="color:#a31515">&#34;short_urls_admin_api_key_usage_plan&#34;</span> {
-  name         = <span style="color:#a31515">&#34;Short URLs admin API key usage plan&#34;</span>
-  description  = <span style="color:#a31515">&#34;Usage plan for the admin API key for Short URLS.&#34;</span>
-  api_stages {
-    api_id = <span style="color:#a31515">&#34;</span><span style="color:#a31515">${</span>aws_api_gateway_rest_api.short_urls_api_gateway.id<span style="color:#a31515">}</span><span style="color:#a31515">&#34;</span>
-    stage  = <span style="color:#a31515">&#34;</span><span style="color:#a31515">${</span>aws_api_gateway_deployment.short_url_api_deployment.stage_name<span style="color:#a31515">}</span><span style="color:#a31515">&#34;</span>
-  }
-}
-</code></pre></div><p>This time, the complete example is around 450 lines of textual templates. Are there ways to reduce the size of the infrastructure definition?</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-tf" data-lang="tf"><span style="display:flex;"><span><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_rest_api&#34;</span> <span style="color:#a31515">&#34;short_urls_api_gateway&#34;</span> {
+</span></span><span style="display:flex;"><span>  name        = <span style="color:#a31515">&#34;Short URLs API&#34;</span>
+</span></span><span style="display:flex;"><span>  description = <span style="color:#a31515">&#34;API for managing short URLs.&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#00f">resource</span> <span style="color:#a31515">&#34;aws_api_gateway_usage_plan&#34;</span> <span style="color:#a31515">&#34;short_urls_admin_api_key_usage_plan&#34;</span> {
+</span></span><span style="display:flex;"><span>  name         = <span style="color:#a31515">&#34;Short URLs admin API key usage plan&#34;</span>
+</span></span><span style="display:flex;"><span>  description  = <span style="color:#a31515">&#34;Usage plan for the admin API key for Short URLS.&#34;</span>
+</span></span><span style="display:flex;"><span>  api_stages {
+</span></span><span style="display:flex;"><span>    api_id = <span style="color:#a31515">&#34;</span><span style="color:#a31515">${</span>aws_api_gateway_rest_api.short_urls_api_gateway.id<span style="color:#a31515">}</span><span style="color:#a31515">&#34;</span>
+</span></span><span style="display:flex;"><span>    stage  = <span style="color:#a31515">&#34;</span><span style="color:#a31515">${</span>aws_api_gateway_deployment.short_url_api_deployment.stage_name<span style="color:#a31515">}</span><span style="color:#a31515">&#34;</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>This time, the complete example is around 450 lines of textual templates. Are there ways to reduce the size of the infrastructure definition?</p>
 <p>Yes, by raising the level of abstraction. It&rsquo;s possible with Terraform&rsquo;s modules, or by using other, more specialized tools.</p>
 <h2 id="serverless-framework-and-sam">Serverless Framework and SAM</h2>
 <p><a href="https://serverless.com/">The Serverless Framework</a> is an infrastructure management tool focused on serverless applications. It works across cloud providers (AWS support is the strongest though) and only exposes features related to building applications with cloud functions.</p>
 <p>The benefit is that it&rsquo;s much more concise. Once again, the tool is using YAML to define the templates, here is the snippet from <a href="https://github.com/danielireson/serverless-url-shortener">Serverless URL Shortener</a> example:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml">functions:
-  store:
-    handler: api/store.handle
-    events:
-      - http:
-          path: /
-          method: post
-          cors: <span style="color:#00f">true</span>
-</code></pre></div><p>The domain-specific language yields a shorter definition: this example has 45 lines of YAML + 123 lines of JavaScript functions.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>functions:
+</span></span><span style="display:flex;"><span>  store:
+</span></span><span style="display:flex;"><span>    handler: api/store.handle
+</span></span><span style="display:flex;"><span>    events:
+</span></span><span style="display:flex;"><span>      - http:
+</span></span><span style="display:flex;"><span>          path: /
+</span></span><span style="display:flex;"><span>          method: post
+</span></span><span style="display:flex;"><span>          cors: <span style="color:#00f">true</span>
+</span></span></code></pre></div><p>The domain-specific language yields a shorter definition: this example has 45 lines of YAML + 123 lines of JavaScript functions.</p>
 <p>However, the conciseness has a flip side: as soon as you veer outside of the fairly &ldquo;thin&rdquo; golden path—the cloud functions and an incomplete list of event sources—you have to fall back to more generic tools like CloudFormation. As soon as your landscape includes lower-level infrastructure work or some container-based components, you&rsquo;re stuck using multiple config languages and tools again.</p>
 <p>Amazon&rsquo;s <a href="https://docs.aws.amazon.com/serverless-application-model/index.html">AWS Serverless Application Model</a> (SAM) looks very similar to the Serverless Framework but tailored to be AWS-specific.</p>
 <p>Is that the end game? I don&rsquo;t think so.</p>
@@ -351,8 +351,7 @@ aws apigateway create-stage --rest-api-id 1234123412 --stage-name 'dev' --descri
 <p>Nah, I crossed out the last item. YAML seems to be the most popular language among this class of tools (and I haven&rsquo;t even touched Kubernetes yet!), but I&rsquo;m not convinced it works well for me. <a href="https://noyaml.com/">YAML has many flaws, and I just don&rsquo;t want to use it</a>.</p>
 <p>Have you noticed that I haven&rsquo;t mentioned <strong>Infrastructure as code</strong> a single time yet? Well, here we go (from <a href="https://en.wikipedia.org/wiki/Infrastructure_as_code">Wikipedia</a>):</p>
 <blockquote>
-<p>Infrastructure as code (IaC) is the process of managing and provisioning computer data centers through machine-readable definition files, rather than physical hardware configuration or interactive configuration tools.</p>
-</blockquote>
+<p>Infrastructure as code (IaC) is the process of managing and provisioning computer data centers through machine-readable definition files, rather than physical hardware configuration or interactive configuration tools.</p></blockquote>
 <p>Shouldn&rsquo;t it be called &ldquo;Infrastructure as definition files&rdquo;, or &ldquo;Infrastructure as YAML&rdquo;?</p>
 <p>As a software developer, what I really want is &ldquo;Infrastructure as actual code, you know, the program thing&rdquo;. I want to use <strong>the same language</strong> that I already know. I want to stay in the same editor. I want to get IntelliSense <strong>auto-completion</strong> when I type. I want to see the <strong>compilation errors</strong> when what I typed is not syntactically correct. I want to reuse the <strong>developer skills</strong> that I already have. I want to come up with <strong>abstractions</strong> to generalize my code and create <strong>reusable components</strong>. I want to <strong>leverage the open-source community</strong> who would create much better components than I ever could. I want to <strong>combine the code and infrastructure</strong> in one code project.</p>
 <p>If you are with me on that, keep reading. You get all of that with Pulumi.</p>
@@ -362,85 +361,85 @@ aws apigateway create-stage --rest-api-id 1234123412 --stage-name 'dev' --descri
 <p>While prototyping a URL shortener, I explain the fundamental way of working and illustrate the benefits and some trade-offs. If you want to follow along, <a href="https://pulumi.io/quickstart/install.html">install Pulumi</a>.</p>
 <h2 id="how-pulumi-works">How Pulumi Works</h2>
 <p>Let&rsquo;s start defining our URL shortener application in TypeScript. I installed <code>@pulumi/pulumi</code> and <code>@pulumi/aws</code> NPM modules so that I can start the program. The first resource to create is a DynamoDB table:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript">    <span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/aws&#34;</span>;
-
-    <span style="color:#008000">// A DynamoDB table with a single primary key
-</span><span style="color:#008000"></span>    <span style="color:#00f">let</span> counterTable = <span style="color:#00f">new</span> aws.dynamodb.Table(<span style="color:#a31515">&#34;urls&#34;</span>, {
-        name: <span style="color:#a31515">&#34;urls&#34;</span>,
-        attributes: [
-            { name: <span style="color:#a31515">&#34;name&#34;</span>, <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;S&#34;</span> },
-        ],
-        hashKey: <span style="color:#a31515">&#34;name&#34;</span>,
-        readCapacity: <span style="color:#2b91af">1</span>,
-        writeCapacity: <span style="color:#2b91af">1</span>
-    });
-</code></pre></div><p>I use <code>pulumi</code> CLI to run this program to provision the actual resource in AWS:</p>
-<pre><code class="language-console" data-lang="console">&gt; pulumi up
-
-Previewing update (urlshortener):
-
-     Type                   Name             Plan
- +   pulumi:pulumi:Stack    urlshortener     create
- +    aws:dynamodb:Table    urls             create
-
-Resources:
-    + 2 to create
-
-Do you want to perform this update? yes
-Updating (urlshortener):
-
-     Type                   Name             Status
- +   pulumi:pulumi:Stack    urlshortener     created
- +    aws:dynamodb:Table    urls             created
-
-Resources:
-    + 2 created
-</code></pre><p>The CLI first shows the preview of the changes to be made, and when I confirm, it creates the resource. It also creates a <strong>stack</strong>—a container for all the resources of the application.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span>    <span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/aws&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#008000">// A DynamoDB table with a single primary key
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>    <span style="color:#00f">let</span> counterTable = <span style="color:#00f">new</span> aws.dynamodb.Table(<span style="color:#a31515">&#34;urls&#34;</span>, {
+</span></span><span style="display:flex;"><span>        name: <span style="color:#a31515">&#34;urls&#34;</span>,
+</span></span><span style="display:flex;"><span>        attributes: [
+</span></span><span style="display:flex;"><span>            { name: <span style="color:#a31515">&#34;name&#34;</span>, <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;S&#34;</span> },
+</span></span><span style="display:flex;"><span>        ],
+</span></span><span style="display:flex;"><span>        hashKey: <span style="color:#a31515">&#34;name&#34;</span>,
+</span></span><span style="display:flex;"><span>        readCapacity: <span style="color:#2b91af">1</span>,
+</span></span><span style="display:flex;"><span>        writeCapacity: <span style="color:#2b91af">1</span>
+</span></span><span style="display:flex;"><span>    });
+</span></span></code></pre></div><p>I use <code>pulumi</code> CLI to run this program to provision the actual resource in AWS:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-console" data-lang="console"><span style="display:flex;"><span><span style="font-weight:bold">&gt;</span> pulumi up
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>Previewing update (urlshortener):
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>     Type                   Name             Plan
+</span></span><span style="display:flex;"><span> +   pulumi:pulumi:Stack    urlshortener     create
+</span></span><span style="display:flex;"><span> +    aws:dynamodb:Table    urls             create
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>Resources:
+</span></span><span style="display:flex;"><span>    + 2 to create
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>Do you want to perform this update? yes
+</span></span><span style="display:flex;"><span>Updating (urlshortener):
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>     Type                   Name             Status
+</span></span><span style="display:flex;"><span> +   pulumi:pulumi:Stack    urlshortener     created
+</span></span><span style="display:flex;"><span> +    aws:dynamodb:Table    urls             created
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>Resources:
+</span></span><span style="display:flex;"><span>    + 2 created
+</span></span></code></pre></div><p>The CLI first shows the preview of the changes to be made, and when I confirm, it creates the resource. It also creates a <strong>stack</strong>—a container for all the resources of the application.</p>
 <p>This code might look like an imperative command to create a DynamoDB table, but it actually isn&rsquo;t. If I go ahead and change <code>readCapacity</code> to <code>2</code> and then re-run <code>pulumi up</code>, it produces a different outcome:</p>
-<pre><code class="language-console" data-lang="console">&gt; pulumi up
-
-Previewing update (urlshortener):
-
-     Type                   Name             Plan
-     pulumi:pulumi:Stack    urlshortener
- ~   aws:dynamodb:Table     urls             update  [diff: ~readCapacity]
-
-Resources:
-    ~ 1 to update
-    1 unchanged
-</code></pre><p>It detects the exact change that I made and suggests an update. The following picture illustrates how Pulumi works:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-console" data-lang="console"><span style="display:flex;"><span><span style="font-weight:bold">&gt;</span> pulumi up
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>Previewing update (urlshortener):
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>     Type                   Name             Plan
+</span></span><span style="display:flex;"><span>     pulumi:pulumi:Stack    urlshortener
+</span></span><span style="display:flex;"><span> ~   aws:dynamodb:Table     urls             update  [diff: ~readCapacity]
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>Resources:
+</span></span><span style="display:flex;"><span>    ~ 1 to update
+</span></span><span style="display:flex;"><span>    1 unchanged
+</span></span></code></pre></div><p>It detects the exact change that I made and suggests an update. The following picture illustrates how Pulumi works:</p>
 <p><img src="how-pulumi-works.png" alt="How Pulumi works"></p>
 <figcaption><h4>How Pulumi works</h4></figcaption>
 <p><code>index.ts</code> in the red square is my program. Pulumi&rsquo;s language host understands TypeScript and translates the code to commands to the internal engine. As a result, the engine builds a tree of resources-to-be-provisioned, the desired state of the infrastructure.</p>
 <p>The end state of the last deployment is persisted in the storage (can be in pulumi.com backend or a file on disk). The engine then compares the current state of the system with the desired state of the program and calculates the delta in terms of create-update-delete commands to the cloud provider.</p>
 <h2 id="help-of-types">Help Of Types</h2>
 <p>Now I can proceed to the code that defines a Lambda function:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#008000">// Create a Role giving our Lambda access.
-</span><span style="color:#008000"></span><span style="color:#00f">let</span> policy: <span style="color:#2b91af">aws.iam.PolicyDocument</span> = { <span style="color:#008000">/* Redacted for brevity */</span> };
-<span style="color:#00f">let</span> role = <span style="color:#00f">new</span> aws.iam.Role(<span style="color:#a31515">&#34;lambda-role&#34;</span>, {
-    assumeRolePolicy: <span style="color:#2b91af">JSON.stringify</span>(policy),
-});
-<span style="color:#00f">let</span> fullAccess = <span style="color:#00f">new</span> aws.iam.RolePolicyAttachment(<span style="color:#a31515">&#34;lambda-access&#34;</span>, {
-    role: <span style="color:#2b91af">role</span>,
-    policyArn: <span style="color:#2b91af">aws.iam.AWSLambdaFullAccess</span>,
-});
-
-<span style="color:#008000">// Create a Lambda function, using code from the `./app` folder.
-</span><span style="color:#008000"></span><span style="color:#00f">let</span> lambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;lambda-get&#34;</span>, {
-    runtime: <span style="color:#2b91af">aws.lambda.NodeJS8d10Runtime</span>,
-    code: <span style="color:#2b91af">new</span> pulumi.asset.AssetArchive({
-        <span style="color:#a31515">&#34;.&#34;</span>: <span style="color:#00f">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./app&#34;</span>),
-    }),
-    timeout: <span style="color:#2b91af">300</span>,
-    handler: <span style="color:#a31515">&#34;read.handler&#34;</span>,
-    role: <span style="color:#2b91af">role.arn</span>,
-    environment: {
-        variables: {
-            <span style="color:#a31515">&#34;COUNTER_TABLE&#34;</span>: counterTable.name
-        }
-    },
-}, { dependsOn: [fullAccess] });
-</code></pre></div><p>You can see that the complexity kicked in and the code size is growing. However, now I start to gain real benefits from using a typed programming language:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#008000">// Create a Role giving our Lambda access.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> policy: <span style="color:#2b91af">aws.iam.PolicyDocument</span> = { <span style="color:#008000">/* Redacted for brevity */</span> };
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> role = <span style="color:#00f">new</span> aws.iam.Role(<span style="color:#a31515">&#34;lambda-role&#34;</span>, {
+</span></span><span style="display:flex;"><span>    assumeRolePolicy: <span style="color:#2b91af">JSON.stringify</span>(policy),
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> fullAccess = <span style="color:#00f">new</span> aws.iam.RolePolicyAttachment(<span style="color:#a31515">&#34;lambda-access&#34;</span>, {
+</span></span><span style="display:flex;"><span>    role: <span style="color:#2b91af">role</span>,
+</span></span><span style="display:flex;"><span>    policyArn: <span style="color:#2b91af">aws.iam.AWSLambdaFullAccess</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Create a Lambda function, using code from the `./app` folder.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> lambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;lambda-get&#34;</span>, {
+</span></span><span style="display:flex;"><span>    runtime: <span style="color:#2b91af">aws.lambda.NodeJS8d10Runtime</span>,
+</span></span><span style="display:flex;"><span>    code: <span style="color:#2b91af">new</span> pulumi.asset.AssetArchive({
+</span></span><span style="display:flex;"><span>        <span style="color:#a31515">&#34;.&#34;</span>: <span style="color:#00f">new</span> pulumi.asset.FileArchive(<span style="color:#a31515">&#34;./app&#34;</span>),
+</span></span><span style="display:flex;"><span>    }),
+</span></span><span style="display:flex;"><span>    timeout: <span style="color:#2b91af">300</span>,
+</span></span><span style="display:flex;"><span>    handler: <span style="color:#a31515">&#34;read.handler&#34;</span>,
+</span></span><span style="display:flex;"><span>    role: <span style="color:#2b91af">role.arn</span>,
+</span></span><span style="display:flex;"><span>    environment: {
+</span></span><span style="display:flex;"><span>        variables: {
+</span></span><span style="display:flex;"><span>            <span style="color:#a31515">&#34;COUNTER_TABLE&#34;</span>: counterTable.name
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>}, { dependsOn: [fullAccess] });
+</span></span></code></pre></div><p>You can see that the complexity kicked in and the code size is growing. However, now I start to gain real benefits from using a typed programming language:</p>
 <ul>
 <li>I&rsquo;m using objects in the definitions of other object&rsquo;s parameters. If I misspell their name, I don&rsquo;t get a runtime failure but an immediate error message from the editor.</li>
 <li>If I don&rsquo;t know which options I need to provide, I can go to the type definition and look it up (or use IntelliSense).</li>
@@ -451,118 +450,118 @@ Resources:
 <p>You can see the code for API Gateway <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/1-raw/index.ts#L60-L118">here</a>. It looks too verbose, doesn&rsquo;t it? Moreover, I&rsquo;m only half-way through with only one Lambda function defined.</p>
 <h2 id="reusable-components">Reusable Components</h2>
 <p>We can do better than that. Here is the improved definition of the same Lambda function:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">import</span> { Lambda } <span style="color:#00f">from</span> <span style="color:#a31515">&#34;./lambda&#34;</span>;
-
-<span style="color:#00f">const</span> func = <span style="color:#00f">new</span> Lambda(<span style="color:#a31515">&#34;lambda-get&#34;</span>, {
-    path: <span style="color:#a31515">&#34;./app&#34;</span>,
-    file: <span style="color:#a31515">&#34;read&#34;</span>,
-    environment: {
-       <span style="color:#a31515">&#34;COUNTER_TABLE&#34;</span>: counterTable.name
-    },
-});
-</code></pre></div><p>Now, isn&rsquo;t that beautiful? Only the essential options remained, while all the machinery is gone. Well, it&rsquo;s not completely gone, it&rsquo;s been hidden behind an <em>abstraction</em>.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#00f">import</span> { Lambda } <span style="color:#00f">from</span> <span style="color:#a31515">&#34;./lambda&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> func = <span style="color:#00f">new</span> Lambda(<span style="color:#a31515">&#34;lambda-get&#34;</span>, {
+</span></span><span style="display:flex;"><span>    path: <span style="color:#a31515">&#34;./app&#34;</span>,
+</span></span><span style="display:flex;"><span>    file: <span style="color:#a31515">&#34;read&#34;</span>,
+</span></span><span style="display:flex;"><span>    environment: {
+</span></span><span style="display:flex;"><span>       <span style="color:#a31515">&#34;COUNTER_TABLE&#34;</span>: counterTable.name
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>Now, isn&rsquo;t that beautiful? Only the essential options remained, while all the machinery is gone. Well, it&rsquo;s not completely gone, it&rsquo;s been hidden behind an <em>abstraction</em>.</p>
 <p>I defined a <strong>custom component</strong> called <code>Lambda</code>:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">export</span> <span style="color:#00f">interface</span> LambdaOptions {
-    <span style="color:#00f">readonly</span> path: <span style="color:#2b91af">string</span>;
-    <span style="color:#00f">readonly</span> file: <span style="color:#2b91af">string</span>;
-
-    <span style="color:#00f">readonly</span> environment?:  <span style="color:#2b91af">pulumi.Input</span>&lt;{
-        [key: <span style="color:#2b91af">string</span>]: pulumi.Input&lt;string&gt;;
-    }&gt;;
-}
-
-<span style="color:#00f">export</span> <span style="color:#00f">class</span> Lambda <span style="color:#00f">extends</span> pulumi.ComponentResource {
-    <span style="color:#00f">public</span> <span style="color:#00f">readonly</span> lambda: <span style="color:#2b91af">aws.lambda.Function</span>;
-
-    <span style="color:#00f">constructor</span>(name: <span style="color:#2b91af">string</span>,
-        options: <span style="color:#2b91af">LambdaOptions</span>,
-        opts?: <span style="color:#2b91af">pulumi.ResourceOptions</span>) {
-
-        <span style="color:#00f">super</span>(<span style="color:#a31515">&#34;my:Lambda&#34;</span>, name, opts);
-
-        <span style="color:#00f">const</span> role = <span style="color:#008000">//... Role as defined in the last snippet
-</span><span style="color:#008000"></span>        <span style="color:#00f">const</span> fullAccess = <span style="color:#008000">//... RolePolicyAttachment as defined in the last snippet
-</span><span style="color:#008000"></span>
-        <span style="color:#00f">this</span>.lambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-func`</span>, {
-            runtime: <span style="color:#2b91af">aws.lambda.NodeJS8d10Runtime</span>,
-            code: <span style="color:#2b91af">new</span> pulumi.asset.AssetArchive({
-                <span style="color:#a31515">&#34;.&#34;</span>: <span style="color:#00f">new</span> pulumi.asset.FileArchive(options.path),
-            }),
-            timeout: <span style="color:#2b91af">300</span>,
-            handler: <span style="color:#a31515">`</span><span style="color:#a31515">${</span>options.file<span style="color:#a31515">}</span><span style="color:#a31515">.handler`</span>,
-            role: <span style="color:#2b91af">role.arn</span>,
-            environment: {
-                variables: <span style="color:#2b91af">options.environment</span>
-            }
-        }, { dependsOn: [fullAccess], parent: <span style="color:#2b91af">this</span> });
-    }
-}
-</code></pre></div><p>The interface <code>LambdaOptions</code> defines options that are important for my abstraction. The class <code>Lambda</code> derives from <code>pulumi.ComponentResource</code> and creates all the child resources in its constructor.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#00f">export</span> <span style="color:#00f">interface</span> LambdaOptions {
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">readonly</span> path: <span style="color:#2b91af">string</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">readonly</span> file: <span style="color:#2b91af">string</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">readonly</span> environment?:  <span style="color:#2b91af">pulumi.Input</span>&lt;{
+</span></span><span style="display:flex;"><span>        [key: <span style="color:#2b91af">string</span>]: pulumi.Input&lt;string&gt;;
+</span></span><span style="display:flex;"><span>    }&gt;;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">export</span> <span style="color:#00f">class</span> Lambda <span style="color:#00f">extends</span> pulumi.ComponentResource {
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#00f">readonly</span> lambda: <span style="color:#2b91af">aws.lambda.Function</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">constructor</span>(name: <span style="color:#2b91af">string</span>,
+</span></span><span style="display:flex;"><span>        options: <span style="color:#2b91af">LambdaOptions</span>,
+</span></span><span style="display:flex;"><span>        opts?: <span style="color:#2b91af">pulumi.ResourceOptions</span>) {
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">super</span>(<span style="color:#a31515">&#34;my:Lambda&#34;</span>, name, opts);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">const</span> role = <span style="color:#008000">//... Role as defined in the last snippet
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>        <span style="color:#00f">const</span> fullAccess = <span style="color:#008000">//... RolePolicyAttachment as defined in the last snippet
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">this</span>.lambda = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">`</span><span style="color:#a31515">${</span>name<span style="color:#a31515">}</span><span style="color:#a31515">-func`</span>, {
+</span></span><span style="display:flex;"><span>            runtime: <span style="color:#2b91af">aws.lambda.NodeJS8d10Runtime</span>,
+</span></span><span style="display:flex;"><span>            code: <span style="color:#2b91af">new</span> pulumi.asset.AssetArchive({
+</span></span><span style="display:flex;"><span>                <span style="color:#a31515">&#34;.&#34;</span>: <span style="color:#00f">new</span> pulumi.asset.FileArchive(options.path),
+</span></span><span style="display:flex;"><span>            }),
+</span></span><span style="display:flex;"><span>            timeout: <span style="color:#2b91af">300</span>,
+</span></span><span style="display:flex;"><span>            handler: <span style="color:#a31515">`</span><span style="color:#a31515">${</span>options.file<span style="color:#a31515">}</span><span style="color:#a31515">.handler`</span>,
+</span></span><span style="display:flex;"><span>            role: <span style="color:#2b91af">role.arn</span>,
+</span></span><span style="display:flex;"><span>            environment: {
+</span></span><span style="display:flex;"><span>                variables: <span style="color:#2b91af">options.environment</span>
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }, { dependsOn: [fullAccess], parent: <span style="color:#2b91af">this</span> });
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The interface <code>LambdaOptions</code> defines options that are important for my abstraction. The class <code>Lambda</code> derives from <code>pulumi.ComponentResource</code> and creates all the child resources in its constructor.</p>
 <p>A nice effect is that one can see the structure in <code>pulumi</code> preview:</p>
-<pre><code class="language-console" data-lang="console">Previewing update (urlshortener):
-
-     Type                                Name                  Plan
- +   pulumi:pulumi:Stack                 urlshortener          create
- +     my:Lambda                         lambda-get            create
- +       aws:iam:Role                    lambda-get-role       create
- +       aws:iam:RolePolicyAttachment    lambda-get-access     create
- +       aws:lambda:Function             lambda-get-func       create
- +     aws:dynamodb:Table                urls                  create
-</code></pre><p>The <code>Endpoint</code> component simplifies the definition of API Gateway (see <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/2-components/endpoint.ts">the source</a>):</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">const</span> api = <span style="color:#00f">new</span> Endpoint(<span style="color:#a31515">&#34;urlapi&#34;</span>, {
-    path: <span style="color:#a31515">&#34;/{proxy+}&#34;</span>,
-    lambda: <span style="color:#2b91af">func.lambda</span>
-});
-</code></pre></div><p>The component hides the complexity from the clients—if the abstraction was selected correctly, that is. The component class can be reused in multiple places, in several projects, across teams, etc.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-console" data-lang="console"><span style="display:flex;"><span>Previewing update (urlshortener):
+</span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span>     Type                                Name                  Plan
+</span></span><span style="display:flex;"><span> +   pulumi:pulumi:Stack                 urlshortener          create
+</span></span><span style="display:flex;"><span> +     my:Lambda                         lambda-get            create
+</span></span><span style="display:flex;"><span> +       aws:iam:Role                    lambda-get-role       create
+</span></span><span style="display:flex;"><span> +       aws:iam:RolePolicyAttachment    lambda-get-access     create
+</span></span><span style="display:flex;"><span> +       aws:lambda:Function             lambda-get-func       create
+</span></span><span style="display:flex;"><span> +     aws:dynamodb:Table                urls                  create
+</span></span></code></pre></div><p>The <code>Endpoint</code> component simplifies the definition of API Gateway (see <a href="https://github.com/mikhailshilkov/fosdem2019/blob/master/samples/2-components/endpoint.ts">the source</a>):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#00f">const</span> api = <span style="color:#00f">new</span> Endpoint(<span style="color:#a31515">&#34;urlapi&#34;</span>, {
+</span></span><span style="display:flex;"><span>    path: <span style="color:#a31515">&#34;/{proxy+}&#34;</span>,
+</span></span><span style="display:flex;"><span>    lambda: <span style="color:#2b91af">func.lambda</span>
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>The component hides the complexity from the clients—if the abstraction was selected correctly, that is. The component class can be reused in multiple places, in several projects, across teams, etc.</p>
 <h2 id="standard-component-library">Standard Component Library</h2>
 <p>In fact, Pulumi team came up with lots of high-level components that build abstractions on top of raw resources. The components from the <code>@pulumi/cloud-aws</code> package are particularly useful for serverless applications.</p>
 <p>Here is the full URL shortener application with DynamoDB table, Lambdas, API Gateway, and S3-based static files:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-typescript" data-lang="typescript"><span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/cloud-aws&#34;</span>;
-
-<span style="color:#008000">// Create a table `urls`, with `name` as primary key.
-</span><span style="color:#008000"></span><span style="color:#00f">let</span> urlTable = <span style="color:#00f">new</span> aws.Table(<span style="color:#a31515">&#34;urls&#34;</span>, <span style="color:#a31515">&#34;name&#34;</span>);
-
-<span style="color:#008000">// Create a web server.
-</span><span style="color:#008000"></span><span style="color:#00f">let</span> endpoint = <span style="color:#00f">new</span> aws.API(<span style="color:#a31515">&#34;urlshortener&#34;</span>);
-
-<span style="color:#008000">// Serve all files in the www directory to the root.
-</span><span style="color:#008000"></span>endpoint.<span style="color:#00f">static</span>(<span style="color:#a31515">&#34;/&#34;</span>, <span style="color:#a31515">&#34;www&#34;</span>);
-
-<span style="color:#008000">// GET /url/{name} redirects to the target URL based on a short-name.
-</span><span style="color:#008000"></span>endpoint.<span style="color:#00f">get</span>(<span style="color:#a31515">&#34;/url/{name}&#34;</span>, <span style="color:#00f">async</span> (req, res) =&gt; {
-    <span style="color:#00f">let</span> name = req.params[<span style="color:#a31515">&#34;name&#34;</span>];
-    <span style="color:#00f">let</span> value = <span style="color:#00f">await</span> urlTable.<span style="color:#00f">get</span>({name});
-    <span style="color:#00f">let</span> url = value &amp;&amp; value.url;
-
-    <span style="color:#008000">// If we found an entry, 301 redirect to it; else, 404.
-</span><span style="color:#008000"></span>    <span style="color:#00f">if</span> (url) {
-        res.setHeader(<span style="color:#a31515">&#34;Location&#34;</span>, url);
-        res.status(301);
-        res.end(<span style="color:#a31515">&#34;&#34;</span>);
-    }
-    <span style="color:#00f">else</span> {
-        res.status(404);
-        res.end(<span style="color:#a31515">&#34;&#34;</span>);
-    }
-});
-
-<span style="color:#008000">// POST /url registers a new URL with a given short-name.
-</span><span style="color:#008000"></span>endpoint.post(<span style="color:#a31515">&#34;/url&#34;</span>, <span style="color:#00f">async</span> (req, res) =&gt; {
-    <span style="color:#00f">let</span> url = req.query[<span style="color:#a31515">&#34;url&#34;</span>];
-    <span style="color:#00f">let</span> name = req.query[<span style="color:#a31515">&#34;name&#34;</span>];
-    <span style="color:#00f">await</span> urlTable.insert({ name, url });
-    res.json({ shortenedURLName: <span style="color:#2b91af">name</span> });
-});
-
-<span style="color:#00f">export</span> <span style="color:#00f">let</span> endpointUrl = endpoint.publish().url;
-</code></pre></div><p>The coolest thing here is that the actual <em>implementation code</em> of AWS Lambdas is <a href="https://blog.pulumi.com/lambdas-as-lambdas-the-magic-of-simple-serverless-functions">intertwined</a> with the <em>definition of resources</em>. The code looks very similar to an Express application. AWS Lambdas are defined as TypeScript lambdas. All strongly typed and compile-time checked.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/cloud-aws&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Create a table `urls`, with `name` as primary key.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> urlTable = <span style="color:#00f">new</span> aws.Table(<span style="color:#a31515">&#34;urls&#34;</span>, <span style="color:#a31515">&#34;name&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Create a web server.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> endpoint = <span style="color:#00f">new</span> aws.API(<span style="color:#a31515">&#34;urlshortener&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Serve all files in the www directory to the root.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>endpoint.<span style="color:#00f">static</span>(<span style="color:#a31515">&#34;/&#34;</span>, <span style="color:#a31515">&#34;www&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// GET /url/{name} redirects to the target URL based on a short-name.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>endpoint.<span style="color:#00f">get</span>(<span style="color:#a31515">&#34;/url/{name}&#34;</span>, <span style="color:#00f">async</span> (req, res) =&gt; {
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> name = req.params[<span style="color:#a31515">&#34;name&#34;</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> value = <span style="color:#00f">await</span> urlTable.<span style="color:#00f">get</span>({name});
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> url = value &amp;&amp; value.url;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#008000">// If we found an entry, 301 redirect to it; else, 404.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>    <span style="color:#00f">if</span> (url) {
+</span></span><span style="display:flex;"><span>        res.setHeader(<span style="color:#a31515">&#34;Location&#34;</span>, url);
+</span></span><span style="display:flex;"><span>        res.status(301);
+</span></span><span style="display:flex;"><span>        res.end(<span style="color:#a31515">&#34;&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">else</span> {
+</span></span><span style="display:flex;"><span>        res.status(404);
+</span></span><span style="display:flex;"><span>        res.end(<span style="color:#a31515">&#34;&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// POST /url registers a new URL with a given short-name.
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>endpoint.post(<span style="color:#a31515">&#34;/url&#34;</span>, <span style="color:#00f">async</span> (req, res) =&gt; {
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> url = req.query[<span style="color:#a31515">&#34;url&#34;</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> name = req.query[<span style="color:#a31515">&#34;name&#34;</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#00f">await</span> urlTable.insert({ name, url });
+</span></span><span style="display:flex;"><span>    res.json({ shortenedURLName: <span style="color:#2b91af">name</span> });
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">export</span> <span style="color:#00f">let</span> endpointUrl = endpoint.publish().url;
+</span></span></code></pre></div><p>The coolest thing here is that the actual <em>implementation code</em> of AWS Lambdas is <a href="https://blog.pulumi.com/lambdas-as-lambdas-the-magic-of-simple-serverless-functions">intertwined</a> with the <em>definition of resources</em>. The code looks very similar to an Express application. AWS Lambdas are defined as TypeScript lambdas. All strongly typed and compile-time checked.</p>
 <p>It&rsquo;s worth noting that at the moment such high-level components only exist in TypeScript. One could create their custom components in Python or Go, but there is no standard library available. Pulumi folks <a href="https://github.com/pulumi/pulumi/issues/2430">are actively trying to figure out a way to bridge this gap</a>.</p>
 <h2 id="avoiding-vendor-lock-in">Avoiding Vendor Lock-in?</h2>
 <p>If you look closely at the previous code block, you notice that only one line is AWS-specific: the <code>import</code> statement. The rest is just naming.</p>
 <p>We can get rid of that one too: just change the import to <code>import * as cloud from &quot;@pulumi/cloud&quot;;</code> and replace <code>aws.</code> with <code>cloud.</code> everywhere. Now, we&rsquo;d have to go to the stack configuration file and specify the cloud provider there:</p>
-<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml">config:
-  cloud:provider: aws
-</code></pre></div><p>Which is enough to make the application work again!</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>config:
+</span></span><span style="display:flex;"><span>  cloud:provider: aws
+</span></span></code></pre></div><p>Which is enough to make the application work again!</p>
 <p>Vendor lock-in seems to be a big concern among many people when it comes to cloud architectures heavily relying on managed cloud services, including serverless applications. While I don&rsquo;t necessarily share those concerns and am not sure if generic abstractions are the right way to go, Pulumi Cloud library can be one direction for the exploration.</p>
 <p>The following picture illustrates the choice of the level of abstraction that Pulumi provides:</p>
 <p><img src="pulumi-layers.png" alt="Pulumi abstraction layers"></p>
@@ -617,8 +616,8 @@ Resources:
         <div class="col-md-8">
             
             <div id="disqus_thread"></div>
-<script type="application/javascript">
-    var disqus_config = function () {
+<script>
+    window.disqus_config = function () {
     
     
     
@@ -667,17 +666,19 @@ Resources:
 
 
 <script src="/js/bundle.min.js"></script>
-<script type="application/javascript">
-var doNotTrack = false;
-if (!doNotTrack) {
-	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-	ga('create', 'UA-59218480-1', 'auto');
-	
-	ga('send', 'pageview');
-}
-</script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJW7RC6EV4"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJW7RC6EV4');
+        }
+      </script>
     </body>
 </html>
