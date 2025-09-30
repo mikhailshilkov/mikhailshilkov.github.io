@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Pulumi &#43; Azure Deployment Environments: Better Together for Enterprise Developers | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	<link rel="canonical" href="https://www.pulumi.com/blog/azure-deployment-environments/">
+	
+	
+	<meta property="og:title" content="Pulumi &#43; Azure Deployment Environments: Better Together for Enterprise Developers" />
+	<meta property="og:description" content="Author Azure Deployment Environments definitions with Pulumi using your favorite programming language." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2024/05/azure-deployment-environments/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2024/05/azure-deployment-environments/meta.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Pulumi" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2024/05/azure-deployment-environments/meta.png" />
+	
+	
+
+	<meta name="twitter:title" content="Pulumi &#43; Azure Deployment Environments: Better Together for Enterprise Developers"/>
+	<meta name="twitter:description" content="Author Azure Deployment Environments definitions with Pulumi using your favorite programming language."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Pulumi%20%2b%20Azure%20Deployment%20Environments%3a%20Better%20Together%20for%20Enterprise%20Developers%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2024%2f05%2fazure-deployment-environments%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Pulumi &#43; Azure Deployment Environments: Better Together for Enterprise Developers</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Originally published on the <a
+                                        href='https://www.pulumi.com/blog/azure-deployment-environments/'>Pulumi Blog</a> on
+                                    May 21, 2024
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 5 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>We are excited to announce the support for authoring <a href="https://learn.microsoft.com/en-us/azure/deployment-environments/">Azure Deployment Environments (ADE)</a> environment definitions in Pulumi Infrastructure as Code (IaC) empowering developers to self-serve app infrastructure required to deploy and test cloud-based applications. With Pulumi support, you can now manage your Azure resources in these environments using the same familiar programming model and the full power of our IaC platform.</p>
+<p>Azure Deployment Environments is a service that enables developers to quickly spin up app infrastructure with project-based templates, all while maintaining centralized management and governance. Azure Deployment Environments also provides developers with an intuitive self-service portal where they can choose a curated, project-specific template to deploy new environments with just a few clicks. Thanks to the <a href="https://learn.microsoft.com/en-us/azure/deployment-environments/how-to-configure-extensibility-generic-container-image">ADE extensibility model</a>, you can now turn any Pulumi program into an environment definition and use it directly to securely provision application infrastructure in Azure. This post will guide you through creating ADE templates and deploying resources from the Microsoft developer portal.</p>
+<p><img src="./devportal.png" alt="Developer Portal"></p>
+<h2 id="how-it-works">How It Works</h2>
+<p>Azure Deployment Environments natively supports the Azure Resource Manager (ARM) and Bicep IaC frameworks. In addition, ADE provides an extensibility model that enables customers to create custom container images to author environment definitions.</p>
+<p>The Azure Deployment Environments and Pulumi teams collaborated to publish a standard container image that our joint customers can use directly to run Pulumi programs in ADE: <a href="https://hub.docker.com/r/pulumi/azure-deployment-environments"><code>pulumi/azure-deployment-environments</code></a>. The image leverages ADE’s extensibility model to run Pulumi programs in the container.</p>
+<p>When used with Pulumi, each environment definition consists of two components:</p>
+<ol>
+<li>
+<p>An <code>environment.yaml</code> file that describes the environment by referencing the Pulumi Docker image and pointing to a Pulumi program. Here is an example of such a file:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>name: MyPulumiEnvironment
+</span></span><span style="display:flex;"><span>version: 1.0.0
+</span></span><span style="display:flex;"><span>summary: My First Pulumi-Enabled Environment
+</span></span><span style="display:flex;"><span>description: Deploys a Pulumi stack into ADE
+</span></span><span style="display:flex;"><span>runner: pulumi/azure-deployment-environments:latest
+</span></span><span style="display:flex;"><span>templatePath: Pulumi.yaml
+</span></span></code></pre></div></li>
+<li>
+<p>A Pulumi program that defines the resources to deploy. This program can use any of the <a href="https://www.pulumi.com/docs/clouds/azure/">Pulumi Azure providers</a> to define resources in the environment. Here is a very simple Pulumi program defined in YAML:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>name: ade-pulumi
+</span></span><span style="display:flex;"><span>runtime: yaml
+</span></span><span style="display:flex;"><span>description: My first Pulumi program in ADE
+</span></span><span style="display:flex;"><span>config:
+</span></span><span style="display:flex;"><span>resource-group-name:
+</span></span><span style="display:flex;"><span>    type: string
+</span></span><span style="display:flex;"><span>resources:
+</span></span><span style="display:flex;"><span>sa:
+</span></span><span style="display:flex;"><span>    type: azure-native:storage:StorageAccount
+</span></span><span style="display:flex;"><span>    properties:
+</span></span><span style="display:flex;"><span>    kind: Storage
+</span></span><span style="display:flex;"><span>    resourceGroupName: ${resource-group-name}
+</span></span><span style="display:flex;"><span>    sku:
+</span></span><span style="display:flex;"><span>        name: Standard_LRS
+</span></span></code></pre></div></li>
+</ol>
+<p>This is all you need to define a Pulumi environment in ADE. If you prefer to use a programming language like C#, TypeScript, Python, or Go, you will also need to add the code next to the <code>Pulumi.yaml</code> file.</p>
+<p>Once the environment definition is added to the catalog, a user simply chooses an applicable environment in their developer portal. After accepting parameter values, ADE will run the Pulumi program in the container to provision Azure resources. In the case of the above program, it will create a new Storage Account in the environment, and the user will be able to use the resources once they are provisioned by Pulumi.</p>
+<h2 id="getting-started">Getting Started</h2>
+<p>To get started, you must have the <strong>Azure Deployment Environments</strong> service configured. You can manually create one in the Azure Portal by following the <a href="https://learn.microsoft.com/en-us/azure/deployment-environments/quickstart-create-and-configure-devcenter">instructions</a> or using our <a href="https://github.com/pulumi/azure-deployment-environments/tree/main/Provisioning/ade">sample Pulumi program</a> to provision all the required resources.</p>
+<p>Once you have an ADE instance, you can start authoring your <strong>environment definitions</strong>. You can use the <a href="https://github.com/pulumi/azure-deployment-environments/tree/main/Environments">Pulumi Azure Deployment Environments samples</a> as a starting point. The folder contains four simple Pulumi programs in four different languages, each creating a Storage Account in the environment. The programs also show how to use parameters to integrate with ADE’s configuration system.</p>
+<p>Once you have the definitions, you will <strong>publish them to a GitHub or Azure DevOps repository</strong> and <a href="https://learn.microsoft.com/en-us/azure/deployment-environments/how-to-configure-catalog?tabs=DevOpsRepoMSI"><strong>attach the repository as a Catalog in Azure Deployment Environments</strong></a>. You can do so manually using the Azure Portal or configure it within your Pulumi project, as illustrated in <a href="https://github.com/pulumi/azure-deployment-environments/blob/1a9633cd31977be2b78cd727b21225ff7b48913d/Provisioning/ade/index.ts#L132-L141">our sample</a>.</p>
+<p>Finally, <strong>navigate to the <a href="https://devportal.microsoft.com">Microsoft developer portal</a></strong> to create a new environment. You will see the list of available templates, including the ones you just published.</p>
+<h2 id="bring-a-custom-container-image">Bring a Custom Container Image</h2>
+<p>The Pulumi container image <a href="https://hub.docker.com/r/pulumi/azure-deployment-environments"><code>pulumi/azure-deployment-environments</code></a> is a great starting point for your environment definitions. However, if you want to customize the behavior to your needs, you can also bring your own container image to run Pulumi programs in ADE. To do so, refer to the <a href="https://aka.ms/ade/pulumi-docs">Configure a container image to execute deployments with Pulumi</a> article on Microsoft Learn.</p>
+<p>One benefit of using a custom image is the ability to provide a Pulumi Cloud access token to the image via the <code>PULUMI_ACCESS_TOKEN</code> environment variable. This allows the image to authenticate with the Pulumi Cloud backend without requiring additional configuration. Pulumi Cloud securely encrypts and stores your infrastructure state, manages secrets, provides search and clear visibility across all your cloud resources, runs remote deployments, integrates with CI/CD pipelines, detects configuration drift, and enables centralized policy enforcement. Additional features such as RBAC and audit logging enable your team to collaborate easily, ship faster, more securely and with confidence for every deployment.</p>
+<p>If you have a suggestion for improving the standard Pulumi container image, please <a href="https://github.com/pulumi/azure-deployment-environments/issues/new">open an issue</a> on our GitHub repository. We are always looking for ways to improve the experience for our Azure users.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Together with the Azure Deployment Environments team, Pulumi is excited to enable our shared customers to take advantage of the ADE extensibility model, Pulumi IaC platform, and empower developers with self-service of Azure App infrastructure, within enterprise guardrails. We hope that this new capability will help you streamline your development processes and make it easier for your teams to provision new environments in Azure quickly.</p>
+<p>If you want to learn more:</p>
+<ul>
+<li>Attend our workshop <a href="https://www.pulumi.com/resources/platform-engineering-with-azure-pulumi/">Platform Engineering with Microsoft Azure and Pulumi</a> that takes place on June 20</li>
+<li>Read the <a href="https://aka.ms/build24/ade-blog">announcement on the Azure blog</a></li>
+<li>Explore the code at <a href="https://github.com/pulumi/azure-deployment-environments"><code>pulumi/azure-deployment-environments</code></a></li>
+</ul>
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/pulumi">Pulumi</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/56'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">56</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/56'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJW7RC6EV4"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJW7RC6EV4');
+        }
+      </script>
+    </body>
+</html>

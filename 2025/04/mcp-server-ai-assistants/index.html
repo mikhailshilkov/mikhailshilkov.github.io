@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>AI-Assisted Infrastructure as Code with Pulumi&#39;s Model Context Protocol Server | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	<link rel="canonical" href="https://www.pulumi.com/blog/mcp-server-ai-assistants/">
+	
+	
+	<meta property="og:title" content="AI-Assisted Infrastructure as Code with Pulumi&#39;s Model Context Protocol Server" />
+	<meta property="og:description" content="Learn how AI assistants like Cursor with Pulumi&#39;s MCP server accelerate IaC workflows and improve developer experience." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2025/04/mcp-server-ai-assistants/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2025/04/mcp-server-ai-assistants/meta.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Pulumi" />
+	
+	<meta property="article:tag" content="AI" />
+	
+	<meta property="article:tag" content="Azure" />
+	
+	<meta property="article:tag" content="Kubernetes" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2025/04/mcp-server-ai-assistants/meta.png" />
+	
+	
+
+	<meta name="twitter:title" content="AI-Assisted Infrastructure as Code with Pulumi&#39;s Model Context Protocol Server"/>
+	<meta name="twitter:description" content="Learn how AI assistants like Cursor with Pulumi&#39;s MCP server accelerate IaC workflows and improve developer experience."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=AI-Assisted%20Infrastructure%20as%20Code%20with%20Pulumi%27s%20Model%20Context%20Protocol%20Server%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2025%2f04%2fmcp-server-ai-assistants%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">AI-Assisted Infrastructure as Code with Pulumi&#39;s Model Context Protocol Server</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Originally published on the <a
+                                        href='https://www.pulumi.com/blog/mcp-server-ai-assistants/'>Pulumi Blog</a> on
+                                    Apr 8, 2025
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 7 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Infrastructure as Code (IaC) has revolutionized how we manage cloud resources, but navigating complex cloud provider APIs, writing boilerplate code, and iterating through deployment cycles can still be time-consuming. Pulumi offers a fantastic developer experience using familiar programming languages. But what if we could make it even <em>faster</em> and more intuitive by integrating powerful AI assistants directly into the development loop?</p>
+<p>This is where the <strong>Pulumi Model Context Protocol (MCP) Server integration</strong> shines. <a href="https://modelcontextprotocol.io">MCP</a> is a specification that allows language models (like the AI in your coding assistant) to interact with external tools and data sources in a structured way. By connecting AI-powered code assistants with Pulumi&rsquo;s CLI and registry via MCP, we can bring real-time resource information and infrastructure management directly into the development environment, dramatically reducing friction and accelerating workflows.</p>
+<p>Several AI coding assistants like GitHub Copilot, Anthropic&rsquo;s Claude Code, Windsurf and others are rapidly evolving; this post will use <strong>Cursor</strong> (an AI-first code editor) to demonstrate a real-world example of this synergy in action.</p>
+<h2 id="setting-up-the-pulumi-mcp-integration-in-cursor">Setting up the Pulumi MCP Integration in Cursor</h2>
+<p>Before diving in, you typically need to configure your AI assistant to communicate with the Pulumi MCP server. In Cursor, you create a configuration file named <code>mcp.json</code> within the <code>.cursor</code> directory in your project&rsquo;s root.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    &#34;mcpServers&#34;: {
+</span></span><span style="display:flex;"><span>        &#34;pulumi&#34;: {
+</span></span><span style="display:flex;"><span>            &#34;type&#34;: <span style="color:#a31515">&#34;stdio&#34;</span>,
+</span></span><span style="display:flex;"><span>            &#34;command&#34;: <span style="color:#a31515">&#34;npx&#34;</span>,
+</span></span><span style="display:flex;"><span>            &#34;args&#34;: [<span style="color:#a31515">&#34;@pulumi/mcp-server&#34;</span>]
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Validate the connection within the assistant&rsquo;s settings (e.g., Cursor has a dedicated section to check the MCP connection status).</p>
+<p><img src="cursor-mcp-settings.png" alt="Cursor MCP Settings"></p>
+<p>Once configured, the AI assistant can leverage Pulumi tools seamlessly. These tools are specific actions enabled by the MCP server—like searching the Pulumi Registry or running a <code>pulumi</code> command—allowing the assistant to gather information or interact with your Pulumi project.</p>
+<h2 id="the-goal-provisioning-an-aks-cluster">The Goal: Provisioning an AKS Cluster</h2>
+<p>Our objective for this walkthrough is to provision a temporary Azure Kubernetes Service (AKS) cluster for a short experiment using Pulumi and TypeScript. We need the cluster created with minimal fuss and its <code>kubeconfig</code> exported for access.</p>
+<h2 id="the-traditional-approach">The Traditional Approach</h2>
+<p>The conventional method for this task involves significant context switching: searching Azure and Pulumi documentation in a browser, writing code in an editor, running commands (<code>pulumi preview</code>, <code>pulumi up</code>) in a terminal, and manually correlating information between these different environments. This process can be slow, requires deep knowledge recall (or constant lookups), and is prone to errors during the manual translation from documentation to code.</p>
+<h2 id="the-ai-assistant--pulumi-mcp-approach">The AI Assistant + Pulumi MCP Approach</h2>
+<p>Let&rsquo;s walk through how the same task unfolds much more efficiently using an AI assistant integrated with Pulumi MCP.</p>
+<h3 id="understanding-the-ai-assistant--tool-interaction">Understanding the AI Assistant + Tool Interaction</h3>
+<p>Before detailing the steps, it&rsquo;s helpful to understand the user interface flow when the AI assistant uses integrated tools like those provided by the Pulumi MCP integration. Typically:</p>
+<ol>
+<li>The developer provides a prompt or instruction in the chat interface within their editor.</li>
+<li>The AI assistant analyzes the request and determines that it needs specific information (like resource properties) or needs to perform an action (like running <code>pulumi preview</code>).</li>
+<li>The assistant indicates it will use a specific tool (e.g., <code>pulumi_registry_listResources</code>, <code>pulumi_cli_preview</code>). This often appears as a distinct UI element in the chat, showing the tool name and parameters being used.</li>
+<li>The tool executes via the MCP server, interacting with the Pulumi CLI or registry as needed.</li>
+<li>The output or result from the tool (e.g., registry listings, preview results, deployment errors) is displayed directly in the chat interface.</li>
+<li>The AI assistant processes this output and uses it to continue the task – either by generating code, providing an answer, or deciding on the next step (like suggesting a fix for an error).</li>
+</ol>
+<p>This tight loop keeps the developer focused within their editor environment, minimizing disruptions.</p>
+<p><img src="cursor-tool-calls.png" alt="Cursor calling Pulumi tools"></p>
+<h3 id="step-by-step-walkthrough">Step-by-Step Walkthrough</h3>
+<p>Here&rsquo;s how the AKS provisioning task played out:</p>
+<h4 id="the-request">The Request</h4>
+<p>The developer starts with a natural language request to the AI assistant within the editor:</p>
+<blockquote>
+<p>&ldquo;I have an empty Pulumi project with TypeScript. Please edit the program to provision an AKS cluster for me. It&rsquo;s a temporary AKS cluster that I need for a short experiment, so I don&rsquo;t need any particular configuration of it. Just export its kubeconfig when you are done. Please use the tools to lookup resource information and to run pulumi preview to make sure your code works. When done, run pulumi up for me.&rdquo;</p></blockquote>
+<h4 id="ai-powered-resource-discovery">AI-Powered Resource Discovery</h4>
+<p>Instead of the developer manually searching docs, the AI assistant leverages the MCP integration.</p>
+<ul>
+<li>The AI assistant first queries the Pulumi Registry via MCP to list resources within the Azure Native provider&rsquo;s <code>containerservice</code> module (using the <code>pulumi_registry_listResources</code> tool). This immediately identified <code>ManagedCluster</code> as the relevant resource.</li>
+<li>The AI assistant then requests detailed information <em>specifically</em> for <code>ManagedCluster</code> (using <code>pulumi_registry_getResource</code>), directly retrieving its required properties, descriptions, and structure without leaving the editor.</li>
+</ul>
+<p><img src="registry-tools.png" alt="Cursor calling Pulumi tools"></p>
+<h4 id="ai-code-generation--editing">AI Code Generation &amp; Editing</h4>
+<p>Using the information retrieved from the Pulumi Registry, the assistant generated the necessary TypeScript code. It defined the <code>ManagedCluster</code> resource with a basic configuration and used its code editing capabilities to insert the code directly into the developer&rsquo;s <code>index.ts</code> file.</p>
+<h4 id="integrated-validation">Integrated Validation</h4>
+<p>Before attempting a potentially time-consuming deployment, the assistant ran <code>pulumi preview</code> using the integrated CLI tool (<code>pulumi_cli_preview</code>). The preview output appeared directly in the chat.</p>
+<p>The preview succeeded, showing the resources that would be created. The assistant then proceeded to run <code>pulumi up</code> using the integrated CLI tool (<code>pulumi_cli_up</code>). However, the deployment flagged an error: an incorrect attempt to interpolate a Pulumi <code>Output&lt;string&gt;</code> directly into a resource property.</p>
+<p><img src="up-failed.png" alt="Pulumi UP tool failed due to incorrect interpolation"></p>
+<h4 id="ai-assisted-debugging--iteration">AI-Assisted Debugging &amp; Iteration</h4>
+<p>The assistant analyzed the error message from the tool:</p>
+<ul>
+<li>It identified the incorrect string interpolation and proposed a fix (using <code>pulumi.interpolate</code>), applying it via the editing tool.</li>
+<li><em>Self-correction:</em> The first fix inadvertently introduced a circular dependency (caught by linters integrated into the editor and surfaced to the assistant). The assistant recognized this and further refined the code by removing the problematic property, correctly relying on Azure&rsquo;s default behavior.</li>
+<li>Another attempt to deploy using <code>pulumi up</code> failed, this time surfacing an Azure API error: the provided SSH key format was invalid.</li>
+</ul>
+<p><img src="ssh-key.png" alt="Pulumi UP tool failed due to incorrect SSH key"></p>
+<h4 id="collaborative-problem-solving--tooling">Collaborative Problem Solving &amp; Tooling</h4>
+<p>The developer, seeing the SSH key error, suggested using the Pulumi TLS package to generate a valid key dynamically.</p>
+<ul>
+<li>The assistant used the integrated terminal tool to execute <code>npm install @pulumi/tls</code>.</li>
+<li>It then edited the <code>index.ts</code> file again, incorporating the <code>tls.PrivateKey</code> resource and correctly using its <code>publicKeyOpenssh</code> output for the <code>ManagedCluster</code>&rsquo;s Linux profile.</li>
+</ul>
+<p><img src="tls-key.png" alt="Use the Pulumi TLS provider"></p>
+<h4 id="successful-deployment">Successful Deployment</h4>
+<p>The subsequent <code>pulumi preview</code> showed the correct plan (including the new TLS key resource). The assistant then executed <code>pulumi up</code>, which completed successfully. The success message and resource summary appeared in the chat.</p>
+<p><img src="success.png" alt="Successful Deployment"></p>
+<h4 id="accessing-outputs">Accessing Outputs</h4>
+<p>Finally, retrieving the <code>kubeconfig</code> was trivial. The assistant used the stack output tool (<code>pulumi_cli_stack_output kubeconfig</code>) to fetch and display the configuration directly.</p>
+<p><img src="stack-output.png" alt="Stack Output showing Kubeconfig"></p>
+<h2 id="why-this-changes-the-game">Why This Changes the Game</h2>
+<p>Integrating AI assistants with the Pulumi Model Context Protocol offers tangible benefits:</p>
+<ul>
+<li><strong>Reduced Context Switching:</strong> The entire workflow – discovery, coding, validation, deployment, debugging, output retrieval – happens primarily <em>inside</em> the editor. No more juggling browser tabs and terminal windows.</li>
+<li><strong>Accelerated Discovery:</strong> MCP integration provides immediate, context-aware access to Pulumi resource schemas and documentation snippets.</li>
+<li><strong>Faster Coding:</strong> AI generates boilerplate and resource definitions quickly based on registry data and natural language requests.</li>
+<li><strong>Tighter Feedback Loop:</strong> <code>pulumi preview</code> and <code>pulumi up</code> results are instantly available within the coding environment, enabling rapid iteration.</li>
+<li><strong>Intelligent Assistance &amp; Collaboration:</strong> The AI assists with debugging complex errors, incorporates developer suggestions, and leverages integrated tooling effectively.</li>
+</ul>
+<h2 id="conclusion">Conclusion</h2>
+<p>The synergy between AI coding assistants and the Pulumi Model Context Protocol (MCP) integration creates a remarkably efficient environment for Infrastructure as Code development. By bringing cloud resource knowledge, code generation, and the Pulumi CLI workflow directly into the editor, developers can build, deploy, and iterate on their infrastructure faster and with significantly less friction.</p>
+<p>Whether you use Cursor, Copilot, Claude Code, Windsurf, or another emerging AI tool, integrating it with the Pulumi MCP server offers a glimpse into the future of streamlined, intelligent IaC development, ultimately boosting productivity and improving the overall developer experience.</p>
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/pulumi">Pulumi</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/ai">AI</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/azure">Azure</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/kubernetes">Kubernetes</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/58'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">58</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/58'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJW7RC6EV4"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJW7RC6EV4');
+        }
+      </script>
+    </body>
+</html>

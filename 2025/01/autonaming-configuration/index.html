@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Introducing Customizable Resource Auto-naming in Pulumi | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	<link rel="canonical" href="https://www.pulumi.com/blog/autonaming-configuration/">
+	
+	
+	<meta property="og:title" content="Introducing Customizable Resource Auto-naming in Pulumi" />
+	<meta property="og:description" content="Discover how to customize Pulumi&#39;s resource naming to align with your organization&#39;s standards and naming conventions." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2025/01/autonaming-configuration/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2025/01/autonaming-configuration/meta.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Pulumi" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2025/01/autonaming-configuration/meta.png" />
+	
+	
+
+	<meta name="twitter:title" content="Introducing Customizable Resource Auto-naming in Pulumi"/>
+	<meta name="twitter:description" content="Discover how to customize Pulumi&#39;s resource naming to align with your organization&#39;s standards and naming conventions."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Introducing%20Customizable%20Resource%20Auto-naming%20in%20Pulumi%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2025%2f01%2fautonaming-configuration%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Introducing Customizable Resource Auto-naming in Pulumi</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Originally published on the <a
+                                        href='https://www.pulumi.com/blog/autonaming-configuration/'>Pulumi Blog</a> on
+                                    Jan 16, 2025
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 5 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>I&rsquo;m thrilled to announce that you can now customize how Pulumi names your cloud resources! Our default auto-naming feature has helped thousands of customers successfully manage cloud resources at scale by automatically ensuring unique, conflict-free resource names across their cloud deployments. This robust naming system has been particularly valuable for teams managing multiple environments, handling zero-downtime deployments, and maintaining clear resource organization. Today, we&rsquo;re taking it to the next level by giving you control over how these names are generated.</p>
+<p>Over the years, we&rsquo;ve heard from many teams using Pulumi that while they love the power and convenience of our auto-naming system, they need it to work with their organization&rsquo;s naming standards - whether that&rsquo;s adding cost center identifiers, following compliance rules, or matching existing naming patterns. The <a href="https://github.com/pulumi/pulumi/issues/1518">GitHub issue tracking this feature</a> has gathered quite some attention (50 thumbs up!) and lots of great input from the community.</p>
+<p>Today, I&rsquo;m excited to introduce resource auto-naming configuration. Now you can have the best of both worlds: keep the robustness of Pulumi&rsquo;s auto-naming while making it follow your team&rsquo;s naming conventions. Want your resources to include environment tags? Project prefixes? Random suffixes of specific length? Disable auto-naming entirely? It&rsquo;s all possible now, and it works across all major cloud providers.</p>
+<h2 id="the-road-to-better-resource-naming">The Road to Better Resource Naming</h2>
+<p>The original <a href="https://github.com/pulumi/pulumi/issues/1518">feature request</a> I opened in June 2018 when I was a Pulumi customer. It has generated extensive discussion, with users sharing various use cases and requirements. Today, I&rsquo;m happy to finally close that issue with a solution that addresses the community&rsquo;s needs while maintaining Pulumi&rsquo;s robust resource management capabilities.</p>
+<p>Check out the full story:</p>
+<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+      <iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" loading="eager" referrerpolicy="strict-origin-when-cross-origin" src="https://www.youtube.com/embed/Y7tedYSZly4?rel=0?autoplay=0&amp;controls=1&amp;end=0&amp;loop=0&amp;mute=0&amp;start=0" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border:0;" title="YouTube video"></iframe>
+    </div>
+
+<h2 id="introducing-auto-naming-configuration">Introducing Auto-naming Configuration</h2>
+<p>With the new auto-naming configuration feature, you now have full control over how Pulumi generates resource names. Here are some common scenarios you can achieve:</p>
+<h3 id="disable-auto-naming">Disable Auto-naming</h3>
+<p>If you want complete control over your resource names, you can disable Pulumi auto-naming entirely:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>pulumi:autonaming:
+</span></span><span style="display:flex;"><span>  mode: disabled
+</span></span></code></pre></div><p>In this mode, Pulumi will require you to provide explicit physical names for all resources.</p>
+<h3 id="use-logical-names-as-is">Use Logical Names As-Is</h3>
+<p>For scenarios where you want Pulumi to copy exactly the logical names to become the physical names, you can use the <code>verbatim</code> mode:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>pulumi:autonaming:
+</span></span><span style="display:flex;"><span>  mode: verbatim
+</span></span></code></pre></div><p>No random suffixes will be added to the resource names.</p>
+<p>Note, when an update requires replacing the resource, Pulumi&rsquo;s default behavior is to create the new resource and then delete the old resource. However, when using verbatim names or patterns without random components, resources that need to be replaced will be deleted before creating the new resource. This can lead to downtime.</p>
+<h3 id="custom-naming-patterns">Custom Naming Patterns</h3>
+<p>Create your own naming patterns that combine static text, resource information, and random elements:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>pulumi:autonaming:
+</span></span><span style="display:flex;"><span>  pattern: ${project}-${stack}-${name}${alphanum(6)}
+</span></span></code></pre></div><p>See the <a href="/docs/concepts/resources/names/#autonaming-configuration">auto-naming configuration documentation</a> to see the full list of available expressions.</p>
+<h2 id="see-it-in-action">See It In Action</h2>
+<p>Let&rsquo;s look at a practical example. Say you&rsquo;re creating an S3 bucket and a DynamoDB table in your Pulumi program:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/aws&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Create an S3 bucket
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> bucket = <span style="color:#00f">new</span> aws.s3.Bucket(<span style="color:#a31515">&#34;uploads&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#008000">// Create a DynamoDB table
+</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> table = <span style="color:#00f">new</span> aws.dynamodb.Table(<span style="color:#a31515">&#34;users&#34;</span>, {
+</span></span><span style="display:flex;"><span>    hashKey: <span style="color:#a31515">&#34;id&#34;</span>,
+</span></span><span style="display:flex;"><span>    attributes: [{
+</span></span><span style="display:flex;"><span>        name: <span style="color:#a31515">&#34;id&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;S&#34;</span>,
+</span></span><span style="display:flex;"><span>    }],
+</span></span><span style="display:flex;"><span>    billingMode: <span style="color:#a31515">&#34;PAY_PER_REQUEST&#34;</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p>By default, Pulumi would generate names like <code>uploads-ae26f3b</code> and <code>users-4c2dd09</code>. But let&rsquo;s say you want your resources to follow a pattern that includes your project and stack name. You can configure this in your stack configuration file (<code>Pulumi.&lt;stack-name&gt;.yaml</code>):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>config:
+</span></span><span style="display:flex;"><span>  pulumi:autonaming:
+</span></span><span style="display:flex;"><span>    pattern: ${project}-${stack}-${name}
+</span></span></code></pre></div><p>Now when you run <code>pulumi up</code>, your resources will be created with predictable names:</p>
+<ul>
+<li>S3 bucket: <code>myproject-dev-uploads</code></li>
+<li>DynamoDB table: <code>myproject-dev-users</code></li>
+</ul>
+<p>You can also set different patterns for specific providers or resource types:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>config:
+</span></span><span style="display:flex;"><span>  pulumi:autonaming:
+</span></span><span style="display:flex;"><span>    pattern: ${project}-${stack}-${name}
+</span></span><span style="display:flex;"><span>    providers:
+</span></span><span style="display:flex;"><span>      aws:
+</span></span><span style="display:flex;"><span>        resources:
+</span></span><span style="display:flex;"><span>          <span style="color:#a31515">&#34;aws:s3/bucket:Bucket&#34;</span>:
+</span></span><span style="display:flex;"><span>            pattern: ${name}-${stack}-${alphanum(6)}
+</span></span></code></pre></div><p>With this configuration, you&rsquo;ll get:</p>
+<ul>
+<li>S3 bucket: <code>uploads-dev-x7yz9n</code> (with a random suffix for global uniqueness)</li>
+<li>DynamoDB table: <code>myproject-dev-users</code> (following the default pattern)</li>
+</ul>
+<h3 id="configuration-syntax">Configuration Syntax</h3>
+<p>The configuration syntax differs slightly depending on where you define it:</p>
+<p>In your project file <code>Pulumi.yaml</code>:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>config:
+</span></span><span style="display:flex;"><span>  pulumi:autonaming:
+</span></span><span style="display:flex;"><span>    value:
+</span></span><span style="display:flex;"><span>      mode: verbatim
+</span></span></code></pre></div><p>In your stack configuration file <code>Pulumi.&lt;stack-name&gt;.yaml</code>:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>config:
+</span></span><span style="display:flex;"><span>  pulumi:autonaming:
+</span></span><span style="display:flex;"><span>    mode: verbatim
+</span></span></code></pre></div><p>The same applies to other configuration patterns shown above - use the <code>value:</code> key in project-level configuration, but omit it in stack-level configuration.</p>
+<h2 id="getting-started">Getting Started</h2>
+<p>To use the auto-naming configuration feature, you&rsquo;ll need:</p>
+<ol>
+<li>Pulumi CLI 3.146.0 or later</li>
+<li>The following minimum provider versions (as applicable):
+<ul>
+<li>AWS provider 6.66.0 or later</li>
+<li>Azure Native provider 2.78.0 or later</li>
+<li>Azure Classic provider 6.14.0 or later</li>
+<li>Google Cloud Platform provider 8.11.0 or later</li>
+<li>Kubernetes provider 4.20.0 or later</li>
+<li>AWS Cloud Control provider 1.21.0 or later</li>
+</ul>
+</li>
+</ol>
+<p>Once you have the required versions installed, simply add your desired auto-naming configuration to your Pulumi configuration file.</p>
+<p>For complete documentation and advanced usage scenarios, visit our <a href="/docs/intro/concepts/resources/names/#auto-naming-configuration">resource auto-naming documentation</a>.</p>
+<h2 id="general-availability">General Availability</h2>
+<p>We&rsquo;re excited to announce that the auto-naming feature is now generally available across our major cloud providers. This release marks an important milestone in Pulumi&rsquo;s evolution, delivering a robust and flexible solution for resource naming.</p>
+<p>Thank you to everyone who participated in the <a href="https://github.com/pulumi/pulumi/discussions/17592">RFC discussion</a> and the preview period and for providing valuable feedback. Your input has been invaluable in creating a solution that works for diverse use cases while maintaining Pulumi&rsquo;s core strengths.</p>
+<p>If you have any questions or feedback about the resource auto-naming feature, please don&rsquo;t hesitate to reach out to us on GitHub or in the <a href="https://slack.pulumi.com">Pulumi Community Slack</a>.</p>
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/pulumi">Pulumi</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/57'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">57</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/57'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJW7RC6EV4"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJW7RC6EV4');
+        }
+      </script>
+    </body>
+</html>

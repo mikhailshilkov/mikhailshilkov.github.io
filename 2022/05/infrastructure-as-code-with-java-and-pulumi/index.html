@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Infrastructure as Code with Java and Pulumi | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	<link rel="canonical" href="https://www.pulumi.com/blog/announcing-infrastructure-as-code-with-java-and-pulumi/">
+	
+	
+	<meta property="og:title" content="Infrastructure as Code with Java and Pulumi" />
+	<meta property="og:description" content="Learn about Pulumi&#39;s support for Java and JVM languages, which enable you to use Infrastructure As Code on any Cloud with the JVM ecosystem." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2022/05/infrastructure-as-code-with-java-and-pulumi/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2022/05/infrastructure-as-code-with-java-and-pulumi/meta.png" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="Java" />
+	
+	<meta property="article:tag" content="Pulumi" />
+	
+	<meta property="article:tag" content="Kubernetes" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2022/05/infrastructure-as-code-with-java-and-pulumi/meta.png" />
+	
+	
+
+	<meta name="twitter:title" content="Infrastructure as Code with Java and Pulumi"/>
+	<meta name="twitter:description" content="Learn about Pulumi&#39;s support for Java and JVM languages, which enable you to use Infrastructure As Code on any Cloud with the JVM ecosystem."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://twitter.com/intent/tweet?text=Infrastructure%20as%20Code%20with%20Java%20and%20Pulumi%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2022%2f05%2finfrastructure-as-code-with-java-and-pulumi%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Infrastructure as Code with Java and Pulumi</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Originally published on the <a
+                                        href='https://www.pulumi.com/blog/announcing-infrastructure-as-code-with-java-and-pulumi/'>Pulumi Blog</a> on
+                                    May 4, 2022
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 6 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Infrastructure has become a core part of application development as modern cloud capabilities such as microservices, containers, serverless, and data stores define your application&rsquo;s architecture. The term &ldquo;infrastructure&rdquo; covers all of the cloud resources your application needs to run. Modern architectures require thinking deeply about infrastructure while building your application, instead of treating it as an afterthought. Pulumi&rsquo;s approach helps developers, infrastructure engineers, and platform teams work together to leverage everything the modern cloud has to offer.</p>
+<p>Pulumi has worked with hundreds of companies to get cloud applications into production, and Java has quickly risen to become one of the most frequently requested features by the community. Pulumi is an open source product, and we are grateful to our awesome community members who bootstrapped Pulumi for Java last year and were instrumental in helping us with this public preview. Thank you to <a href="https://twitter.com/pawelprazak">Paweł Prażak</a> and his <a href="https://virtuslab.com">VirtusLab</a> colleagues!</p>
+<p>Pulumi supports Java for all of your modern infrastructure as code needs, this means you can build, deploy, and manage your infrastructure on any cloud—including all of AWS, Azure, Google Cloud, Kubernetes, Oracle Cloud, and more—using Java and other JVM languages. With Pulumi, you will have the entire cloud at your fingertips without ever having to leave your code editor, while using production-ready infrastructure as code techniques.</p>
+<h2 id="what-is-pulumi">What is Pulumi?</h2>
+<p>Pulumi lets you build, deploy, and manage infrastructure on any cloud using general-purpose programming languages (TypeScript, Python, Go, .NET, Java) and markup languages (YAML, CUE) to express your application&rsquo;s infrastructure needs, using a powerful technique called &ldquo;infrastructure as code.&rdquo; You declare desired infrastructure, and an engine provisions it for you, so that it&rsquo;s automated, easy to replicate, and robust enough for demanding production requirements. Pulumi takes this approach a step further by leveraging programming languages and software engineering tools to make modern cloud infrastructure patterns, such as containers and serverless programs, easy and first-class citizens.</p>
+<p>With Pulumi for Java you can:</p>
+<ul>
+<li>
+<p><strong>Declare infrastructure</strong> using programs, classes, and libraries written in Java or other JVM languages (Kotlin, Scala, Clojure, Groovy, etc.).</p>
+</li>
+<li>
+<p><strong>Automatically create, update, or delete cloud resources</strong> using Pulumi&rsquo;s infrastructure as code engine, removing manual point-and-clicking in web consoles and ad-hoc scripts.</p>
+</li>
+<li>
+<p><strong>Use your favorite IDEs and tools</strong>, including IntelliJ IDEA and Visual Studio Code, taking advantage of features like auto-completion, refactoring, and interactive documentation.</p>
+</li>
+<li>
+<p><strong>Catch mistakes early on</strong> with standard compiler errors, analyzers, and an infrastructure-specific policy engine for enforcing security, compliance, and best practices.</p>
+</li>
+<li>
+<p><strong>Reuse any existing Java package</strong>, or distribute your own, whether that&rsquo;s for infrastructure best practices, productivity, or just general programming patterns.</p>
+</li>
+<li>
+<p><strong>Deploy continuously, predictably, and reliably</strong> using GitHub Actions, or one of over a dozen CI integrations.</p>
+</li>
+<li>
+<p><strong>Build scalable cloud applications</strong> using cloud native technologies like Kubernetes, Docker containers, serverless functions, and PaaS services into your core development experience, bringing them closer to your application code.</p>
+</li>
+</ul>
+<p>Pulumi&rsquo;s free open source SDK, which includes a CLI and an assortment of libraries, enables these capabilities.</p>
+<h2 id="example-provision-a-gke-cluster-with-a-kubernetes-namespace">Example: Provision a GKE cluster with a Kubernetes namespace</h2>
+<p>The following Java snippet demonstrates the power of Pulumi for Java (<a href="https://github.com/pulumi/examples/tree/master/gcp-java-gke-hello-world">full source code</a>). The program defines a Google Kubernetes Engine cluster, calculates its <code>kubeconfig</code> and exports it for user&rsquo;s needs, and deploys a Kubernetes namespace into the newly provisioned cluster.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-java" data-lang="java"><span style="display:flex;"><span><span style="color:#00f">package</span> gke_sample;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">import</span> java.util.*;
+</span></span><span style="display:flex;"><span><span style="color:#00f">import</span> java.io.*;
+</span></span><span style="display:flex;"><span><span style="color:#00f">import</span> java.nio.*;
+</span></span><span style="display:flex;"><span><span style="color:#00f">import</span> com.pulumi.*;
+</span></span><span style="display:flex;"><span><span style="color:#00f">import</span> com.pulumi.gcp.container.*;
+</span></span><span style="display:flex;"><span><span style="color:#00f">import</span> com.pulumi.kubernetes.core_v1.*;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Program</span> {
+</span></span><span style="display:flex;"><span>   <span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#2b91af">void</span> stack(Context ctx) {
+</span></span><span style="display:flex;"><span>       <span style="color:#008000">// Create a GKE cluster</span>
+</span></span><span style="display:flex;"><span>       <span style="color:#00f">var</span> cluster = <span style="color:#00f">new</span> Cluster(<span style="color:#a31515">&#34;mygke&#34;</span>,
+</span></span><span style="display:flex;"><span>           ClusterArgs.builder()
+</span></span><span style="display:flex;"><span>               .initialNodeCount(1)
+</span></span><span style="display:flex;"><span>               .minMasterVersion(<span style="color:#a31515">&#34;1.20.7&#34;</span>)
+</span></span><span style="display:flex;"><span>               .build()
+</span></span><span style="display:flex;"><span>       );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>       <span style="color:#008000">// Build and export a Kubeconfig for the newly created cluster.</span>
+</span></span><span style="display:flex;"><span>       <span style="color:#00f">var</span> kubeconfig = Utils.buildKubeconfig(cluster);
+</span></span><span style="display:flex;"><span>       ctx.export(<span style="color:#a31515">&#34;kubeconfig&#34;</span>, kubeconfig);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>       <span style="color:#008000">// Create a Kubernetes provider instance that uses our cluster from above.</span>
+</span></span><span style="display:flex;"><span>       <span style="color:#00f">var</span> clusterProvider = <span style="color:#00f">new</span> Provider(<span style="color:#a31515">&#34;gke-provider&#34;</span>,
+</span></span><span style="display:flex;"><span>           ProviderArgs.builder().kubeconfig(kubeconfig).build());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>       <span style="color:#008000">// Create a Kubernetes Namespace</span>
+</span></span><span style="display:flex;"><span>       <span style="color:#00f">var</span> ns = <span style="color:#00f">new</span> Namespace(<span style="color:#a31515">&#34;test&#34;</span>,
+</span></span><span style="display:flex;"><span>           NamespaceArgs.Empty,
+</span></span><span style="display:flex;"><span>           CustomResourceOptions.builder().provider(clusterProvider).build()
+</span></span><span style="display:flex;"><span>       );
+</span></span><span style="display:flex;"><span>   }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>   <span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#2b91af">void</span> main(String[] args) {
+</span></span><span style="display:flex;"><span>       Pulumi.run(App::stack);
+</span></span><span style="display:flex;"><span>   }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Resources are defined declaratively using class constructors and argument builders. Dependencies between resources are managed automatically by the Pulumi engine based on the way you use variables in the program. You are free to use any libraries, helper functions—for instance, to build the kubeconfig string above, classes, if statements, for loops, and all the other tools available to Java developers.</p>
+<h2 id="why-is-java-great-for-infrastructure-too">Why is Java great for infrastructure too?</h2>
+<p>Many of us love using Java to author our applications, so why not use it for infrastructure as code too? By using Java, you get many helpful features for your infrastructure code:</p>
+<ul>
+<li>
+<p><strong>Familiarity</strong>: No need to learn DSLs or markup templating languages.</p>
+</li>
+<li>
+<p><strong>Expressiveness</strong>: Use loops, conditionals, pattern matching, async code, and more, to dynamically create infrastructure that meets the target environment&rsquo;s needs.</p>
+</li>
+<li>
+<p><strong>Abstraction</strong>: Encapsulate common patterns into classes and functions to hide complexity and avoid copy-and-pasting the same boilerplate repeatedly.</p>
+</li>
+<li>
+<p><strong>Sharing and reuse</strong>: Tap into a community of cloud applications and infrastructure experts by sharing and reusing Maven or Gradle packages with your team or the global community.</p>
+</li>
+<li>
+<p><strong>Productivity</strong>: Use your favorite IDE and get statement completion, go to definition, live error checking, refactoring, static analysis, and interactive documentation.</p>
+</li>
+<li>
+<p><strong>Project organization</strong>: Use common code structuring techniques to manage your infrastructure across one or more projects.</p>
+</li>
+<li>
+<p><strong>Application lifecycle</strong>: Use existing ALM systems and techniques to manage and deploy your infrastructure projects, including source control, code review, testing, and continuous integration (CI) and delivery (CD).</p>
+</li>
+</ul>
+<p>Pulumi unlocks access to the entire JVM ecosystem—something that&rsquo;s easy to take for granted but is missing from other solutions based on DSLs or CLI scripts. This approach also helps developers and operators work better together using a shared foundation. Add all of the above together, and you get things done faster and more reliably.</p>
+<h2 id="join-the-community-and-get-started">Join the community and get started</h2>
+<p>The first preview of Pulumi for Java includes support for the entire breadth of services in AWS, Azure, Google Cloud, and more. Give Pulumi a try, visit the <a href="https://www.pulumi.com/docs/languages-sdks/java/">Pulumi for Java docs</a>.</p>
+<p>There you will find several instructions on installing and getting started with Pulumi for Java. The following resources provide additional useful information:</p>
+<ul>
+<li>
+<p><a href="https://github.com/pulumi/examples/tree/master/gcp-java-gke-hello-world">Full example code</a></p>
+</li>
+<li>
+<p><a href="https://www.pulumi.com/docs/get-started/">Getting started with Pulumi</a></p>
+</li>
+<li>
+<p><a href="https://www.pulumi.com/docs/concepts/">General Pulumi overview (concepts and architecture)</a></p>
+</li>
+</ul>
+<p>Although Pulumi for Java is listed in &ldquo;preview&rdquo; status, it supports all of the most essential Pulumi programming model features (and the rest is on its way). Our goal is to gather feedback over the next few weeks, and we will be working hard to improve the Java experience across the board, including more examples and better documentation.</p>
+<p>Pulumi is <a href="https://github.com/pulumi/pulumi">open source on GitHub</a> and you can find the Java plugin at <a href="https://github.com/pulumi/pulumi-java">pulumi/pulumi-java</a>.
+And you&rsquo;re welcome to <a href="https://slack.pulumi.com/">join the community in Slack</a> to discuss your scenarios, ideas, and to get any needed assistance from the team and other end users.</p>
+<p>We look forward to seeing the new and amazing cloud applications you build with Pulumi for Java!</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/java">Java</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/pulumi">Pulumi</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/kubernetes">Kubernetes</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud developer and researcher.</div><div>Software engineer at Pulumi. Microsoft Azure MVP.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://twitter.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/55'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">55</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/55'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJW7RC6EV4"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJW7RC6EV4');
+        }
+      </script>
+    </body>
+</html>
