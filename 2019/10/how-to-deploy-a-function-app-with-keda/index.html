@@ -250,9 +250,9 @@
 </figure>
 <p>The deployment artifact is just the code packaged as a zip archive and uploaded to Blob Storage. <strong>Scale Controller</strong> is an internal Azure component that observes the target queue and allocates Function App instances based on the queue length fluctuations. Each instance bootstraps itself with a zip file, connects to the queue, and pulls messages to process.</p>
 <p>The cloud provider manages all the components of the system, so developers can focus on writing business logic code. It can be <a href="/2019/08/ten-pearls-with-azure-functions-in-pulumi/">as simple as a JavaScript callback</a>:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span>queue.onEvent(<span style="color:#a31515">&#34;MyHandler&#34;</span>, <span style="color:#00f">async</span> (context, msg) =&gt; {
-</span></span><span style="display:flex;"><span>   console.log(<span style="color:#a31515">&#34;New message: &#34;</span> + JSON.stringify(msg));
-</span></span><span style="display:flex;"><span>});
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#1f2328">queue</span><span style="color:#1f2328">.</span><span style="color:#1f2328">onEvent</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;MyHandler&#34;</span><span style="color:#1f2328">,</span> <span style="color:#cf222e">async</span> <span style="color:#1f2328">(</span><span style="color:#1f2328">context</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">msg</span><span style="color:#1f2328">)</span> <span style="color:#0550ae">=&gt;</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">console</span><span style="color:#1f2328">.</span><span style="color:#1f2328">log</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;New message: &#34;</span> <span style="color:#0550ae">+</span> <span style="color:#1f2328">JSON</span><span style="color:#1f2328">.</span><span style="color:#1f2328">stringify</span><span style="color:#1f2328">(</span><span style="color:#1f2328">msg</span><span style="color:#1f2328">));</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><h2 id="keda">KEDA</h2>
 <p>Over the last few years, Kubernetes has gained traction across many industries. KEDA is provides a way to design and run event-driven applications inside a Kubernetes cluster. KEDA implements the autoscaling components in terms of Kubernetes tools.</p>
 <p>The target Function App is packaged together with the Azure Functions runtime into a custom <strong>Docker image</strong> and published to a <strong>registry</strong>. A Kubernetes <strong>deployment</strong> utilizes that image and configures the parameters to connect it to the target event source (for instance, a queue):</p>
@@ -286,137 +286,137 @@
 <p>All these components can be defined and deployed within a single Pulumi program. Below I highlight the main blocks of the program. Navigate to the <a href="#reusable-components">following section</a> to look at a short and reusable component.</p>
 <h3 id="aks-cluster">AKS Cluster</h3>
 <p>KEDA can run on any Kubernetes cluster, but I choose to do so on managed AKS. My custom <code>AksCluster</code> component defines a cluster, including the required Active Directory and networking configuration. It makes multiple assumptions, so I only need to specify the main properties:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> resourceGroup = <span style="color:#00f">new</span> azure.core.ResourceGroup(<span style="color:#a31515">&#34;keda-sample&#34;</span>);
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">resourceGroup</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">azure</span><span style="color:#1f2328">.</span><span style="color:#1f2328">core</span><span style="color:#1f2328">.</span><span style="color:#1f2328">ResourceGroup</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;keda-sample&#34;</span><span style="color:#1f2328">);</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> aks = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;keda-cluster&#34;</span>, {
-</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-</span></span><span style="display:flex;"><span>    kubernetesVersion: <span style="color:#a31515">&#34;1.13.5&#34;</span>,
-</span></span><span style="display:flex;"><span>    vmSize: <span style="color:#a31515">&#34;Standard_B2s&#34;</span>,
-</span></span><span style="display:flex;"><span>    vmCount: <span style="color:#2b91af">3</span>,
-</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">aks</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">AksCluster</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;keda-cluster&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">resourceGroupName</span>: <span style="color:#cf222e">resourceGroup.name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">kubernetesVersion</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;1.13.5&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">vmSize</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;Standard_B2s&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">vmCount</span>: <span style="color:#cf222e">3</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><p><code>aks.cluster</code> now has all the required output values, for instance, <code>aks.cluster.kubeConfigRaw</code> configuration.</p>
 <h3 id="shared-cluster-components">Shared Cluster Components</h3>
 <p>The next group of components needs to be deployed just once.</p>
 <p>Azure Container Registry is not part of the AKS cluster. Its purpose is to host Docker images of applications.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> registry = <span style="color:#00f">new</span> azure.containerservice.Registry(<span style="color:#a31515">&#34;registry&#34;</span>, {
-</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">args.resourceGroup.name</span>,
-</span></span><span style="display:flex;"><span>    adminEnabled: <span style="color:#2b91af">true</span>,
-</span></span><span style="display:flex;"><span>    sku: <span style="color:#a31515">&#34;Premium&#34;</span>,
-</span></span><span style="display:flex;"><span>});
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">registry</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">azure</span><span style="color:#1f2328">.</span><span style="color:#1f2328">containerservice</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Registry</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;registry&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">resourceGroupName</span>: <span style="color:#cf222e">args.resourceGroup.name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">adminEnabled</span>: <span style="color:#cf222e">true</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">sku</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;Premium&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><p>A Helm chart <code>kedacore/keda-edge</code> deploys the KEDA service and the <code>ScaledObject</code> custom resource definition.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> keda = <span style="color:#00f">new</span> k8s.helm.v2.Chart(<span style="color:#a31515">&#34;keda-edge&#34;</span>, {
-</span></span><span style="display:flex;"><span>    repo: <span style="color:#a31515">&#34;kedacore&#34;</span>,
-</span></span><span style="display:flex;"><span>    chart: <span style="color:#a31515">&#34;keda-edge&#34;</span>,
-</span></span><span style="display:flex;"><span>    version: <span style="color:#a31515">&#34;0.0.1-2019.07.24.21.37.42-8ffd9a3&#34;</span>,
-</span></span><span style="display:flex;"><span>    values: {
-</span></span><span style="display:flex;"><span>        logLevel: <span style="color:#a31515">&#34;debug&#34;</span>,
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>}, { providers: { kubernetes: <span style="color:#2b91af">aks.provider</span> } });
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">keda</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">k8s</span><span style="color:#1f2328">.</span><span style="color:#1f2328">helm</span><span style="color:#1f2328">.</span><span style="color:#1f2328">v2</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Chart</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;keda-edge&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">repo</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;kedacore&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">chart</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;keda-edge&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">version</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;0.0.1-2019.07.24.21.37.42-8ffd9a3&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">values</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">logLevel</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;debug&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">},</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">providers</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">kubernetes</span>: <span style="color:#cf222e">aks.provider</span> <span style="color:#1f2328">}</span> <span style="color:#1f2328">});</span>
 </span></span></code></pre></div><h3 id="event-source">Event Source</h3>
 <p>KEDA supports multiple types of event sources, and the current list is available <a href="https://github.com/kedacore/keda#event-sources-and-scalers">here</a>. An event source is supported if there is a scaler which knows how to pull metrics out of it and turn them into a custom metric for HPA.</p>
 <p>My example uses an Azure Storage Queue as the event source:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> storageAccount = <span style="color:#00f">new</span> azure.storage.Account(<span style="color:#a31515">&#34;kedasa&#34;</span>, {
-</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-</span></span><span style="display:flex;"><span>    accountTier: <span style="color:#a31515">&#34;Standard&#34;</span>,
-</span></span><span style="display:flex;"><span>    accountReplicationType: <span style="color:#a31515">&#34;LRS&#34;</span>,
-</span></span><span style="display:flex;"><span>});
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">storageAccount</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">azure</span><span style="color:#1f2328">.</span><span style="color:#1f2328">storage</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Account</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;kedasa&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">resourceGroupName</span>: <span style="color:#cf222e">resourceGroup.name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">accountTier</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;Standard&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">accountReplicationType</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;LRS&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> queue = <span style="color:#00f">new</span> azure.storage.Queue(<span style="color:#a31515">&#34;kedaqueue&#34;</span>, {
-</span></span><span style="display:flex;"><span>    storageAccountName: <span style="color:#2b91af">storageAccount.name</span>,
-</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">queue</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">azure</span><span style="color:#1f2328">.</span><span style="color:#1f2328">storage</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Queue</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;kedaqueue&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">storageAccountName</span>: <span style="color:#cf222e">storageAccount.name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><h3 id="docker-image">Docker Image</h3>
 <p>The same Pulumi program is capable of building a Docker image and uploading it to the Container Registry.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> dockerImage = <span style="color:#00f">new</span> docker.Image(<span style="color:#a31515">&#34;image&#34;</span>, {
-</span></span><span style="display:flex;"><span>    imageName: <span style="color:#2b91af">pulumi.interpolate</span><span style="color:#a31515">`</span><span style="color:#a31515">${</span>registry.loginServer<span style="color:#a31515">}</span><span style="color:#a31515">/</span><span style="color:#a31515">${</span>args.queue.name<span style="color:#a31515">}</span><span style="color:#a31515">:v1.0.0`</span>,
-</span></span><span style="display:flex;"><span>    build: {
-</span></span><span style="display:flex;"><span>        context: <span style="color:#a31515">&#34;./functionapp&#34;</span>,
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>    registry: {
-</span></span><span style="display:flex;"><span>        server: <span style="color:#2b91af">registry.loginServer</span>,
-</span></span><span style="display:flex;"><span>        username: <span style="color:#2b91af">registry.adminUsername</span>,
-</span></span><span style="display:flex;"><span>        password: <span style="color:#2b91af">registry.adminPassword</span>,
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>});
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">dockerImage</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">docker</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Image</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;image&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">imageName</span>: <span style="color:#cf222e">pulumi.interpolate</span><span style="color:#0a3069">`</span><span style="color:#0a3069">${</span><span style="color:#1f2328">registry</span><span style="color:#1f2328">.</span><span style="color:#1f2328">loginServer</span><span style="color:#0a3069">}</span><span style="color:#0a3069">/</span><span style="color:#0a3069">${</span><span style="color:#1f2328">args</span><span style="color:#1f2328">.</span><span style="color:#1f2328">queue</span><span style="color:#1f2328">.</span><span style="color:#1f2328">name</span><span style="color:#0a3069">}</span><span style="color:#0a3069">:v1.0.0`</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">build</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">context</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;./functionapp&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">registry</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">server</span>: <span style="color:#cf222e">registry.loginServer</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">username</span>: <span style="color:#cf222e">registry.adminUsername</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">password</span>: <span style="color:#cf222e">registry.adminPassword</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><p>The image refers to the folder with a <code>Dockerfile</code> in it and uses the <code>registry</code> variables to fill the credentials.</p>
 <h3 id="deployment">Deployment</h3>
 <p>Now, we can define a Deployment which uses the Docker image to run our Function App on Kubernetes pods.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> appLabels = { app: <span style="color:#2b91af">name</span> };
-</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> deployment = <span style="color:#00f">new</span> k8s.apps.v1.Deployment(name, {
-</span></span><span style="display:flex;"><span>    apiVersion: <span style="color:#a31515">&#34;apps/v1&#34;</span>,
-</span></span><span style="display:flex;"><span>    kind: <span style="color:#a31515">&#34;Deployment&#34;</span>,
-</span></span><span style="display:flex;"><span>    metadata: {
-</span></span><span style="display:flex;"><span>        labels: <span style="color:#2b91af">appLabels</span>,
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>    spec: {
-</span></span><span style="display:flex;"><span>        selector: { matchLabels: <span style="color:#2b91af">appLabels</span> },
-</span></span><span style="display:flex;"><span>        template: {
-</span></span><span style="display:flex;"><span>            metadata: {
-</span></span><span style="display:flex;"><span>                labels: <span style="color:#2b91af">appLabels</span>,
-</span></span><span style="display:flex;"><span>            },
-</span></span><span style="display:flex;"><span>            spec: {
-</span></span><span style="display:flex;"><span>                containers: [{
-</span></span><span style="display:flex;"><span>                    name,
-</span></span><span style="display:flex;"><span>                    image: <span style="color:#2b91af">dockerImage.imageName</span>,
-</span></span><span style="display:flex;"><span>                    env: [{ name: <span style="color:#a31515">&#34;queuename&#34;</span>, value: <span style="color:#2b91af">args.queue.name</span> }],
-</span></span><span style="display:flex;"><span>                    envFrom: [{ secretRef: {name: <span style="color:#2b91af">secretQueue.metadata.name</span> } }],
-</span></span><span style="display:flex;"><span>                }],
-</span></span><span style="display:flex;"><span>                imagePullSecrets: [{ name: <span style="color:#2b91af">args.service.registrySecretName</span> }],
-</span></span><span style="display:flex;"><span>            },
-</span></span><span style="display:flex;"><span>        },
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>}, { provider: <span style="color:#2b91af">aks.provider</span> });
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">appLabels</span> <span style="color:#0550ae">=</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">app</span>: <span style="color:#cf222e">name</span> <span style="color:#1f2328">};</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">deployment</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">k8s</span><span style="color:#1f2328">.</span><span style="color:#1f2328">apps</span><span style="color:#1f2328">.</span><span style="color:#1f2328">v1</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Deployment</span><span style="color:#1f2328">(</span><span style="color:#1f2328">name</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">apiVersion</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;apps/v1&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">kind</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;Deployment&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">metadata</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">labels</span>: <span style="color:#cf222e">appLabels</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">spec</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">selector</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">matchLabels</span>: <span style="color:#cf222e">appLabels</span> <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">template</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">metadata</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#1f2328">labels</span>: <span style="color:#cf222e">appLabels</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">spec</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#1f2328">containers</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">[{</span>
+</span></span><span style="display:flex;"><span>                    <span style="color:#1f2328">name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>                    <span style="color:#1f2328">image</span>: <span style="color:#cf222e">dockerImage.imageName</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>                    <span style="color:#1f2328">env</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">[{</span> <span style="color:#1f2328">name</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;queuename&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">value</span>: <span style="color:#cf222e">args.queue.name</span> <span style="color:#1f2328">}],</span>
+</span></span><span style="display:flex;"><span>                    <span style="color:#1f2328">envFrom</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">[{</span> <span style="color:#1f2328">secretRef</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span><span style="color:#1f2328">name</span>: <span style="color:#cf222e">secretQueue.metadata.name</span> <span style="color:#1f2328">}</span> <span style="color:#1f2328">}],</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#1f2328">}],</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#1f2328">imagePullSecrets</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">[{</span> <span style="color:#1f2328">name</span>: <span style="color:#cf222e">args.service.registrySecretName</span> <span style="color:#1f2328">}],</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">},</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">provider</span>: <span style="color:#cf222e">aks.provider</span> <span style="color:#1f2328">});</span>
 </span></span></code></pre></div><p>The deployment refers to the secret value which stores the connection string to our target Storage Queue:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> secretQueue = <span style="color:#00f">new</span> k8s.core.v1.Secret(<span style="color:#a31515">&#34;queue-secret&#34;</span>, {
-</span></span><span style="display:flex;"><span>    data: {
-</span></span><span style="display:flex;"><span>        queueConnectionString:
-</span></span><span style="display:flex;"><span>            <span style="color:#2b91af">args.storageAccount.primaryConnectionString.apply</span>(c =&gt; Buffer.<span style="color:#00f">from</span>(c).toString(<span style="color:#a31515">&#34;base64&#34;</span>)),
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>}, { provider: <span style="color:#2b91af">aks.provider</span> });
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">secretQueue</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">k8s</span><span style="color:#1f2328">.</span><span style="color:#1f2328">core</span><span style="color:#1f2328">.</span><span style="color:#1f2328">v1</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Secret</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;queue-secret&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">data</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">queueConnectionString</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#cf222e">args.storageAccount.primaryConnectionString.apply</span><span style="color:#1f2328">(</span><span style="color:#1f2328">c</span> <span style="color:#0550ae">=&gt;</span> <span style="color:#1f2328">Buffer</span><span style="color:#1f2328">.</span><span style="color:#cf222e">from</span><span style="color:#1f2328">(</span><span style="color:#1f2328">c</span><span style="color:#1f2328">).</span><span style="color:#1f2328">toString</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;base64&#34;</span><span style="color:#1f2328">)),</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">},</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">provider</span>: <span style="color:#cf222e">aks.provider</span> <span style="color:#1f2328">});</span>
 </span></span></code></pre></div><h3 id="scaled-object">Scaled Object</h3>
 <p>Finally, we need to deploy an instance of the <code>ScaledObject</code> custom resource, which takes care of feeding the metrics from the queue to the Horizontal Pod Autoscaler.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> scaledObject = <span style="color:#00f">new</span> k8s.apiextensions.CustomResource(<span style="color:#a31515">&#34;scaledobject&#34;</span>, {
-</span></span><span style="display:flex;"><span>    apiVersion: <span style="color:#a31515">&#34;keda.k8s.io/v1alpha1&#34;</span>,
-</span></span><span style="display:flex;"><span>    kind: <span style="color:#a31515">&#34;ScaledObject&#34;</span>,
-</span></span><span style="display:flex;"><span>    metadata: {
-</span></span><span style="display:flex;"><span>        labels: { deploymentName: <span style="color:#2b91af">name</span> },
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>    spec: {
-</span></span><span style="display:flex;"><span>        scaleTargetRef: { deploymentName: <span style="color:#2b91af">name</span> },
-</span></span><span style="display:flex;"><span>        triggers: [{
-</span></span><span style="display:flex;"><span>            <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;azure-queue&#34;</span>,
-</span></span><span style="display:flex;"><span>            metadata: {
-</span></span><span style="display:flex;"><span>                <span style="color:#00f">type</span>: <span style="color:#a31515">&#34;queueTrigger&#34;</span>,
-</span></span><span style="display:flex;"><span>                connection: <span style="color:#a31515">&#34;queueConnectionString&#34;</span>,
-</span></span><span style="display:flex;"><span>                queueName: <span style="color:#2b91af">args.queue.name</span>,
-</span></span><span style="display:flex;"><span>                name: <span style="color:#a31515">&#34;myQueueItem&#34;</span>,
-</span></span><span style="display:flex;"><span>            },
-</span></span><span style="display:flex;"><span>        }],
-</span></span><span style="display:flex;"><span>    },
-</span></span><span style="display:flex;"><span>}, { provider: <span style="color:#2b91af">aks.provider</span> });
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">scaledObject</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">k8s</span><span style="color:#1f2328">.</span><span style="color:#1f2328">apiextensions</span><span style="color:#1f2328">.</span><span style="color:#1f2328">CustomResource</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;scaledobject&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">apiVersion</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;keda.k8s.io/v1alpha1&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">kind</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;ScaledObject&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">metadata</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">labels</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">deploymentName</span>: <span style="color:#cf222e">name</span> <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">spec</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">scaleTargetRef</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">deploymentName</span>: <span style="color:#cf222e">name</span> <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">triggers</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">[{</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#cf222e">type</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;azure-queue&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">metadata</span><span style="color:#0550ae">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#cf222e">type</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;queueTrigger&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#1f2328">connection</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;queueConnectionString&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#1f2328">queueName</span>: <span style="color:#cf222e">args.queue.name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#1f2328">name</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;myQueueItem&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">}],</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">},</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">provider</span>: <span style="color:#cf222e">aks.provider</span> <span style="color:#1f2328">});</span>
 </span></span></code></pre></div><h2 id="reusable-components">Reusable Components</h2>
 <p>We can simplify the program further by creating reusable Pulumi components for a Cluster, a Service, and a Function app. After those are done, here is all the code required to deploy a Kubernetes cluster with a Function App and KEDA.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#008000">// Create an AKS K8s cluster
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> aks = <span style="color:#00f">new</span> AksCluster(<span style="color:#a31515">&#34;keda-cluster&#34;</span>, {
-</span></span><span style="display:flex;"><span>    resourceGroupName: <span style="color:#2b91af">resourceGroup.name</span>,
-</span></span><span style="display:flex;"><span>    kubernetesVersion: <span style="color:#a31515">&#34;1.13.5&#34;</span>,
-</span></span><span style="display:flex;"><span>    vmSize: <span style="color:#a31515">&#34;Standard_B2s&#34;</span>,
-</span></span><span style="display:flex;"><span>    vmCount: <span style="color:#2b91af">3</span>,
-</span></span><span style="display:flex;"><span>});
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#57606a">// Create an AKS K8s cluster
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">const</span> <span style="color:#1f2328">aks</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">AksCluster</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;keda-cluster&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">resourceGroupName</span>: <span style="color:#cf222e">resourceGroup.name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">kubernetesVersion</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;1.13.5&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">vmSize</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;Standard_B2s&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">vmCount</span>: <span style="color:#cf222e">3</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#008000">// Deploy shared components of KEDA (container registry, kedacore/keda-edge Helm chart)
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> service = <span style="color:#00f">new</span> KedaService(<span style="color:#a31515">&#34;keda-edge&#34;</span>, {
-</span></span><span style="display:flex;"><span>    resourceGroup,
-</span></span><span style="display:flex;"><span>    k8sProvider: <span style="color:#2b91af">aks.provider</span>,
-</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#57606a">// Deploy shared components of KEDA (container registry, kedacore/keda-edge Helm chart)
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">const</span> <span style="color:#1f2328">service</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">KedaService</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;keda-edge&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">resourceGroup</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">k8sProvider</span>: <span style="color:#cf222e">aks.provider</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#008000">// Deploy a Function App which subscribes to the Storage Queue
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> app = <span style="color:#00f">new</span> KedaStorageQueueHandler(<span style="color:#a31515">&#34;queue-handler&#34;</span>, {
-</span></span><span style="display:flex;"><span>    resourceGroup,
-</span></span><span style="display:flex;"><span>    storageAccount,
-</span></span><span style="display:flex;"><span>    queue,
-</span></span><span style="display:flex;"><span>    service,
-</span></span><span style="display:flex;"><span>    path: <span style="color:#a31515">&#34;./functionapp&#34;</span>,
-</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#57606a">// Deploy a Function App which subscribes to the Storage Queue
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">const</span> <span style="color:#1f2328">app</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">KedaStorageQueueHandler</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;queue-handler&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">resourceGroup</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">storageAccount</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">queue</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">service</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">path</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;./functionapp&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><p>You can find the full code of the components, the sample program, and steps to run it in <a href="https://github.com/pulumi/examples/tree/master/azure-ts-aks-keda">this example</a>.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>As of October 2019, the KEDA project is still in the experimental phase and should not be used for any production applications. Also, if the managed version of Azure Functions suits your needs, you should probably stick to that service. It requires less effort, provides high-level primitives, and enables unlimited elastic scaling.</p>
@@ -531,6 +531,24 @@
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

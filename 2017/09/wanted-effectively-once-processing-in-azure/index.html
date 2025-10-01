@@ -214,29 +214,29 @@ processing of messages, to be hosted in Azure, preferably on PaaS-level of servi
 <p>Let&rsquo;s say we are making a TODO app. There is a constant flow of requests
 to create a TODO in the system. Each request contains just two fields:
 a title and a project ID which TODO should belong to. Here is the definition:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">TodoRequest</span> = {
-</span></span><span style="display:flex;"><span>  ProjectId: int
-</span></span><span style="display:flex;"><span>  Title: <span style="color:#2b91af">string</span>
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">type</span> <span style="color:#1f2328">TodoRequest</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>  ProjectId<span style="color:#0550ae">:</span> int
+</span></span><span style="display:flex;"><span>  Title<span style="color:#0550ae">:</span> <span style="color:#cf222e">string</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>Now, we want to process the request and assign each TODO an identifier,
 which should be an auto-incremented integer. Numeration is unique per project,
 so each TODO must have its own combination of <code>ProjectId</code> and <code>Id</code>:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Todo</span> = {
-</span></span><span style="display:flex;"><span>  ProjectId: int
-</span></span><span style="display:flex;"><span>  Id: int
-</span></span><span style="display:flex;"><span>  Title: <span style="color:#2b91af">string</span>
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">type</span> <span style="color:#1f2328">Todo</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>  ProjectId<span style="color:#0550ae">:</span> int
+</span></span><span style="display:flex;"><span>  Id<span style="color:#0550ae">:</span> int
+</span></span><span style="display:flex;"><span>  Title<span style="color:#0550ae">:</span> <span style="color:#cf222e">string</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>Now, instead of relying on some database sequences, I want to describe this
 transformation as a function. The function has the type <code>(TodoRequest, int) -&gt; (Todo, int)</code>, i.e. it transforms a tuple of a request and current per-project
 state (last generated ID) to a tuple of a TODO and post-processing state:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> create (request: TodoRequest, state: int) =
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> nextId = state + 1
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> todo = {
-</span></span><span style="display:flex;"><span>    ProjectId = request.ProjectId
-</span></span><span style="display:flex;"><span>    Id = nextId
-</span></span><span style="display:flex;"><span>    Title = request.Title
-</span></span><span style="display:flex;"><span>  }
-</span></span><span style="display:flex;"><span>  todo, nextId
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">create</span> <span style="color:#0550ae">(</span>request<span style="color:#0550ae">:</span> TodoRequest<span style="color:#0550ae">,</span> state<span style="color:#0550ae">:</span> int<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">let</span> <span style="color:#953800">nextId</span> <span style="color:#0550ae">=</span> state <span style="color:#0550ae">+</span> 1
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">let</span> <span style="color:#953800">todo</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>    ProjectId <span style="color:#0550ae">=</span> request<span style="color:#0550ae">.</span>ProjectId
+</span></span><span style="display:flex;"><span>    Id <span style="color:#0550ae">=</span> nextId
+</span></span><span style="display:flex;"><span>    Title <span style="color:#0550ae">=</span> request<span style="color:#0550ae">.</span>Title
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">}</span>
+</span></span><span style="display:flex;"><span>  todo<span style="color:#0550ae">,</span> nextId
 </span></span></code></pre></div><p>This is an extremely simple function, and I can use it to great success to
 process local, non-durable data.</p>
 <p>But if I need to make a reliable distributed application out of it, I need
@@ -395,26 +395,7 @@ expensive ZooKeeper-managed clusters?</p>
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
-            <div id="disqus_thread"></div>
-<script>
-    window.disqus_config = function () {
-    
-    
-    
-    };
-    (function() {
-        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
-            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
-            return;
-        }
-        var d = document, s = d.createElement('script'); s.async = true;
-        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
-        s.setAttribute('data-timestamp', +new Date());
-        (d.head || d.body).appendChild(s);
-    })();
-</script>
-<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
-<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
             
         </div>
     </div>
@@ -434,6 +415,24 @@ expensive ZooKeeper-managed clusters?</p>
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

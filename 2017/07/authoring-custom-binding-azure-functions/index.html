@@ -220,38 +220,38 @@ bindings: reading configuration values.</p>
 runtime uses <code>local.settings.json</code> file for that).</p>
 <p>That means, when you need a configuration value inside your C# code,
 you normally do</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#2b91af">string</span> setting = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;MySetting&#34;</span>];
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">string</span> setting <span style="color:#1f2328">=</span> ConfigurationManager<span style="color:#1f2328">.</span>AppSettings<span style="color:#1f2328">[</span><span style="color:#0a3069">&#34;MySetting&#34;</span><span style="color:#1f2328">];</span>
 </span></span></code></pre></div><p>Alternatively, <code>Environment.GetEnvironmentVariable()</code> method can be used.</p>
 <p>When I <a href="https://mikhail.io/2017/07/custom-auto-scaling-in-azure/">needed to collect</a>
 service bus subscription metrics, I wrote this kind of bulky code:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#2b91af">var</span> resourceToScale = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ResourceToScale&#34;</span>];
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">var</span> resourceToScale <span style="color:#1f2328">=</span> ConfigurationManager<span style="color:#1f2328">.</span>AppSettings<span style="color:#1f2328">[</span><span style="color:#0a3069">&#34;ResourceToScale&#34;</span><span style="color:#1f2328">];</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#2b91af">var</span> connectionString = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;ServiceBusConnection&#34;</span>];
-</span></span><span style="display:flex;"><span><span style="color:#2b91af">var</span> topic = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Topic&#34;</span>];
-</span></span><span style="display:flex;"><span><span style="color:#2b91af">var</span> subscription = ConfigurationManager.AppSettings[<span style="color:#a31515">&#34;Subscription&#34;</span>];
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">var</span> connectionString <span style="color:#1f2328">=</span> ConfigurationManager<span style="color:#1f2328">.</span>AppSettings<span style="color:#1f2328">[</span><span style="color:#0a3069">&#34;ServiceBusConnection&#34;</span><span style="color:#1f2328">];</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">var</span> topic <span style="color:#1f2328">=</span> ConfigurationManager<span style="color:#1f2328">.</span>AppSettings<span style="color:#1f2328">[</span><span style="color:#0a3069">&#34;Topic&#34;</span><span style="color:#1f2328">];</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">var</span> subscription <span style="color:#1f2328">=</span> ConfigurationManager<span style="color:#1f2328">.</span>AppSettings<span style="color:#1f2328">[</span><span style="color:#0a3069">&#34;Subscription&#34;</span><span style="color:#1f2328">];</span>
 </span></span></code></pre></div><p>The code is no rocket science, but it&rsquo;s tedious to write, so instead I came
 up with this idea to define Functions:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">void</span> MyFunction(
-</span></span><span style="display:flex;"><span>    [TimerTrigger(&#34;0 */1 * * * *&#34;)] TimerInfo timer,
-</span></span><span style="display:flex;"><span>    [Configuration(Key = &#34;ResourceToScale&#34;)] <span style="color:#2b91af">string</span> resource,
-</span></span><span style="display:flex;"><span>    [Configuration] ServiceBusSubscriptionConfig config)
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">public</span> <span style="color:#cf222e">static</span> <span style="color:#cf222e">void</span> MyFunction<span style="color:#1f2328">(</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">    [TimerTrigger(&#34;0 */1 * * * *&#34;)]</span> TimerInfo timer<span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">    [Configuration(Key = &#34;ResourceToScale&#34;)]</span> <span style="color:#cf222e">string</span> resource<span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">    [Configuration]</span> ServiceBusSubscriptionConfig config<span style="color:#1f2328">)</span>
 </span></span></code></pre></div><p>Note two usages of <code>Configuration</code> attribute. The first one defines the
 specific configuration key, and binds its value to a string parameter. The
 other one binds <em>multiple</em> configuration values to a POCO parameter. I defined
 the config class as</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ServiceBusSubscriptionConfig</span>
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> ServiceBusSubscriptionConfig(<span style="color:#2b91af">string</span> serviceBusConnection, <span style="color:#2b91af">string</span> topic, <span style="color:#2b91af">string</span> subscription)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        ServiceBusConnection = serviceBusConnection;
-</span></span><span style="display:flex;"><span>        Topic = topic;
-</span></span><span style="display:flex;"><span>        Subscription = subscription;
-</span></span><span style="display:flex;"><span>    }
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">public</span> <span style="color:#cf222e">class</span> <span style="color:#1f2328">ServiceBusSubscriptionConfig</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> ServiceBusSubscriptionConfig<span style="color:#1f2328">(</span><span style="color:#cf222e">string</span> serviceBusConnection<span style="color:#1f2328">,</span> <span style="color:#cf222e">string</span> topic<span style="color:#1f2328">,</span> <span style="color:#cf222e">string</span> subscription<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        ServiceBusConnection <span style="color:#1f2328">=</span> serviceBusConnection<span style="color:#1f2328">;</span>
+</span></span><span style="display:flex;"><span>        Topic <span style="color:#1f2328">=</span> topic<span style="color:#1f2328">;</span>
+</span></span><span style="display:flex;"><span>        Subscription <span style="color:#1f2328">=</span> subscription<span style="color:#1f2328">;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> ServiceBusConnection { <span style="color:#00f">get</span>; }
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Topic { <span style="color:#00f">get</span>; }
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Subscription { <span style="color:#00f">get</span>; }
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> <span style="color:#cf222e">string</span> ServiceBusConnection <span style="color:#1f2328">{</span> <span style="color:#cf222e">get</span><span style="color:#1f2328">;</span> <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> <span style="color:#cf222e">string</span> Topic <span style="color:#1f2328">{</span> <span style="color:#cf222e">get</span><span style="color:#1f2328">;</span> <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> <span style="color:#cf222e">string</span> Subscription <span style="color:#1f2328">{</span> <span style="color:#cf222e">get</span><span style="color:#1f2328">;</span> <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>The immutable class is a bit verbose, but I still prefer it over get-set
 container in this scenario.</p>
 <p>The binding behavior is convention-based in this case: the binding engine
@@ -277,66 +277,66 @@ simple:</p>
 <code>Microsoft.Azure.WebJobs</code> and <code>Microsoft.Azure.WebJobs.Extensions</code> NuGet
 packages (at the time of writing I used <code>2.1.0-beta1</code> version).</p>
 <p><strong>Define</strong> a class for binding attribute:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span>[AttributeUsage(AttributeTargets.Parameter)]
-</span></span><span style="display:flex;"><span>[Binding]
-</span></span><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ConfigurationAttribute</span> : Attribute
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    [AutoResolve]
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> Key { <span style="color:#00f">get</span>; <span style="color:#00f">set</span>; }
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#1f2328">[AttributeUsage(AttributeTargets.Parameter)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">[Binding]</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">public</span> <span style="color:#cf222e">class</span> <span style="color:#1f2328">ConfigurationAttribute</span> <span style="color:#1f2328">:</span> Attribute
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">    [AutoResolve]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> <span style="color:#cf222e">string</span> Key <span style="color:#1f2328">{</span> <span style="color:#cf222e">get</span><span style="color:#1f2328">;</span> <span style="color:#cf222e">set</span><span style="color:#1f2328">;</span> <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>The attribute is marked as <code>Binding</code> and the <code>Key</code> property is marked as
 resolvable from <code>function.json</code>.</p>
 <p><strong>Implement</strong> <code>IExtensionConfigProvider</code> which will tell the function runtime
 how to use your binding correctly.</p>
 <p>The interface has just one method to implement:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">class</span> <span style="color:#2b91af">ConfigurationExtensionConfigProvider</span> : IExtensionConfigProvider
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#00f">void</span> Initialize(ExtensionConfigContext context)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// ... see below</span>
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">public</span> <span style="color:#cf222e">class</span> <span style="color:#1f2328">ConfigurationExtensionConfigProvider</span> <span style="color:#1f2328">:</span> IExtensionConfigProvider
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> <span style="color:#cf222e">void</span> Initialize<span style="color:#1f2328">(</span>ExtensionConfigContext context<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// ... see below</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>The first step of the implementation is to define a rule for our new
 <code>ConfigurationAttribute</code> and tell this rule how to get a string value out
 of any attribute instance:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#2b91af">var</span> rule = context.AddBindingRule&lt;ConfigurationAttribute&gt;();
-</span></span><span style="display:flex;"><span>rule.BindToInput&lt;<span style="color:#2b91af">string</span>&gt;(a =&gt; ConfigurationManager.AppSettings[a.Key]);
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">var</span> rule <span style="color:#1f2328">=</span> context<span style="color:#1f2328">.</span>AddBindingRule<span style="color:#1f2328">&lt;</span>ConfigurationAttribute<span style="color:#1f2328">&gt;();</span>
+</span></span><span style="display:flex;"><span>rule<span style="color:#1f2328">.</span>BindToInput<span style="color:#1f2328">&lt;</span><span style="color:#cf222e">string</span><span style="color:#1f2328">&gt;(</span>a <span style="color:#1f2328">=&gt;</span> ConfigurationManager<span style="color:#1f2328">.</span>AppSettings<span style="color:#1f2328">[</span>a<span style="color:#1f2328">.</span>Key<span style="color:#1f2328">]);</span>
 </span></span></code></pre></div><p>That&rsquo;s really all that needs to happen to bind <code>string</code> parameters.</p>
 <p>To make our binding work with any POCO, we need a more elaborate construct:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span>rule.BindToInput&lt;Env&gt;(_ =&gt; <span style="color:#00f">new</span> Env());
-</span></span><span style="display:flex;"><span><span style="color:#2b91af">var</span> cm = context.Config.GetService&lt;IConverterManager&gt;();
-</span></span><span style="display:flex;"><span>cm.AddConverter&lt;Env, OpenType, ConfigurationAttribute&gt;(<span style="color:#00f">typeof</span>(PocoConverter&lt;&gt;));
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span>rule<span style="color:#1f2328">.</span>BindToInput<span style="color:#1f2328">&lt;</span>Env<span style="color:#1f2328">&gt;(</span>_ <span style="color:#1f2328">=&gt;</span> <span style="color:#cf222e">new</span> Env<span style="color:#1f2328">());</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">var</span> cm <span style="color:#1f2328">=</span> context<span style="color:#1f2328">.</span>Config<span style="color:#1f2328">.</span>GetService<span style="color:#1f2328">&lt;</span>IConverterManager<span style="color:#1f2328">&gt;();</span>
+</span></span><span style="display:flex;"><span>cm<span style="color:#1f2328">.</span>AddConverter<span style="color:#1f2328">&lt;</span>Env<span style="color:#1f2328">,</span> OpenType<span style="color:#1f2328">,</span> ConfigurationAttribute<span style="color:#1f2328">&gt;(</span><span style="color:#cf222e">typeof</span><span style="color:#1f2328">(</span>PocoConverter<span style="color:#1f2328">&lt;&gt;));</span>
 </span></span></code></pre></div><p>I instruct the rule to bind to my custom class <code>Env</code>, and then I say that
 this class <code>Env</code> is convertable to any type (denoted by special <code>OpenType</code>
 type argument) with a generic converter called <code>PocoConverter</code>.</p>
 <p>The <code>Env</code> class is a bit dummy (it exists just because I need <em>some</em> class):</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">Env</span>
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> <span style="color:#2b91af">string</span> GetValue(<span style="color:#2b91af">string</span> key) =&gt; ConfigurationManager.AppSettings[key];
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">private</span> <span style="color:#cf222e">class</span> <span style="color:#1f2328">Env</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> <span style="color:#cf222e">string</span> GetValue<span style="color:#1f2328">(</span><span style="color:#cf222e">string</span> key<span style="color:#1f2328">)</span> <span style="color:#1f2328">=&gt;</span> ConfigurationManager<span style="color:#1f2328">.</span>AppSettings<span style="color:#1f2328">[</span>key<span style="color:#1f2328">];</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>And <code>PocoConverter</code> is a piece of reflection, that loops through property
 names and reads configuration values out of them. Then it calls a constructor
 which matches the property count:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#00f">private</span> <span style="color:#00f">class</span> <span style="color:#2b91af">PocoConverter</span>&lt;T&gt; : IConverter&lt;Env, T&gt;
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">public</span> T Convert(Env env)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#2b91af">var</span> values = <span style="color:#00f">typeof</span>(T)
-</span></span><span style="display:flex;"><span>            .GetProperties()
-</span></span><span style="display:flex;"><span>            .Select(p =&gt; p.Name)
-</span></span><span style="display:flex;"><span>            .Select(env.GetValue)
-</span></span><span style="display:flex;"><span>            .Cast&lt;<span style="color:#2b91af">object</span>&gt;()
-</span></span><span style="display:flex;"><span>            .ToArray();
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#cf222e">private</span> <span style="color:#cf222e">class</span> <span style="color:#1f2328">PocoConverter</span><span style="color:#1f2328">&lt;</span>T<span style="color:#1f2328">&gt;</span> <span style="color:#1f2328">:</span> IConverter<span style="color:#1f2328">&lt;</span>Env<span style="color:#1f2328">,</span> T<span style="color:#1f2328">&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">public</span> T Convert<span style="color:#1f2328">(</span>Env env<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">var</span> values <span style="color:#1f2328">=</span> <span style="color:#cf222e">typeof</span><span style="color:#1f2328">(</span>T<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">.</span>GetProperties<span style="color:#1f2328">()</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">.</span>Select<span style="color:#1f2328">(</span>p <span style="color:#1f2328">=&gt;</span> p<span style="color:#1f2328">.</span>Name<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">.</span>Select<span style="color:#1f2328">(</span>env<span style="color:#1f2328">.</span>GetValue<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">.</span>Cast<span style="color:#1f2328">&lt;</span><span style="color:#cf222e">object</span><span style="color:#1f2328">&gt;()</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">.</span>ToArray<span style="color:#1f2328">();</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>        <span style="color:#2b91af">var</span> constructor = <span style="color:#00f">typeof</span>(T).GetConstructor(values.Select(v =&gt; v.GetType()).ToArray());
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">if</span> (constructor == <span style="color:#00f">null</span>)
-</span></span><span style="display:flex;"><span>        {
-</span></span><span style="display:flex;"><span>            <span style="color:#00f">throw</span> <span style="color:#00f">new</span> Exception(<span style="color:#a31515">&#34;We tried to bind to your C# class, but it looks like there&#39;s no constructor which accepts all property values&#34;</span>);
-</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">var</span> constructor <span style="color:#1f2328">=</span> <span style="color:#cf222e">typeof</span><span style="color:#1f2328">(</span>T<span style="color:#1f2328">).</span>GetConstructor<span style="color:#1f2328">(</span>values<span style="color:#1f2328">.</span>Select<span style="color:#1f2328">(</span>v <span style="color:#1f2328">=&gt;</span> v<span style="color:#1f2328">.</span>GetType<span style="color:#1f2328">()).</span>ToArray<span style="color:#1f2328">());</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">if</span> <span style="color:#1f2328">(</span>constructor <span style="color:#1f2328">==</span> <span style="color:#cf222e">null</span><span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#cf222e">throw</span> <span style="color:#cf222e">new</span> Exception<span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;We tried to bind to your C# class, but it looks like there&#39;s no constructor which accepts all property values&#34;</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">return</span> (T)constructor.Invoke(values);
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">return</span> <span style="color:#1f2328">(</span>T<span style="color:#1f2328">)</span>constructor<span style="color:#1f2328">.</span>Invoke<span style="color:#1f2328">(</span>values<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>This piece of code is not particularly robust, but it is good enough to
 illustrate the concept.</p>
 <p>And that&rsquo;s it, the binding it ready! You can find the complete example in
@@ -352,7 +352,7 @@ too sophisticated:</p>
 <li>
 <p>Set <code>AzureWebJobs_ExtensionsPath</code> parameter in your app settings
 to that folder&rsquo;s path. For local development add a line to <code>local.settings.json</code>:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#a31515">&#34;AzureWebJobs_ExtensionsPath&#34;</span><span style="">:</span> <span style="color:#a31515">&#34;D:\\BindingExtensions&#34;</span><span style="">,</span>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#0a3069">&#34;AzureWebJobs_ExtensionsPath&#34;</span><span style="color:#f6f8fa;background-color:#82071e">:</span> <span style="color:#0a3069">&#34;D:\\BindingExtensions&#34;</span><span style="color:#f6f8fa;background-color:#82071e">,</span>
 </span></span></code></pre></div></li>
 <li>
 <p>Create a subfolder for your extension, e.g.
@@ -442,26 +442,7 @@ examples and walkthroughs, and get fresh updates:</p>
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
-            <div id="disqus_thread"></div>
-<script>
-    window.disqus_config = function () {
-    
-    
-    
-    };
-    (function() {
-        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
-            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
-            return;
-        }
-        var d = document, s = d.createElement('script'); s.async = true;
-        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
-        s.setAttribute('data-timestamp', +new Date());
-        (d.head || d.body).appendChild(s);
-    })();
-</script>
-<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
-<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
             
         </div>
     </div>
@@ -481,6 +462,24 @@ examples and walkthroughs, and get fresh updates:</p>
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

@@ -267,39 +267,39 @@
 <p>You can find the full Dockerfile <a href="https://github.com/pulumi/examples/blob/master/aws-ts-lambda-thumbnailer/docker-ffmpeg-thumb/Dockerfile">here</a>.</p>
 <h3 id="create-an-s3-bucket">Create an S3 Bucket</h3>
 <p>Now, let&rsquo;s start composing our Pulumi program in TypeScript. The first step is to define an S3 bucket.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">import</span> * <span style="color:#00f">as</span> aws <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/aws&#34;</span>;
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">import</span> <span style="color:#0550ae">*</span> <span style="color:#cf222e">as</span> <span style="color:#1f2328">aws</span> <span style="color:#cf222e">from</span> <span style="color:#0a3069">&#34;@pulumi/aws&#34;</span><span style="color:#1f2328">;</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#008000">// A bucket to store videos and thumbnails.
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">const</span> bucket = <span style="color:#00f">new</span> aws.s3.Bucket(<span style="color:#a31515">&#34;bucket&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#57606a">// A bucket to store videos and thumbnails.
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">const</span> <span style="color:#1f2328">bucket</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">aws</span><span style="color:#1f2328">.</span><span style="color:#1f2328">s3</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Bucket</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;bucket&#34;</span><span style="color:#1f2328">);</span>
 </span></span></code></pre></div><h3 id="build-the-container-image-and-publish-it-to-ecr">Build the container image and publish it to ECR</h3>
 <p>We can use <a href="https://www.pulumi.com/docs/guides/crosswalk/aws/">Pulumi Crosswalk for AWS</a> to build the Docker image and publish it to a new ECR repository with just three lines of code.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">import</span> * <span style="color:#00f">as</span> awsx <span style="color:#00f">from</span> <span style="color:#a31515">&#34;@pulumi/awsx&#34;</span>;
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">import</span> <span style="color:#0550ae">*</span> <span style="color:#cf222e">as</span> <span style="color:#1f2328">awsx</span> <span style="color:#cf222e">from</span> <span style="color:#0a3069">&#34;@pulumi/awsx&#34;</span><span style="color:#1f2328">;</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">const</span> image = awsx.ecr.buildAndPushImage(<span style="color:#a31515">&#34;image&#34;</span>, {
-</span></span><span style="display:flex;"><span>   context: <span style="color:#a31515">&#34;./docker-ffmpeg-thumb&#34;</span>,
-</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">image</span> <span style="color:#0550ae">=</span> <span style="color:#1f2328">awsx</span><span style="color:#1f2328">.</span><span style="color:#1f2328">ecr</span><span style="color:#1f2328">.</span><span style="color:#1f2328">buildAndPushImage</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;image&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">context</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;./docker-ffmpeg-thumb&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><p>The local <code>docker-ffmpeg-thumb</code> folder contains the application files (<code>Dockerfile</code> and <code>index.js</code>).</p>
 <h3 id="setup-a-role">Setup a role</h3>
 <p>Next, we define an IAM role and a policy attachment to grant AWS Lambda access to ECR, CloudWatch, and other supporting services.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> role = <span style="color:#00f">new</span> aws.iam.Role(<span style="color:#a31515">&#34;thumbnailerRole&#34;</span>, {
-</span></span><span style="display:flex;"><span>   assumeRolePolicy: <span style="color:#2b91af">aws.iam.assumeRolePolicyForPrincipal</span>({ Service: <span style="color:#a31515">&#34;lambda.amazonaws.com&#34;</span> }),
-</span></span><span style="display:flex;"><span>});
-</span></span><span style="display:flex;"><span><span style="color:#00f">new</span> aws.iam.RolePolicyAttachment(<span style="color:#a31515">&#34;lambdaFullAccess&#34;</span>, {
-</span></span><span style="display:flex;"><span>   role: <span style="color:#2b91af">role.name</span>,
-</span></span><span style="display:flex;"><span>   policyArn: <span style="color:#2b91af">aws.iam.ManagedPolicies.AWSLambdaFullAccess</span>,
-</span></span><span style="display:flex;"><span>});
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">role</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">aws</span><span style="color:#1f2328">.</span><span style="color:#1f2328">iam</span><span style="color:#1f2328">.</span><span style="color:#1f2328">Role</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;thumbnailerRole&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">assumeRolePolicy</span>: <span style="color:#cf222e">aws.iam.assumeRolePolicyForPrincipal</span><span style="color:#1f2328">({</span> <span style="color:#1f2328">Service</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;lambda.amazonaws.com&#34;</span> <span style="color:#1f2328">}),</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">new</span> <span style="color:#1f2328">aws</span><span style="color:#1f2328">.</span><span style="color:#1f2328">iam</span><span style="color:#1f2328">.</span><span style="color:#1f2328">RolePolicyAttachment</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;lambdaFullAccess&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">role</span>: <span style="color:#cf222e">role.name</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">policyArn</span>: <span style="color:#cf222e">aws.iam.ManagedPolicies.AWSLambdaFullAccess</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><h3 id="configure-your-aws-lambda-function">Configure your AWS Lambda function</h3>
 <p>It&rsquo;s time to define the AWS Lambda function itself! It&rsquo;s as simple as giving it a name and pointing to the image URI returned from the ECR. Also, we assign the role and increase the timeout to 15 minutes, as video processing may take a while.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#00f">const</span> thumbnailer = <span style="color:#00f">new</span> aws.lambda.Function(<span style="color:#a31515">&#34;thumbnailer&#34;</span>, {
-</span></span><span style="display:flex;"><span>   packageType: <span style="color:#a31515">&#34;Image&#34;</span>,
-</span></span><span style="display:flex;"><span>   imageUri: <span style="color:#2b91af">image.imageValue</span>,
-</span></span><span style="display:flex;"><span>   role: <span style="color:#2b91af">role.arn</span>,
-</span></span><span style="display:flex;"><span>   timeout: <span style="color:#2b91af">900</span>,
-</span></span><span style="display:flex;"><span>});
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#cf222e">const</span> <span style="color:#1f2328">thumbnailer</span> <span style="color:#0550ae">=</span> <span style="color:#cf222e">new</span> <span style="color:#1f2328">aws</span><span style="color:#1f2328">.</span><span style="color:#1f2328">lambda</span><span style="color:#1f2328">.</span><span style="color:#6639ba">Function</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;thumbnailer&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">packageType</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;Image&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">imageUri</span>: <span style="color:#cf222e">image.imageValue</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">role</span>: <span style="color:#cf222e">role.arn</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#1f2328">timeout</span>: <span style="color:#cf222e">900</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">});</span>
 </span></span></code></pre></div><h3 id="trigger-on-new-videos">Trigger on new videos</h3>
 <p>Finally, we can assign a trigger to the function using the <code>bucket.onObjectCreated</code> helper method. We want to limit the function to only process <code>mp4</code> files.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#008000">// When a new video is uploaded, run the FFMPEG task on the video file.
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>bucket.onObjectCreated(<span style="color:#a31515">&#34;onNewVideo&#34;</span>, thumbnailer, { filterSuffix: <span style="color:#a31515">&#34;.mp4&#34;</span> });
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#57606a">// When a new video is uploaded, run the FFMPEG task on the video file.
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#1f2328">bucket</span><span style="color:#1f2328">.</span><span style="color:#1f2328">onObjectCreated</span><span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;onNewVideo&#34;</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">thumbnailer</span><span style="color:#1f2328">,</span> <span style="color:#1f2328">{</span> <span style="color:#1f2328">filterSuffix</span><span style="color:#0550ae">:</span> <span style="color:#0a3069">&#34;.mp4&#34;</span> <span style="color:#1f2328">});</span>
 </span></span></code></pre></div><p>And that is it! We run <code>pulumi up</code> to get the thumbnailed service up and running.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>Support for container images in AWS Lambda brings the power and usability of industry-standard packaging to serverless functions. It becomes easy to reuse application components packaged with the ubiquitous deployment format.</p>
@@ -410,6 +410,24 @@
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

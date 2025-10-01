@@ -345,27 +345,27 @@ with Azure Durable Functions.</p>
 the richest domain modeling capabilities in the .NET ecosystem.</p>
 <h3 id="types">Types</h3>
 <p>Our service is invoked with a wish list as the input parameter, so let&rsquo;s start with the type <code>WishList</code>:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">WishList</span> =
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    Kid: Customer
-</span></span><span style="display:flex;"><span>    Wishes: <span style="color:#2b91af">string</span> <span style="color:#2b91af">list</span>
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">type</span> <span style="color:#1f2328">WishList</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>    Kid<span style="color:#0550ae">:</span> Customer
+</span></span><span style="display:flex;"><span>    Wishes<span style="color:#0550ae">:</span> <span style="color:#cf222e">string</span> <span style="color:#cf222e">list</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>It contains information about the author of the list and recognized &ldquo;order&rdquo; items. <code>Customer</code> is a custom type;
 for now, it&rsquo;s not important what&rsquo;s in it.</p>
 <p>For each wish we want to produce a list of possible matches:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Match</span> =
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    Product: Product
-</span></span><span style="display:flex;"><span>    Confidence: Probability
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">type</span> <span style="color:#1f2328">Match</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>    Product<span style="color:#0550ae">:</span> Product
+</span></span><span style="display:flex;"><span>    Confidence<span style="color:#0550ae">:</span> Probability
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>The product is a specific gift option from Santa&rsquo;s catalog, and the confidence is a number
 from <code>0.0</code> to <code>1.0</code> of how strong the match is.</p>
 <p>The end goal of our service is to produce a <code>Reservation</code>:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">Reservation</span> =
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    Kid: Customer
-</span></span><span style="display:flex;"><span>    Product: Product
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">type</span> <span style="color:#1f2328">Reservation</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>    Kid<span style="color:#0550ae">:</span> Customer
+</span></span><span style="display:flex;"><span>    Product<span style="color:#0550ae">:</span> Product
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>It represents the exact product selection for the specific kid.</p>
 <h3 id="functions">Functions</h3>
 <p>The Wish Fulfillment service needs to perform three actions, which can be
@@ -373,49 +373,49 @@ modeled with three strongly-typed asynchronous functions.</p>
 <p><em>Note: I use lowercase &ldquo;function&rdquo; for F# functions and capitalize &ldquo;Function&rdquo; for Azure Functions
 throughout the article to minimize confusion.</em></p>
 <p>The <strong>first action</strong> finds matches for each wish:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#008000">// string -&gt; Async&lt;Match list&gt;
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> findMatchingGift (wish: <span style="color:#2b91af">string</span>) = async {
-</span></span><span style="display:flex;"><span>    <span style="color:#008000">// Call a custom machine learning model
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>    <span style="color:#008000">// The real implementation uses the Customer profile to adjust decisions by age, etc.
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>    <span style="color:#008000">// but we&#39;ll keep the model simple for now.
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#57606a">// string -&gt; Async&lt;Match list&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">let</span> <span style="color:#953800">findMatchingGift</span> <span style="color:#0550ae">(</span>wish<span style="color:#0550ae">:</span> <span style="color:#cf222e">string</span><span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span> async <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#57606a">// Call a custom machine learning model
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span>    <span style="color:#57606a">// The real implementation uses the Customer profile to adjust decisions by age, etc.
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span>    <span style="color:#57606a">// but we&#39;ll keep the model simple for now.
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>The first line of all my function snippets shows the function type. In this case, it&rsquo;s a mapping
 from the text of the child&rsquo;s wish (<code>string</code>) to a list of matches (<code>Match list</code>).</p>
 <p>The <strong>second action</strong> takes the <em>combined</em> list of all matches of all wishes and picks one. Its
 real implementation is Santa&rsquo;s secret sauce, but my model just picks the one with the highest
 confidence level:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#008000">// Match list -&gt; Product
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> pickGift (candidates: Match <span style="color:#2b91af">list</span>) =
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#57606a">// Match list -&gt; Product
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">let</span> <span style="color:#953800">pickGift</span> <span style="color:#0550ae">(</span>candidates<span style="color:#0550ae">:</span> Match <span style="color:#cf222e">list</span><span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span>
 </span></span><span style="display:flex;"><span>    candidates
-</span></span><span style="display:flex;"><span>    |&gt; List.sortByDescending (<span style="color:#00f">fun</span> x -&gt; x.Confidence)
-</span></span><span style="display:flex;"><span>    |&gt; List.head
-</span></span><span style="display:flex;"><span>    |&gt; (<span style="color:#00f">fun</span> x -&gt; x.Product)
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">|&gt;</span> <span style="color:#24292e">List</span><span style="color:#1f2328">.</span>sortByDescending <span style="color:#0550ae">(</span><span style="color:#cf222e">fun</span> x <span style="color:#0550ae">-&gt;</span> x<span style="color:#0550ae">.</span>Confidence<span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">|&gt;</span> <span style="color:#24292e">List</span><span style="color:#1f2328">.</span>head
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">|&gt;</span> <span style="color:#0550ae">(</span><span style="color:#cf222e">fun</span> x <span style="color:#0550ae">-&gt;</span> x<span style="color:#0550ae">.</span>Product<span style="color:#0550ae">)</span>
 </span></span></code></pre></div><p>Given the picked <code>gift</code>, the reservation is merely <code>{ Kid = wishlist.Kid; Product = gift }</code>,
 not worthy of a separate action.</p>
 <p>The <strong>third action</strong> registers a reservation in the SAP system:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#008000">// Reservation -&gt; Async&lt;unit&gt;
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> reserve (reservation: Reservation) = async {
-</span></span><span style="display:flex;"><span>    <span style="color:#008000">// Call Santa&#39;s Archive of Products
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#57606a">// Reservation -&gt; Async&lt;unit&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">let</span> <span style="color:#953800">reserve</span> <span style="color:#0550ae">(</span>reservation<span style="color:#0550ae">:</span> Reservation<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span> async <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#57606a">// Call Santa&#39;s Archive of Products
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><h3 id="workflow">Workflow</h3>
 <p>The fulfillment service combines the three actions into one workflow:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#008000">// WishList -&gt; Async&lt;Reservation&gt;
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> workflow (wishlist: WishList) = async {
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#57606a">// WishList -&gt; Async&lt;Reservation&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">let</span> <span style="color:#953800">workflow</span> <span style="color:#0550ae">(</span>wishlist<span style="color:#0550ae">:</span> WishList<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span> async <span style="color:#0550ae">{</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#008000">// 1. Find matches for each wish
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>    <span style="color:#00f">let!</span> matches =
-</span></span><span style="display:flex;"><span>        wishlist.Wishes
-</span></span><span style="display:flex;"><span>        |&gt; List.map findMatchingGift
-</span></span><span style="display:flex;"><span>        |&gt; Async.Parallel
+</span></span><span style="display:flex;"><span>    <span style="color:#57606a">// 1. Find matches for each wish
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span>    <span style="color:#cf222e">let!</span> <span style="color:#953800">matches</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>        wishlist<span style="color:#0550ae">.</span>Wishes
+</span></span><span style="display:flex;"><span>        <span style="color:#0550ae">|&gt;</span> <span style="color:#24292e">List</span><span style="color:#1f2328">.</span>map findMatchingGift
+</span></span><span style="display:flex;"><span>        <span style="color:#0550ae">|&gt;</span> <span style="color:#24292e">Async</span><span style="color:#1f2328">.</span>Parallel
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#008000">// 2. Pick one product from the combined list of matches
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>    <span style="color:#00f">let</span> gift = pickGift (List.concat matches)
+</span></span><span style="display:flex;"><span>    <span style="color:#57606a">// 2. Pick one product from the combined list of matches
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span>    <span style="color:#cf222e">let</span> <span style="color:#953800">gift</span> <span style="color:#0550ae">=</span> pickGift <span style="color:#0550ae">(</span><span style="color:#24292e">List</span><span style="color:#1f2328">.</span>concat matches<span style="color:#0550ae">)</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#008000">// 3. Register and return the reservation
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span>    <span style="color:#00f">let</span> reservation = { Kid = wishlist.Kid; Product = gift }
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">do</span>! reserve reservation
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> reservation
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>    <span style="color:#57606a">// 3. Register and return the reservation
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span>    <span style="color:#cf222e">let</span> <span style="color:#953800">reservation</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">{</span> Kid <span style="color:#0550ae">=</span> wishlist<span style="color:#0550ae">.</span>Kid<span style="color:#0550ae">;</span> Product <span style="color:#0550ae">=</span> gift <span style="color:#0550ae">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">do</span><span style="color:#0550ae">!</span> reserve reservation
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">return</span> reservation
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>The workflow implementation is a nice and concise summary of the actual domain flow.</p>
 <p>Note that the Matching service is called multiple times in parallel, and then
 the results are easily combined by virtue of the <code>Async.Parallel</code> F# function.</p>
@@ -430,17 +430,17 @@ have added <a href="https://github.com/Azure/azure-functions-durable-extension/t
 to the official repository.</p>
 <p>Here are two examples from that old F# code of mine (they have nothing to do with our
 gift fulfillment domain):</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#008000">// 1. Simple sequencing of activities
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> Run([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) = task {
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">let!</span> hello1 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;E1_SayHello&#34;</span>, <span style="color:#a31515">&#34;Tokyo&#34;</span>)
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">let!</span> hello2 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;E1_SayHello&#34;</span>, <span style="color:#a31515">&#34;Seattle&#34;</span>)
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">let!</span> hello3 = context.CallActivityAsync&lt;<span style="color:#2b91af">string</span>&gt;(<span style="color:#a31515">&#34;E1_SayHello&#34;</span>, <span style="color:#a31515">&#34;London&#34;</span>)
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">return</span> [hello1; hello2; hello3]
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#57606a">// 1. Simple sequencing of activities
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">let</span> <span style="color:#953800">Run</span><span style="color:#0550ae">([&lt;</span>OrchestrationTrigger<span style="color:#0550ae">&gt;]</span> context<span style="color:#0550ae">:</span> DurableOrchestrationContext<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span> task <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">let!</span> <span style="color:#953800">hello1</span> <span style="color:#0550ae">=</span> context<span style="color:#0550ae">.</span>CallActivityAsync<span style="color:#0550ae">&lt;</span><span style="color:#cf222e">string</span><span style="color:#0550ae">&gt;(</span><span style="color:#0a3069">&#34;E1_SayHello&#34;</span><span style="color:#0550ae">,</span> <span style="color:#0a3069">&#34;Tokyo&#34;</span><span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">let!</span> <span style="color:#953800">hello2</span> <span style="color:#0550ae">=</span> context<span style="color:#0550ae">.</span>CallActivityAsync<span style="color:#0550ae">&lt;</span><span style="color:#cf222e">string</span><span style="color:#0550ae">&gt;(</span><span style="color:#0a3069">&#34;E1_SayHello&#34;</span><span style="color:#0550ae">,</span> <span style="color:#0a3069">&#34;Seattle&#34;</span><span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">let!</span> <span style="color:#953800">hello3</span> <span style="color:#0550ae">=</span> context<span style="color:#0550ae">.</span>CallActivityAsync<span style="color:#0550ae">&lt;</span><span style="color:#cf222e">string</span><span style="color:#0550ae">&gt;(</span><span style="color:#0a3069">&#34;E1_SayHello&#34;</span><span style="color:#0550ae">,</span> <span style="color:#0a3069">&#34;London&#34;</span><span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">return</span> <span style="color:#0550ae">[</span>hello1<span style="color:#0550ae">;</span> hello2<span style="color:#0550ae">;</span> hello3<span style="color:#0550ae">]</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#008000">// 2. Parallel calls snippet
-</span></span></span><span style="display:flex;"><span><span style="color:#008000"></span><span style="color:#00f">let</span> tasks = Array.map (<span style="color:#00f">fun</span> f -&gt; context.CallActivityAsync&lt;<span style="color:#2b91af">int64</span>&gt;(<span style="color:#a31515">&#34;E2_CopyFileToBlob&#34;</span>, f)) files
-</span></span><span style="display:flex;"><span><span style="color:#00f">let!</span> results = Task.WhenAll tasks
+</span></span><span style="display:flex;"><span><span style="color:#57606a">// 2. Parallel calls snippet
+</span></span></span><span style="display:flex;"><span><span style="color:#57606a"></span><span style="color:#cf222e">let</span> <span style="color:#953800">tasks</span> <span style="color:#0550ae">=</span> <span style="color:#24292e">Array</span><span style="color:#1f2328">.</span>map <span style="color:#0550ae">(</span><span style="color:#cf222e">fun</span> f <span style="color:#0550ae">-&gt;</span> context<span style="color:#0550ae">.</span>CallActivityAsync<span style="color:#0550ae">&lt;</span><span style="color:#cf222e">int64</span><span style="color:#0550ae">&gt;(</span><span style="color:#0a3069">&#34;E2_CopyFileToBlob&#34;</span><span style="color:#0550ae">,</span> f<span style="color:#0550ae">))</span> files
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">let!</span> <span style="color:#953800">results</span> <span style="color:#0550ae">=</span> <span style="color:#24292e">Task</span><span style="color:#1f2328">.</span>WhenAll tasks
 </span></span></code></pre></div><p>This code works and does its job, but doesn&rsquo;t look like idiomatic F# code:</p>
 <ul>
 <li>No strong typing: Activity Functions are called by name and with types manually specified</li>
@@ -462,25 +462,25 @@ to instruct how to run the application in the cloud</li>
 <h3 id="activity-functions">Activity Functions</h3>
 <p>Each Activity Function defines one step of the workflow: Matching, Picking, and Reserving. We
 simply reference the F# functions of those actions in one-line definitions:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> findMatchingGiftActivity = Activity.defineAsync <span style="color:#a31515">&#34;FindMatchingGift&#34;</span> findMatchingGift
-</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> pickGiftActivity = Activity.define <span style="color:#a31515">&#34;PickGift&#34;</span> pickGift
-</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> reserveActivity = Activity.defineAsync <span style="color:#a31515">&#34;Reserve&#34;</span> reserve
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">findMatchingGiftActivity</span> <span style="color:#0550ae">=</span> <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>defineAsync <span style="color:#0a3069">&#34;FindMatchingGift&#34;</span> findMatchingGift
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">pickGiftActivity</span> <span style="color:#0550ae">=</span> <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>define <span style="color:#0a3069">&#34;PickGift&#34;</span> pickGift
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">reserveActivity</span> <span style="color:#0550ae">=</span> <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>defineAsync <span style="color:#0a3069">&#34;Reserve&#34;</span> reserve
 </span></span></code></pre></div><p>Each activity is defined by a name and a function.</p>
 <h3 id="orchestrator">Orchestrator</h3>
 <p>The Orchestrator calls Activity Functions to produce the desired outcome of the service. The code
 uses a custom computation expression:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> workflow wishlist = orchestrator {
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">let!</span> matches =
-</span></span><span style="display:flex;"><span>        wishlist.Wishes
-</span></span><span style="display:flex;"><span>        |&gt; List.map (Activity.call findMatchingGiftActivity)
-</span></span><span style="display:flex;"><span>        |&gt; Activity.all
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">workflow</span> wishlist <span style="color:#0550ae">=</span> orchestrator <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">let!</span> <span style="color:#953800">matches</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>        wishlist<span style="color:#0550ae">.</span>Wishes
+</span></span><span style="display:flex;"><span>        <span style="color:#0550ae">|&gt;</span> <span style="color:#24292e">List</span><span style="color:#1f2328">.</span>map <span style="color:#0550ae">(</span><span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>call findMatchingGiftActivity<span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#0550ae">|&gt;</span> <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>all
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">let!</span> gift = Activity.call pickGiftActivity (List.concat matches)
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">let!</span> <span style="color:#953800">gift</span> <span style="color:#0550ae">=</span> <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>call pickGiftActivity <span style="color:#0550ae">(</span><span style="color:#24292e">List</span><span style="color:#1f2328">.</span>concat matches<span style="color:#0550ae">)</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> reservation = { Kid = wishlist.Kid; Product = gift }
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">do</span>! Activity.call reserveActivity reservation
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> reservation
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">let</span> <span style="color:#953800">reservation</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">{</span> Kid <span style="color:#0550ae">=</span> wishlist<span style="color:#0550ae">.</span>Kid<span style="color:#0550ae">;</span> Product <span style="color:#0550ae">=</span> gift <span style="color:#0550ae">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">do</span><span style="color:#0550ae">!</span> <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>call reserveActivity reservation
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">return</span> reservation
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>Notice how closely it matches the workflow definition from our domain model:</p>
 <figure >
     
@@ -505,21 +505,21 @@ not allowed in Orchestrators</li>
 <p>An Azure Function trigger needs to be defined to host any piece of code as a cloud Function. This can
 be done manually in <code>function.json</code>, or via trigger generation from .NET attributes. In my case
 I added the following four definitions:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span>[&lt;FunctionName(<span style="color:#a31515">&#34;FindMatchingGift&#34;</span>)&gt;]
-</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> FindMatchingGift([&lt;ActivityTrigger&gt;] wish) =
-</span></span><span style="display:flex;"><span>    Activity.run findMatchingGiftActivity wish
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#0550ae">[&lt;</span>FunctionName<span style="color:#0550ae">(</span><span style="color:#0a3069">&#34;FindMatchingGift&#34;</span><span style="color:#0550ae">)&gt;]</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">FindMatchingGift</span><span style="color:#0550ae">([&lt;</span>ActivityTrigger<span style="color:#0550ae">&gt;]</span> wish<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>run findMatchingGiftActivity wish
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>[&lt;FunctionName(<span style="color:#a31515">&#34;PickGift&#34;</span>)&gt;]
-</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> PickGift([&lt;ActivityTrigger&gt;] matches) =
-</span></span><span style="display:flex;"><span>    Activity.run pickGiftActivity matches
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">[&lt;</span>FunctionName<span style="color:#0550ae">(</span><span style="color:#0a3069">&#34;PickGift&#34;</span><span style="color:#0550ae">)&gt;]</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">PickGift</span><span style="color:#0550ae">([&lt;</span>ActivityTrigger<span style="color:#0550ae">&gt;]</span> matches<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>run pickGiftActivity matches
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>[&lt;FunctionName(<span style="color:#a31515">&#34;Reserve&#34;</span>)&gt;]
-</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> Reserve([&lt;ActivityTrigger&gt;] wish) =
-</span></span><span style="display:flex;"><span>    Activity.run reserveActivity wish
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">[&lt;</span>FunctionName<span style="color:#0550ae">(</span><span style="color:#0a3069">&#34;Reserve&#34;</span><span style="color:#0550ae">)&gt;]</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">Reserve</span><span style="color:#0550ae">([&lt;</span>ActivityTrigger<span style="color:#0550ae">&gt;]</span> wish<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#24292e">Activity</span><span style="color:#1f2328">.</span>run reserveActivity wish
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>[&lt;FunctionName(<span style="color:#a31515">&#34;WishlistFulfillment&#34;</span>)&gt;]
-</span></span><span style="display:flex;"><span><span style="color:#00f">let</span> Workflow ([&lt;OrchestrationTrigger&gt;] context: DurableOrchestrationContext) =
-</span></span><span style="display:flex;"><span>    Orchestrator.run (workflow, context)
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">[&lt;</span>FunctionName<span style="color:#0550ae">(</span><span style="color:#0a3069">&#34;WishlistFulfillment&#34;</span><span style="color:#0550ae">)&gt;]</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">Workflow</span> <span style="color:#0550ae">([&lt;</span>OrchestrationTrigger<span style="color:#0550ae">&gt;]</span> context<span style="color:#0550ae">:</span> DurableOrchestrationContext<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#24292e">Orchestrator</span><span style="color:#1f2328">.</span>run <span style="color:#0550ae">(</span>workflow<span style="color:#0550ae">,</span> context<span style="color:#0550ae">)</span>
 </span></span></code></pre></div><p>The definitions are very mechanical and, again, strongly typed (apart from Functions&rsquo; names).</p>
 <h3 id="ship-it">Ship It!</h3>
 <p>These are all the bits required to get our Durable Wish Fulfillment service up and running.
@@ -660,26 +660,7 @@ for reviewing the draft of this article and their valuable contributions and sug
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
-            <div id="disqus_thread"></div>
-<script>
-    window.disqus_config = function () {
-    
-    
-    
-    };
-    (function() {
-        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
-            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
-            return;
-        }
-        var d = document, s = d.createElement('script'); s.async = true;
-        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
-        s.setAttribute('data-timestamp', +new Date());
-        (d.head || d.body).appendChild(s);
-    })();
-</script>
-<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
-<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
             
         </div>
     </div>
@@ -699,6 +680,24 @@ for reviewing the draft of this article and their valuable contributions and sug
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

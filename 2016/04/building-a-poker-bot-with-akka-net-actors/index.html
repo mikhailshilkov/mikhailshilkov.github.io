@@ -291,17 +291,17 @@ It returns the poker window screenshots and titles.</p>
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#RouterSupervisor">Router-Supervisor</a> pattern to
 define the behavior. The ouput tuple defines an ID of an output actor and a
 message to send to it:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> findActor msg =
-</span></span><span style="display:flex;"><span>  findWindows ()
-</span></span><span style="display:flex;"><span>  |&gt; Seq.map (<span style="color:#00f">fun</span> x -&gt; (<span style="color:#a31515">&#34;recognizer-actor-&#34;</span> + x.TableName, x))
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">findActor</span> msg <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>  findWindows <span style="color:#6a737d">()</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">|&gt;</span> <span style="color:#24292e">Seq</span><span style="color:#1f2328">.</span>map <span style="color:#0550ae">(</span><span style="color:#cf222e">fun</span> x <span style="color:#0550ae">-&gt;</span> <span style="color:#0550ae">(</span><span style="color:#0a3069">&#34;recognizer-actor-&#34;</span> <span style="color:#0550ae">+</span> x<span style="color:#0550ae">.</span>TableName<span style="color:#0550ae">,</span> x<span style="color:#0550ae">))</span>
 </span></span></code></pre></div><p>Here is how I spawn the singleton instance of this actor:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> tableFinderRef =
-</span></span><span style="display:flex;"><span>  actorOfRouteToChildren findActor (spawnChild recognizer)
-</span></span><span style="display:flex;"><span>  |&gt; spawn system <span style="color:#a31515">&#34;table-finder-actor&#34;</span>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">tableFinderRef</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>  actorOfRouteToChildren findActor <span style="color:#0550ae">(</span>spawnChild recognizer<span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">|&gt;</span> spawn system <span style="color:#0a3069">&#34;table-finder-actor&#34;</span>
 </span></span></code></pre></div><p>Where <code>spawnChild</code> is a helper function - essentially an adapter of standard
 <code>spawn</code> function with proper parameter order:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> spawnChild childActor name (mailbox : Actor&lt;<span style="color:#00f">&#39;</span>a&gt;) =
-</span></span><span style="display:flex;"><span>  spawn mailbox.Context name childActor
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">spawnChild</span> childActor name <span style="color:#0550ae">(</span>mailbox <span style="color:#0550ae">:</span> Actor<span style="color:#0550ae">&lt;</span><span style="color:#cf222e">&#39;</span>a<span style="color:#0550ae">&gt;)</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>  spawn mailbox<span style="color:#0550ae">.</span>Context name childActor
 </span></span></code></pre></div><p>We can also extend it to debug messages when new actors get created.</p>
 <h2 id="recognizer">Recognizer</h2>
 <p>Recognizer receives the <code>WindowInfo</code> produced by the Table Finder.</p>
@@ -313,14 +313,14 @@ of these series.</p>
 <a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#ConverterSupervisor">Converter-Supervisor</a> pattern.
 The output is a decision message for Decision Maker actor which is a supervised
 child of the Recognizer. Here is the actor function:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> recognizeActor (window : WindowInfo) =
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> result = recognize window.Bitmap
-</span></span><span style="display:flex;"><span>  { WindowTitle = window.Title
-</span></span><span style="display:flex;"><span>    TableName = window.TableName
-</span></span><span style="display:flex;"><span>    Screen = result
-</span></span><span style="display:flex;"><span>    Bitmap = window.Bitmap }
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">recognizeActor</span> <span style="color:#0550ae">(</span>window <span style="color:#0550ae">:</span> WindowInfo<span style="color:#0550ae">)</span> <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">let</span> <span style="color:#953800">result</span> <span style="color:#0550ae">=</span> recognize window<span style="color:#0550ae">.</span>Bitmap
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">{</span> WindowTitle <span style="color:#0550ae">=</span> window<span style="color:#0550ae">.</span>Title
+</span></span><span style="display:flex;"><span>    TableName <span style="color:#0550ae">=</span> window<span style="color:#0550ae">.</span>TableName
+</span></span><span style="display:flex;"><span>    Screen <span style="color:#0550ae">=</span> result
+</span></span><span style="display:flex;"><span>    Bitmap <span style="color:#0550ae">=</span> window<span style="color:#0550ae">.</span>Bitmap <span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>And here is the spawn function:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> recognizer = actorOfConvertToChild recognizeActor (spawnChild decider <span style="color:#a31515">&#34;decider&#34;</span>)
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">recognizer</span> <span style="color:#0550ae">=</span> actorOfConvertToChild recognizeActor <span style="color:#0550ae">(</span>spawnChild decider <span style="color:#0a3069">&#34;decider&#34;</span><span style="color:#0550ae">)</span>
 </span></span></code></pre></div><p>Notice how this expression was used in Table Finder instantiation above.</p>
 <h2 id="decision-maker">Decision Maker</h2>
 <p>Decision Maker actor function is an implementation of
@@ -333,25 +333,25 @@ ignored.</p>
 <p>This way the actor function has the type of
 <code>DecisionMessage -&gt; Screen option -&gt; ClickerMessage * Screen option</code>
 and looks like this:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> decisionActor msg lastScreen =
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">let</span> screen = msg.Screen
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">match</span> lastScreen <span style="color:#00f">with</span>
-</span></span><span style="display:flex;"><span>  | Some s <span style="color:#00f">when</span> s = screen -&gt; (None, lastScreen)
-</span></span><span style="display:flex;"><span>  | _ -&gt;
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> action = decide screen
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">let</span> outMsg = { WindowTitle = msg.WindowTitle; Clicks = action }
-</span></span><span style="display:flex;"><span>    (Some outMsg, Some screen)
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">decisionActor</span> msg lastScreen <span style="color:#0550ae">=</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">let</span> <span style="color:#953800">screen</span> <span style="color:#0550ae">=</span> msg<span style="color:#0550ae">.</span>Screen
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">match</span> lastScreen <span style="color:#cf222e">with</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">|</span> Some s <span style="color:#cf222e">when</span> s <span style="color:#0550ae">=</span> screen <span style="color:#0550ae">-&gt;</span> <span style="color:#0550ae">(</span>None<span style="color:#0550ae">,</span> lastScreen<span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">|</span> <span style="color:#0550ae">_</span> <span style="color:#0550ae">-&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">let</span> <span style="color:#953800">action</span> <span style="color:#0550ae">=</span> decide screen
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">let</span> <span style="color:#953800">outMsg</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">{</span> WindowTitle <span style="color:#0550ae">=</span> msg<span style="color:#0550ae">.</span>WindowTitle<span style="color:#0550ae">;</span> Clicks <span style="color:#0550ae">=</span> action <span style="color:#0550ae">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">(</span>Some outMsg<span style="color:#0550ae">,</span> Some screen<span style="color:#0550ae">)</span>
 </span></span></code></pre></div><p>Here is the spawn function:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> decider = actorOfStatefulConvert decisionActor None clickerRef
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">decider</span> <span style="color:#0550ae">=</span> actorOfStatefulConvert decisionActor None clickerRef
 </span></span></code></pre></div><p>where <code>None</code> represents the initial state.</p>
 <h2 id="button-clicker">Button Clicker</h2>
 <p>Clicker actor has the simplest implementation because it does not send messages to other actors.
 Here is the message that it receives from Decision Maker:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">ClickTarget</span> = (int * int * int * int)
-</span></span><span style="display:flex;"><span><span style="color:#00f">type</span> <span style="color:#2b91af">ClickerMessage</span> = {
-</span></span><span style="display:flex;"><span>  WindowTitle: <span style="color:#2b91af">string</span>
-</span></span><span style="display:flex;"><span>  Clicks: ClickTarget[]
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">type</span> <span style="color:#1f2328">ClickTarget</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">(</span>int <span style="color:#0550ae">*</span> int <span style="color:#0550ae">*</span> int <span style="color:#0550ae">*</span> int<span style="color:#0550ae">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">type</span> <span style="color:#1f2328">ClickerMessage</span> <span style="color:#0550ae">=</span> <span style="color:#0550ae">{</span>
+</span></span><span style="display:flex;"><span>  WindowTitle<span style="color:#0550ae">:</span> <span style="color:#cf222e">string</span>
+</span></span><span style="display:flex;"><span>  Clicks<span style="color:#0550ae">:</span> ClickTarget<span style="color:#6a737d">[]</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">}</span>
 </span></span></code></pre></div><p>The domain function has the simple type <code>ClickerMessage -&gt; unit</code> with mouse
 clicks as side effect. You can read more about the mouse movements in
 <a href="https://mikhail.io/2016/03/building-a-poker-bot-mouse-movements/">Part 3</a>
@@ -359,7 +359,7 @@ of these series.</p>
 <p><a href="https://mikhail.io/2016/03/functional-actor-patterns-with-akkadotnet-and-fsharp/#MessageSink">Message Sink</a>
 pattern is used for this actor, so actor function isn&rsquo;t
 really needed. We spawn the singleton instance with the following statement:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#00f">let</span> clickerRef = actorOfSink click |&gt; spawn system <span style="color:#a31515">&#34;clicker-actor&#34;</span>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fsharp" data-lang="fsharp"><span style="display:flex;"><span><span style="color:#cf222e">let</span> <span style="color:#953800">clickerRef</span> <span style="color:#0550ae">=</span> actorOfSink click <span style="color:#0550ae">|&gt;</span> spawn system <span style="color:#0a3069">&#34;clicker-actor&#34;</span>
 </span></span></code></pre></div><p>Actor goes under supervision by actor system with <code>click</code> as message handler.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>The top layer of poker player application is composed of small single-purpose
@@ -447,26 +447,7 @@ very thin, and thus easy to understand and maintain.</p>
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
-            <div id="disqus_thread"></div>
-<script>
-    window.disqus_config = function () {
-    
-    
-    
-    };
-    (function() {
-        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
-            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
-            return;
-        }
-        var d = document, s = d.createElement('script'); s.async = true;
-        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
-        s.setAttribute('data-timestamp', +new Date());
-        (d.head || d.body).appendChild(s);
-    })();
-</script>
-<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
-<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
             
         </div>
     </div>
@@ -486,6 +467,24 @@ very thin, and thus easy to understand and maintain.</p>
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

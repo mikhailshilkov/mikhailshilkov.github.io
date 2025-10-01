@@ -202,66 +202,66 @@
 <p>Our production databases were migrated from SQL Server 2012 to SQL Server 2014. Among other improvements in the latter, <a href="http://blogs.msdn.com/b/psssql/archive/2014/04/01/sql-server-2014-s-new-cardinality-estimator-part-1.aspx">the new cardinality estimator was introduced</a>. In two words, cardinality estimator is a piece of SQL functionality which estimates how many rows the engine might get for a specific query or a query part. The new estimator is supposed to be smarter than the old one, of course. It takes more factors into account, and thus should give better results with some query plans. But &ldquo;new&rdquo; also means &ldquo;less tested&rdquo;&hellip;</p>
 <p>Immediately after migration we found out that one of the stored procedures got much slower than before. That stored procedure was retrieving thousands of rows from a queue, and then did a series of transformations which took ages to complete. During the investigation we found that the query plan is far from being optimal, with massive scans of partitioned tables; and the reason was in ridiculously high estimations on one of the tables. That table was of moderate size (millions of rows), our query touched only some hundreds rows, while the estimate was&hellip; millions!</p>
 <p>Here is a repro to show this issue on any test database (database must be in SQL Server 2014 compatibility mode):</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#00f">CREATE</span> <span style="color:#00f">TABLE</span> [dbo].[Store](
-</span></span><span style="display:flex;"><span>Id int <span style="color:#00f">IDENTITY</span>(1,1) <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
-</span></span><span style="display:flex;"><span>City int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
-</span></span><span style="display:flex;"><span><span style="color:#00f">Size</span> int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>,
-</span></span><span style="display:flex;"><span>Name varchar(<span style="color:#00f">max</span>) <span style="color:#00f">NULL</span>,
-</span></span><span style="display:flex;"><span>     <span style="color:#00f">CONSTRAINT</span> [PK_Store] <span style="color:#00f">PRIMARY</span> <span style="color:#00f">KEY</span> CLUSTERED ([Id] <span style="color:#00f">ASC</span>)
-</span></span><span style="display:flex;"><span>)
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">GO</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">CREATE</span> NONCLUSTERED <span style="color:#00f">INDEX</span> [IX_Store] <span style="color:#00f">ON</span> [dbo].[Store]
-</span></span><span style="display:flex;"><span>(
-</span></span><span style="display:flex;"><span>City <span style="color:#00f">ASC</span>,
-</span></span><span style="display:flex;"><span><span style="color:#00f">Size</span> <span style="color:#00f">ASC</span>
-</span></span><span style="display:flex;"><span>)
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">GO</span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">TRUNCATE</span> <span style="color:#00f">TABLE</span> Store
-</span></span><span style="display:flex;"><span><span style="color:#00f">INSERT</span> Store
-</span></span><span style="display:flex;"><span><span style="color:#00f">SELECT</span> i % 101, i % 11, <span style="color:#a31515">&#39;Store &#39;</span> + <span style="color:#00f">CAST</span>(i <span style="color:#00f">AS</span> VARCHAR)
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">FROM</span>
-</span></span><span style="display:flex;"><span>  (<span style="color:#00f">SELECT</span> TOP 100000 ROW_NUMBER() OVER (<span style="color:#00f">ORDER</span> <span style="color:#00f">BY</span> s1.[object_id]) <span style="color:#00f">AS</span> i
-</span></span><span style="display:flex;"><span>     <span style="color:#00f">FROM</span> sys.all_objects  s1, sys.all_objects  s2) numbers
-</span></span><span style="display:flex;"><span><span style="color:#00f">GO</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">CREATE</span> <span style="color:#00f">TABLE</span> StoreRequest (City int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>, <span style="color:#00f">Size</span> int <span style="color:#00f">NOT</span> <span style="color:#00f">NULL</span>)
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">GO</span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">DELETE</span> StoreRequest
-</span></span><span style="display:flex;"><span><span style="color:#00f">INSERT</span> StoreRequest <span style="color:#00f">values</span> (55, 1)
-</span></span><span style="display:flex;"><span><span style="color:#00f">INSERT</span> StoreRequest <span style="color:#00f">values</span> (66, 2)
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">GO</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">SELECT</span> s.City
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
-</span></span><span style="display:flex;"><span>       <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
-</span></span><span style="display:flex;"><span>               <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
-</span></span><span style="display:flex;"><span> <span style="color:#00f">WHERE</span> r.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55
-</span></span></code></pre></div><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#cf222e">CREATE</span><span style="color:#fff"> </span><span style="color:#cf222e">TABLE</span><span style="color:#fff"> </span><span style="color:#1f2328">[</span>dbo<span style="color:#1f2328">].[</span>Store<span style="color:#1f2328">](</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span>Id<span style="color:#fff"> </span><span style="color:#6639ba">int</span><span style="color:#fff"> </span><span style="color:#cf222e">IDENTITY</span><span style="color:#1f2328">(</span><span style="color:#0550ae">1</span><span style="color:#1f2328">,</span><span style="color:#0550ae">1</span><span style="color:#1f2328">)</span><span style="color:#fff"> </span><span style="color:#cf222e">NOT</span><span style="color:#fff"> </span><span style="color:#cf222e">NULL</span><span style="color:#1f2328">,</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span>City<span style="color:#fff"> </span><span style="color:#6639ba">int</span><span style="color:#fff"> </span><span style="color:#cf222e">NOT</span><span style="color:#fff"> </span><span style="color:#cf222e">NULL</span><span style="color:#1f2328">,</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#6639ba">int</span><span style="color:#fff"> </span><span style="color:#cf222e">NOT</span><span style="color:#fff"> </span><span style="color:#cf222e">NULL</span><span style="color:#1f2328">,</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span>Name<span style="color:#fff"> </span><span style="color:#6639ba">varchar</span><span style="color:#1f2328">(</span><span style="color:#cf222e">max</span><span style="color:#1f2328">)</span><span style="color:#fff"> </span><span style="color:#cf222e">NULL</span><span style="color:#1f2328">,</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">     </span><span style="color:#cf222e">CONSTRAINT</span><span style="color:#fff"> </span><span style="color:#1f2328">[</span>PK_Store<span style="color:#1f2328">]</span><span style="color:#fff"> </span><span style="color:#cf222e">PRIMARY</span><span style="color:#fff"> </span><span style="color:#cf222e">KEY</span><span style="color:#fff"> </span>CLUSTERED<span style="color:#fff"> </span><span style="color:#1f2328">([</span>Id<span style="color:#1f2328">]</span><span style="color:#fff"> </span><span style="color:#cf222e">ASC</span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">GO</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">CREATE</span><span style="color:#fff"> </span>NONCLUSTERED<span style="color:#fff"> </span><span style="color:#cf222e">INDEX</span><span style="color:#fff"> </span><span style="color:#1f2328">[</span>IX_Store<span style="color:#1f2328">]</span><span style="color:#fff"> </span><span style="color:#cf222e">ON</span><span style="color:#fff"> </span><span style="color:#1f2328">[</span>dbo<span style="color:#1f2328">].[</span>Store<span style="color:#1f2328">]</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#1f2328">(</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span>City<span style="color:#fff"> </span><span style="color:#cf222e">ASC</span><span style="color:#1f2328">,</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#cf222e">ASC</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">GO</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">TRUNCATE</span><span style="color:#fff"> </span><span style="color:#cf222e">TABLE</span><span style="color:#fff"> </span>Store<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">INSERT</span><span style="color:#fff"> </span>Store<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">SELECT</span><span style="color:#fff"> </span>i<span style="color:#fff"> </span><span style="color:#0550ae">%</span><span style="color:#fff"> </span><span style="color:#0550ae">101</span><span style="color:#1f2328">,</span><span style="color:#fff"> </span>i<span style="color:#fff"> </span><span style="color:#0550ae">%</span><span style="color:#fff"> </span><span style="color:#0550ae">11</span><span style="color:#1f2328">,</span><span style="color:#fff"> </span><span style="color:#0a3069">&#39;Store &#39;</span><span style="color:#fff"> </span><span style="color:#0550ae">+</span><span style="color:#fff"> </span><span style="color:#cf222e">CAST</span><span style="color:#1f2328">(</span>i<span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span><span style="color:#6639ba">VARCHAR</span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">  </span><span style="color:#cf222e">FROM</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">  </span><span style="color:#1f2328">(</span><span style="color:#cf222e">SELECT</span><span style="color:#fff"> </span>TOP<span style="color:#fff"> </span><span style="color:#0550ae">100000</span><span style="color:#fff"> </span>ROW_NUMBER<span style="color:#1f2328">()</span><span style="color:#fff"> </span>OVER<span style="color:#fff"> </span><span style="color:#1f2328">(</span><span style="color:#cf222e">ORDER</span><span style="color:#fff"> </span><span style="color:#cf222e">BY</span><span style="color:#fff"> </span>s1<span style="color:#1f2328">.[</span>object_id<span style="color:#1f2328">])</span><span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span>i<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">     </span><span style="color:#cf222e">FROM</span><span style="color:#fff"> </span>sys<span style="color:#1f2328">.</span>all_objects<span style="color:#fff">  </span>s1<span style="color:#1f2328">,</span><span style="color:#fff"> </span>sys<span style="color:#1f2328">.</span>all_objects<span style="color:#fff">  </span>s2<span style="color:#1f2328">)</span><span style="color:#fff"> </span>numbers<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">GO</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">CREATE</span><span style="color:#fff"> </span><span style="color:#cf222e">TABLE</span><span style="color:#fff"> </span>StoreRequest<span style="color:#fff"> </span><span style="color:#1f2328">(</span>City<span style="color:#fff"> </span><span style="color:#6639ba">int</span><span style="color:#fff"> </span><span style="color:#cf222e">NOT</span><span style="color:#fff"> </span><span style="color:#cf222e">NULL</span><span style="color:#1f2328">,</span><span style="color:#fff"> </span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#6639ba">int</span><span style="color:#fff"> </span><span style="color:#cf222e">NOT</span><span style="color:#fff"> </span><span style="color:#cf222e">NULL</span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">GO</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">DELETE</span><span style="color:#fff"> </span>StoreRequest<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">INSERT</span><span style="color:#fff"> </span>StoreRequest<span style="color:#fff"> </span><span style="color:#cf222e">values</span><span style="color:#fff"> </span><span style="color:#1f2328">(</span><span style="color:#0550ae">55</span><span style="color:#1f2328">,</span><span style="color:#fff"> </span><span style="color:#0550ae">1</span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">INSERT</span><span style="color:#fff"> </span>StoreRequest<span style="color:#fff"> </span><span style="color:#cf222e">values</span><span style="color:#fff"> </span><span style="color:#1f2328">(</span><span style="color:#0550ae">66</span><span style="color:#1f2328">,</span><span style="color:#fff"> </span><span style="color:#0550ae">2</span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">GO</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"></span><span style="color:#cf222e">SELECT</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">  </span><span style="color:#cf222e">FROM</span><span style="color:#fff"> </span>StoreRequest<span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span>r<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">       </span><span style="color:#cf222e">INNER</span><span style="color:#fff"> </span><span style="color:#cf222e">JOIN</span><span style="color:#fff"> </span>Store<span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span>s<span style="color:#fff">  </span><span style="color:#cf222e">WITH</span><span style="color:#1f2328">(</span><span style="color:#cf222e">INDEX</span><span style="color:#1f2328">(</span>IX_Store<span style="color:#1f2328">),</span><span style="color:#fff"> </span>FORCESEEK<span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">               </span><span style="color:#cf222e">ON</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#0550ae">=</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#cf222e">AND</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#0550ae">=</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"> </span><span style="color:#cf222e">WHERE</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#0550ae">&lt;&gt;</span><span style="color:#fff"> </span><span style="color:#0550ae">1</span><span style="color:#fff"> </span><span style="color:#cf222e">OR</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#0550ae">&lt;&gt;</span><span style="color:#fff"> </span><span style="color:#0550ae">55</span><span style="color:#fff">
+</span></span></span></code></pre></div><p>In this script I create two tables: Store with 100k rows and StoreRequest with 2 rows. And then I make a query where I join them on two columns. The WHERE clause contains two restrictions: one for each of the tables with OR clause in between. It sounds more complicated than it really is.</p>
 <p>INDEX and FORCESEEK hints are there to force the engine to use this index to be able to see the statistics. Otherwise it considers the index to be too heavy to use. And that is why:</p>
 <p><img src="2014estimates.png" alt="Execution plan in SQL Server 2014"></p>
 <p>You see the significant error in Estimated Number of Rows vs Actual Number of Rows. The estimator actually thinks that the query is going to yield half of all rows in that table!</p>
 <p>Good news: it&rsquo;s actually easy to fix that problem in this case. We should just change the WHERE clause to use same table for both sides of OR condition:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#00f">SELECT</span> s.City
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
-</span></span><span style="display:flex;"><span>       <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
-</span></span><span style="display:flex;"><span>               <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
-</span></span><span style="display:flex;"><span> <span style="color:#00f">WHERE</span> s.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55
-</span></span></code></pre></div><p>Estimator is able to handle this situation correctly:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#cf222e">SELECT</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">  </span><span style="color:#cf222e">FROM</span><span style="color:#fff"> </span>StoreRequest<span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span>r<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">       </span><span style="color:#cf222e">INNER</span><span style="color:#fff"> </span><span style="color:#cf222e">JOIN</span><span style="color:#fff"> </span>Store<span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span>s<span style="color:#fff">  </span><span style="color:#cf222e">WITH</span><span style="color:#1f2328">(</span><span style="color:#cf222e">INDEX</span><span style="color:#1f2328">(</span>IX_Store<span style="color:#1f2328">),</span><span style="color:#fff"> </span>FORCESEEK<span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">               </span><span style="color:#cf222e">ON</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#0550ae">=</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#cf222e">AND</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#0550ae">=</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"> </span><span style="color:#cf222e">WHERE</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#0550ae">&lt;&gt;</span><span style="color:#fff"> </span><span style="color:#0550ae">1</span><span style="color:#fff"> </span><span style="color:#cf222e">OR</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#0550ae">&lt;&gt;</span><span style="color:#fff"> </span><span style="color:#0550ae">55</span><span style="color:#fff">
+</span></span></span></code></pre></div><p>Estimator is able to handle this situation correctly:</p>
 <p><img src="2014estimates_good.png" alt="Execution plan in SQL Server 2014 as it should be"></p>
 <p>Same fix worked for our production query. That query was much more complicated so it took more time to find the reason.</p>
 <p>To prove that this bug is fresh for the new cardinality estimator, we can switch the original query to the legacy cardinality estimator with flag 9481:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span> <span style="color:#00f">SELECT</span> s.City
-</span></span><span style="display:flex;"><span>   <span style="color:#00f">FROM</span> StoreRequest <span style="color:#00f">AS</span> r
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">INNER</span> <span style="color:#00f">JOIN</span> Store <span style="color:#00f">AS</span> s  <span style="color:#00f">WITH</span>(<span style="color:#00f">INDEX</span>(IX_Store), FORCESEEK)
-</span></span><span style="display:flex;"><span>                <span style="color:#00f">ON</span> s.City = r.City <span style="color:#00f">AND</span> s.<span style="color:#00f">Size</span> = r.<span style="color:#00f">Size</span>
-</span></span><span style="display:flex;"><span>  <span style="color:#00f">WHERE</span> r.<span style="color:#00f">Size</span> &lt;&gt; 1 <span style="color:#00f">OR</span> s.City &lt;&gt; 55
-</span></span><span style="display:flex;"><span> <span style="color:#00f">OPTION</span>(QUERYTRACEON 9481)
-</span></span></code></pre></div><p>And then we get this:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#fff"> </span><span style="color:#cf222e">SELECT</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">   </span><span style="color:#cf222e">FROM</span><span style="color:#fff"> </span>StoreRequest<span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span>r<span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">        </span><span style="color:#cf222e">INNER</span><span style="color:#fff"> </span><span style="color:#cf222e">JOIN</span><span style="color:#fff"> </span>Store<span style="color:#fff"> </span><span style="color:#cf222e">AS</span><span style="color:#fff"> </span>s<span style="color:#fff">  </span><span style="color:#cf222e">WITH</span><span style="color:#1f2328">(</span><span style="color:#cf222e">INDEX</span><span style="color:#1f2328">(</span>IX_Store<span style="color:#1f2328">),</span><span style="color:#fff"> </span>FORCESEEK<span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">                </span><span style="color:#cf222e">ON</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#0550ae">=</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#cf222e">AND</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#0550ae">=</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff">  </span><span style="color:#cf222e">WHERE</span><span style="color:#fff"> </span>r<span style="color:#1f2328">.</span><span style="color:#cf222e">Size</span><span style="color:#fff"> </span><span style="color:#0550ae">&lt;&gt;</span><span style="color:#fff"> </span><span style="color:#0550ae">1</span><span style="color:#fff"> </span><span style="color:#cf222e">OR</span><span style="color:#fff"> </span>s<span style="color:#1f2328">.</span>City<span style="color:#fff"> </span><span style="color:#0550ae">&lt;&gt;</span><span style="color:#fff"> </span><span style="color:#0550ae">55</span><span style="color:#fff">
+</span></span></span><span style="display:flex;"><span><span style="color:#fff"> </span><span style="color:#cf222e">OPTION</span><span style="color:#1f2328">(</span>QUERYTRACEON<span style="color:#fff"> </span><span style="color:#0550ae">9481</span><span style="color:#1f2328">)</span><span style="color:#fff">
+</span></span></span></code></pre></div><p>And then we get this:</p>
 <p><img src="2012estimates.png" alt="Execution plan in SQL Server 2012"></p>
 <p>Which is as good as the best attempt of SQL Server 2014 and much-much better than the worst one.</p>
 <p>I posted this repro to <a href="https://connect.microsoft.com/SQLServer/feedback/details/1086125/cardinality-estimator-2014-is-off-with-or-in-where-clause">SQL Server forum</a>. Here is the comment that I got from Erland Sommarskog, SQL Server MVP:</p>
@@ -352,26 +352,7 @@ Happy coding!</p>
     <div id="comments" class="row justify-content-center mb-5">
         <div class="col-md-8">
             
-            <div id="disqus_thread"></div>
-<script>
-    window.disqus_config = function () {
-    
-    
-    
-    };
-    (function() {
-        if (["localhost", "127.0.0.1"].indexOf(window.location.hostname) != -1) {
-            document.getElementById('disqus_thread').innerHTML = 'Disqus comments not available by default when the website is previewed locally.';
-            return;
-        }
-        var d = document, s = d.createElement('script'); s.async = true;
-        s.src = '//' + "mikhailio" + '.disqus.com/embed.js';
-        s.setAttribute('data-timestamp', +new Date());
-        (d.head || d.body).appendChild(s);
-    })();
-</script>
-<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
-<a href="https://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+            
             
         </div>
     </div>
@@ -391,6 +372,24 @@ Happy coding!</p>
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

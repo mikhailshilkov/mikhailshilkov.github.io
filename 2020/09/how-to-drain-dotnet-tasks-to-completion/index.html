@@ -207,101 +207,101 @@
 <p>Yet, they kick off the actual operations of resource creation as background tasks. An end-user does not see these tasks and does not await them.</p>
 <p>Nonetheless, Pulumi must not stop the program execution until all the tasks are completed. The SDK should collect all open tasks and reliably await them.</p>
 <p>The following model illustrates the goal:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">static</span> <span style="color:#00f">async</span> Task Main()
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">for</span> (<span style="color:#2b91af">int</span> i = 0; i &lt; N; i++)
-</span></span><span style="display:flex;"><span>        DoWork(<span style="color:#a31515">$&#34;Job {i}&#34;</span>); <span style="color:#008000">// creates a Task and returns immediately</span>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">static</span> <span style="color:#cf222e">async</span> Task Main<span style="color:#1f2328">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">for</span> <span style="color:#1f2328">(</span><span style="color:#cf222e">int</span> i <span style="color:#1f2328">=</span> <span style="color:#0550ae">0</span><span style="color:#1f2328">;</span> i <span style="color:#1f2328">&lt;</span> N<span style="color:#1f2328">;</span> i<span style="color:#1f2328">++)</span>
+</span></span><span style="display:flex;"><span>        DoWork<span style="color:#1f2328">(</span><span style="color:#0a3069">$&#34;Job {i}&#34;</span><span style="color:#1f2328">);</span> <span style="color:#57606a">// creates a Task and returns immediately</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">await</span> WaitForAllOpenTasksToComplete();
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">await</span> WaitForAllOpenTasksToComplete<span style="color:#1f2328">();</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">static</span> <span style="color:#00f">void</span> DoWork(<span style="color:#2b91af">string</span> message)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    RegisterTask(message, RunAsync());
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">async</span> Task RunAsync()
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#2b91af">var</span> delay = <span style="color:#00f">new</span> Random().Next(1000);
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">await</span> Task.Delay(delay).ConfigureAwait(<span style="color:#00f">false</span>);
-</span></span><span style="display:flex;"><span>        Log(<span style="color:#a31515">$&#34;{message} finishing&#34;</span>);
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">static</span> <span style="color:#cf222e">void</span> DoWork<span style="color:#1f2328">(</span><span style="color:#cf222e">string</span> message<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    RegisterTask<span style="color:#1f2328">(</span>message<span style="color:#1f2328">,</span> RunAsync<span style="color:#1f2328">());</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">async</span> Task RunAsync<span style="color:#1f2328">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">var</span> delay <span style="color:#1f2328">=</span> <span style="color:#cf222e">new</span> Random<span style="color:#1f2328">().</span>Next<span style="color:#1f2328">(</span><span style="color:#0550ae">1000</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">await</span> Task<span style="color:#1f2328">.</span>Delay<span style="color:#1f2328">(</span>delay<span style="color:#1f2328">).</span>ConfigureAwait<span style="color:#1f2328">(</span><span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        Log<span style="color:#1f2328">(</span><span style="color:#0a3069">$&#34;{message} finishing&#34;</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>The <code>DoWork</code> method creates a <code>Task</code> that pauses for a random delay below one second. It passes the task to a <code>RegisterTask</code> method (to be defined) and returns without awaiting.</p>
 <p>In our real use case, tasks may also produce new tasks, which can produce even more tasks, and so on. I emulate this by extending the <code>DoWork</code> method with an extra parameter asking to schedule more work:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">static</span> <span style="color:#00f">void</span> DoWork(<span style="color:#2b91af">string</span> message, <span style="color:#2b91af">bool</span> moreWork = <span style="color:#00f">true</span>)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    RegisterTask(message, RunAsync());
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">async</span> Task RunAsync()
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#2b91af">var</span> delay = <span style="color:#00f">new</span> Random().Next(1000);
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">await</span> Task.Delay(delay).ConfigureAwait(<span style="color:#00f">false</span>);
-</span></span><span style="display:flex;"><span>        Log(<span style="color:#a31515">$&#34;{message} finishing&#34;</span>);
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">static</span> <span style="color:#cf222e">void</span> DoWork<span style="color:#1f2328">(</span><span style="color:#cf222e">string</span> message<span style="color:#1f2328">,</span> <span style="color:#cf222e">bool</span> moreWork <span style="color:#1f2328">=</span> <span style="color:#cf222e">true</span><span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    RegisterTask<span style="color:#1f2328">(</span>message<span style="color:#1f2328">,</span> RunAsync<span style="color:#1f2328">());</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">async</span> Task RunAsync<span style="color:#1f2328">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">var</span> delay <span style="color:#1f2328">=</span> <span style="color:#cf222e">new</span> Random<span style="color:#1f2328">().</span>Next<span style="color:#1f2328">(</span><span style="color:#0550ae">1000</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">await</span> Task<span style="color:#1f2328">.</span>Delay<span style="color:#1f2328">(</span>delay<span style="color:#1f2328">).</span>ConfigureAwait<span style="color:#1f2328">(</span><span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        Log<span style="color:#1f2328">(</span><span style="color:#0a3069">$&#34;{message} finishing&#34;</span><span style="color:#1f2328">);</span>
 </span></span><span style="display:flex;"><span>        
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">if</span> (moreWork)
-</span></span><span style="display:flex;"><span>        {
-</span></span><span style="display:flex;"><span>            <span style="color:#00f">for</span> (<span style="color:#2b91af">int</span> i = 0; i &lt; N; i++)
-</span></span><span style="display:flex;"><span>                DoWork(<span style="color:#a31515">$&#34;{message}.{i}&#34;</span>, <span style="color:#00f">false</span>);
-</span></span><span style="display:flex;"><span>        }
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">if</span> <span style="color:#1f2328">(</span>moreWork<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#cf222e">for</span> <span style="color:#1f2328">(</span><span style="color:#cf222e">int</span> i <span style="color:#1f2328">=</span> <span style="color:#0550ae">0</span><span style="color:#1f2328">;</span> i <span style="color:#1f2328">&lt;</span> N<span style="color:#1f2328">;</span> i<span style="color:#1f2328">++)</span>
+</span></span><span style="display:flex;"><span>                DoWork<span style="color:#1f2328">(</span><span style="color:#0a3069">$&#34;{message}.{i}&#34;</span><span style="color:#1f2328">,</span> <span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>The <code>Main</code> method creates initial work items and needs to await the completion of all of the tasks, immediate or descendant ones, with <code>WaitForAllOpenTasksToComplete</code>.</p>
 <p>Let&rsquo;s look at several options on how to implement such processing.</p>
 <h2 id="registering-tasks">Registering Tasks</h2>
 <p>First thing, I need to store the in-flight tasks somewhere, so I&rsquo;ll allocate a static collection for that. I want to keep a description with each task, so my collection is a dictionary:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">static</span> <span style="color:#00f">readonly</span> Dictionary&lt;Task, <span style="color:#2b91af">string</span>&gt; _inFlightTasks = <span style="color:#00f">new</span> Dictionary&lt;Task, <span style="color:#2b91af">string</span>&gt;();
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">static</span> <span style="color:#cf222e">readonly</span> Dictionary<span style="color:#1f2328">&lt;</span>Task<span style="color:#1f2328">,</span> <span style="color:#cf222e">string</span><span style="color:#1f2328">&gt;</span> _inFlightTasks <span style="color:#1f2328">=</span> <span style="color:#cf222e">new</span> Dictionary<span style="color:#1f2328">&lt;</span>Task<span style="color:#1f2328">,</span> <span style="color:#cf222e">string</span><span style="color:#1f2328">&gt;();</span>
 </span></span></code></pre></div><p>Now I can implement a method to register a new task:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">static</span> <span style="color:#00f">void</span> RegisterTask(<span style="color:#2b91af">string</span> description, Task task)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">lock</span> (_inFlightTasks)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// Duplicates may happen if we try registering things like Task.CompletedTask.</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// We&#39;ll ignore duplicates for now.</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">if</span> (!_inFlightTasks.ContainsKey(task))
-</span></span><span style="display:flex;"><span>        {
-</span></span><span style="display:flex;"><span>            _inFlightTasks.Add(task, description);
-</span></span><span style="display:flex;"><span>        }
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">static</span> <span style="color:#cf222e">void</span> RegisterTask<span style="color:#1f2328">(</span><span style="color:#cf222e">string</span> description<span style="color:#1f2328">,</span> Task task<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">lock</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// Duplicates may happen if we try registering things like Task.CompletedTask.</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// We&#39;ll ignore duplicates for now.</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">if</span> <span style="color:#1f2328">(!</span>_inFlightTasks<span style="color:#1f2328">.</span>ContainsKey<span style="color:#1f2328">(</span>task<span style="color:#1f2328">))</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>            _inFlightTasks<span style="color:#1f2328">.</span>Add<span style="color:#1f2328">(</span>task<span style="color:#1f2328">,</span> description<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>Now, how do we implement the awaiting of these tasks?</p>
 <h2 id="awaiting-the-tasks">Awaiting the Tasks</h2>
 <p>We can&rsquo;t wait for the tasks just once, because new tasks may be coming over time. Therefore, the <code>WaitForAllOpenTasksToComplete</code> will have a loop to wait until all the in-flight tasks are drained. Here is a draft without the actual awaiting yet:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task WaitForAllOpenTasksToComplete_Draft()
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#008000">// Keep looping as long as there are outstanding tasks that are still running.</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">while</span> (<span style="color:#00f">true</span>)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#2b91af">var</span> tasks = <span style="color:#00f">new</span> List&lt;Task&gt;();
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">lock</span> (_inFlightTasks)
-</span></span><span style="display:flex;"><span>        {
-</span></span><span style="display:flex;"><span>            <span style="color:#00f">if</span> (_inFlightTasks.Count == 0)
-</span></span><span style="display:flex;"><span>            {
-</span></span><span style="display:flex;"><span>                <span style="color:#008000">// No more tasks in flight: exit the loop.</span>
-</span></span><span style="display:flex;"><span>                <span style="color:#00f">return</span>;
-</span></span><span style="display:flex;"><span>            }
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">private</span> <span style="color:#cf222e">static</span> <span style="color:#cf222e">async</span> Task WaitForAllOpenTasksToComplete_Draft<span style="color:#1f2328">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#57606a">// Keep looping as long as there are outstanding tasks that are still running.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">while</span> <span style="color:#1f2328">(</span><span style="color:#cf222e">true</span><span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">var</span> tasks <span style="color:#1f2328">=</span> <span style="color:#cf222e">new</span> List<span style="color:#1f2328">&lt;</span>Task<span style="color:#1f2328">&gt;();</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">lock</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#cf222e">if</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">.</span>Count <span style="color:#1f2328">==</span> <span style="color:#0550ae">0</span><span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#57606a">// No more tasks in flight: exit the loop.</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#cf222e">return</span><span style="color:#1f2328">;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>            <span style="color:#008000">// Grab all the tasks we currently have running.</span>
-</span></span><span style="display:flex;"><span>            tasks.AddRange(_inFlightTasks.Keys);
-</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>            <span style="color:#57606a">// Grab all the tasks we currently have running.</span>
+</span></span><span style="display:flex;"><span>            tasks<span style="color:#1f2328">.</span>AddRange<span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">.</span>Keys<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// TODO: await tasks, then proceed to the next iteration</span>
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// TODO: await tasks, then proceed to the next iteration</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>How do we await these tasks?</p>
 <h2 id="use-whenall">Use WhenAll</h2>
 <p>The obvious option is to use <code>WhenAll</code> and then remove all the tasks from the in-flight collections:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#008000">// ... we are inside the loop</span>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#57606a">// ... we are inside the loop</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">await</span> Task.WhenAll(tasks).ConfigureAwait(<span style="color:#00f">false</span>);
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">await</span> Task<span style="color:#1f2328">.</span>WhenAll<span style="color:#1f2328">(</span>tasks<span style="color:#1f2328">).</span>ConfigureAwait<span style="color:#1f2328">(</span><span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
 </span></span><span style="display:flex;"><span>        
-</span></span><span style="display:flex;"><span><span style="color:#00f">lock</span> (_inFlightTasks)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">foreach</span> (<span style="color:#2b91af">var</span> task <span style="color:#00f">in</span> tasks)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        Log(<span style="color:#a31515">$&#34;{_inFlightTasks[task]} handled&#34;</span>);
-</span></span><span style="display:flex;"><span>        _inFlightTasks.Remove(task);
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">lock</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">foreach</span> <span style="color:#1f2328">(</span><span style="color:#cf222e">var</span> task <span style="color:#cf222e">in</span> tasks<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        Log<span style="color:#1f2328">(</span><span style="color:#0a3069">$&#34;{_inFlightTasks[task]} handled&#34;</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        _inFlightTasks<span style="color:#1f2328">.</span>Remove<span style="color:#1f2328">(</span>task<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#008000">// ... the loop continues</span>
+</span></span><span style="display:flex;"><span><span style="color:#57606a">// ... the loop continues</span>
 </span></span></code></pre></div><p>Let&rsquo;s run the program for <code>N</code> = 2 (two parent tasks, each creating two child tasks) and log the messages and timings:</p>
 <pre tabindex="0"><code>0.048: Job 0 finishing
 0.464: Job 0.0 finishing
@@ -322,16 +322,16 @@
 <p>How can we respond to tasks one-by-one?</p>
 <h2 id="use-whenany">Use WhenAny</h2>
 <p>The next option is to use <code>Task.WhenAny</code> to handle the completion of tasks one-by-one. <code>WhenAny</code> accepts a collection of tasks and returns the first one that completes. After the <code>await</code> operator returns the first completed task, we can log it and exclude it from the in-flight tasks list. Then, we call <code>WhenAny</code> again with the list of all remaining tasks.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#2b91af">var</span> task = <span style="color:#00f">await</span> Task.WhenAny(tasks).ConfigureAwait(<span style="color:#00f">false</span>);
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">var</span> task <span style="color:#1f2328">=</span> <span style="color:#cf222e">await</span> Task<span style="color:#1f2328">.</span>WhenAny<span style="color:#1f2328">(</span>tasks<span style="color:#1f2328">).</span>ConfigureAwait<span style="color:#1f2328">(</span><span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
 </span></span><span style="display:flex;"><span>                
-</span></span><span style="display:flex;"><span><span style="color:#00f">lock</span> (_inFlightTasks)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    Log(<span style="color:#a31515">$&#34;{_inFlightTasks[task]} handled&#34;</span>);
-</span></span><span style="display:flex;"><span>    _inFlightTasks.Remove(task);
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">lock</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    Log<span style="color:#1f2328">(</span><span style="color:#0a3069">$&#34;{_inFlightTasks[task]} handled&#34;</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>    _inFlightTasks<span style="color:#1f2328">.</span>Remove<span style="color:#1f2328">(</span>task<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#008000">// Now actually await the returned task and realize any exceptions it may have thrown.</span>
-</span></span><span style="display:flex;"><span><span style="color:#00f">await</span> task.ConfigureAwait(<span style="color:#00f">false</span>);
+</span></span><span style="display:flex;"><span><span style="color:#57606a">// Now actually await the returned task and realize any exceptions it may have thrown.</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">await</span> task<span style="color:#1f2328">.</span>ConfigureAwait<span style="color:#1f2328">(</span><span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
 </span></span></code></pre></div><p>Let&rsquo;s run the modified program and log messages again:</p>
 <pre tabindex="0"><code>0308: Job 0 finishing
 0312: Job 0 handled
@@ -372,59 +372,59 @@
 <h2 id="custom-await-logic">Custom Await Logic</h2>
 <p>It looks like the standard library doesn&rsquo;t have a method that satisfies the requirements. The custom implementation consists of multiple parts.</p>
 <p>First, there is a <code>TaskCompletionSource</code> that tracks the overall task completion:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">private</span> <span style="color:#00f">static</span> TaskCompletionSource&lt;<span style="color:#2b91af">int</span>&gt; Tcs = <span style="color:#00f">new</span> TaskCompletionSource&lt;<span style="color:#2b91af">int</span>&gt;(TaskCreationOptions.RunContinuationsAsynchronously);
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">private</span> <span style="color:#cf222e">static</span> TaskCompletionSource<span style="color:#1f2328">&lt;</span><span style="color:#cf222e">int</span><span style="color:#1f2328">&gt;</span> Tcs <span style="color:#1f2328">=</span> <span style="color:#cf222e">new</span> TaskCompletionSource<span style="color:#1f2328">&lt;</span><span style="color:#cf222e">int</span><span style="color:#1f2328">&gt;(</span>TaskCreationOptions<span style="color:#1f2328">.</span>RunContinuationsAsynchronously<span style="color:#1f2328">);</span>
 </span></span></code></pre></div><p>Now, all that the new <code>WaitForAllOpenTasksToComplete</code> does is waiting for this completion source to return:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">private</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task WaitForAllOpenTasksToComplete()
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">await</span> Tcs.Task.ConfigureAwait(<span style="color:#00f">false</span>);
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">private</span> <span style="color:#cf222e">static</span> <span style="color:#cf222e">async</span> Task WaitForAllOpenTasksToComplete<span style="color:#1f2328">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">await</span> Tcs<span style="color:#1f2328">.</span>Task<span style="color:#1f2328">.</span>ConfigureAwait<span style="color:#1f2328">(</span><span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>It becomes the responsibility of the <code>RegisterTask</code> method to initiate the completion of the task:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">static</span> <span style="color:#00f">void</span> RegisterTask(<span style="color:#2b91af">string</span> description, Task task)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">lock</span> (_inFlightTasks)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// Duplicates may happen if we try registering things like Task.CompletedTask.</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// We&#39;ll ignore duplicates for now.</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">if</span> (!_inFlightTasks.ContainsKey(task))
-</span></span><span style="display:flex;"><span>        {
-</span></span><span style="display:flex;"><span>            _inFlightTasks.Add(task, description);
-</span></span><span style="display:flex;"><span>        }
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>    HandleCompletion(task);
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">static</span> <span style="color:#cf222e">void</span> RegisterTask<span style="color:#1f2328">(</span><span style="color:#cf222e">string</span> description<span style="color:#1f2328">,</span> Task task<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">lock</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// Duplicates may happen if we try registering things like Task.CompletedTask.</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// We&#39;ll ignore duplicates for now.</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">if</span> <span style="color:#1f2328">(!</span>_inFlightTasks<span style="color:#1f2328">.</span>ContainsKey<span style="color:#1f2328">(</span>task<span style="color:#1f2328">))</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>            _inFlightTasks<span style="color:#1f2328">.</span>Add<span style="color:#1f2328">(</span>task<span style="color:#1f2328">,</span> description<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    HandleCompletion<span style="color:#1f2328">(</span>task<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>All the actual logic resides in <code>HandleCompletion</code> method:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#00f">static</span> <span style="color:#00f">async</span> <span style="color:#00f">void</span> HandleCompletion(Task task)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">try</span>
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// Wait for the task completion.</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">await</span> task.ConfigureAwait(<span style="color:#00f">false</span>);
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cs" data-lang="cs"><span style="display:flex;"><span><span style="color:#cf222e">static</span> <span style="color:#cf222e">async</span> <span style="color:#cf222e">void</span> HandleCompletion<span style="color:#1f2328">(</span>Task task<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">try</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// Wait for the task completion.</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">await</span> task<span style="color:#1f2328">.</span>ConfigureAwait<span style="color:#1f2328">(</span><span style="color:#cf222e">false</span><span style="color:#1f2328">);</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>        Log(<span style="">$</span><span style="color:#a31515">&#34;{_inFlightTasks[task]} handled);
-</span></span></span><span style="display:flex;"><span><span style="color:#a31515"></span>    }
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">catch</span> (OperationCanceledException)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        Tcs.TrySetCanceled();
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">catch</span> (Exception ex)
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        Tcs.TrySetException(ex);
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">finally</span>
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#008000">// Once finished, remove the task from the set of tasks that are running.</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#00f">lock</span> (_inFlightTasks)
-</span></span><span style="display:flex;"><span>        {
-</span></span><span style="display:flex;"><span>            _inFlightTasks.Remove(task);
+</span></span><span style="display:flex;"><span>        Log<span style="color:#1f2328">(</span><span style="color:#f6f8fa;background-color:#82071e">$</span><span style="color:#0a3069">&#34;{_inFlightTasks[task]} handled);
+</span></span></span><span style="display:flex;"><span><span style="color:#0a3069"></span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">catch</span> <span style="color:#1f2328">(</span>OperationCanceledException<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        Tcs<span style="color:#1f2328">.</span>TrySetCanceled<span style="color:#1f2328">();</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">catch</span> <span style="color:#1f2328">(</span>Exception ex<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        Tcs<span style="color:#1f2328">.</span>TrySetException<span style="color:#1f2328">(</span>ex<span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">finally</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#57606a">// Once finished, remove the task from the set of tasks that are running.</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#cf222e">lock</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>            _inFlightTasks<span style="color:#1f2328">.</span>Remove<span style="color:#1f2328">(</span>task<span style="color:#1f2328">);</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>            <span style="color:#008000">// Check if all the tasks are completed and signal the completion source if so.</span>
-</span></span><span style="display:flex;"><span>            <span style="color:#00f">if</span> (_inFlightTasks.Count == 0)
-</span></span><span style="display:flex;"><span>            {
-</span></span><span style="display:flex;"><span>                Tcs.TrySetResult(0);
-</span></span><span style="display:flex;"><span>            }
-</span></span><span style="display:flex;"><span>        }
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>            <span style="color:#57606a">// Check if all the tasks are completed and signal the completion source if so.</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#cf222e">if</span> <span style="color:#1f2328">(</span>_inFlightTasks<span style="color:#1f2328">.</span>Count <span style="color:#1f2328">==</span> <span style="color:#0550ae">0</span><span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>                Tcs<span style="color:#1f2328">.</span>TrySetResult<span style="color:#1f2328">(</span><span style="color:#0550ae">0</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><h2 id="testing-it-out">Testing It Out</h2>
 <p>Let&rsquo;s make sure that the custom await logic works as desired. Here is the output for the N=2 case:</p>
 <pre tabindex="0"><code>0549: Job 1 finishing
@@ -532,6 +532,24 @@
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 

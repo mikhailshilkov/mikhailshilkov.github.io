@@ -229,30 +229,30 @@
 </ol>
 <h3 id="net-azure-function">.NET Azure Function</h3>
 <p>Use your favorite tool to create a new Function App. I employed <code>func</code> CLI to create a new Function App project in C# and define an HTTP Function &ldquo;HttpExample&rdquo;.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span>[FunctionName(&#34;HttpExample&#34;)]
-</span></span><span style="display:flex;"><span><span style="color:#00f">public</span> <span style="color:#00f">static</span> <span style="color:#00f">async</span> Task&lt;IActionResult&gt; Run(
-</span></span><span style="display:flex;"><span>    [HttpTrigger(AuthorizationLevel.Anonymous, &#34;get&#34;)] HttpRequest req)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#2b91af">string</span> name = (<span style="color:#2b91af">string</span>)req.Query[<span style="color:#a31515">&#34;name&#34;</span>] ?? <span style="color:#a31515">&#34;World&#34;</span>;
-</span></span><span style="display:flex;"><span>    <span style="color:#2b91af">var</span> service = Environment.GetEnvironmentVariable(<span style="color:#a31515">&#34;K_SERVICE&#34;</span>) ?? <span style="color:#a31515">&#34;&lt;unknown&gt;&#34;</span>;
-</span></span><span style="display:flex;"><span>    <span style="color:#00f">return</span> <span style="color:#00f">new</span> OkObjectResult(<span style="color:#a31515">$&#34;Hello from Azure Function in {service}, {name}&#34;</span>);
-</span></span><span style="display:flex;"><span>}
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#1f2328">[FunctionName(&#34;HttpExample&#34;)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">public</span> <span style="color:#cf222e">static</span> <span style="color:#cf222e">async</span> Task<span style="color:#1f2328">&lt;</span>IActionResult<span style="color:#1f2328">&gt;</span> Run<span style="color:#1f2328">(</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">    [HttpTrigger(AuthorizationLevel.Anonymous, &#34;get&#34;)]</span> HttpRequest req<span style="color:#1f2328">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">string</span> name <span style="color:#1f2328">=</span> <span style="color:#1f2328">(</span><span style="color:#cf222e">string</span><span style="color:#1f2328">)</span>req<span style="color:#1f2328">.</span>Query<span style="color:#1f2328">[</span><span style="color:#0a3069">&#34;name&#34;</span><span style="color:#1f2328">]</span> <span style="color:#1f2328">??</span> <span style="color:#0a3069">&#34;World&#34;</span><span style="color:#1f2328">;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">var</span> service <span style="color:#1f2328">=</span> Environment<span style="color:#1f2328">.</span>GetEnvironmentVariable<span style="color:#1f2328">(</span><span style="color:#0a3069">&#34;K_SERVICE&#34;</span><span style="color:#1f2328">)</span> <span style="color:#1f2328">??</span> <span style="color:#0a3069">&#34;&lt;unknown&gt;&#34;</span><span style="color:#1f2328">;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#cf222e">return</span> <span style="color:#cf222e">new</span> OkObjectResult<span style="color:#1f2328">(</span><span style="color:#0a3069">$&#34;Hello from Azure Function in {service}, {name}&#34;</span><span style="color:#1f2328">);</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
 </span></span></code></pre></div><p>It&rsquo;s a standard hello-world Function, except it also retrieves the value of the <code>K_SERVICE</code> environment variable and appends it to the response. This variable should be present when hosted in Cloud Run.</p>
 <h3 id="container-image">Container image</h3>
 <p>Now, we can wrap the Function App into a Docker image. Here is my <code>Dockerfile</code>:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-dockerfile" data-lang="dockerfile"><span style="display:flex;"><span><span style="color:#00f">FROM</span><span style="color:#a31515"> mcr.microsoft.com/dotnet/core/sdk:3.0 AS installer-env</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#00f">COPY</span> . /src/dotnet-function-app<span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#00f">RUN</span> cd /src/dotnet-function-app &amp;&amp; <span style="color:#a31515">\
-</span></span></span><span style="display:flex;"><span><span style="color:#a31515"></span>    mkdir -p /home/site/wwwroot &amp;&amp; <span style="color:#a31515">\
-</span></span></span><span style="display:flex;"><span><span style="color:#a31515"></span>    dotnet publish *.csproj --output /home/site/wwwroot<span style="">
-</span></span></span><span style="display:flex;"><span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#00f">FROM</span><span style="color:#a31515"> mcr.microsoft.com/azure-functions/dotnet:3.0</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#00f">ENV</span> AzureWebJobsScriptRoot=/home/site/wwwroot <span style="color:#a31515">\
-</span></span></span><span style="display:flex;"><span><span style="color:#a31515"></span>    AzureFunctionsJobHost__Logging__Console__IsEnabled=true <span style="color:#a31515">\
-</span></span></span><span style="display:flex;"><span><span style="color:#a31515"></span>    ASPNETCORE_URLS=http://+:8080<span style="">
-</span></span></span><span style="display:flex;"><span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#00f">COPY</span> --from=installer-env [<span style="color:#a31515">&#34;/home/site/wwwroot&#34;</span>, <span style="color:#a31515">&#34;/home/site/wwwroot&#34;</span>]<span style="">
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-dockerfile" data-lang="dockerfile"><span style="display:flex;"><span><span style="color:#cf222e">FROM</span><span style="color:#0a3069"> mcr.microsoft.com/dotnet/core/sdk:3.0 AS installer-env</span><span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e"></span><span style="color:#cf222e">COPY</span> . /src/dotnet-function-app<span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e"></span><span style="color:#cf222e">RUN</span> <span style="color:#6639ba">cd</span> /src/dotnet-function-app <span style="color:#0550ae">&amp;&amp;</span> <span style="color:#0a3069">\
+</span></span></span><span style="display:flex;"><span><span style="color:#0a3069"></span>    mkdir -p /home/site/wwwroot <span style="color:#0550ae">&amp;&amp;</span> <span style="color:#0a3069">\
+</span></span></span><span style="display:flex;"><span><span style="color:#0a3069"></span>    dotnet publish *.csproj --output /home/site/wwwroot<span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e"></span><span style="color:#cf222e">FROM</span><span style="color:#0a3069"> mcr.microsoft.com/azure-functions/dotnet:3.0</span><span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e"></span><span style="color:#cf222e">ENV</span> <span style="color:#953800">AzureWebJobsScriptRoot</span><span style="color:#0550ae">=</span>/home/site/wwwroot <span style="color:#0a3069">\
+</span></span></span><span style="display:flex;"><span><span style="color:#0a3069"></span>    <span style="color:#953800">AzureFunctionsJobHost__Logging__Console__IsEnabled</span><span style="color:#0550ae">=</span><span style="color:#6639ba">true</span> <span style="color:#0a3069">\
+</span></span></span><span style="display:flex;"><span><span style="color:#0a3069"></span>    <span style="color:#953800">ASPNETCORE_URLS</span><span style="color:#0550ae">=</span>http://+:8080<span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e">
+</span></span></span><span style="display:flex;"><span><span style="color:#f6f8fa;background-color:#82071e"></span><span style="color:#cf222e">COPY</span> --from<span style="color:#0550ae">=</span>installer-env <span style="color:#0550ae">[</span><span style="color:#0a3069">&#34;/home/site/wwwroot&#34;</span>, <span style="color:#0a3069">&#34;/home/site/wwwroot&#34;</span><span style="color:#0550ae">]</span><span style="color:#f6f8fa;background-color:#82071e">
 </span></span></span></code></pre></div><p>It uses the .NET Core SDK to build the application and publish the binaries to the <code>wwwroot</code> folder. Then I use the official Azure Functions host image to run the application from <code>wwwroot</code>.</p>
 <p>The only statement that I have to customize for Cloud Run is <code>ASPNETCORE_URLS=http://+:8080</code>. It instructs my application to listen on the port 8080: the one defined by the Cloud Run&rsquo;s <a href="https://cloud.google.com/run/docs/reference/container-contract">container contract</a>.</p>
 <h3 id="deploy-to-cloud-run">Deploy to Cloud Run</h3>
@@ -395,6 +395,24 @@ Hello from Azure Function in cloudrun-functions-4f40772, Mikhail
         </div>
     </div>
 </footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
 
 
 
