@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Inside Claude Code’s Web Tools: WebFetch vs WebSearch | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Inside Claude Code’s Web Tools: WebFetch vs WebSearch" />
+	<meta property="og:description" content="How Claude Code uses web tools under the hood: schemas, prompts, execution, and design trade-offs" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2025/10/claude-code-web-tools/" />
+
+	
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2025/10/claude-code-web-tools/teaser.jpg" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="AI" />
+	
+	<meta property="article:tag" content="Claude" />
+	
+
+	
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2025/10/claude-code-web-tools/teaser.jpg" />
+	
+	
+
+	<meta name="twitter:title" content="Inside Claude Code’s Web Tools: WebFetch vs WebSearch"/>
+	<meta name="twitter:description" content="How Claude Code uses web tools under the hood: schemas, prompts, execution, and design trade-offs"/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://x.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://x.com/intent/tweet?text=Inside%20Claude%20Code%e2%80%99s%20Web%20Tools%3a%20WebFetch%20vs%20WebSearch%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2025%2f10%2fclaude-code-web-tools%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Inside Claude Code’s Web Tools: WebFetch vs WebSearch</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Published on Oct 6, 2025
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 6 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Claude Code is a popular coding assistant. The tool isn&rsquo;t open-source, so I inspected its runtime behavior to understand the internals. This post documents what I&rsquo;ve seen in the two &ldquo;web&rdquo; tools—<code>WebFetch</code> and <code>WebSearch</code>—and how they&rsquo;re designed. The post is written for agent builders and curious developers.</p>
+<p>Claude Code comes with two built-in Web tools:</p>
+<ul>
+<li><strong><code>WebFetch</code></strong>: accepts a known URL to answer a focused question from that page; returns just the answer + minimal fetch metadata.</li>
+<li><strong><code>WebSearch</code></strong>: accepts a search query to find credible sources; returns a small set of relevant links and page titles.</li>
+</ul>
+<p>Let&rsquo;s dive into the details of both.</p>
+<h2 id="webfetch---page-retrieval">WebFetch - Page Retrieval</h2>
+<h3 id="tldr-how-it-works">TL;DR: How it works</h3>
+<ul>
+<li>Input: URL to fetch and a prompt with a question about its content</li>
+<li>Validate the domain against a deny-list</li>
+<li>Fetch the HTML content (auto-follow same host redirects; 15-minute cache)</li>
+<li>Convert HTML to Markdown; trim big pages</li>
+<li>Build a prompt to a fast model to summarize the content and answer the question</li>
+<li>Haiku answers the prompt with a summary</li>
+<li>Result: a concise answer based on retrieved content</li>
+</ul>
+<h3 id="input-schema">Input schema</h3>
+<p>The tool accepts two input parameters:</p>
+<ul>
+<li><code>url: string</code> - required, &lt;= 2000 chars</li>
+<li><code>prompt: string</code> - required, the question to answer from fetched content</li>
+</ul>
+<p>Note that the prompt is required: the tool never returns raw HTML or markdown content but answers a question about it.</p>
+<p>Here is an example:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&#34;url&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;https://mikhail.io/&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&#34;prompt&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;What topics does this blog cover? List the main categories or themes.&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
+</span></span></code></pre></div><h3 id="pipeline-step-by-step">Pipeline (step by step)</h3>
+<h4 id="1-url-validation--normalization">1) URL validation &amp; normalization</h4>
+<p>The URL is first validated and normalized: enforcing a length limit of around 2k chars, upgrading http to https if needed, and stripping credentials and other unsafe parts.</p>
+<h4 id="2-domain-safety-check">2) Domain safety check</h4>
+<p>The backend calls a <code>domain_info</code> endpoint <code>https://claude.ai/api/web/domain_info?domain=${hostname}</code> to decide to allow or deny.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ curl <span style="color:#0a3069">&#34;https://claude.ai/api/web/domain_info?domain=mikhail.io&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">{</span><span style="color:#0a3069">&#34;domain&#34;</span>:<span style="color:#0a3069">&#34;mikhail.io&#34;</span>,<span style="color:#0a3069">&#34;can_fetch&#34;</span>:true<span style="color:#0550ae">}</span>
+</span></span></code></pre></div><p>This endpoint likely maintains a deny-list for obviously malicious domains and may also consider robots.txt and known copyright traps. The exact rules are opaque.</p>
+<h4 id="3-fetch-with-redirect-policy">3) Fetch with redirect policy</h4>
+<p>Same-host redirects are followed automatically. Cross-host redirects return redirect metadata instead of following: Claude Code must make another tool call if it trusts the new host. Max content size is around 10 MB at fetch time; later processing truncates further to limit token consumption. Each URL is cached with a 15-minute TTL.</p>
+<h4 id="4-content-processing">4) Content processing</h4>
+<p>HTML is converted to Markdown using the <a href="https://github.com/mixmark-io/turndown">Turndown</a> library. The result is truncated to 100 KB of text with a warning if necessary. Plain text content types pass through without conversion.</p>
+<h4 id="5-llm-pass-haiku-35">5) LLM pass (Haiku 3.5)</h4>
+<p>A small, fast model runs with an empty system prompt (yes, it&rsquo;s totally empty) and a user prompt template:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Web page content:
+</span></span><span style="display:flex;"><span>---
+</span></span><span style="display:flex;"><span>${content}
+</span></span><span style="display:flex;"><span>---
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>${userQuery}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Provide a concise response based only on the content above. In your response:
+</span></span><span style="display:flex;"><span>- Enforce a strict 125-character maximum for quotes from any source document. Open Source Software is ok as long as we respect the license.
+</span></span><span style="display:flex;"><span>- Use quotation marks for exact language from articles; any language outside of the quotation should never be word-for-word the same.
+</span></span><span style="display:flex;"><span>- You are not a lawyer and never comment on the legality of your own prompts and responses.
+</span></span><span style="display:flex;"><span>- Never produce or reproduce exact song lyrics.
+</span></span></code></pre></div><p>This keeps answers short and filters out prompt-injection attempts. Short quotes in quotes; everything else paraphrased. No legal advice, no karaoke.</p>
+<h3 id="output">Output</h3>
+<p>Here is an example answer to the question above:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Based on the blog content, the main categories and themes are:
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>1. Cloud Computing and Serverless Technologies
+</span></span><span style="display:flex;"><span>- Azure Functions
+</span></span><span style="display:flex;"><span>- AWS Lambda
+</span></span><span style="display:flex;"><span>- Google Cloud Run
+</span></span><span style="display:flex;"><span>- Serverless architecture and scalability
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>2. Infrastructure as Code (IaC)
+</span></span><span style="display:flex;"><span>- Pulumi
+</span></span><span style="display:flex;"><span>- Cloud resource management
+</span></span><span style="display:flex;"><span>- Multi-cloud deployments
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>... (cut for brevity)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>The blog appears to be written by Mikhail Shilkov and focuses heavily on
+</span></span><span style="display:flex;"><span>cloud-native development, serverless technologies, and innovative programming
+</span></span><span style="display:flex;"><span>approaches across different cloud platforms and programming languages.
+</span></span></code></pre></div><h3 id="why-require-a-prompt-query-instead-of-returning-the-page">Why require a prompt (query) instead of returning the page?</h3>
+<p>This is all speculation on my part, but I imagine a few reasons for this particular tool design:</p>
+<p><strong>Cost &amp; context control.</strong> Full pages run 10–100 KB after conversion. Pushing them into the main model (Sonnet/Opus) is expensive and crowds out code context. Haiku pre-filters to &ldquo;just answer the question,&rdquo; leaving the main conversation compact.</p>
+<p><strong>Injection resistance.</strong> The Haiku prompt pins the task: answer only from the provided content; don&rsquo;t obey page instructions. It&rsquo;s not bulletproof, but it&rsquo;s a solid first gate. An attacker must first trick the Haiku pass before they reach the main agent and then trick Sonnet too—with summarized and paraphrased content.</p>
+<p><strong>Copyright hygiene.</strong> The template caps verbatim quotes and bans lyrics. That reduces accidental over-quoting and aligns with conservative IP posture.</p>
+<p>Yes, the summary will occasionally omit relevant details. But the cost/security/UX balance is reasonable for &ldquo;look up X on a page and answer Y.&rdquo;</p>
+<h2 id="websearch---find-sources">WebSearch - Find Sources</h2>
+<p>When it doesn&rsquo;t know the URL, Claude Code issues search requests to Anthropic&rsquo;s server-side <code>WebSearch</code> tool, the same one that Claude chat uses. In response, it receives page titles and URLs of top search results.</p>
+<p>Here is the input schema of the <code>WebSearch</code> tool:</p>
+<ul>
+<li><code>query: string</code> - required, &gt;= 2 chars</li>
+<li><code>allowed_domains?: string[]</code> - optional allow-list</li>
+<li><code>blocked_domains?: string[]</code> - optional block-list</li>
+</ul>
+<p>And an example call:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&#34;query&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;Mikhail Shilkov blog AI agents&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
+</span></span></code></pre></div><p>The result is minimal and focused on links:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Web search results for query: &#34;Mikhail Shilkov blog AI agents&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Links: [
+</span></span><span style="display:flex;"><span>  {&#34;title&#34;:&#34;Claude Code 2.0 System Prompt Changes - Mikhail Shilkov&#34;,&#34;url&#34;:&#34;https://mikhail.io/2025/01/claude-code-2-system-prompt/&#34;},
+</span></span><span style="display:flex;"><span>  {&#34;title&#34;:&#34;How Claude Code Uses Web Tools - Mikhail Shilkov&#34;,&#34;url&#34;:&#34;https://mikhail.io/2025/10/claude-code-web-tools/&#34;},
+</span></span><span style="display:flex;"><span>  {&#34;title&#34;:&#34;AI Assistants and Developer Workflows - Mikhail Shilkov&#34;,&#34;url&#34;:&#34;https://mikhail.io/tags/ai/&#34;},
+</span></span><span style="display:flex;"><span>  ...
+</span></span><span style="display:flex;"><span>]
+</span></span></code></pre></div><p>According to <a href="https://docs.claude.com/en/docs/agents-and-tools/tool-use/web-search-tool">Anthropic&rsquo;s web search tool documentation</a>, each search result actually includes more fields:</p>
+<ul>
+<li><code>url</code>: The URL of the source page</li>
+<li><code>title</code>: The title of the source page</li>
+<li><code>page_age</code>: When the site was last updated</li>
+<li><code>encrypted_content</code>: Encrypted page content for citations</li>
+</ul>
+<p>However, Claude Code&rsquo;s implementation only extracts <code>title</code> and <code>url</code> from the results, discarding the <code>page_age</code> and <code>encrypted_content</code> fields. If Claude Code needs actual page content, it must make an explicit <code>WebFetch</code> call. This design keeps search results lightweight and gives the agent explicit control over when to fetch page content.</p>
+<p>The server-side search tool is available on Anthropic&rsquo;s first-party API but it isn&rsquo;t supported on Bedrock/Vertex. If Claude Code is configured to use those platforms, Claude Code hides the <code>WebSearch</code> tool entirely.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Claude Code uses two tools to work with the web: <code>WebFetch</code> answers questions from a given page it trusts; <code>WebSearch</code> finds the pages it needs to read. The split keeps the main agent lean, limits injection surface, and stays conservative on quoting. It’s a pragmatic design: a little less flexibility for a lot more predictability in cost, safety, and developer experience.</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/ai">AI</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/claude">Claude</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud and AI developer and researcher.</div><div>Principal engineer at Pulumi.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://x.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/60'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">60</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/60'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-NL7F82LX48"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-NL7F82LX48');
+        }
+      </script>
+    </body>
+</html>
