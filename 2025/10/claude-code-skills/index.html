@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en-us" prefix="og: http://ogp.me/ns#"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	
+	
+	<title>Inside Claude Code Skills: Structure, prompts, invocation | Mikhail Shilkov</title>
+	
+	
+	
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css?family=Righteous%7CMerriweather:300,300i,400,400i,700,700i" rel="stylesheet">
+	
+	<link rel="stylesheet" href="/sass/main.css">
+
+	
+	
+	<meta property="og:title" content="Inside Claude Code Skills: Structure, prompts, invocation" />
+	<meta property="og:description" content="Under the hood of Claude Code skills: folder layout, tool definition, and runtime flow." />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="https://mikhail.io/2025/10/claude-code-skills/" />
+
+	
+	
+	
+	<meta property="og:image" content="https://mikhail.io/2025/10/claude-code-skills/teaser.jpg" />
+	
+	
+
+
+	
+	
+	<meta property="article:tag" content="AI" />
+	
+	<meta property="article:tag" content="Claude" />
+	
+
+	
+	<meta name="twitter:card" content="summary_large_image"/>
+	
+	<meta name="twitter:image" content="https://mikhail.io/2025/10/claude-code-skills/teaser.jpg"/>
+	
+
+	<meta name="twitter:title" content="Inside Claude Code Skills: Structure, prompts, invocation"/>
+	<meta name="twitter:description" content="Under the hood of Claude Code skills: folder layout, tool definition, and runtime flow."/>
+	<meta name="twitter:creator" content="@MikhailShilkov"></meta>
+</head>
+<body><script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load("current", {packages:["corechart"]});
+    function addChart(make) {
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            const data = new google.visualization.DataTable();
+
+            const options = {
+                height: 420,  
+                chartArea: { width: '85%', height: '70%' },
+                legend: 'none',
+                hAxis: { minValue: 0 },
+                vAxis: {},
+                series: {      
+                    0: { tooltip : false}
+                }
+            };
+            const chart = make(data, options);
+            options.hAxis.textStyle = options.hAxis.titleTextStyle 
+                = options.vAxis.textStyle = options.vAxis.titleTextStyle = { fontName: 'Merriweather' };
+
+            chart.draw(data, options);
+        }
+    }
+</script>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container pr-0">
+        <a class="navbar-brand" href="/">
+            <img class="author-thumb" src="/images/author.jpg" alt="Mikhail Shilkov">
+            <span class="text-primary">Mikhail Shilkov</span>
+        </a>
+
+        
+               
+
+
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarMediumish" aria-controls="navbarSupportedContent"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        
+        <div class="collapse navbar-collapse" id="navbarMediumish">
+            
+            <ul class="navbar-nav ml-auto">
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/tags/">TOPICS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/archives/">ARCHIVES</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/talks/">TALKS</a>
+                </li>
+                
+                <li class="nav-item ">
+                    <a class="nav-link" href="/about/">ABOUT</a>
+                </li>
+                <li class="nav-item">
+    <a class="nav-link" href="https://mikhail.io/feed/"><i class="fas fa-rss social-icon" aria-hidden="true"></i></a>
+</li>
+
+<li class="nav-item">
+    <a class="nav-link" href="https://x.com/MikhailShilkov"><i class="fab fa-twitter social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://dev.to/mikhailshilkov"><i class="fab fa-dev social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://medium.com/@MikhailShilkov"><i class="fab fa-medium social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://github.com/MikhailShilkov"><i class="fab fa-github social-icon" aria-hidden="true"></i></a>
+</li>
+
+
+<li class="nav-item">
+    <a class="nav-link" href="https://www.linkedin.com/in/MikhailShilkov"><i class="fab fa-linkedin social-icon" aria-hidden="true"></i></a>
+</li>
+
+</ul>
+        </div>
+        
+    </div>
+</nav>
+
+
+        <div class="container">
+
+<div class="main-content">
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-2 pl-0"><div class="share">
+    <ul>
+        <li class="ml-1 mr-1" title="Say 'Thank You' for this article">
+            <a href="#" onclick="heart();return false;">
+                <i class="fas fa-heart" style="color: red"></i>
+            </a>
+            <div class="count" style="float: right; padding-left: .5em; padding-top: .25em" id="heartcount"></div>
+        </li>
+
+        <li class="ml-1 mr-1" title="Tweet this article">
+            <a target="_blank"
+                href="https://x.com/intent/tweet?text=Inside%20Claude%20Code%20Skills%3a%20Structure%2c%20prompts%2c%20invocation%20by%20@MikhailShilkov&url=https%3a%2f%2fmikhail.io%2f2025%2f10%2fclaude-code-skills%2f"
+                onclick="window.open(this.href, 'twitter-share', 'width=550,height=435');return false;">
+                <i class="fab fa-twitter"></i>
+            </a>
+        </li>
+
+        <li class="ml-1 mr-1" title="See the responses or write a response">
+            <a href="#comments">
+                <i class="fas fa-comment"></i>
+            </a>
+        </li>
+    </ul>
+</div></div>
+            
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+
+                <div class="mainheading">
+                    
+                    <h1 class="posttitle">Inside Claude Code Skills: Structure, prompts, invocation</h1>
+                    
+                    <div class="post-top-meta">
+                        <div>
+                            
+                                
+                                <span class="post-date">Published on Oct 28, 2025
+                                
+                            
+                            
+                        &nbsp;&middot;&nbsp; 5 min read</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-lg-11 offset-lg-1 flex-first flex-lg-unordered">
+                <img class="featured-image img-fluid" src="teaser.jpg" alt="thumbnail for this post">
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-lg-2 pl-0">
+            </div>
+            <div class="col-lg-9 flex-first flex-lg-unordered">
+                
+                
+                
+
+                
+                <div class="article-post">
+                    <p>Claude Code recently added <a href="https://docs.claude.com/en/docs/claude-code/skills">skills</a> as an extensibility mechanism alongside MCP servers and slash commands. While MCP servers add new tools and slash commands provide pre-defined prompts, skills expand prompts on demand with task-specific instructions and local helpers.</p>
+<p>This post explains how skills are wired: how they&rsquo;re discovered, surfaced, and invoked.</p>
+<h2 id="skills-folder-structure">Skills Folder Structure</h2>
+<p>Skills are folders containing a <code>SKILL.md</code> file and optional scripts or other resources. Sub-folders are allowed (and encouraged) for organizing helper scripts, templates, and data files. Here&rsquo;s an example with two skills:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>.claude/skills/
+</span></span><span style="display:flex;"><span>├── pdf/
+</span></span><span style="display:flex;"><span>│   ├── SKILL.md
+</span></span><span style="display:flex;"><span>│   ├── extract_text.py
+</span></span><span style="display:flex;"><span>│   └── templates/
+</span></span><span style="display:flex;"><span>│       └── summary.html
+</span></span><span style="display:flex;"><span>└── csv/
+</span></span><span style="display:flex;"><span>    ├── SKILL.md
+</span></span><span style="display:flex;"><span>    ├── analyze.py
+</span></span><span style="display:flex;"><span>    └── utils/
+</span></span><span style="display:flex;"><span>        ├── parser.py
+</span></span><span style="display:flex;"><span>        └── visualizer.py
+</span></span></code></pre></div><p>The <code>pdf/SKILL.md</code> might contain:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span>---
+</span></span><span style="display:flex;"><span>name: pdf
+</span></span><span style="display:flex;"><span>description: Extract and analyze text from PDF documents. Use when users ask to process or read PDFs.
+</span></span><span style="display:flex;"><span>---
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span># PDF Processing Skill
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Use the extract_text.py script in this folder to extract text from PDFs:
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    python3 extract_text.py <span style="color:#1f2328">&lt;</span><span style="color:#0550ae">input_file</span><span style="color:#1f2328">&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>After extraction, summarize the key points in a structured format.
+</span></span></code></pre></div><p>Each skill packages instructions alongside executable scripts and reference materials, creating self-contained capability extensions.</p>
+<h2 id="skill-tool-definition">Skill Tool Definition</h2>
+<p>Claude Code provides a <code>Skill</code> tool to Claude. Here&rsquo;s the complete tool definition (captured from an actual Claude Code session):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span>## Skill
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>**Input Schema:**
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>object:
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">-</span> command (required):
+</span></span><span style="display:flex;"><span>    string
+</span></span><span style="display:flex;"><span>      # The skill name (no arguments). E.g., &#34;pdf&#34; or &#34;xlsx&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>**Description:**
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Execute a skill within the main conversation
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">&lt;</span><span style="color:#0550ae">skills_instructions</span><span style="color:#1f2328">&gt;</span>
+</span></span><span style="display:flex;"><span>When users ask you to perform tasks, check if any of the available skills
+</span></span><span style="display:flex;"><span>below can help complete the task more effectively. Skills provide specialized
+</span></span><span style="display:flex;"><span>capabilities and domain knowledge.
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>How to use skills:
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">-</span> Invoke skills using this tool with the skill name only (no arguments)
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">-</span> When you invoke a skill, you will see <span style="color:#1f2328">&lt;</span><span style="color:#0550ae">command-message</span><span style="color:#1f2328">&gt;</span>The &#34;{name}&#34; skill is loading<span style="color:#1f2328">&lt;/</span><span style="color:#0550ae">command-message</span><span style="color:#1f2328">&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">-</span> The skill&#39;s prompt will expand and provide detailed instructions on how to complete the task
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">-</span> Examples:
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">-</span> <span style="color:#0a3069">`command: &#34;pdf&#34;`</span> - invoke the pdf skill
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">-</span> <span style="color:#0a3069">`command: &#34;xlsx&#34;`</span> - invoke the xlsx skill
+</span></span><span style="display:flex;"><span>  <span style="color:#cf222e">-</span> <span style="color:#0a3069">`command: &#34;ms-office-suite:pdf&#34;`</span> - invoke using fully qualified name
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Important:
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">-</span> Only use skills listed in <span style="color:#1f2328">&lt;</span><span style="color:#0550ae">available_skills</span><span style="color:#1f2328">&gt;</span> below
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">-</span> Do not invoke a skill that is already running
+</span></span><span style="display:flex;"><span><span style="color:#cf222e">-</span> Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">&lt;/</span><span style="color:#0550ae">skills_instructions</span><span style="color:#1f2328">&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">&lt;</span><span style="color:#0550ae">available_skills</span><span style="color:#1f2328">&gt;</span>
+</span></span><span style="display:flex;"><span>[Skills are listed here - see next section]
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">&lt;/</span><span style="color:#0550ae">available_skills</span><span style="color:#1f2328">&gt;</span>
+</span></span></code></pre></div><p>The tool is simple: just a <code>command</code> parameter with the skill name. But the description contains both instructions for using skills and an embedded <code>&lt;available_skills&gt;</code> section.</p>
+<h2 id="available-skills-list">Available Skills List</h2>
+<p>Within the tool definition&rsquo;s description, Claude Code builds an <code>&lt;available_skills&gt;</code> section based on the skill folders. The <code>name</code> and <code>description</code> fields come directly from the YAML frontmatter in each skill&rsquo;s <code>SKILL.md</code> file:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#0550ae">&lt;available_skills&gt;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&lt;skill&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;name&gt;</span>pdf<span style="color:#0550ae">&lt;/name&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;description&gt;</span>
+</span></span><span style="display:flex;"><span>      Extract and analyze text from PDF documents. Use when users
+</span></span><span style="display:flex;"><span>      ask to process or read PDFs.
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;/description&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;location&gt;</span>user<span style="color:#0550ae">&lt;/location&gt;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&lt;/skill&gt;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&lt;skill&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;name&gt;</span>csv<span style="color:#0550ae">&lt;/name&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;description&gt;</span>
+</span></span><span style="display:flex;"><span>      Analyze and visualize CSV data. Use when users ask to
+</span></span><span style="display:flex;"><span>      process or analyze CSV files.
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;/description&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#0550ae">&lt;location&gt;</span>user<span style="color:#0550ae">&lt;/location&gt;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&lt;/skill&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#0550ae">&lt;/available_skills&gt;</span>
+</span></span></code></pre></div><p>Notice how the <code>pdf</code> skill&rsquo;s name and description match exactly what was defined in the <code>pdf/SKILL.md</code> frontmatter shown earlier. The metadata includes:</p>
+<ul>
+<li><strong>name</strong>: From frontmatter, used as identifier for invoking the skill</li>
+<li><strong>description</strong>: From frontmatter, tells Claude when to use this skill</li>
+<li><strong>location</strong>: Either <code>user</code> (machine-scoped) or <code>project</code> (defined in the current folder)</li>
+</ul>
+<p>The list of skills is embedded in the tool definition.</p>
+<h2 id="runtime-invocation">Runtime Invocation</h2>
+<p>Skills operate via a tool call/tool response pair. For example, when the user asks &ldquo;Extract text from report.pdf&rdquo;, Claude recognizes this matches the pdf skill and sends an assistant message with a tool use:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&#34;role&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;assistant&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&#34;content&#34;</span><span style="color:#1f2328">:</span> <span style="color:#1f2328">[</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;type&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;text&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;text&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;Now let me use the pdf skill to read the document:&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;type&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;tool_use&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;id&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;toolu_01JRBZGD3vy9gDsifuT89L8B&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;name&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;Skill&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;input&#34;</span><span style="color:#1f2328">:</span> <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#0550ae">&#34;command&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;pdf&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#1f2328">]</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
+</span></span></code></pre></div><p>The system responds with a user message containing a <code>tool_result</code> and two <code>text</code> blocks:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&#34;role&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;user&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#0550ae">&#34;content&#34;</span><span style="color:#1f2328">:</span> <span style="color:#1f2328">[</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;type&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;tool_result&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;tool_use_id&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;toolu_01JRBZGD3vy9gDsifuT89L8B&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;content&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;Launching skill: pdf&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;type&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;text&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;text&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;&lt;command-message&gt;The \&#34;pdf\&#34; skill is running&lt;/command-message&gt;\n&lt;command-name&gt;pdf&lt;/command-name&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">},</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">{</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;type&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;text&#34;</span><span style="color:#1f2328">,</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#0550ae">&#34;text&#34;</span><span style="color:#1f2328">:</span> <span style="color:#0a3069">&#34;Base Path: /Users/username/.claude/skills/pdf/\n\n# PDF Processing Skill\n\nUse the extract_text.py script in this folder to extract text from PDFs:\n\n    python3 extract_text.py &lt;input_file&gt;\n\nAfter extraction, summarize the key points in a structured format.&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#1f2328">}</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#1f2328">]</span>
+</span></span><span style="display:flex;"><span><span style="color:#1f2328">}</span>
+</span></span></code></pre></div><p>The third block contains both the skill&rsquo;s base path and the <code>SKILL.md</code> body (without frontmatter). The base path enables Claude Code to locate and execute scripts bundled with the skill relative to that folder.</p>
+<p>From this point, Claude Code follows the expanded instructions: it runs the extraction script, processes the output, and creates a summary. Skills aren&rsquo;t separate processes, sub-agents, or external tools: they&rsquo;re injected instructions that guide Claude&rsquo;s behavior within the main conversation.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Skills in Claude Code are a simple mechanism for extensibility. The mechanics:</p>
+<ol>
+<li><strong>Folder structure</strong>: Each skill is a folder with <code>SKILL.md</code> (containing YAML frontmatter and instructions) plus optional scripts/resources</li>
+<li><strong>Tool definition</strong>: The <code>Skill</code> tool embeds an <code>&lt;available_skills&gt;</code> list built from the frontmatter of all skills</li>
+<li><strong>Runtime invocation</strong>: When invoked, the tool response includes the base path and <code>SKILL.md</code> body, expanding the context and referencing additional resources</li>
+</ol>
+<p>What makes this design clever is that it achieves on-demand prompt expansion without modifying the core system prompt. Skills are executable knowledge packages that Claude loads only when needed, extending capabilities while keeping the main prompt lean.</p>
+<p>The complete tool definition shown here (captured from actual Claude Code sessions) hasn&rsquo;t been published by Anthropic, making this reverse-engineered view a novel contribution to understanding how Claude Code&rsquo;s extensibility works under the hood.</p>
+
+                </div>
+
+                
+                <div class="after-post-tags">
+                    <ul class="tags">
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/ai">AI</a>
+                            
+                        </li>
+                        
+                        <li>
+                            
+                            
+                            <a href="/tags/claude">Claude</a>
+                            
+                        </li>
+                        
+                    </ul>
+                </div>
+                
+
+                <hr/>
+
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="container">
+    <div id="sharepane" class="row justify-content-center">
+        <div class="col-md-2">
+
+        </div>
+        <div class="contact-intro col-md-2 text-center">
+            <img class="profile-small d-inline-block mx-auto rounded-circle mb-3" height="100px"
+                src="/images/author.jpg" alt="">
+        </div>
+        <div class="col-md-8">
+            <section class="article-open_author">
+                <div class="article-open_author_bio">
+                    <h5 itemprop="author" itemscope="" itemtype="http://schema.org/Person">Author: Mikhail Shilkov</h5>
+                    <p>
+                        <div>Cloud and AI developer and researcher.</div><div>Principal engineer at Pulumi.</div>
+                    </p>
+                </div>
+            </section>
+            <a href="https://x.com/MikhailShilkov?ref_src=twsrc%5Etfw" class="twitter-follow-button" data-show-count="false">Follow @MikhailShilkov</a><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div id="comments" class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            
+            <div class="mb-5">
+                <h5 class="float-left">Responses</h5>
+                <div class="float-right"><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/61'>Write a
+                        response</a></div>
+            </div>
+            <div id="gh-comments-list" style="display: none">61</div>
+            <div class="mt-4">Visit the <b><a
+                        href='https://github.com/mikhailshilkov/mikhailio-hugo/issues/61'>Github
+                        Issue</a></b> to comment on this page</div>
+            
+        </div>
+    </div>
+</div>
+</div>
+
+        </div>
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-sm-6 text-center text-lg-left">
+                &copy; Copyright Mikhail Shilkov - All rights reserved
+            </div>
+            <div class="col-md-6 col-sm-6 text-center text-lg-right">    
+                
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('code.language-diff span span').forEach(function(span) {
+        const text = span.textContent;
+        if (text.startsWith('-')) {
+            span.style.backgroundColor = '#ffdddd';
+            span.style.color = '#d73a49';
+            span.style.display = 'block';
+        } else if (text.startsWith('+')) {
+            span.style.backgroundColor = '#ddffdd';
+            span.style.color = '#28a745';
+            span.style.display = 'block';
+        }
+    });
+});
+</script>
+
+
+
+
+
+
+
+
+
+
+
+<script src="/js/bundle.min.js"></script>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-NL7F82LX48"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-NL7F82LX48');
+        }
+      </script>
+    </body>
+</html>
